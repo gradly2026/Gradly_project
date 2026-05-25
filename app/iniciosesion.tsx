@@ -192,6 +192,8 @@ export default function InicioSesion() {
         return "/dashboard-universidad";
       case "empresa":
         return "/dashboard-empresa";
+      case "admin":
+        return "/dashboard-administrador";
       case "talento":
       default:
         return "/dashboard-joventalento";

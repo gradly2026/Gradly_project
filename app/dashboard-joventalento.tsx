@@ -12,24 +12,24 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Image,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import TranslatedText from "../components/TranslatedText";
 import { supabase } from "../lib/supabase";
 import {
-  pickAndUploadImage,
-  updateProfilePhoto,
+    pickAndUploadImage,
+    updateProfilePhoto,
 } from "../services/storageService";
 import ProfileViewerModal from "../src/components/ProfileViewerModal";
 import { useTranslationContext } from "../src/context/TranslationContext";
@@ -530,6 +530,10 @@ export default function DashboardJovenTalento() {
   >("Remoto");
   const [svcHabilidades, setSvcHabilidades] = useState("");
   const [svcEntrega, setSvcEntrega] = useState("");
+  const [talentoNombre, setTalentoNombre] = useState("John Doe");
+  const [talentoHeadline, setTalentoHeadline] = useState(
+    "Ingenieria en Sistemas - UDB",
+  );
   const [cfgNombre, setCfgNombre] = useState("John Doe");
   const [cfgEmail, setCfgEmail] = useState("jdoe@uni.edu.sv");
   const [cfgTel, setCfgTel] = useState("+503 7000-0000");
@@ -599,11 +603,23 @@ export default function DashboardJovenTalento() {
         setCurrentUserId(data.user.id);
         supabase
           .from("talentos")
-          .select("foto_perfil")
+          .select(
+            "foto_perfil, nombre, email, telefono, universidad, area, ciudad, departamento",
+          )
           .eq("id", data.user.id)
           .single()
           .then(({ data: t }) => {
-            if (t?.foto_perfil) setProfilePhotoUrl(t.foto_perfil);
+            if (!t) return;
+            if (t.foto_perfil) setProfilePhotoUrl(t.foto_perfil);
+            if (t.nombre) {
+              setTalentoNombre(t.nombre);
+              setCfgNombre(t.nombre);
+            }
+            const headlineParts = [t.area, t.universidad].filter(Boolean);
+            if (headlineParts.length)
+              setTalentoHeadline(headlineParts.join(" - "));
+            if (t.email) setCfgEmail(t.email);
+            if (t.telefono) setCfgTel(t.telefono);
           });
       }
     });
@@ -1880,9 +1896,9 @@ export default function DashboardJovenTalento() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={[st.sectionTitle, { fontSize: 22, marginBottom: 2 }]}>
-            John Doe
+            {talentoNombre}
           </Text>
-          <Text style={st.muted}>Ingenieria en Sistemas - UDB</Text>
+          <Text style={st.muted}>{talentoHeadline}</Text>
           <View
             style={[
               st.badge,

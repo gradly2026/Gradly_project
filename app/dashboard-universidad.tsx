@@ -12,6 +12,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+// Asegúrate de importar tu cliente de supabase, por ejemplo:
+// import { supabase } from '@/lib/supabase'; // <- Ajusta esta ruta según tu proyecto
 import TranslatedText from "../components/TranslatedText";
 import { supabase } from "../lib/supabase";
 import { getUniversityById, updateUniversidad } from "../services/authService";
@@ -130,105 +133,6 @@ type GrupoDbRow = {
   inicio?: string | null;
   fin?: string | null;
 };
-
-export const GRUPOS_INITIAL: GrupoData[] = [
-  {
-    id: "grupo-1",
-    name: "Ing. Sistemas – Grupo A 2025",
-    carrera: "Ingeniería en Sistemas",
-    dateCreated: "15/01/2025",
-    inicio: "01/02/2025",
-    fin: "15/12/2025",
-    count: 25,
-    status: "Activo",
-    badgeType: "active",
-    tags: ["Desarrollo Web", "Backend", "Bases de datos"],
-    empresaAsignada: "TechSV Solutions",
-    estudiantes: [
-      {
-        id: "s1",
-        name: "Carlos Martínez",
-        carrera: "Ing. Sistemas",
-        estado: "Activo",
-      },
-      {
-        id: "s2",
-        name: "Valentina Cruz",
-        carrera: "Ing. Sistemas",
-        estado: "Activo",
-      },
-      {
-        id: "s3",
-        name: "José Ramos",
-        carrera: "Ing. Sistemas",
-        estado: "Activo",
-      },
-    ],
-  },
-  {
-    id: "grupo-2",
-    name: "Diseño Gráfico – Grupo B 2025",
-    carrera: "Diseño Gráfico",
-    dateCreated: "20/01/2025",
-    inicio: "01/03/2025",
-    fin: "20/11/2025",
-    count: 18,
-    status: "En revisión por empresa",
-    badgeType: "review",
-    tags: ["UX/UI", "Branding"],
-    empresaAsignada: "WebFactory CR",
-    estudiantes: [
-      {
-        id: "s4",
-        name: "María López",
-        carrera: "Diseño Gráfico",
-        estado: "En revisión",
-      },
-    ],
-  },
-  {
-    id: "grupo-3",
-    name: "Administración – Grupo C 2025",
-    carrera: "Administración",
-    dateCreated: "10/02/2025",
-    inicio: "05/03/2025",
-    fin: "10/12/2025",
-    count: 22,
-    status: "Horas sociales en curso",
-    badgeType: "inprogress",
-    tags: ["Finanzas", "Contabilidad", "RRHH"],
-    empresaAsignada: "Banco Agrícola",
-    estudiantes: [
-      {
-        id: "s5",
-        name: "Laura Pérez",
-        carrera: "Administración",
-        estado: "Activo",
-      },
-    ],
-  },
-  {
-    id: "grupo-4",
-    name: "Ing. Industrial – Grupo D 2024",
-    carrera: "Ingeniería Industrial",
-    dateCreated: "05/08/2024",
-    inicio: "15/09/2024",
-    fin: "15/06/2025",
-    count: 20,
-    status: "Completado",
-    badgeType: "completed",
-    tags: ["Producción", "Calidad"],
-    empresaAsignada: null,
-    estudiantes: [
-      {
-        id: "s6",
-        name: "Pedro Gutiérrez",
-        carrera: "Ing. Industrial",
-        estado: "Completado",
-      },
-    ],
-  },
-];
 
 // ── Sub-components ────────────────────────────────────────────────
 
@@ -628,7 +532,7 @@ export default function DashboardUniversidad() {
     "talento" | "empresa" | "universidad"
   >("talento");
 
-  const [grupos, setGrupos] = useState<GrupoData[]>(GRUPOS_INITIAL);
+  const [grupos, setGrupos] = useState<GrupoData[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GrupoData | null>(null);
   const [groupModalMode, setGroupModalMode] = useState<"view" | "edit" | null>(
     null,
@@ -943,6 +847,138 @@ export default function DashboardUniversidad() {
     }
   };
 
+  /**
+   * Carga los grupos creados por el usuario autenticado desde Supabase
+   * y actualiza el estado `grupos` con los datos reales
+   */
+  const loadGruposAutenticado = async () => {
+    try {
+      // Obtener el usuario autenticado
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        console.warn("No authenticated user found");
+        return;
+      }
+
+      // Obtener grupos del usuario autenticado (universidad_id = user.id)
+      const { data: gruposData, error: gruposError } = await supabase
+        .from("grupos")
+        .select("*")
+        .eq("universidad_id", user.id)
+        .order("fecha_creacion", { ascending: false });
+
+      if (gruposError) {
+        console.error("Error cargando grupos autenticados:", gruposError);
+        return;
+      }
+
+      if (!gruposData || gruposData.length === 0) {
+        console.log("No groups found for authenticated user");
+        setGrupos([]);
+        return;
+      }
+
+      // Para cada grupo, obtener estudiantes y solicitudes de horas
+      const gruposConDetalles = await Promise.all(
+        (gruposData as any[]).map(async (groupData) => {
+          try {
+            // Obtener estudiantes del grupo
+            const { data: estudiantesData } = await supabase
+              .from("estudiantes")
+              .select("*")
+              .eq("grupo_id", groupData.id);
+
+            // Obtener solicitud de horas del grupo
+            const { data: solicitudData } = await supabase
+              .from("solicitudes_horas")
+              .select("*")
+              .eq("grupo_id", groupData.id)
+              .order("created_at", { ascending: false })
+              .limit(1);
+
+            // Obtener nombre de la empresa si existe
+            let empresaNombre = null;
+            if (solicitudData && solicitudData.length > 0) {
+              const empresaId = solicitudData[0].empresa_id;
+              const { data: empresaData } = await supabase
+                .from("empresas")
+                .select("nombre")
+                .eq("id", empresaId)
+                .single();
+              empresaNombre = empresaData?.nombre ?? null;
+            }
+
+            // Mapear datos a estructura GrupoData
+            const estadoRaw = solicitudData?.[0]?.estado ?? "Activo";
+            const statusMap: Record<string, string> = {
+              aprobada: "En curso",
+              cerrada: "Completado",
+              pendiente: "En revisión",
+              rechazada: "Rechazada",
+              Activo: "Activo",
+            };
+
+            const badgeTypeMap: Record<string, GrupoData["badgeType"]> = {
+              aprobada: "inprogress",
+              cerrada: "completed",
+              pendiente: "review",
+              rechazada: "rejected",
+              Activo: "active",
+            };
+
+            return {
+              id: String(groupData.id),
+              name: `${groupData.carrera || ""} - ${groupData.nombre_grupo || groupData.nombre || "Grupo sin nombre"}`.trim(),
+              carrera: groupData.carrera || "",
+              dateCreated: formatDateString(
+                groupData.fecha_creacion || groupData.created_at,
+              ),
+              inicio: solicitudData?.[0]?.fecha_inicio
+                ? formatDateString(solicitudData[0].fecha_inicio)
+                : "Por definir",
+              fin: solicitudData?.[0]?.fecha_fin
+                ? formatDateString(solicitudData[0].fecha_fin)
+                : "Por definir",
+              count: (estudiantesData ?? []).length,
+              status: statusMap[estadoRaw] || "Activo",
+              badgeType:
+                (badgeTypeMap[estadoRaw] as GrupoData["badgeType"]) || "active",
+              tags: [
+                groupData.carrera || "",
+                solicitudData?.[0]?.estado || "Sin solicitud",
+              ].filter(Boolean),
+              empresaAsignada: empresaNombre,
+              estudiantes: (estudiantesData ?? []).map((student: any) => ({
+                id: String(student.id),
+                name: student.nombre_completo || "Estudiante sin nombre",
+                carrera: groupData.carrera || "",
+                estado: student.estado || "Activo",
+                horas: groupData.horas_requeridas ?? null,
+              })),
+            } as GrupoData;
+          } catch (error) {
+            console.error("Error procesando grupo:", groupData.id, error);
+            return null;
+          }
+        }),
+      );
+
+      // Filtrar grupos nulos y actualizar estado
+      const gruposFiltrados = gruposConDetalles.filter(
+        (g) => g !== null,
+      ) as GrupoData[];
+      setGrupos(gruposFiltrados);
+
+      console.log(
+        `✓ Grupos autenticados cargados: ${gruposFiltrados.length} grupos`,
+      );
+    } catch (error) {
+      console.error("Error en loadGruposAutenticado:", error);
+    }
+  };
+
   const handleActualizarEstadoPropuesta = async (
     propuestaId: string,
     estado: "aprobada" | "cerrada",
@@ -1046,6 +1082,7 @@ export default function DashboardUniversidad() {
     }
     if (section === "grupos" || section === "gestion") {
       loadGruposDb();
+      loadGruposAutenticado(); // Cargar grupos del usuario autenticado
     }
   }, [section]);
 
@@ -1792,6 +1829,7 @@ export default function DashboardUniversidad() {
                     Creado el {g.dateCreated} · {g.count} estudiantes
                   </Text>
                 </View>
+
                 <Badge label={g.status} type={g.badgeType as any} />
               </View>
               <View
@@ -3100,20 +3138,7 @@ export default function DashboardUniversidad() {
             <Text style={[s.subsectionTitle, { marginBottom: 16 }]}>
               Próximos eventos
             </Text>
-            {[
-              {
-                title: "Feria de Carreras UDB 2026",
-                sub: "06/06/2026 · Campus principal",
-              },
-              {
-                title: "Ceremonia de Graduación",
-                sub: "28/06/2026 · Auditorio central",
-              },
-              {
-                title: "Seminario de Innovación Tecnológica",
-                sub: "15/06/2026 · Laboratorio TEC",
-              },
-            ].map((ev) => (
+            {[].map((ev) => (
               <Card key={ev.title} style={{ marginBottom: 12, padding: 14 }}>
                 <Text style={[s.textSub, { fontSize: 13, fontWeight: "600" }]}>
                   {ev.title}

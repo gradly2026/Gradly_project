@@ -15,16 +15,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-  Alert,
-  Image,
-  Modal,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Image,
+    Modal,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import TranslatedText from "../components/TranslatedText";
 import { supabase } from "../lib/supabase";
@@ -984,6 +984,15 @@ export default function DashboardEmpresa() {
   const [empresaLogoUrl, setEmpresaLogoUrl] = useState<string | null>(null);
   const [empresaBannerUrl, setEmpresaBannerUrl] = useState<string | null>(null);
   const [currentEmpresaId, setCurrentEmpresaId] = useState<string | null>(null);
+  const [empresaName, setEmpresaName] = useState("TechCorp S.A.");
+  const [empresaContactEmail, setEmpresaContactEmail] = useState(
+    "contacto@techcorp.la",
+  );
+  const [empresaPhone, setEmpresaPhone] = useState("+503 7000-1234");
+  const [empresaLocation, setEmpresaLocation] = useState(
+    "San Salvador, El Salvador",
+  );
+  const [empresaVerified, setEmpresaVerified] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -991,12 +1000,32 @@ export default function DashboardEmpresa() {
         setCurrentEmpresaId(data.user.id);
         supabase
           .from("empresas")
-          .select("foto_logo, foto_banner")
+          .select(
+            "foto_logo, foto_banner, nombre, telefono, email_corporativo, direccion, departamento, ciudad, rep_nombre, plan_seleccionado",
+          )
           .eq("id", data.user.id)
           .single()
           .then(({ data: emp }) => {
             if (emp?.foto_logo) setEmpresaLogoUrl(emp.foto_logo);
             if (emp?.foto_banner) setEmpresaBannerUrl(emp.foto_banner);
+            if (emp?.nombre) setEmpresaName(emp.nombre);
+            if (emp?.telefono) setEmpresaPhone(emp.telefono);
+            if (emp?.email_corporativo)
+              setEmpresaContactEmail(emp.email_corporativo);
+            const locationParts = [
+              emp?.direccion,
+              emp?.ciudad,
+              emp?.departamento,
+            ].filter(Boolean);
+            if (locationParts.length)
+              setEmpresaLocation(locationParts.join(", "));
+            setEmpresaVerified(Boolean(emp?.plan_seleccionado));
+            if (emp?.nombre) setCfgNombre(emp.nombre);
+            if (emp?.email_corporativo) setCfgEmail(emp.email_corporativo);
+            if (emp?.telefono) setCfgTel(emp.telefono);
+            if (emp?.nombre) setCfgEmpresa(emp.nombre);
+            if (emp?.email_corporativo) setCfgContacto(emp.email_corporativo);
+            if (emp?.rep_nombre) setCfgPuesto(emp.rep_nombre);
           });
       }
     });
@@ -3519,12 +3548,18 @@ export default function DashboardEmpresa() {
             <Text style={{ fontSize: 42 }}>🏢</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.profileCompanyName}>TechCorp S.A.</Text>
+            <Text style={s.profileCompanyName}>{empresaName}</Text>
             <View style={s.verifiedBadge}>
-              <Text style={s.verifiedText}>Empresa verificada ✓</Text>
+              <Text style={s.verifiedText}>
+                {empresaVerified
+                  ? "Empresa verificada ✓"
+                  : "Perfil en espera de verificación"}
+              </Text>
             </View>
             <Text style={[s.muted, { fontSize: 13, marginTop: 8 }]}>
-              Empresa líder en talento latinoamericano.
+              {empresaVerified
+                ? "Empresa con perfil activo y visibilidad mejorada."
+                : "Completa los datos de tu empresa para mejorar tu alcance."}
             </Text>
           </View>
         </View>
@@ -3570,17 +3605,17 @@ export default function DashboardEmpresa() {
               {
                 icon: "mail-outline" as const,
                 label: "Correo",
-                value: "contacto@techcorp.la",
+                value: empresaContactEmail,
               },
               {
                 icon: "location-outline" as const,
                 label: "Ubicación",
-                value: "San Salvador, El Salvador",
+                value: empresaLocation,
               },
               {
                 icon: "call-outline" as const,
                 label: "Teléfono",
-                value: "+503 7000-1234",
+                value: empresaPhone,
               },
             ].map((ci) => (
               <View key={ci.label} style={s.contactItem}>
