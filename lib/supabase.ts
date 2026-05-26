@@ -7,10 +7,8 @@ import { Platform } from "react-native";
  * IMPORTANTE: Para producción, utiliza variables de entorno (.env)
  * Reemplaza estos valores con los de tu proyecto Supabase
  */
-export const SUPABASE_URL =
-  process.env.SUPABASE_URL || "https://kbevyjupphyxrgcvdsgv.supabase.co";
-export const SUPABASE_ANON_KEY = 
-  process.env.SUPABASE_ANON_KEY ||
+export const SUPABASE_URL = "https://kbevyjupphyxrgcvdsgv.supabase.co";
+export const SUPABASE_ANON_KEY =
   "sb_publishable_-CLkZKX7jyJuzOA0QEG4uQ_JopGLyhE";
 
 /**

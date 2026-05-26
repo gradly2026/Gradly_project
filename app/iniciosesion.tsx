@@ -3,18 +3,18 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { supabase } from "../lib/supabase";
 import { resolveEmailFromUsername } from "../services/authService";
@@ -188,12 +188,13 @@ export default function InicioSesion() {
 
   const getDashboardRoute = (role: string) => {
     switch (role) {
+      case "admin":
+      case "administrador":
+        return "/dashboard-administrador";
       case "universidad":
         return "/dashboard-universidad";
       case "empresa":
         return "/dashboard-empresa";
-      case "admin":
-        return "/dashboard-administrador";
       case "talento":
       default:
         return "/dashboard-joventalento";
@@ -239,9 +240,17 @@ export default function InicioSesion() {
       if (authError) throw authError;
       if (!authData.user) throw new Error("No se pudo iniciar sesión");
 
-      // Login successful: redirect to dashboard
+      // Login successful: get role from profiles table (source of truth)
       try {
-        const role = authData.user.user_metadata?.role ?? "talento";
+        const userId = authData.user.id;
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", userId)
+          .single();
+
+        const role =
+          profileData?.role ?? authData.user.user_metadata?.role ?? "talento";
         router.replace(getDashboardRoute(role) as any);
         return;
       } catch (err) {

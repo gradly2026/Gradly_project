@@ -25,6 +25,10 @@ export default function RootLayout() {
           <Stack.Screen name="iniciosesion" options={{ headerShown: false }} />
           <Stack.Screen name="registro" options={{ headerShown: false }} />
           <Stack.Screen
+            name="dashboard-administrador"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="dashboard-universidad"
             options={{ headerShown: false }}
           />

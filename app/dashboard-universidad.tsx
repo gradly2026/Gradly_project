@@ -411,6 +411,34 @@ export default function DashboardUniversidad() {
   const [nombreUniv, setNombreUniv] = useState("Cargando...");
   const [encNombre, setEncNombre] = useState("");
   const [universidadId, setUniversidadId] = useState("");
+  // Estado para almacenar las universidades traídas de la base de datos
+const [universidadesExplorar, setUniversidadesExplorar] = useState<any[]>([]);
+useEffect(() => {
+  const cargarUniversidadesExplorar = async () => {
+    try {
+      // 1. Obtener el ID del usuario actual con sesión abierta
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // 2. Consultar la tabla de universidades
+      let query = supabase.from("universidades").select("*");
+      
+      // 3. EXCLUSIÓN CRÍTICA: Si hay un usuario logueado, lo omitimos del listado de exploración
+      if (user) {
+        query = query.neq("id", user.id);
+      }
+      
+      const { data, error } = await query;
+      if (!error && data) {
+        setUniversidadesExplorar(data);
+      }
+    } catch (err) {
+      console.error("Error al obtener universidades de exploración:", err);
+    }
+  };
+
+  cargarUniversidadesExplorar();
+}, []);
+
   const [universidad, setUniversidad] = useState<any>(null);
 
   useEffect(() => {
@@ -435,6 +463,28 @@ export default function DashboardUniversidad() {
         .catch(() => {});
     });
   }, []);
+
+
+  // 1. Añade este estado junto a los demás estados al inicio de tu componente
+const [totalEstudiantes, setTotalEstudiantes] = useState<number>(0);
+
+// 2. Ejecuta esta función dentro del useEffect de inicialización cuando ya tengas el id del usuario (uid)
+const obtenerConteoEstudiantes = async (uid: string) => {
+  try {
+    const { count, error } = await supabase
+      .from("alumnos")
+      .select("*", { count: "exact", head: true })
+      .eq("universidad_id", uid);
+
+    if (!error && count !== null) {
+      setTotalEstudiantes(count);
+    }
+  } catch (err) {
+    console.error("Error al contar estudiantes:", err);
+  }
+};
+
+
 
   // ── Navigation state
   const [section, setSection] = useState<Section>("inicio");
@@ -1119,6 +1169,8 @@ export default function DashboardUniversidad() {
     setGroupModalMode("edit");
   };
 
+  
+
   const filteredExploreCompanies = useMemo(() => {
     const query = exploreSearch.trim().toLowerCase();
     if (!query) return [];
@@ -1354,7 +1406,7 @@ export default function DashboardUniversidad() {
         ))}
       </Card>
 
-      <Card style={{ marginBottom: 16 }}>
+      {/* <Card style={{ marginBottom: 16 }}>
         <Text style={s.sideCardTitle}>📅 Próximas fechas importantes</Text>
         {[
           {
@@ -1381,9 +1433,9 @@ export default function DashboardUniversidad() {
             </View>
           </View>
         ))}
-      </Card>
+      </Card> */}
 
-      {/* Feed */}
+      {/* Feed
       <Card style={{ marginBottom: 32 }}>
         <Text style={s.subsectionTitle}>Actividad reciente</Text>
         {[
@@ -1425,7 +1477,7 @@ export default function DashboardUniversidad() {
             </View>
           </View>
         ))}
-      </Card>
+      </Card> */}
     </ScrollView>
   );
 
@@ -1528,75 +1580,75 @@ export default function DashboardUniversidad() {
       )}
 
       {exploreTab === "universidades" && (
-        <>
-          {[
-            {
-              icon: "🎓",
-              name: "Universidad de El Salvador",
-              acreds: ["ACAP", "ABET"],
-              areas: ["Ingeniería", "Medicina", "Derecho"],
-              conv: 12,
-            },
-            {
-              icon: "🏫",
-              name: "UTEC El Salvador",
-              acreds: ["ISO 9001"],
-              areas: ["Sistemas", "Negocios"],
-              conv: 7,
-            },
-            {
-              icon: "🏛️",
-              name: "UCA El Salvador",
-              acreds: ["ACAP"],
-              areas: ["Psicología", "Comunicaciones", "Sistemas"],
-              conv: 9,
-            },
-          ].map((u) => (
-            <Card
-              key={u.name}
-              style={{ marginBottom: 16, alignItems: "center" }}
-            >
-              <Text style={{ fontSize: 40, marginBottom: 12 }}>{u.icon}</Text>
-              <Text
-                style={[
-                  s.empresaName,
-                  { textAlign: "center", marginBottom: 8 },
-                ]}
-              >
-                {u.name}
-              </Text>
-              <View
-                style={[
-                  s.row,
-                  { flexWrap: "wrap", gap: 6, justifyContent: "center" },
-                ]}
-              >
-                {u.acreds.map((a) => (
-                  <Tag key={a} label={a} />
-                ))}
-              </View>
-              <View
-                style={[
-                  s.row,
-                  {
-                    flexWrap: "wrap",
-                    gap: 6,
-                    justifyContent: "center",
-                    marginTop: 6,
-                  },
-                ]}
-              >
-                {u.areas.map((a) => (
-                  <Tag key={a} label={a} />
-                ))}
-              </View>
-              <Text style={[s.textMuted, { fontSize: 12, marginTop: 12 }]}>
-                {u.conv} convenios activos
-              </Text>
-            </Card>
-          ))}
-        </>
-      )}
+  <>
+    {universidadesExplorar.map((u) => {
+      // Mapeo seguro y dinámico con datos reales de la tabla 'universidades'
+      // Si la base de datos no incluye arreglos de acreditaciones o áreas, usamos datos geográficos/por defecto
+      const listaAcreds = u.acreds || [u.departamento || "El Salvador"];
+      const listaAreas = u.areas || [u.ciudad || "Educación Superior"];
+
+      return (
+        <Card
+          key={u.id}
+          style={{ marginBottom: 16, alignItems: "center" }}
+        >
+          {/* Conservamos el diseño de ícono nativo */}
+          <Text style={{ fontSize: 40, marginBottom: 12 }}>🎓</Text>
+          
+          <Text
+            style={[
+              s.empresaName,
+              { textAlign: "center", marginBottom: 8 },
+            ]}
+          >
+            {u.nombre || "Institución Universitaria"}
+          </Text>
+          
+          {/* Fila 1 de Etiquetas (Acreditaciones / Ubicación) */}
+          <View
+            style={[
+              s.row,
+              { flexWrap: "wrap", gap: 6, justifyContent: "center" },
+            ]}
+          >
+            {listaAcreds.map((a: string, index: number) => (
+              <Tag key={`${u.id}-acred-${index}`} label={a} />
+            ))}
+          </View>
+          
+          {/* Fila 2 de Etiquetas (Áreas / Especialidades) */}
+          <View
+            style={[
+              s.row,
+              {
+                flexWrap: "wrap",
+                gap: 6,
+                justifyContent: "center",
+                marginTop: 6,
+              },
+            ]}
+          >
+            {listaAreas.map((a: string, index: number) => (
+              <Tag key={`${u.id}-area-${index}`} label={a} />
+            ))}
+          </View>
+          
+          {/* Texto de convenios o descripción de la universidad */}
+          <Text style={[s.textMuted, { fontSize: 12, marginTop: 12, textAlign: "center", paddingHorizontal: 8 }]}>
+            {u.bio || "Convenio institucional disponible para vinculación de estudiantes."}
+          </Text>
+        </Card>
+      );
+    })}
+
+    {/* Estado vacío elegante por si no hay registros o solo existía el usuario actual */}
+    {universidadesExplorar.length === 0 && (
+      <Text style={{ color: "rgba(255,255,255,0.4)", textAlign: "center", marginVertical: 24, fontSize: 14 }}>
+        No hay otras universidades registradas en este momento.
+      </Text>
+    )}
+  </>
+)}
 
       {exploreTab === "proyectos" && (
         <>
@@ -2978,32 +3030,32 @@ export default function DashboardUniversidad() {
               },
             ]}
           >
-            {/* Acreditaciones estáticas: mantener como etiquetas, pueden provenir de BD en iteración futura */}
+            {/* Acreditaciones estáticas: mantener como etiquetas, pueden provenir de BD en iteración futura
             {(["✓ ACAP", "✓ ISO 9001", "✓ MINED"] as string[]).map((a) => (
               <Tag key={a} label={a} />
-            ))}
+            ))} */}
           </View>
 
-          <View style={s.profileStats}>
-            <Text style={s.textMuted}>
-              <Text style={{ color: C.accent70, fontWeight: "700" }}>
-                {universidad?.estudiantesCount ?? "—"}
-              </Text>{" "}
-              estudiantes
-            </Text>
-            <Text style={s.textMuted}>
-              <Text style={{ color: C.accent70, fontWeight: "700" }}>
-                {universidad?.carrerasCount ?? "—"}
-              </Text>{" "}
-              carreras
-            </Text>
-            <Text style={s.textMuted}>
-              <Text style={{ color: C.accent70, fontWeight: "700" }}>
-                {universidad?.empresasAliadas ?? "—"}
-              </Text>{" "}
-              empresas aliadas
-            </Text>
-          </View>
+         <View style={s.profileStats}>
+  <Text style={s.textMuted}>
+    <Text style={{ color: C.accent70, fontWeight: "700" }}>
+      {totalEstudiantes}
+    </Text>{" "}
+    estudiantes
+  </Text>
+  <Text style={s.textMuted}>
+    <Text style={{ color: C.accent70, fontWeight: "700" }}>
+      {((universidad as any)?.carreras?.length) ?? 0}
+    </Text>{" "}
+    carreras
+  </Text>
+  <Text style={s.textMuted}>
+    <Text style={{ color: C.accent70, fontWeight: "700" }}>
+      {universidad?.empresasAliadas ?? "0"}
+    </Text>{" "}
+    empresas aliadas
+  </Text>
+</View>
 
           {/* Botón editar perfil institucional — COMENTADO: placeholder estático para edición */}
           {/* BtnPrimary: Editar perfil institucional (actualmente abre modal local). Reemplazar por flujo de edición institucional. */}
@@ -3153,37 +3205,26 @@ export default function DashboardUniversidad() {
       )}
 
       {perfilTab === "carreras" && (
-        <>
-          {[
-            {
-              name: "Ingeniería en Sistemas",
-              dur: "5 años · Presencial",
-              coord: "👩‍💻 Coord. Ana García",
-            },
-            {
-              name: "Diseño Gráfico",
-              dur: "4 años · Presencial",
-              coord: "👨‍🎨 Coord. Mario Pérez",
-            },
-            {
-              name: "Administración de Empresas",
-              dur: "4 años · Mixta",
-              coord: "👩‍💼 Coord. Laura Vásquez",
-            },
-          ].map((c) => (
-            <Card key={c.name} style={{ marginBottom: 16 }}>
-              <Text style={s.empresaName}>{c.name}</Text>
-              <Text style={[s.textMuted, { fontSize: 12, marginVertical: 6 }]}>
-                {c.dur}
-              </Text>
-              <Badge label="Presencial" type="verificada" />
-              <Text style={[s.textSub, { fontSize: 13, marginTop: 14 }]}>
-                {c.coord}
-              </Text>
-            </Card>
-          ))}
-        </>
-      )}
+  <>
+    {((universidad as any)?.carreras || []).map((c: any, index: number) => (
+      <Card key={`${c.nombre || 'carrera'}-${index}`} style={{ marginBottom: 16 }}>
+        <Text style={s.empresaName}>{c.nombre || "Carrera sin nombre"}</Text>
+        <Text style={[s.textMuted, { fontSize: 12, marginVertical: 6 }]}>
+          {c.dur || c.duracion || "Duración no especificada"}
+        </Text>
+        <Badge label={c.modalidad || "Presencial"} type="verificada" />
+        <Text style={[s.textSub, { fontSize: 13, marginTop: 14 }]}>
+          {c.coord || c.coordinador || "Coordinador no asignado"}
+        </Text>
+      </Card>
+    ))}
+    {(!(universidad as any)?.carreras || (universidad as any).carreras.length === 0) && (
+      <Text style={{ color: "rgba(255,255,255,0.4)", textAlign: "center", marginVertical: 24, fontSize: 14 }}>
+        No tienes carreras registradas actualmente.
+      </Text>
+    )}
+  </>
+)}
 
       {perfilTab === "aliadas" && (
         <View style={s.grid2}>
@@ -3401,7 +3442,7 @@ export default function DashboardUniversidad() {
         />
       </Card>
 
-      <Card style={{ marginBottom: 16 }}>
+      {/* <Card style={{ marginBottom: 16 }}>
         <Text style={[s.subsectionTitle, { marginBottom: 16 }]}>
           Notificaciones
         </Text>
@@ -3445,7 +3486,7 @@ export default function DashboardUniversidad() {
             </TouchableOpacity>
           </View>
         ))}
-      </Card>
+      </Card> */}
 
       {/* Ayuda / Acerca de */}
       <View
