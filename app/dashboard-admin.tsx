@@ -13,6 +13,7 @@ import {
     View,
 } from "react-native";
 import { supabase } from "../lib/supabase";
+import UniversalHeader from "../src/components/UniversalHeader";
 import handleLogout from "../src/services/authService";
 import { C, s } from "./admin/adminStyles";
 
@@ -231,6 +232,13 @@ function Card({ children, style }: { children: React.ReactNode; style?: any }) {
 export default function DashboardAdmin() {
   const router = useRouter();
   const [page, setPage] = useState<AdminPage>("resumen");
+  const [adminUserId, setAdminUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) setAdminUserId(data.user.id);
+    });
+  }, []);
 
   const [roleTab, setRoleTab] = useState<Role>("talento");
   const [statusFilter, setStatusFilter] = useState<Status | "todos">("todos");
@@ -986,30 +994,11 @@ export default function DashboardAdmin() {
 
   return (
     <View style={s.root}>
-      <View style={s.topbar}>
-        <View style={s.topbarLeft}>
-          <View style={s.brand}>
-            <Text style={s.brandText}>G</Text>
-          </View>
-          <Text style={s.topbarTitle}>Gradly Admin</Text>
-        </View>
-        <View style={s.topbarRight}>
-          <TouchableOpacity
-            style={s.iconBtn}
-            onPress={() => setPage("usuarios")}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="people-outline" size={20} color={C.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={s.iconBtn}
-            onPress={() => setPage("config")}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="settings-outline" size={20} color={C.text} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <UniversalHeader
+        userName="Administrador"
+        userSubtitle="Gradly Admin"
+        userId={adminUserId}
+      />
 
       <View style={s.content}>{renderBody()}</View>
 

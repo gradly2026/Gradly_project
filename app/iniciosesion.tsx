@@ -190,11 +190,14 @@ export default function InicioSesion() {
     switch (role) {
       case "admin":
       case "administrador":
-        return "/dashboard-administrador";
+        return "/dashboard-admin";
       case "universidad":
         return "/dashboard-universidad";
       case "empresa":
         return "/dashboard-empresa";
+      case "alumno":
+      case "estudiante":
+        return "/dashboard-estudiante";
       case "talento":
       default:
         return "/dashboard-joventalento";

@@ -6,6 +6,7 @@ import {
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
+import { ThemeProvider as GradlyThemeProvider } from "../src/context/ThemeContext";
 import { TranslationProvider } from "../src/context/TranslationContext";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -19,33 +20,39 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      <TranslationProvider>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="iniciosesion" options={{ headerShown: false }} />
-          <Stack.Screen name="registro" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="dashboard-administrador"
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="dashboard-universidad"
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="dashboard-joventalento"
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="dashboard-alumno"
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="modal"
-            options={{ presentation: "modal", title: "Modal" }}
-          />
-        </Stack>
-      </TranslationProvider>
+      <GradlyThemeProvider>
+        <TranslationProvider>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="iniciosesion" options={{ headerShown: false }} />
+            <Stack.Screen name="registro" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="dashboard-admin"
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="dashboard-universidad"
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="dashboard-joventalento"
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="dashboard-estudiante"
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="dashboard-empresa"
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="modal"
+              options={{ presentation: "modal", title: "Modal" }}
+            />
+          </Stack>
+        </TranslationProvider>
+      </GradlyThemeProvider>
       <StatusBar style="auto" />
     </ThemeProvider>
   );

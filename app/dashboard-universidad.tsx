@@ -23,6 +23,8 @@ import GroupDetailModal, {
   type GrupoData,
 } from "../src/components/GroupDetailModal";
 import ProfileViewerModal from "../src/components/ProfileViewerModal";
+import UniversalHeader from "../src/components/UniversalHeader";
+import { useThemeContext } from "../src/context/ThemeContext";
 import { useTranslationContext } from "../src/context/TranslationContext";
 import handleLogout from "../src/services/authService";
 
@@ -458,6 +460,9 @@ useEffect(() => {
             setEditLinkedin(data.enc_linkedin ?? "");
             setEditBanner(data.banner_url ?? "");
             setEditLogo(data.logo_url ?? "");
+            // Inicializar configuración con datos reales
+            setCfgEmail(data.email_institucional ?? "");
+            setCfgTel(data.telefono ?? "");
           }
         })
         .catch(() => {});
@@ -508,29 +513,31 @@ const obtenerConteoEstudiantes = async (uid: string) => {
   // ── Notificaciones
   const [notifFilter, setNotifFilter] = useState("Todas");
   const [unreadRead, setUnreadRead] = useState(false);
-  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
-  const { language, changeLanguage } = useTranslationContext();
-  const [darkMode, setDarkMode] = useState(false);
+  const [notifData, setNotifData] = useState<
+    {
+      id: string;
+      tipo: string | null;
+      titulo: string;
+      mensaje: string;
+      leida: boolean;
+      created_at: string | null;
+    }[]
+  >([]);
+  const [loadingNotifs, setLoadingNotifs] = useState(false);
 
-  C = darkMode ? lightTheme : darkTheme;
+  // ── Alumnos destacados (para la pestaña "Destacados" del perfil)
+  const [alumnosDestacados, setAlumnosDestacados] = useState<
+    {
+      id: string;
+      nombre_completo: string;
+      carrera: string | null;
+      promedio_rating: number | null;
+    }[]
+  >([]);
+  const [loadingDestacados, setLoadingDestacados] = useState(false);
+  const { isDark } = useThemeContext();
+  C = isDark ? darkTheme : lightTheme;
   s = createStyles(C);
-
-  const toggleLanguage = () => {
-    setLanguageMenuOpen((prev) => !prev);
-  };
-
-  const handleChangeLanguage = () => {
-    const target = language === "es" ? "en" : "es";
-    changeLanguage(target);
-    setLanguageMenuOpen(false);
-  };
-
-  const languageOptionLabel =
-    language === "es" ? "Cambiar a Inglés" : "Change to Spanish";
-
-  const onLogout = async () => {
-    await handleLogout(router);
-  };
 
   // ── Sidebar (mobile simulation — treated as bottom nav)
   // ── Modal: Crear Grupo
@@ -553,8 +560,8 @@ const obtenerConteoEstudiantes = async (uid: string) => {
   useEffect(() => {
     if (encNombre) setCfgNombre(encNombre);
   }, [encNombre]);
-  const [cfgEmail, setCfgEmail] = useState("agarcia@udb.edu.sv");
-  const [cfgTel, setCfgTel] = useState("+503 7000-0001");
+  const [cfgEmail, setCfgEmail] = useState("");
+  const [cfgTel, setCfgTel] = useState("");
   const [cfgNotif1, setCfgNotif1] = useState(true);
   const [cfgNotif2, setCfgNotif2] = useState(true);
   const [cfgNotif3, setCfgNotif3] = useState(false);
@@ -1127,14 +1134,59 @@ const obtenerConteoEstudiantes = async (uid: string) => {
   };
 
   useEffect(() => {
-    if (section === "inicio" || section === "explorar") {
+    if (
+      section === "inicio" ||
+      section === "explorar" ||
+      section === "gestion" ||
+      section === "empresas" ||
+      section === "perfil"
+    ) {
       loadEmpresasDb();
     }
     if (section === "grupos" || section === "gestion") {
       loadGruposDb();
       loadGruposAutenticado(); // Cargar grupos del usuario autenticado
     }
-  }, [section]);
+    if (
+      section === "gestion" ||
+      section === "horas" ||
+      section === "inicio"
+    ) {
+      loadPropuestas();
+    }
+    if (section === "notificaciones" && universidadId) {
+      (async () => {
+        setLoadingNotifs(true);
+        const { data } = await supabase
+          .from("notificaciones")
+          .select("id,tipo,titulo,mensaje,leida,created_at")
+          .eq("usuario_id", universidadId)
+          .order("created_at", { ascending: false });
+        setNotifData((data ?? []) as typeof notifData);
+        setLoadingNotifs(false);
+      })();
+    }
+    if (section === "perfil" && universidadId) {
+      (async () => {
+        setLoadingDestacados(true);
+        const { data } = await supabase
+          .from("alumnos")
+          .select("id,nombre_completo,carrera,promedio_rating")
+          .eq("universidad_id", universidadId)
+          .order("promedio_rating", { ascending: false })
+          .limit(4);
+        setAlumnosDestacados(
+          (data ?? []).map((a: any) => ({
+            id: String(a.id),
+            nombre_completo: a.nombre_completo ?? "Alumno",
+            carrera: a.carrera ?? null,
+            promedio_rating: a.promedio_rating ?? null,
+          })),
+        );
+        setLoadingDestacados(false);
+      })();
+    }
+  }, [section, universidadId]);
 
   const noop = () =>
     Alert.alert("Próximamente", "Esta función estará disponible pronto.");
@@ -1363,21 +1415,42 @@ const obtenerConteoEstudiantes = async (uid: string) => {
       {/* Paneles laterales */}
       <Card style={{ marginBottom: 16 }}>
         <Text style={s.sideCardTitle}>📋 Solicitudes pendientes</Text>
-        {[
-          { grupo: "Ing. Sistemas – Grupo A", empresa: "TechSV Solutions" },
-          { grupo: "Diseño Gráfico – Grupo B", empresa: "WebFactory CR" },
-          { grupo: "Administración – Grupo C", empresa: "Banco Agrícola" },
-        ].map((item) => (
-          <View key={item.grupo} style={s.pendingItem}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.pendingGroup}>{item.grupo}</Text>
-              <Text style={[s.textMuted, { fontSize: 12 }]}>
-                {item.empresa}
-              </Text>
-            </View>
-            <Badge label="Pendiente" type="pending" />
-          </View>
-        ))}
+        {isLoadingPropuestas ? (
+          <Text style={[s.textMuted, { fontSize: 13, padding: 8 }]}>
+            Cargando...
+          </Text>
+        ) : propuestas.filter(
+            (p) =>
+              p.decision_universidad === "pendiente" ||
+              p.estado === "pendiente",
+          ).length === 0 ? (
+          <Text style={[s.textMuted, { fontSize: 13, padding: 8 }]}>
+            No hay solicitudes pendientes.
+          </Text>
+        ) : (
+          propuestas
+            .filter(
+              (p) =>
+                p.decision_universidad === "pendiente" ||
+                p.estado === "pendiente",
+            )
+            .slice(0, 3)
+            .map((item) => (
+              <View key={item.id} style={s.pendingItem}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.pendingGroup}>
+                    {grupos.find((g) => g.id === item.grupo_id)?.name ??
+                      "Grupo desconocido"}
+                  </Text>
+                  <Text style={[s.textMuted, { fontSize: 12 }]}>
+                    {empresasDb.find((e) => e.id === item.empresa_id)?.nombre ??
+                      "Empresa desconocida"}
+                  </Text>
+                </View>
+                <Badge label="Pendiente" type="pending" />
+              </View>
+            ))
+        )}
         <BtnOutline
           label="Ver todas →"
           small
@@ -1388,22 +1461,40 @@ const obtenerConteoEstudiantes = async (uid: string) => {
 
       <Card style={{ marginBottom: 16 }}>
         <Text style={s.sideCardTitle}>✅ Últimas validaciones</Text>
-        {[
-          { avatar: "👨‍💻", name: "Carlos Martínez", sub: "TechSV · 30/04/2026" },
-          { avatar: "👩‍🎨", name: "María López", sub: "WebFactory · 29/04/2026" },
-          { avatar: "👨‍🔬", name: "José Ramos", sub: "BioMed Labs · 28/04/2026" },
-        ].map((a) => (
-          <View key={a.name} style={s.activityItem}>
-            <View style={s.activityAvatar}>
-              <Text style={{ fontSize: 20 }}>{a.avatar}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.activityName}>{a.name}</Text>
-              <Text style={[s.textMuted, { fontSize: 12 }]}>{a.sub}</Text>
-            </View>
-            <Badge label="Validado" type="validated" />
-          </View>
-        ))}
+        {isLoadingPropuestas ? (
+          <Text style={[s.textMuted, { fontSize: 13, padding: 8 }]}>
+            Cargando...
+          </Text>
+        ) : propuestas.filter(
+            (p) => p.estado === "validada" || p.estado === "cerrada",
+          ).length === 0 ? (
+          <Text style={[s.textMuted, { fontSize: 13, padding: 8 }]}>
+            No hay validaciones recientes.
+          </Text>
+        ) : (
+          propuestas
+            .filter((p) => p.estado === "validada" || p.estado === "cerrada")
+            .slice(0, 3)
+            .map((a) => (
+              <View key={a.id} style={s.activityItem}>
+                <View style={s.activityAvatar}>
+                  <Text style={{ fontSize: 20 }}>✅</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.activityName}>
+                    {grupos.find((g) => g.id === a.grupo_id)?.name ??
+                      "Grupo desconocido"}
+                  </Text>
+                  <Text style={[s.textMuted, { fontSize: 12 }]}>
+                    {empresasDb.find((e) => e.id === a.empresa_id)?.nombre ??
+                      "—"}{" "}
+                    · {formatDateString(a.fecha_fin)}
+                  </Text>
+                </View>
+                <Badge label="Validado" type="validated" />
+              </View>
+            ))
+        )}
       </Card>
 
       {/* <Card style={{ marginBottom: 16 }}>
@@ -1692,122 +1783,46 @@ const obtenerConteoEstudiantes = async (uid: string) => {
   );
 
   const renderGestion = () => {
-    const GRUPOS_FILTER = [
-      "Todos",
-      "Ing. Sistemas – Grupo A",
-      "Diseño Gráfico – Grupo B",
-      "Administración – Grupo C",
-      "Ing. Industrial – Grupo D",
-    ];
-    const ESTUDIANTES_POR_GRUPO: Record<string, string[]> = {
-      Todos: [
-        "Todos",
-        "Carlos Martínez",
-        "María López",
-        "Valentina Cruz",
-        "José Ramos",
-      ],
-      "Ing. Sistemas – Grupo A": [
-        "Todos",
-        "Carlos Martínez",
-        "Valentina Cruz",
-        "José Ramos",
-      ],
-      "Diseño Gráfico – Grupo B": ["Todos", "María López"],
-      "Administración – Grupo C": ["Todos"],
-      "Ing. Industrial – Grupo D": ["Todos"],
-    };
-    const estudiantesOpts = ESTUDIANTES_POR_GRUPO[gestionGrupoFilter] ?? [
-      "Todos",
-    ];
+    // Filtros de grupo derivados de datos reales
+    const gruposFilter = ["Todos", ...grupos.map((g) => g.name)];
 
-    const pendientesData = [
-      {
-        icon: "💼",
-        grupo: "Ing. Sistemas – Grupo A",
-        empresa: "TechSV Solutions",
-        empresaId: "demo-empresa-1",
-        periodo: "15/05/2026 – 15/08/2026",
-        horas: 120,
-      },
-      {
-        icon: "🌐",
-        grupo: "Diseño Gráfico – Grupo B",
-        empresa: "WebFactory CR",
-        empresaId: "demo-empresa-1",
-        periodo: "20/05/2026 – 20/08/2026",
-        horas: 100,
-      },
-      {
-        icon: "🏦",
-        grupo: "Administración – Grupo C",
-        empresa: "Banco Agrícola",
-        empresaId: "demo-empresa-1",
-        periodo: "01/06/2026 – 01/09/2026",
-        horas: 120,
-      },
-    ].filter(
-      (item) =>
-        gestionGrupoFilter === "Todos" || item.grupo === gestionGrupoFilter,
-    );
+    // Helpers de lookup cliente
+    const getGrupoNombre = (grupoId?: string | null) =>
+      grupoId
+        ? (grupos.find((g) => g.id === grupoId)?.name ?? "Grupo desconocido")
+        : "—";
+    const getEmpresaNombre = (empresaId?: string | null) =>
+      empresaId
+        ? (empresasDb.find((e) => e.id === empresaId)?.nombre ??
+          "Empresa desconocida")
+        : "—";
 
-    const enCursoData = [
-      {
-        avatar: "👨‍💻",
-        name: "Carlos Martínez",
-        talentoId: "demo-talento-1",
-        sub: "Ing. Sistemas · Grupo A",
-        grupo: "Ing. Sistemas – Grupo A",
-        last: "03/05/2026",
-        done: 90,
-        total: 120,
-        pct: 75,
-      },
-      {
-        avatar: "👩‍🎨",
-        name: "María López",
-        talentoId: "demo-talento-1",
-        sub: "Diseño Gráfico · Grupo B",
-        grupo: "Diseño Gráfico – Grupo B",
-        last: "02/05/2026",
-        done: 50,
-        total: 100,
-        pct: 50,
-      },
-    ].filter(
-      (item) =>
-        (gestionGrupoFilter === "Todos" || item.grupo === gestionGrupoFilter) &&
-        (gestionEstudianteFilter === "Todos" ||
-          item.name === gestionEstudianteFilter),
-    );
+    const matchesGrupoFilter = (p: SolicitudHorasRow) =>
+      gestionGrupoFilter === "Todos" ||
+      getGrupoNombre(p.grupo_id) === gestionGrupoFilter;
 
-    const validadasData = [
-      {
-        avatar: "👨‍🔬",
-        name: "José Ramos",
-        talentoId: "demo-talento-1",
-        sub: "BioMed Labs · 120 horas",
-        grupo: "Ing. Sistemas – Grupo A",
-        certified: true,
-        evidencias: "📄 Informe final · 🖼 Fotografías",
-        firma: "BioMed Labs — 28/04/2026",
-      },
-      {
-        avatar: "👩‍💻",
-        name: "Valentina Cruz",
-        talentoId: "demo-talento-1",
-        sub: "TechSV Solutions · 120 horas",
-        grupo: "Ing. Sistemas – Grupo A",
-        certified: false,
-        evidencias: "📄 Reporte · 📊 Presentación",
-        firma: "",
-      },
-    ].filter(
-      (item) =>
-        (gestionGrupoFilter === "Todos" || item.grupo === gestionGrupoFilter) &&
-        (gestionEstudianteFilter === "Todos" ||
-          item.name === gestionEstudianteFilter),
-    );
+    // Datos derivados de propuestas reales
+    const pendientesData = propuestas
+      .filter(
+        (p) =>
+          p.decision_universidad === "pendiente" || p.estado === "pendiente",
+      )
+      .filter(matchesGrupoFilter);
+
+    const enCursoData = propuestas
+      .filter(
+        (p) =>
+          p.estado === "aprobada" || p.decision_universidad === "aprobada",
+      )
+      .filter(matchesGrupoFilter);
+
+    const validadasData = propuestas
+      .filter((p) => p.estado === "validada" || p.estado === "cerrada")
+      .filter(matchesGrupoFilter);
+
+    const rechazadasData = propuestas
+      .filter((p) => p.decision_universidad === "rechazada")
+      .filter(matchesGrupoFilter);
 
     const gruposFiltrados = grupos.filter(
       (grupo) =>
@@ -1972,46 +1987,12 @@ const obtenerConteoEstudiantes = async (uid: string) => {
           style={{ marginBottom: 14 }}
         >
           <View style={[s.row, { gap: 6, paddingHorizontal: 16 }]}>
-            {GRUPOS_FILTER.map((g) => (
+            {gruposFilter.map((g) => (
               <Chip
                 key={g}
                 label={g === "Todos" ? "Todos los grupos" : g}
                 active={gestionGrupoFilter === g}
-                onPress={() => {
-                  setGestionGrupoFilter(g);
-                  setGestionEstudianteFilter("Todos");
-                }}
-              />
-            ))}
-          </View>
-        </ScrollView>
-
-        {/* Filtro por estudiante */}
-        <Text
-          style={[
-            s.textMuted,
-            {
-              fontSize: 11,
-              letterSpacing: 0.8,
-              paddingHorizontal: 16,
-              marginBottom: 8,
-            },
-          ]}
-        >
-          FILTRAR POR ESTUDIANTE
-        </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 16 }}
-        >
-          <View style={[s.row, { gap: 6, paddingHorizontal: 16 }]}>
-            {estudiantesOpts.map((e) => (
-              <Chip
-                key={e}
-                label={e === "Todos" ? "Todos" : e}
-                active={gestionEstudianteFilter === e}
-                onPress={() => setGestionEstudianteFilter(e)}
+                onPress={() => setGestionGrupoFilter(g)}
               />
             ))}
           </View>
@@ -2026,7 +2007,11 @@ const obtenerConteoEstudiantes = async (uid: string) => {
           <View style={[s.row, { gap: 4, paddingHorizontal: 16 }]}>
             {(
               [
-                { key: "pendientes", label: "Pendientes", badge: 3 },
+                {
+                  key: "pendientes",
+                  label: "Pendientes",
+                  badge: pendientesData.length || undefined,
+                },
                 { key: "en-curso", label: "En curso" },
                 { key: "validadas", label: "Validadas" },
                 { key: "rechazadas", label: "Rechazadas" },
@@ -2071,223 +2056,212 @@ const obtenerConteoEstudiantes = async (uid: string) => {
               openProfileViewer(universidadId, "universidad");
             }}
           />
-          <BtnOutline
-            label="Ver perfil talento"
-            small
-            onPress={() => openProfileViewer("demo-talento-1", "talento")}
-          />
         </View>
 
         {/* Tab: Pendientes */}
         {gestionHorasTab === "pendientes" && (
           <>
-            {pendientesData.length === 0 && (
+            {isLoadingPropuestas ? (
               <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                No hay solicitudes para este grupo.
+                Cargando propuestas...
               </Text>
+            ) : pendientesData.length === 0 ? (
+              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+                No hay solicitudes pendientes para este grupo.
+              </Text>
+            ) : (
+              pendientesData.map((item) => (
+                <Card key={item.id} style={{ marginBottom: 16 }}>
+                  <View style={s.empresaHeader}>
+                    <View style={s.empresaLogo}>
+                      <Text style={{ fontSize: 22 }}>📋</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.empresaName}>
+                        {getGrupoNombre(item.grupo_id)}
+                      </Text>
+                      <Text style={s.empresaSector}>
+                        {getEmpresaNombre(item.empresa_id)}
+                      </Text>
+                    </View>
+                    <Badge label="Pendiente" type="pending" />
+                  </View>
+                  <Text style={[s.textMuted, { fontSize: 13, marginTop: 12 }]}>
+                    📅 {formatDateString(item.fecha_inicio)} –{" "}
+                    {formatDateString(item.fecha_fin)}
+                  </Text>
+                  {item.empresa_id ? (
+                    <BtnOutline
+                      label="Ver empresa"
+                      small
+                      style={{ marginTop: 12 }}
+                      onPress={() =>
+                        openProfileViewer(item.empresa_id!, "empresa")
+                      }
+                    />
+                  ) : null}
+                </Card>
+              ))
             )}
-            {pendientesData.map((item) => (
-              <Card key={item.grupo} style={{ marginBottom: 16 }}>
-                <View style={s.empresaHeader}>
-                  <View style={s.empresaLogo}>
-                    <Text style={{ fontSize: 22 }}>{item.icon}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.empresaName}>{item.grupo}</Text>
-                    <Text style={s.empresaSector}>{item.empresa}</Text>
-                  </View>
-                  <Badge label="Pendiente" type="pending" />
-                </View>
-                <Text style={[s.textMuted, { fontSize: 13, marginTop: 12 }]}>
-                  📅 Período: {item.periodo} · {item.horas} horas
-                </Text>
-                {item.empresaId ? (
-                  <BtnOutline
-                    label="Ver empresa"
-                    small
-                    style={{ marginTop: 12 }}
-                    onPress={() => openProfileViewer(item.empresaId, "empresa")}
-                  />
-                ) : null}
-              </Card>
-            ))}
           </>
         )}
 
         {/* Tab: En curso */}
         {gestionHorasTab === "en-curso" && (
           <>
-            {enCursoData.length === 0 && (
+            {isLoadingPropuestas ? (
               <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                No hay registros para este filtro.
+                Cargando propuestas...
               </Text>
-            )}
-            {enCursoData.map((e) => (
-              <Card key={e.name} style={{ marginBottom: 16 }}>
-                <View style={s.empresaHeader}>
-                  <View style={s.empresaLogo}>
-                    <Text style={{ fontSize: 22 }}>{e.avatar}</Text>
+            ) : enCursoData.length === 0 ? (
+              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+                No hay propuestas en curso para este grupo.
+              </Text>
+            ) : (
+              enCursoData.map((e) => (
+                <Card key={e.id} style={{ marginBottom: 16 }}>
+                  <View style={s.empresaHeader}>
+                    <View style={s.empresaLogo}>
+                      <Text style={{ fontSize: 22 }}>⏱️</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.empresaName}>
+                        {getGrupoNombre(e.grupo_id)}
+                      </Text>
+                      <Text style={s.empresaSector}>
+                        {getEmpresaNombre(e.empresa_id)}
+                      </Text>
+                    </View>
+                    <Badge label="En curso" type="inprogress" />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.empresaName}>{e.name}</Text>
-                    <Text style={s.empresaSector}>{e.sub}</Text>
-                  </View>
-                </View>
-                <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
-                  Último registro: {e.last}
-                </Text>
-                <View style={s.progressWrap}>
-                  <View
-                    style={[s.progressBar, { width: `${e.pct}%` as any }]}
-                  />
-                </View>
-                <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-                  {e.done} / {e.total} horas completadas
-                </Text>
-                <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
-                  <BtnOutline
-                    label="Ver detalle"
-                    small
-                    style={{ marginTop: 12 }}
-                  />
-                  {e.talentoId ? (
+                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
+                    📅 Inicio: {formatDateString(e.fecha_inicio)} · Fin:{" "}
+                    {formatDateString(e.fecha_fin)}
+                  </Text>
+                  {e.empresa_id ? (
                     <BtnOutline
-                      label="Ver talento"
+                      label="Ver empresa"
                       small
                       style={{ marginTop: 12 }}
-                      onPress={() => openProfileViewer(e.talentoId, "talento")}
+                      onPress={() =>
+                        openProfileViewer(e.empresa_id!, "empresa")
+                      }
                     />
                   ) : null}
-                </View>
-              </Card>
-            ))}
+                </Card>
+              ))
+            )}
           </>
         )}
 
         {/* Tab: Validadas */}
         {gestionHorasTab === "validadas" && (
           <>
-            {validadasData.length === 0 && (
+            {isLoadingPropuestas ? (
               <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                No hay registros para este filtro.
+                Cargando propuestas...
               </Text>
-            )}
-            {validadasData.map((e) => (
-              <Card
-                key={e.name}
-                style={{
-                  marginBottom: 16,
-                  borderColor: e.certified ? C.accent40 : C.border,
-                }}
-              >
-                {e.certified && (
+            ) : validadasData.length === 0 ? (
+              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+                No hay propuestas validadas para este grupo.
+              </Text>
+            ) : (
+              validadasData.map((e) => (
+                <Card
+                  key={e.id}
+                  style={{ marginBottom: 16, borderColor: C.accent40 }}
+                >
                   <View style={s.certSeal}>
-                    <Text style={s.certSealText}>CERTIFICADO</Text>
+                    <Text style={s.certSealText}>VALIDADA</Text>
                   </View>
-                )}
-                <View style={s.empresaHeader}>
-                  <View style={s.empresaLogo}>
-                    <Text style={{ fontSize: 22 }}>{e.avatar}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.empresaName}>{e.name}</Text>
-                    <Text style={s.empresaSector}>{e.sub}</Text>
-                  </View>
-                </View>
-                <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
-                  Evidencias: {e.evidencias}
-                </Text>
-                {e.certified ? (
-                  <Text style={[s.textMuted, { fontSize: 12 }]}>
-                    Firma digital: {e.firma}
-                  </Text>
-                ) : (
-                  <>
-                    <Text
-                      style={[s.textMuted, { fontSize: 12, marginBottom: 16 }]}
-                    >
-                      Horas reportadas: 120 · Pendiente firma
-                    </Text>
-                    <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
-                      {e.talentoId ? (
-                        <BtnOutline
-                          label="Ver talento"
-                          small
-                          style={{ marginTop: 0 }}
-                          onPress={() =>
-                            openProfileViewer(e.talentoId, "talento")
-                          }
-                        />
-                      ) : null}
-                      <TouchableOpacity
-                        style={[
-                          s.btnPrimary,
-                          s.btnSm,
-                          { backgroundColor: C.green },
-                        ]}
-                        onPress={noop}
-                      >
-                        <Text style={s.btnPrimaryText}>
-                          ✓ Validar y certificar
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[
-                          s.btnPrimary,
-                          s.btnSm,
-                          { backgroundColor: C.red },
-                        ]}
-                        onPress={() => setModalRechazar(true)}
-                      >
-                        <Text style={s.btnPrimaryText}>✕ Rechazar</Text>
-                      </TouchableOpacity>
+                  <View style={s.empresaHeader}>
+                    <View style={s.empresaLogo}>
+                      <Text style={{ fontSize: 22 }}>✅</Text>
                     </View>
-                  </>
-                )}
-              </Card>
-            ))}
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.empresaName}>
+                        {getGrupoNombre(e.grupo_id)}
+                      </Text>
+                      <Text style={s.empresaSector}>
+                        {getEmpresaNombre(e.empresa_id)}
+                      </Text>
+                    </View>
+                    <Badge label="Validada" type="validated" />
+                  </View>
+                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
+                    📅 {formatDateString(e.fecha_inicio)} –{" "}
+                    {formatDateString(e.fecha_fin)}
+                  </Text>
+                  {e.empresa_id ? (
+                    <BtnOutline
+                      label="Ver empresa"
+                      small
+                      style={{ marginTop: 12 }}
+                      onPress={() =>
+                        openProfileViewer(e.empresa_id!, "empresa")
+                      }
+                    />
+                  ) : null}
+                </Card>
+              ))
+            )}
           </>
         )}
 
         {/* Tab: Rechazadas */}
-        {gestionHorasTab === "rechazadas" &&
-          (gestionGrupoFilter !== "Todos" &&
-          gestionGrupoFilter !== "Ing. Química – Grupo E" ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              No hay rechazos para este grupo.
-            </Text>
-          ) : (
-            <Card style={{ marginBottom: 16 }}>
-              <View style={s.empresaHeader}>
-                <View style={s.empresaLogo}>
-                  <Text style={{ fontSize: 22 }}>🔬</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.empresaName}>Ing. Química – Grupo E</Text>
-                  <Text style={s.empresaSector}>BioMed Labs</Text>
-                </View>
-                <Badge label="Rechazada" type="rejected" />
-              </View>
-              <View
-                style={[
-                  s.card,
-                  {
-                    marginTop: 12,
-                    backgroundColor: C.redBg,
-                    borderColor: "rgba(239,68,68,0.25)",
-                  },
-                ]}
-              >
-                <Text style={[s.textMuted, { fontSize: 12 }]}>
-                  Motivo de rechazo:
-                </Text>
-                <Text style={[s.textSub, { fontSize: 13, marginTop: 4 }]}>
-                  El grupo no cumplía los requisitos mínimos de créditos
-                  académicos establecidos en el convenio.
-                </Text>
-              </View>
-            </Card>
-          ))}
+        {gestionHorasTab === "rechazadas" && (
+          <>
+            {isLoadingPropuestas ? (
+              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+                Cargando propuestas...
+              </Text>
+            ) : rechazadasData.length === 0 ? (
+              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+                No hay rechazos para este grupo.
+              </Text>
+            ) : (
+              rechazadasData.map((e) => (
+                <Card key={e.id} style={{ marginBottom: 16 }}>
+                  <View style={s.empresaHeader}>
+                    <View style={s.empresaLogo}>
+                      <Text style={{ fontSize: 22 }}>🚫</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.empresaName}>
+                        {getGrupoNombre(e.grupo_id)}
+                      </Text>
+                      <Text style={s.empresaSector}>
+                        {getEmpresaNombre(e.empresa_id)}
+                      </Text>
+                    </View>
+                    <Badge label="Rechazada" type="rejected" />
+                  </View>
+                  {e.motivo_rechazo_universidad ? (
+                    <View
+                      style={[
+                        s.card,
+                        {
+                          marginTop: 12,
+                          backgroundColor: C.redBg,
+                          borderColor: "rgba(239,68,68,0.25)",
+                        },
+                      ]}
+                    >
+                      <Text style={[s.textMuted, { fontSize: 12 }]}>
+                        Motivo de rechazo:
+                      </Text>
+                      <Text
+                        style={[s.textSub, { fontSize: 13, marginTop: 4 }]}
+                      >
+                        {e.motivo_rechazo_universidad}
+                      </Text>
+                    </View>
+                  ) : null}
+                </Card>
+              ))
+            )}
+          </>
+        )}
 
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -2460,184 +2434,229 @@ const obtenerConteoEstudiantes = async (uid: string) => {
 
       {horasTab === "pendientes" && (
         <>
-          {[
-            {
-              icon: "💼",
-              grupo: "Ing. Sistemas – Grupo A",
-              empresa: "TechSV Solutions",
-              periodo: "15/05/2026 – 15/08/2026",
-              horas: 120,
-            },
-            {
-              icon: "🌐",
-              grupo: "Diseño Gráfico – Grupo B",
-              empresa: "WebFactory CR",
-              periodo: "20/05/2026 – 20/08/2026",
-              horas: 100,
-            },
-            {
-              icon: "🏦",
-              grupo: "Administración – Grupo C",
-              empresa: "Banco Agrícola",
-              periodo: "01/06/2026 – 01/09/2026",
-              horas: 120,
-            },
-          ].map((item) => (
-            <Card key={item.grupo} style={{ marginBottom: 16 }}>
-              <View style={s.empresaHeader}>
-                <View style={s.empresaLogo}>
-                  <Text style={{ fontSize: 22 }}>{item.icon}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.empresaName}>{item.grupo}</Text>
-                  <Text style={s.empresaSector}>{item.empresa}</Text>
-                </View>
-                <Badge label="Pendiente de respuesta" type="pending" />
-              </View>
-              <Text style={[s.textMuted, { fontSize: 13, marginTop: 12 }]}>
-                📅 Período: {item.periodo} · {item.horas} horas
-              </Text>
-            </Card>
-          ))}
+          {isLoadingPropuestas ? (
+            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+              Cargando propuestas...
+            </Text>
+          ) : propuestas.filter(
+              (p) =>
+                p.decision_universidad === "pendiente" ||
+                p.estado === "pendiente",
+            ).length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+              No hay solicitudes pendientes.
+            </Text>
+          ) : (
+            propuestas
+              .filter(
+                (p) =>
+                  p.decision_universidad === "pendiente" ||
+                  p.estado === "pendiente",
+              )
+              .map((item) => (
+                <Card key={item.id} style={{ marginBottom: 16 }}>
+                  <View style={s.empresaHeader}>
+                    <View style={s.empresaLogo}>
+                      <Text style={{ fontSize: 22 }}>📋</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.empresaName}>
+                        {grupos.find((g) => g.id === item.grupo_id)?.name ??
+                          "Grupo desconocido"}
+                      </Text>
+                      <Text style={s.empresaSector}>
+                        {empresasDb.find((e) => e.id === item.empresa_id)
+                          ?.nombre ?? "Empresa desconocida"}
+                      </Text>
+                    </View>
+                    <Badge label="Pendiente" type="pending" />
+                  </View>
+                  <Text
+                    style={[s.textMuted, { fontSize: 13, marginTop: 12 }]}
+                  >
+                    📅 {formatDateString(item.fecha_inicio)} –{" "}
+                    {formatDateString(item.fecha_fin)}
+                  </Text>
+                  {item.empresa_id ? (
+                    <BtnOutline
+                      label="Ver empresa"
+                      small
+                      style={{ marginTop: 12 }}
+                      onPress={() =>
+                        openProfileViewer(item.empresa_id!, "empresa")
+                      }
+                    />
+                  ) : null}
+                </Card>
+              ))
+          )}
         </>
       )}
 
       {horasTab === "en-curso" && (
         <>
-          {[
-            {
-              avatar: "👨‍💻",
-              name: "Carlos Martínez",
-              sub: "Ing. Sistemas · UDB",
-              last: "03/05/2026",
-              done: 90,
-              total: 120,
-              pct: 75,
-            },
-            {
-              avatar: "👩‍🎨",
-              name: "María López",
-              sub: "Diseño Gráfico · UDB",
-              last: "02/05/2026",
-              done: 50,
-              total: 100,
-              pct: 50,
-            },
-          ].map((e) => (
-            <Card key={e.name} style={{ marginBottom: 16 }}>
-              <View style={s.empresaHeader}>
-                <View style={s.empresaLogo}>
-                  <Text style={{ fontSize: 22 }}>{e.avatar}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.empresaName}>{e.name}</Text>
-                  <Text style={s.empresaSector}>{e.sub}</Text>
-                </View>
-              </View>
-              <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
-                Último registro: {e.last}
-              </Text>
-              <View style={s.progressWrap}>
-                <View style={[s.progressBar, { width: `${e.pct}%` as any }]} />
-              </View>
-              <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-                {e.done} / {e.total} horas completadas
-              </Text>
-              <BtnOutline label="Ver detalle" small style={{ marginTop: 12 }} />
-            </Card>
-          ))}
+          {isLoadingPropuestas ? (
+            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+              Cargando propuestas...
+            </Text>
+          ) : propuestas.filter(
+              (p) =>
+                p.estado === "aprobada" || p.decision_universidad === "aprobada",
+            ).length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+              No hay propuestas en curso.
+            </Text>
+          ) : (
+            propuestas
+              .filter(
+                (p) =>
+                  p.estado === "aprobada" ||
+                  p.decision_universidad === "aprobada",
+              )
+              .map((e) => (
+                <Card key={e.id} style={{ marginBottom: 16 }}>
+                  <View style={s.empresaHeader}>
+                    <View style={s.empresaLogo}>
+                      <Text style={{ fontSize: 22 }}>⏱️</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.empresaName}>
+                        {grupos.find((g) => g.id === e.grupo_id)?.name ??
+                          "Grupo desconocido"}
+                      </Text>
+                      <Text style={s.empresaSector}>
+                        {empresasDb.find((emp) => emp.id === e.empresa_id)
+                          ?.nombre ?? "Empresa desconocida"}
+                      </Text>
+                    </View>
+                    <Badge label="En curso" type="inprogress" />
+                  </View>
+                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
+                    📅 Inicio: {formatDateString(e.fecha_inicio)} · Fin:{" "}
+                    {formatDateString(e.fecha_fin)}
+                  </Text>
+                  {e.empresa_id ? (
+                    <BtnOutline
+                      label="Ver empresa"
+                      small
+                      style={{ marginTop: 12 }}
+                      onPress={() =>
+                        openProfileViewer(e.empresa_id!, "empresa")
+                      }
+                    />
+                  ) : null}
+                </Card>
+              ))
+          )}
         </>
       )}
 
       {horasTab === "validadas" && (
         <>
-          <Card style={{ marginBottom: 16, borderColor: C.accent40 }}>
-            <View style={s.certSeal}>
-              <Text style={s.certSealText}>CERTIFICADO</Text>
-            </View>
-            <View style={s.empresaHeader}>
-              <View style={s.empresaLogo}>
-                <Text style={{ fontSize: 22 }}>👨‍🔬</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.empresaName}>José Ramos</Text>
-                <Text style={s.empresaSector}>BioMed Labs · 120 horas</Text>
-              </View>
-            </View>
-            <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
-              Evidencias: 📄 Informe final · 🖼 Fotografías
+          {isLoadingPropuestas ? (
+            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+              Cargando propuestas...
             </Text>
-            <Text style={[s.textMuted, { fontSize: 12 }]}>
-              Firma digital: BioMed Labs — 28/04/2026
+          ) : propuestas.filter(
+              (p) => p.estado === "validada" || p.estado === "cerrada",
+            ).length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+              No hay propuestas validadas.
             </Text>
-          </Card>
-          <Card style={{ marginBottom: 16 }}>
-            <View style={s.empresaHeader}>
-              <View style={s.empresaLogo}>
-                <Text style={{ fontSize: 22 }}>👩‍💻</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.empresaName}>Valentina Cruz</Text>
-                <Text style={s.empresaSector}>
-                  TechSV Solutions · 120 horas
-                </Text>
-              </View>
-            </View>
-            <Text style={[s.textMuted, { fontSize: 12, marginTop: 12 }]}>
-              Evidencias: 📄 Reporte · 📊 Presentación
-            </Text>
-            <Text style={[s.textMuted, { fontSize: 12, marginBottom: 16 }]}>
-              Horas reportadas: 120 · Pendiente firma
-            </Text>
-            <View style={[s.row, { gap: 8 }]}>
-              <TouchableOpacity
-                style={[s.btnPrimary, s.btnSm, { backgroundColor: C.green }]}
-                onPress={noop}
-              >
-                <Text style={s.btnPrimaryText}>✓ Validar y certificar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.btnPrimary, s.btnSm, { backgroundColor: C.red }]}
-                onPress={() => setModalRechazar(true)}
-              >
-                <Text style={s.btnPrimaryText}>✕ Rechazar con nota</Text>
-              </TouchableOpacity>
-            </View>
-          </Card>
+          ) : (
+            propuestas
+              .filter((p) => p.estado === "validada" || p.estado === "cerrada")
+              .map((e) => (
+                <Card
+                  key={e.id}
+                  style={{ marginBottom: 16, borderColor: C.accent40 }}
+                >
+                  <View style={s.certSeal}>
+                    <Text style={s.certSealText}>VALIDADA</Text>
+                  </View>
+                  <View style={s.empresaHeader}>
+                    <View style={s.empresaLogo}>
+                      <Text style={{ fontSize: 22 }}>✅</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.empresaName}>
+                        {grupos.find((g) => g.id === e.grupo_id)?.name ??
+                          "Grupo desconocido"}
+                      </Text>
+                      <Text style={s.empresaSector}>
+                        {empresasDb.find((emp) => emp.id === e.empresa_id)
+                          ?.nombre ?? "Empresa desconocida"}
+                      </Text>
+                    </View>
+                    <Badge label="Validada" type="validated" />
+                  </View>
+                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
+                    📅 {formatDateString(e.fecha_inicio)} –{" "}
+                    {formatDateString(e.fecha_fin)}
+                  </Text>
+                </Card>
+              ))
+          )}
         </>
       )}
 
       {horasTab === "rechazadas" && (
-        <Card>
-          <View style={s.empresaHeader}>
-            <View style={s.empresaLogo}>
-              <Text style={{ fontSize: 22 }}>🔬</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.empresaName}>Ing. Química – Grupo E</Text>
-              <Text style={s.empresaSector}>BioMed Labs</Text>
-            </View>
-            <Badge label="Rechazada" type="rejected" />
-          </View>
-          <View
-            style={[
-              s.card,
-              {
-                marginTop: 12,
-                backgroundColor: C.redBg,
-                borderColor: "rgba(239,68,68,0.25)",
-              },
-            ]}
-          >
-            <Text style={[s.textMuted, { fontSize: 12 }]}>
-              Motivo de rechazo:
+        <>
+          {isLoadingPropuestas ? (
+            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+              Cargando propuestas...
             </Text>
-            <Text style={[s.textSub, { fontSize: 13, marginTop: 4 }]}>
-              El grupo no cumplía los requisitos mínimos de créditos académicos
-              establecidos en el convenio.
+          ) : propuestas.filter((p) => p.decision_universidad === "rechazada")
+              .length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+              No hay solicitudes rechazadas.
             </Text>
-          </View>
-        </Card>
+          ) : (
+            propuestas
+              .filter((p) => p.decision_universidad === "rechazada")
+              .map((e) => (
+                <Card key={e.id} style={{ marginBottom: 16 }}>
+                  <View style={s.empresaHeader}>
+                    <View style={s.empresaLogo}>
+                      <Text style={{ fontSize: 22 }}>🚫</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.empresaName}>
+                        {grupos.find((g) => g.id === e.grupo_id)?.name ??
+                          "Grupo desconocido"}
+                      </Text>
+                      <Text style={s.empresaSector}>
+                        {empresasDb.find((emp) => emp.id === e.empresa_id)
+                          ?.nombre ?? "Empresa desconocida"}
+                      </Text>
+                    </View>
+                    <Badge label="Rechazada" type="rejected" />
+                  </View>
+                  {e.motivo_rechazo_universidad ? (
+                    <View
+                      style={[
+                        s.card,
+                        {
+                          marginTop: 12,
+                          backgroundColor: C.redBg,
+                          borderColor: "rgba(239,68,68,0.25)",
+                        },
+                      ]}
+                    >
+                      <Text style={[s.textMuted, { fontSize: 12 }]}>
+                        Motivo de rechazo:
+                      </Text>
+                      <Text
+                        style={[s.textSub, { fontSize: 13, marginTop: 4 }]}
+                      >
+                        {e.motivo_rechazo_universidad}
+                      </Text>
+                    </View>
+                  ) : null}
+                </Card>
+              ))
+          )}
+        </>
       )}
     </ScrollView>
   );
@@ -2681,38 +2700,34 @@ const obtenerConteoEstudiantes = async (uid: string) => {
           ))}
         </View>
       </ScrollView>
-      <EmpresaCard
-        icon="💼"
-        name="TechSV Solutions"
-        sector="Tecnología"
-        rating="4.8"
-        reviews="124"
-        horas={45}
-        badgeLabel="Premium"
-        badgeType="premium"
-        showConvenio
-      />
-      <EmpresaCard
-        icon="🏦"
-        name="Banco Agrícola"
-        sector="Finanzas"
-        rating="4.7"
-        reviews="209"
-        horas={60}
-        badgeLabel="Internacional"
-        badgeType="internacional"
-        showConvenio
-      />
-      <EmpresaCard
-        icon="🔬"
-        name="BioMed Labs"
-        sector="Salud · Biotecnología"
-        rating="4.5"
-        reviews="67"
-        horas={25}
-        badgeLabel="Verificada"
-        badgeType="verificada"
-      />
+      {isLoadingEmpresas ? (
+        <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+          Cargando empresas...
+        </Text>
+      ) : empresasDb.length === 0 ? (
+        <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+          No hay empresas registradas aún.
+        </Text>
+      ) : (
+        empresasDb.map((emp) => {
+          const isPremium = /premium/i.test(emp.plan_seleccionado ?? "");
+          return (
+            <EmpresaCard
+              key={emp.id}
+              icon="🏢"
+              name={emp.nombre}
+              sector={emp.industria ?? "Sin industria"}
+              rating="—"
+              reviews="—"
+              horas={0}
+              badgeLabel={isPremium ? "Premium" : undefined}
+              badgeType={isPremium ? "premium" : undefined}
+              onViewEmpresa={() => openProfileViewer(emp.id, "empresa")}
+              onSolicitarHoras={() => openSolicitarHorasModal(emp)}
+            />
+          );
+        })
+      )}
     </ScrollView>
   );
 
@@ -2865,98 +2880,91 @@ const obtenerConteoEstudiantes = async (uid: string) => {
         </View>
       </ScrollView>
 
-      {!unreadRead && (
+      {loadingNotifs ? (
+        <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+          Cargando notificaciones...
+        </Text>
+      ) : notifData.length === 0 ? (
+        <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+          No tienes notificaciones.
+        </Text>
+      ) : (
         <>
-          <Text
-            style={[
-              s.textMuted,
-              {
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                marginBottom: 12,
-              },
-            ]}
-          >
-            Sin leer
-          </Text>
-          {[
-            {
-              icon: "🏢",
-              text: "Nueva empresa ha publicado cupos de horas sociales para Ing. Sistemas",
-              sub: "LogiSV Corp · hace 20 min",
-            },
-            {
-              icon: "✅",
-              text: "Tu solicitud de horas sociales fue aprobada por TechSV Solutions",
-              sub: "hace 1 hora",
-            },
-            {
-              icon: "⏳",
-              text: "Tu solicitud fue puesta en revisión por Banco Agrícola",
-              sub: "hace 2 horas",
-            },
-            {
-              icon: "⭐",
-              text: "BioMed Labs evaluó a José Ramos con 5 estrellas",
-              sub: "hace 5 horas",
-            },
-            {
-              icon: "🎓",
-              text: "3 estudiantes completaron sus horas sociales en TechSV Solutions",
-              sub: "ayer 18:30",
-            },
-          ].map((n, i) => (
-            <Card key={i} style={[{ marginBottom: 10 }, s.notifUnread]}>
-              <View style={s.notifDot} />
-              <Text style={{ fontSize: 20, marginRight: 12 }}>{n.icon}</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.textSub, { fontSize: 13 }]}>{n.text}</Text>
-                <Text style={[s.textMuted, { fontSize: 12, marginTop: 2 }]}>
-                  {n.sub}
-                </Text>
-              </View>
-            </Card>
-          ))}
+          {!unreadRead && notifData.filter((n) => !n.leida).length > 0 && (
+            <>
+              <Text
+                style={[
+                  s.textMuted,
+                  {
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                    marginBottom: 12,
+                  },
+                ]}
+              >
+                Sin leer
+              </Text>
+              {notifData
+                .filter((n) => !n.leida)
+                .map((n) => (
+                  <Card key={n.id} style={[{ marginBottom: 10 }, s.notifUnread]}>
+                    <View style={s.notifDot} />
+                    <Text style={{ fontSize: 20, marginRight: 12 }}>🔔</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.textSub, { fontSize: 13 }]}>
+                        {n.titulo}
+                      </Text>
+                      <Text style={[s.textMuted, { fontSize: 12, marginTop: 2 }]}>
+                        {n.mensaje}
+                      </Text>
+                      <Text style={[s.textMuted, { fontSize: 11, marginTop: 2 }]}>
+                        {formatDateString(n.created_at)}
+                      </Text>
+                    </View>
+                  </Card>
+                ))}
+            </>
+          )}
+
+          {notifData.filter((n) => n.leida || unreadRead).length > 0 && (
+            <>
+              <Text
+                style={[
+                  s.textMuted,
+                  {
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                    marginBottom: 12,
+                    marginTop: 8,
+                  },
+                ]}
+              >
+                Leídas
+              </Text>
+              {notifData
+                .filter((n) => n.leida || unreadRead)
+                .map((n) => (
+                  <Card key={n.id} style={[{ marginBottom: 10 }, s.notifRead]}>
+                    <Text style={{ fontSize: 20, marginRight: 12 }}>🔔</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.textSub, { fontSize: 13 }]}>
+                        {n.titulo}
+                      </Text>
+                      <Text style={[s.textMuted, { fontSize: 12, marginTop: 2 }]}>
+                        {n.mensaje}
+                      </Text>
+                      <Text style={[s.textMuted, { fontSize: 11, marginTop: 2 }]}>
+                        {formatDateString(n.created_at)}
+                      </Text>
+                    </View>
+                  </Card>
+                ))}
+            </>
+          )}
         </>
       )}
-
-      <Text
-        style={[
-          s.textMuted,
-          {
-            fontSize: 11,
-            textTransform: "uppercase",
-            letterSpacing: 1,
-            marginBottom: 12,
-            marginTop: 8,
-          },
-        ]}
-      >
-        Leídas
-      </Text>
-      {[
-        {
-          icon: "👤",
-          text: "Valentina Cruz activó su cuenta en Gradly",
-          sub: "30/04/2026",
-        },
-        {
-          icon: "🏢",
-          text: "Nueva empresa verificada en tu área académica: WebFactory CR",
-          sub: "29/04/2026",
-        },
-      ].map((n, i) => (
-        <Card key={i} style={[{ marginBottom: 10 }, s.notifRead]}>
-          <Text style={{ fontSize: 20, marginRight: 12 }}>{n.icon}</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.textSub, { fontSize: 13 }]}>{n.text}</Text>
-            <Text style={[s.textMuted, { fontSize: 12, marginTop: 2 }]}>
-              {n.sub}
-            </Text>
-          </View>
-        </Card>
-      ))}
     </ScrollView>
   );
 
@@ -3227,87 +3235,86 @@ const obtenerConteoEstudiantes = async (uid: string) => {
 )}
 
       {perfilTab === "aliadas" && (
-        <View style={s.grid2}>
-          {[
-            { icon: "💼", name: "TechSV Solutions" },
-            { icon: "🏦", name: "Banco Agrícola" },
-            { icon: "📡", name: "Tigo El Salvador" },
-            { icon: "🔬", name: "BioMed Labs" },
-          ].map((e) => (
-            <TouchableOpacity
-              key={e.name}
-              style={[s.card, s.aliadaCard]}
-              onPress={noop}
-              activeOpacity={0.75}
-            >
-              <Text style={{ fontSize: 36, marginBottom: 8 }}>{e.icon}</Text>
-              <Text
-                style={[
-                  s.textSub,
-                  { fontSize: 13, fontWeight: "600", textAlign: "center" },
-                ]}
+        isLoadingEmpresas ? (
+          <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+            Cargando empresas...
+          </Text>
+        ) : empresasDb.length === 0 ? (
+          <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+            No hay empresas aliadas registradas.
+          </Text>
+        ) : (
+          <View style={s.grid2}>
+            {empresasDb.map((emp) => (
+              <TouchableOpacity
+                key={emp.id}
+                style={[s.card, s.aliadaCard]}
+                onPress={() => openProfileViewer(emp.id, "empresa")}
+                activeOpacity={0.75}
               >
-                {e.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+                <Text style={{ fontSize: 36, marginBottom: 8 }}>🏢</Text>
+                <Text
+                  style={[
+                    s.textSub,
+                    { fontSize: 13, fontWeight: "600", textAlign: "center" },
+                  ]}
+                >
+                  {emp.nombre}
+                </Text>
+                {emp.industria ? (
+                  <Text
+                    style={[
+                      s.textMuted,
+                      { fontSize: 11, textAlign: "center", marginTop: 2 },
+                    ]}
+                  >
+                    {emp.industria}
+                  </Text>
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )
       )}
 
       {perfilTab === "destacados" && (
         <>
           <Text style={[s.textMuted, { fontSize: 12, marginBottom: 16 }]}>
-            Con permiso del estudiante para aparecer aquí.
+            Alumnos con mejor calificación en tu institución.
           </Text>
-          {[
-            {
-              avatar: "👩‍💻",
-              name: "Valentina Cruz",
-              role: "Ing. Sistemas",
-              stars: "★★★★★",
-              pts: "98.5",
-            },
-            {
-              avatar: "👨‍🔬",
-              name: "José Ramos",
-              role: "Ing. Sistemas",
-              stars: "★★★★★",
-              pts: "96.2",
-            },
-            {
-              avatar: "👩‍🎨",
-              name: "María López",
-              role: "Diseño Gráfico",
-              stars: "★★★★☆",
-              pts: "92.8",
-            },
-            {
-              avatar: "👨‍💼",
-              name: "Carlos Martínez",
-              role: "Administración",
-              stars: "★★★★☆",
-              pts: "90.1",
-            },
-          ].map((e) => (
-            <Card
-              key={e.name}
-              style={{ marginBottom: 16, alignItems: "center" }}
-            >
-              <Text style={{ fontSize: 40, marginBottom: 8 }}>{e.avatar}</Text>
-              <Text style={[s.textSub, { fontSize: 15, fontWeight: "700" }]}>
-                {e.name}
-              </Text>
-              <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-                {e.role}
-              </Text>
-              <Text style={{ color: C.yellow, fontSize: 16, marginTop: 6 }}>
-                {e.stars}
-              </Text>
-              <Text style={[s.textMuted, { fontSize: 12, marginTop: 2 }]}>
-                {e.pts} pts
-              </Text>
-            </Card>
-          ))}
+          {loadingDestacados ? (
+            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+              Cargando alumnos...
+            </Text>
+          ) : alumnosDestacados.length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
+              No hay alumnos destacados aún.
+            </Text>
+          ) : (
+            alumnosDestacados.map((e) => (
+              <Card
+                key={e.id}
+                style={{ marginBottom: 16, alignItems: "center" }}
+              >
+                <Text style={{ fontSize: 40, marginBottom: 8 }}>🎓</Text>
+                <Text style={[s.textSub, { fontSize: 15, fontWeight: "700" }]}>
+                  {e.nombre_completo}
+                </Text>
+                {e.carrera ? (
+                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
+                    {e.carrera}
+                  </Text>
+                ) : null}
+                {e.promedio_rating !== null && e.promedio_rating !== undefined ? (
+                  <Text
+                    style={{ color: C.yellow, fontSize: 14, marginTop: 6 }}
+                  >
+                    ⭐ {e.promedio_rating.toFixed(1)}
+                  </Text>
+                ) : null}
+              </Card>
+            ))
+          )}
         </>
       )}
 
@@ -3334,7 +3341,7 @@ const obtenerConteoEstudiantes = async (uid: string) => {
             s.card,
             { flexDirection: "row", alignItems: "center", padding: 16 },
           ]}
-          onPress={onLogout}
+          onPress={() => handleLogout(router)}
           activeOpacity={0.8}
         >
           <Text style={{ fontSize: 22, marginRight: 14 }}>🚪</Text>
@@ -3400,7 +3407,19 @@ const obtenerConteoEstudiantes = async (uid: string) => {
         <BtnPrimary
           label="Guardar cambios"
           style={{ marginTop: 20 }}
-          onPress={() => Alert.alert("Guardado", "Datos actualizados.")}
+          onPress={async () => {
+            if (!universidadId) return;
+            try {
+              await updateUniversidad(universidadId, {
+                enc_nombre: cfgNombre,
+                email_institucional: cfgEmail,
+                telefono: cfgTel,
+              });
+              Alert.alert("Guardado", "Datos actualizados correctamente.");
+            } catch {
+              Alert.alert("Error", "No se pudo guardar los cambios.");
+            }
+          }}
         />
       </Card>
 
@@ -3438,7 +3457,27 @@ const obtenerConteoEstudiantes = async (uid: string) => {
         <BtnPrimary
           label="Cambiar contraseña"
           style={{ marginTop: 20 }}
-          onPress={() => Alert.alert("Actualizado", "Contraseña cambiada.")}
+          onPress={async () => {
+            if (!cfgPwdNew.trim()) {
+              Alert.alert("Error", "Ingresa la nueva contraseña.");
+              return;
+            }
+            if (cfgPwdNew !== cfgPwdConfirm) {
+              Alert.alert("Error", "Las contraseñas no coinciden.");
+              return;
+            }
+            const { error } = await supabase.auth.updateUser({
+              password: cfgPwdNew,
+            });
+            if (error) {
+              Alert.alert("Error", "No se pudo cambiar la contraseña.");
+            } else {
+              setCfgPwdActual("");
+              setCfgPwdNew("");
+              setCfgPwdConfirm("");
+              Alert.alert("Actualizado", "Contraseña cambiada correctamente.");
+            }
+          }}
         />
       </Card>
 
@@ -4535,60 +4574,12 @@ const obtenerConteoEstudiantes = async (uid: string) => {
   return (
     <View style={s.root}>
       {/* Topbar */}
-      <View style={s.topbar}>
-        <View style={s.topbarLeft}>
-          <Text style={{ fontSize: 22, marginRight: 8 }}>🏛️</Text>
-          <Text style={s.topbarName}>{nombreUniv}</Text>
-          <Badge label="Verificada" type="verificada" />
-        </View>
-        <TouchableOpacity
-          style={{ padding: 8, borderRadius: 12 }}
-          onPress={toggleLanguage}
-          accessibilityLabel="Cambiar idioma"
-        >
-          <Ionicons name="planet-outline" size={22} color={C.text} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={{ padding: 8, borderRadius: 12 }}
-          onPress={() => setDarkMode((prev) => !prev)}
-          accessibilityLabel="Cambiar tema"
-        >
-          <Ionicons
-            name={darkMode ? "sunny-outline" : "moon-outline"}
-            size={22}
-            color={C.text}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setSection("notificaciones")}
-          style={s.logoutBtn}
-          accessibilityLabel="Notificaciones"
-        >
-          <Text style={{ fontSize: 22 }}>🔔</Text>
-          {!unreadRead && (
-            <View style={s.navBadge}>
-              <Text style={s.navBadgeText}>5</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-      {languageMenuOpen && (
-        <TouchableOpacity
-          style={s.languageMenuBackdrop}
-          activeOpacity={1}
-          onPress={() => setLanguageMenuOpen(false)}
-        >
-          <View style={s.languageMenu}>
-            <TouchableOpacity
-              style={s.languageMenuItem}
-              onPress={handleChangeLanguage}
-              activeOpacity={0.8}
-            >
-              <Text style={s.languageMenuText}>{languageOptionLabel}</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      )}
+      <UniversalHeader
+        userName={nombreUniv}
+        userSubtitle="Universidad"
+        profilePhotoUrl={universidad?.logo_url ?? null}
+        userId={universidadId || null}
+      />
 
       {/* Content */}
       <View style={s.content}>{renderContent()}</View>

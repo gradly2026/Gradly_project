@@ -32,6 +32,8 @@ import {
     updateProfilePhoto,
 } from "../services/storageService";
 import ProfileViewerModal from "../src/components/ProfileViewerModal";
+import UniversalHeader from "../src/components/UniversalHeader";
+import { useThemeContext } from "../src/context/ThemeContext";
 import { useTranslationContext } from "../src/context/TranslationContext";
 import handleLogout from "../src/services/authService";
 
@@ -44,25 +46,27 @@ type SubPage = "config" | "ayuda" | "acercade" | null;
 type ServiceStatus = "activo" | "pausado" | "borrador";
 type ServiceModalStep = 1 | 2 | 3;
 
-type Vacante = {
-  empresa: string;
-  cargo: string;
-  area: string;
-  ubicacion: string;
-  departamentos: string[];
-  buscan: string[];
-  modalidad: "Remoto" | "Presencial" | "Hibrido";
+type VacanteDB = {
+  id: string;
+  empresa_id: string;
+  titulo: string;
+  area: string | null;
+  ubicacion: string | null;
+  departamento: string | null;
+  modalidad: "Remoto" | "Presencial" | "Hibrido" | null;
+  requisitos: string[] | null;
+  empresa: { nombre: string; logo: string | null } | null;
 };
 
-type Service = {
+type ServicioRow = {
   id: string;
-  title: string;
-  category: string;
-  modality: "Remoto" | "Presencial" | "Hibrido";
-  price: number;
-  rating: number;
-  contracts: number;
-  status: ServiceStatus;
+  titulo: string;
+  categoria: string | null;
+  modalidad: "Remoto" | "Presencial" | "Hibrido";
+  precio: number;
+  calificacion: number;
+  contratos: number;
+  estado: ServiceStatus;
 };
 
 // ─── Static data ──────────────────────────────────────────────────────────────
@@ -84,72 +88,6 @@ const DEPARTAMENTOS = [
   "Usulutan",
 ];
 
-const VACANTES: Vacante[] = [
-  {
-    empresa: "Applaudo",
-    cargo: "Desarrollador Java Junior",
-    area: "Tecnologia",
-    ubicacion: "San Salvador",
-    modalidad: "Hibrido",
-    departamentos: ["San Salvador", "*"],
-    buscan: [
-      "Java (POO)",
-      "Bases de datos (SQL)",
-      "Git",
-      "Mentalidad de aprendizaje",
-    ],
-  },
-  {
-    empresa: "Aeroman",
-    cargo: "Tecnico de Planificacion",
-    area: "Aviacion",
-    ubicacion: "La Paz",
-    modalidad: "Presencial",
-    departamentos: ["La Paz", "*"],
-    buscan: ["Orden y seguimiento", "Excel", "Comunicacion efectiva"],
-  },
-  {
-    empresa: "Telus International",
-    cargo: "Analista de Datos Junior",
-    area: "Datos",
-    ubicacion: "Santa Tecla",
-    modalidad: "Remoto",
-    departamentos: ["La Libertad", "*"],
-    buscan: ["Excel / Google Sheets", "Pensamiento logico", "SQL (ideal)"],
-  },
-  {
-    empresa: "Sherwin-Williams",
-    cargo: "Pasante de Ingenieria Industrial",
-    area: "Ingenieria",
-    ubicacion: "Soyapango",
-    modalidad: "Presencial",
-    departamentos: ["San Salvador", "*"],
-    buscan: ["Ganas de aprender", "Excel", "Mejora continua"],
-  },
-];
-
-const INITIAL_SERVICES: Service[] = [
-  {
-    id: "1",
-    title: "Diseno de landing page moderna",
-    category: "Desarrollo Web",
-    modality: "Remoto",
-    price: 80,
-    rating: 4.8,
-    contracts: 12,
-    status: "activo",
-  },
-  {
-    id: "2",
-    title: "Automatizacion con Python",
-    category: "Programacion",
-    modality: "Remoto",
-    price: 120,
-    rating: 4.5,
-    contracts: 5,
-    status: "pausado",
-  },
-];
 
 const FAQ_ITEMS = [
   {
@@ -309,12 +247,11 @@ function buildTokens(q: string): string[] {
     .filter((t) => t.length > 1 && !STOPWORDS.has(t));
 }
 
-function matchesVacante(v: Vacante, tokens: string[], dep: string): boolean {
-  const okDep =
-    dep === "" ||
-    v.departamentos.includes("*") ||
-    v.departamentos.includes(dep);
-  const hay = normalize(`${v.cargo} ${v.area} ${v.empresa} ${v.ubicacion}`);
+function matchesVacante(v: VacanteDB, tokens: string[], dep: string): boolean {
+  const okDep = dep === "" || !v.departamento || v.departamento === dep;
+  const hay = normalize(
+    `${v.titulo} ${v.area ?? ""} ${v.empresa?.nombre ?? ""} ${v.ubicacion ?? ""}`,
+  );
   const okSearch = tokens.length === 0 || tokens.every((t) => hay.includes(t));
   return okDep && okSearch;
 }
@@ -518,7 +455,8 @@ export default function DashboardJovenTalento() {
   const [departamento, setDepartamento] = useState("");
   const [showDepPicker, setShowDepPicker] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [services, setServices] = useState<Service[]>(INITIAL_SERVICES);
+  const [services, setServices] = useState<ServicioRow[]>([]);
+  const [loadingServices, setLoadingServices] = useState(true);
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [serviceStep, setServiceStep] = useState<ServiceModalStep>(1);
   const [svcTitle, setSvcTitle] = useState("");
@@ -549,43 +487,14 @@ export default function DashboardJovenTalento() {
   const [contactMensaje, setContactMensaje] = useState("");
   const [contactSent, setContactSent] = useState(false);
   const router = useRouter();
-  const { language, changeLanguage } = useTranslationContext();
-  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
-  C = darkMode ? darkTheme : lightTheme;
+  const { language } = useTranslationContext();
+  const { isDark } = useThemeContext();
+  C = isDark ? darkTheme : lightTheme;
   st = createStyles(C);
-
-  const toggleLanguage = () => {
-    setLanguageMenuOpen((prev) => !prev);
-  };
-
-  const handleChangeLanguage = () => {
-    const target = language === "es" ? "en" : "es";
-    changeLanguage(target);
-    setLanguageMenuOpen(false);
-  };
-
-  const toggleTheme = () => {
-    setDarkMode((prev) => !prev);
-  };
-
-  const languageOptionLabel =
-    language === "es" ? "Cambiar a Inglés" : "Change to Spanish";
-
-  const onLogout = async () => {
-    await handleLogout(router);
-  };
 
   const navigate = (page: Page) => {
     setActivePage(page);
     setSubPage(null);
-  };
-
-  const companyProfileIds: Record<string, string> = {
-    "TechSV Solutions": "demo-empresa-1",
-    "BioMed Labs": "demo-empresa-2",
-    "LogiSV Corp": "demo-empresa-3",
-    "Banco Agrícola": "demo-empresa-4",
   };
 
   const [profileViewerVisible, setProfileViewerVisible] = useState(false);
@@ -596,6 +505,9 @@ export default function DashboardJovenTalento() {
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [vacantes, setVacantes] = useState<VacanteDB[]>([]);
+  const [loadingVacantes, setLoadingVacantes] = useState(true);
+  const [agendaCounts, setAgendaCounts] = useState({ postulaciones: 0, horasSociales: 0 });
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -625,6 +537,69 @@ export default function DashboardJovenTalento() {
     });
   }, []);
 
+  // Fetch active vacantes from Supabase
+  useEffect(() => {
+    (async () => {
+      setLoadingVacantes(true);
+      const { data } = await supabase
+        .from("vacantes")
+        .select(
+          "id, empresa_id, titulo, area, ubicacion, departamento, modalidad, requisitos, empresas(nombre, logo)",
+        )
+        .eq("estado", "activa")
+        .order("created_at", { ascending: false });
+      setVacantes(
+        (data ?? []).map((v: any) => ({ ...v, empresa: v.empresas ?? null })),
+      );
+      setLoadingVacantes(false);
+    })();
+  }, []);
+
+  // Fetch services and agenda counts once user is known
+  useEffect(() => {
+    if (!currentUserId) return;
+    (async () => {
+      setLoadingServices(true);
+      const { data: svcs } = await supabase
+        .from("servicios")
+        .select(
+          "id, titulo, categoria, modalidad, precio, calificacion, contratos, estado",
+        )
+        .eq("talento_id", currentUserId)
+        .order("created_at", { ascending: false });
+      setServices(
+        (svcs ?? []).map((s: any) => ({
+          id: s.id,
+          titulo: s.titulo,
+          categoria: s.categoria ?? null,
+          modalidad: s.modalidad ?? "Remoto",
+          precio: s.precio ?? 0,
+          calificacion: s.calificacion ?? 0,
+          contratos: s.contratos ?? 0,
+          estado: s.estado ?? "borrador",
+        })),
+      );
+      setLoadingServices(false);
+
+      const [{ count: postCount }, { count: horasCount }] = await Promise.all([
+        supabase
+          .from("aplicaciones")
+          .select("*", { count: "exact", head: true })
+          .eq("solicitante_id", currentUserId)
+          .in("estado", ["pendiente", "revision"]),
+        supabase
+          .from("solicitudes_horas")
+          .select("*", { count: "exact", head: true })
+          .eq("alumno_id", currentUserId)
+          .eq("estado", "aprobada"),
+      ]);
+      setAgendaCounts({
+        postulaciones: postCount ?? 0,
+        horasSociales: horasCount ?? 0,
+      });
+    })();
+  }, [currentUserId]);
+
   const openProfileViewer = (
     userId: string,
     userType: "talento" | "empresa" | "universidad",
@@ -636,23 +611,23 @@ export default function DashboardJovenTalento() {
 
   const tokens = useMemo(() => buildTokens(busqueda), [busqueda]);
   const filteredVacantes = useMemo(
-    () => VACANTES.filter((v) => matchesVacante(v, tokens, departamento)),
-    [tokens, departamento],
+    () => vacantes.filter((v) => matchesVacante(v, tokens, departamento)),
+    [vacantes, tokens, departamento],
   );
 
   const searchSuggestions = useMemo(() => {
     if (!busqueda.trim()) return [];
     return filteredVacantes
-      .map((v) => `${v.cargo} · ${v.empresa}`)
+      .map((v) => `${v.titulo} · ${v.empresa?.nombre ?? ""}`)
       .filter((value, index, self) => self.indexOf(value) === index)
       .slice(0, 4);
   }, [busqueda, filteredVacantes]);
 
   const handleSuggestionPress = (suggestion: string) => {
     setBusqueda(suggestion);
-    const company = suggestion.split("·")[1]?.trim() ?? "";
-    const companyId = companyProfileIds[company] ?? "demo-empresa-1";
-    openProfileViewer(companyId, "empresa");
+    const titulo = suggestion.split("·")[0]?.trim() ?? "";
+    const match = vacantes.find((v) => v.titulo === titulo);
+    if (match) openProfileViewer(match.empresa_id, "empresa");
   };
 
   const resetServiceForm = () => {
@@ -666,20 +641,40 @@ export default function DashboardJovenTalento() {
     setServiceStep(1);
   };
 
-  const handlePublishService = () => {
+  const handlePublishService = async () => {
     if (!svcTitle.trim() || !svcPrice) {
       Alert.alert("Error", "Completa el titulo y el precio.");
       return;
     }
-    const ns: Service = {
-      id: String(Date.now()),
-      title: svcTitle,
-      category: svcCategory || "General",
-      modality: svcModality,
-      price: parseFloat(svcPrice) || 0,
-      rating: 0,
-      contracts: 0,
-      status: "borrador",
+    if (!currentUserId) return;
+    const { data, error } = await supabase
+      .from("servicios")
+      .insert({
+        talento_id: currentUserId,
+        titulo: svcTitle,
+        categoria: svcCategory || "General",
+        descripcion: svcDesc,
+        modalidad: svcModality,
+        precio: parseFloat(svcPrice) || 0,
+        habilidades: svcHabilidades,
+        entrega_dias: parseInt(svcEntrega) || null,
+        estado: "borrador",
+      })
+      .select()
+      .single();
+    if (error) {
+      Alert.alert("Error", "No se pudo guardar el servicio.");
+      return;
+    }
+    const ns: ServicioRow = {
+      id: data.id,
+      titulo: data.titulo,
+      categoria: data.categoria ?? null,
+      modalidad: data.modalidad ?? svcModality,
+      precio: data.precio ?? 0,
+      calificacion: 0,
+      contratos: 0,
+      estado: "borrador",
     };
     setServices((prev) => [ns, ...prev]);
     setShowServiceModal(false);
@@ -687,13 +682,14 @@ export default function DashboardJovenTalento() {
     Alert.alert("Servicio creado", "Tu servicio fue guardado como borrador.");
   };
 
-  const toggleServiceStatus = (id: string) => {
+  const toggleServiceStatus = async (id: string) => {
+    const svc = services.find((s) => s.id === id);
+    if (!svc) return;
+    const newEstado: ServiceStatus =
+      svc.estado === "activo" ? "pausado" : "activo";
+    await supabase.from("servicios").update({ estado: newEstado }).eq("id", id);
     setServices((prev) =>
-      prev.map((s) =>
-        s.id === id
-          ? { ...s, status: s.status === "activo" ? "pausado" : "activo" }
-          : s,
-      ),
+      prev.map((s) => (s.id === id ? { ...s, estado: newEstado } : s)),
     );
   };
 
@@ -703,7 +699,10 @@ export default function DashboardJovenTalento() {
       {
         text: "Eliminar",
         style: "destructive",
-        onPress: () => setServices((prev) => prev.filter((s) => s.id !== id)),
+        onPress: async () => {
+          await supabase.from("servicios").delete().eq("id", id);
+          setServices((prev) => prev.filter((s) => s.id !== id));
+        },
       },
     ]);
   };
@@ -1112,7 +1111,18 @@ export default function DashboardJovenTalento() {
         />
         <BtnPrimary
           label="Guardar cambios"
-          onPress={() => Alert.alert("Guardado", "Datos actualizados.")}
+          onPress={async () => {
+            if (!currentUserId) return;
+            const { error } = await supabase
+              .from("talentos")
+              .update({ nombre: cfgNombre, telefono: cfgTel })
+              .eq("id", currentUserId);
+            if (error) Alert.alert("Error", "No se pudieron guardar los cambios.");
+            else {
+              setTalentoNombre(cfgNombre);
+              Alert.alert("Guardado", "Datos actualizados.");
+            }
+          }}
           style={{ marginTop: 6 }}
         />
       </Card>
@@ -1143,7 +1153,22 @@ export default function DashboardJovenTalento() {
         />
         <BtnPrimary
           label="Cambiar contrasena"
-          onPress={() => Alert.alert("Actualizado", "Contrasena cambiada.")}
+          onPress={async () => {
+            if (!cfgPwdNew || cfgPwdNew !== cfgPwdConfirm) {
+              Alert.alert("Error", "Las contrasenas no coinciden.");
+              return;
+            }
+            const { error } = await supabase.auth.updateUser({
+              password: cfgPwdNew,
+            });
+            if (error) Alert.alert("Error", error.message);
+            else {
+              setCfgPwdActual("");
+              setCfgPwdNew("");
+              setCfgPwdConfirm("");
+              Alert.alert("Actualizado", "Contrasena cambiada exitosamente.");
+            }
+          }}
           style={{ marginTop: 6 }}
         />
       </Card>
@@ -1267,7 +1292,7 @@ export default function DashboardJovenTalento() {
     >
       <View style={st.welcomeBanner}>
         <View style={st.welcomeOrb} />
-        <Text style={st.welcomeTitle}>Bienvenido, John Doe!</Text>
+        <Text style={st.welcomeTitle}>Bienvenido, {talentoNombre}!</Text>
         <Text style={[st.muted, { marginTop: 4 }]}>
           Encuentra tu proxima oportunidad laboral.
         </Text>
@@ -1280,23 +1305,26 @@ export default function DashboardJovenTalento() {
           {
             icon: "mail-outline" as keyof typeof Ionicons.glyphMap,
             label: "Postulaciones",
-            value: "2 esperan respuesta",
+            value:
+              agendaCounts.postulaciones > 0
+                ? `${agendaCounts.postulaciones} esperan respuesta`
+                : "Sin pendientes",
             color: C.orange,
-            badge: "2",
+            badge: String(agendaCounts.postulaciones),
           },
           {
             icon: "time-outline" as keyof typeof Ionicons.glyphMap,
             label: "Horas sociales",
-            value: "Hoy 08:00 AM",
+            value: `${agendaCounts.horasSociales} aprobadas`,
             color: C.greenBright,
-            badge: "v",
+            badge: "✓",
           },
           {
-            icon: "chatbubble-outline" as keyof typeof Ionicons.glyphMap,
-            label: "Comentarios",
-            value: "3 nuevos",
+            icon: "briefcase-outline" as keyof typeof Ionicons.glyphMap,
+            label: "Vacantes",
+            value: `${vacantes.length} disponibles`,
             color: C.purple,
-            badge: "3",
+            badge: String(vacantes.length),
           },
         ].map((ag, i) => (
           <React.Fragment key={ag.label}>
@@ -1427,15 +1455,21 @@ export default function DashboardJovenTalento() {
           </ScrollView>
         )}
       </Card>
-      {filteredVacantes.length === 0 ? (
+      {loadingVacantes ? (
+        <Card>
+          <Text style={[st.muted, { textAlign: "center", padding: 20 }]}>
+            Cargando vacantes...
+          </Text>
+        </Card>
+      ) : filteredVacantes.length === 0 ? (
         <Card>
           <Text style={[st.muted, { textAlign: "center", padding: 20 }]}>
             No se encontraron vacantes para tu busqueda.
           </Text>
         </Card>
       ) : (
-        filteredVacantes.map((v, i) => (
-          <Card key={i} style={{ marginBottom: 12 }}>
+        filteredVacantes.map((v) => (
+          <Card key={v.id} style={{ marginBottom: 12 }}>
             <View
               style={{
                 flexDirection: "row",
@@ -1444,62 +1478,99 @@ export default function DashboardJovenTalento() {
                 marginBottom: 10,
               }}
             >
-              <View style={st.jobLogoPlaceholder}>
-                <Text
-                  style={{ color: "#fff", fontWeight: "700", fontSize: 18 }}
-                >
-                  {v.empresa.charAt(0)}
-                </Text>
-              </View>
+              <TouchableOpacity
+                style={st.jobLogoPlaceholder}
+                onPress={() => openProfileViewer(v.empresa_id, "empresa")}
+              >
+                {v.empresa?.logo ? (
+                  <Image
+                    source={{ uri: v.empresa.logo }}
+                    style={{ width: 50, height: 50, borderRadius: 12 }}
+                  />
+                ) : (
+                  <Text
+                    style={{ color: "#fff", fontWeight: "700", fontSize: 18 }}
+                  >
+                    {(v.empresa?.nombre ?? "?").charAt(0)}
+                  </Text>
+                )}
+              </TouchableOpacity>
               <View style={{ flex: 1 }}>
                 <Text
                   style={[st.contactValue, { fontWeight: "700", fontSize: 15 }]}
                 >
-                  {v.cargo}
+                  {v.titulo}
                 </Text>
                 <Text style={[st.muted, { fontSize: 13 }]}>
-                  {v.empresa} - {v.ubicacion}
+                  {v.empresa?.nombre ?? ""}{v.ubicacion ? ` - ${v.ubicacion}` : ""}
                 </Text>
-                <Text style={[st.muted, { fontSize: 12 }]}>{v.area}</Text>
+                {v.area ? (
+                  <Text style={[st.muted, { fontSize: 12 }]}>{v.area}</Text>
+                ) : null}
               </View>
-              <View
-                style={[
-                  st.badge,
-                  { backgroundColor: C.purpleDim, borderColor: C.purpleBorder },
-                ]}
-              >
-                <Text style={[st.badgeText, { color: C.purple }]}>
-                  {v.modalidad}
-                </Text>
-              </View>
+              {v.modalidad ? (
+                <View
+                  style={[
+                    st.badge,
+                    {
+                      backgroundColor: C.purpleDim,
+                      borderColor: C.purpleBorder,
+                    },
+                  ]}
+                >
+                  <Text style={[st.badgeText, { color: C.purple }]}>
+                    {v.modalidad}
+                  </Text>
+                </View>
+              ) : null}
             </View>
-            <Text
-              style={[
-                st.muted,
-                {
-                  fontSize: 11,
-                  fontWeight: "700",
-                  textTransform: "uppercase",
-                  marginBottom: 4,
-                },
-              ]}
-            >
-              Que buscan?
-            </Text>
-            {v.buscan.map((b, bi) => (
-              <Text key={bi} style={[st.muted, { fontSize: 13 }]}>
-                - {b}
-              </Text>
-            ))}
+            {v.requisitos && v.requisitos.length > 0 ? (
+              <>
+                <Text
+                  style={[
+                    st.muted,
+                    {
+                      fontSize: 11,
+                      fontWeight: "700",
+                      textTransform: "uppercase",
+                      marginBottom: 4,
+                    },
+                  ]}
+                >
+                  Que buscan?
+                </Text>
+                {v.requisitos.map((b, bi) => (
+                  <Text key={bi} style={[st.muted, { fontSize: 13 }]}>
+                    - {b}
+                  </Text>
+                ))}
+              </>
+            ) : null}
             <BtnPrimary
               label="Aplicar"
               style={{ marginTop: 12 }}
-              onPress={() =>
-                Alert.alert(
-                  "Postulacion",
-                  `Aplicando a ${v.cargo} en ${v.empresa}.`,
-                )
-              }
+              onPress={async () => {
+                if (!currentUserId) {
+                  Alert.alert("Error", "Debes iniciar sesion.");
+                  return;
+                }
+                const { error } = await supabase.from("aplicaciones").insert({
+                  vacante_id: v.id,
+                  solicitante_id: currentUserId,
+                  estado: "pendiente",
+                });
+                if (error && error.code === "23505") {
+                  Alert.alert("Ya aplicaste", `Ya tienes una postulacion activa para ${v.titulo}.`);
+                } else if (error) {
+                  Alert.alert("Error", "No se pudo enviar tu postulacion.");
+                } else {
+                  Alert.alert("Postulacion enviada", `Aplicaste a ${v.titulo} en ${v.empresa?.nombre ?? ""}.`);
+                  setAgendaCounts((prev) => ({
+                    ...prev,
+                    postulaciones: prev.postulaciones + 1,
+                  }));
+                }
+              }}
             />
           </Card>
         ))
@@ -1568,106 +1639,129 @@ export default function DashboardJovenTalento() {
         style={{ marginBottom: 20 }}
         onPress={() => setShowServiceModal(true)}
       />
-      {services.map((svc) => {
-        const statusColors = {
-          activo: {
-            bg: C.greenBg,
-            border: C.greenBorder,
-            color: C.greenBright,
-          },
-          pausado: { bg: C.orangeBg, border: C.orangeBorder, color: C.orange },
-          borrador: {
-            bg: "rgba(255,255,255,0.06)",
-            border: C.border,
-            color: C.muted,
-          },
-        };
-        const sc = statusColors[svc.status];
-        return (
-          <Card
-            key={svc.id}
-            style={{ marginBottom: 14, padding: 0, overflow: "hidden" }}
-          >
-            <View style={st.serviceCover}>
-              <Ionicons name="image-outline" size={32} color={C.muted} />
-            </View>
-            <View style={{ padding: 14 }}>
-              <Text
-                style={[
-                  st.contactValue,
-                  { fontWeight: "700", fontSize: 15, marginBottom: 4 },
-                ]}
-              >
-                {svc.title}
-              </Text>
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
-                <View style={st.techBadge}>
-                  <Text style={st.techBadgeText}>{svc.category}</Text>
-                </View>
-                <View style={[st.techBadge, { backgroundColor: C.purpleDim }]}>
-                  <Text style={[st.techBadgeText, { color: C.purple }]}>
-                    {svc.modality}
-                  </Text>
-                </View>
+      {loadingServices ? (
+        <Card>
+          <Text style={[st.muted, { textAlign: "center", padding: 16 }]}>
+            Cargando servicios...
+          </Text>
+        </Card>
+      ) : services.length === 0 ? (
+        <Card style={{ marginBottom: 14 }}>
+          <Text style={[st.muted, { textAlign: "center", padding: 16 }]}>
+            Aun no tienes servicios publicados.
+          </Text>
+        </Card>
+      ) : (
+        services.map((svc) => {
+          const statusColors = {
+            activo: {
+              bg: C.greenBg,
+              border: C.greenBorder,
+              color: C.greenBright,
+            },
+            pausado: {
+              bg: C.orangeBg,
+              border: C.orangeBorder,
+              color: C.orange,
+            },
+            borrador: {
+              bg: "rgba(255,255,255,0.06)",
+              border: C.border,
+              color: C.muted,
+            },
+          };
+          const sc = statusColors[svc.estado];
+          return (
+            <Card
+              key={svc.id}
+              style={{ marginBottom: 14, padding: 0, overflow: "hidden" }}
+            >
+              <View style={st.serviceCover}>
+                <Ionicons name="image-outline" size={32} color={C.muted} />
               </View>
-              <Text
-                style={{
-                  color: C.greenBright,
-                  fontWeight: "700",
-                  fontSize: 16,
-                  marginBottom: 6,
-                }}
-              >
-                ${svc.price.toFixed(2)}
-              </Text>
-              {svc.rating > 0 && (
-                <Text style={[st.muted, { fontSize: 13, marginBottom: 6 }]}>
-                  {"*".repeat(Math.round(svc.rating))} {svc.rating.toFixed(1)} -{" "}
-                  {svc.contracts} contrataciones
-                </Text>
-              )}
-              <View
-                style={[
-                  st.badge,
-                  {
-                    backgroundColor: sc.bg,
-                    borderColor: sc.border,
-                    alignSelf: "flex-start",
-                    marginBottom: 12,
-                  },
-                ]}
-              >
+              <View style={{ padding: 14 }}>
                 <Text
                   style={[
-                    st.badgeText,
-                    { color: sc.color, textTransform: "capitalize" },
+                    st.contactValue,
+                    { fontWeight: "700", fontSize: 15, marginBottom: 4 },
                   ]}
                 >
-                  {svc.status}
+                  {svc.titulo}
                 </Text>
-              </View>
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <BtnOutline
-                  label="Editar"
-                  small
-                  onPress={() => Alert.alert("Editar", "Proximamente.")}
-                />
-                <BtnOutline
-                  label={svc.status === "activo" ? "Pausar" : "Activar"}
-                  small
-                  onPress={() => toggleServiceStatus(svc.id)}
-                />
-                <TouchableOpacity
-                  onPress={() => deleteService(svc.id)}
-                  style={st.deleteBtn}
+                <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+                  {svc.categoria ? (
+                    <View style={st.techBadge}>
+                      <Text style={st.techBadgeText}>{svc.categoria}</Text>
+                    </View>
+                  ) : null}
+                  <View
+                    style={[st.techBadge, { backgroundColor: C.purpleDim }]}
+                  >
+                    <Text style={[st.techBadgeText, { color: C.purple }]}>
+                      {svc.modalidad}
+                    </Text>
+                  </View>
+                </View>
+                <Text
+                  style={{
+                    color: C.greenBright,
+                    fontWeight: "700",
+                    fontSize: 16,
+                    marginBottom: 6,
+                  }}
                 >
-                  <Ionicons name="trash-outline" size={18} color={C.danger} />
-                </TouchableOpacity>
+                  ${svc.precio.toFixed(2)}
+                </Text>
+                {svc.calificacion > 0 && (
+                  <Text style={[st.muted, { fontSize: 13, marginBottom: 6 }]}>
+                    {"★".repeat(Math.round(svc.calificacion))}{" "}
+                    {svc.calificacion.toFixed(1)} - {svc.contratos}{" "}
+                    contrataciones
+                  </Text>
+                )}
+                <View
+                  style={[
+                    st.badge,
+                    {
+                      backgroundColor: sc.bg,
+                      borderColor: sc.border,
+                      alignSelf: "flex-start",
+                      marginBottom: 12,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      st.badgeText,
+                      { color: sc.color, textTransform: "capitalize" },
+                    ]}
+                  >
+                    {svc.estado}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <BtnOutline
+                    label="Editar"
+                    small
+                    onPress={() => Alert.alert("Editar", "Proximamente.")}
+                  />
+                  <BtnOutline
+                    label={svc.estado === "activo" ? "Pausar" : "Activar"}
+                    small
+                    onPress={() => toggleServiceStatus(svc.id)}
+                  />
+                  <TouchableOpacity
+                    onPress={() => deleteService(svc.id)}
+                    style={st.deleteBtn}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={C.danger} />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          </Card>
-        );
-      })}
+            </Card>
+          );
+        })
+      )}
     </ScrollView>
   );
 
@@ -2347,82 +2441,12 @@ export default function DashboardJovenTalento() {
 
   return (
     <SafeAreaView style={st.root}>
-      <View style={st.topbar}>
-        <View style={st.brandRow}>
-          <View style={st.brandBadge}>
-            <Text style={st.brandBadgeText}>G</Text>
-          </View>
-          <View>
-            <Text style={st.brandTitle}>Gradly</Text>
-            <TranslatedText style={st.brandSub}>Joven Talento</TranslatedText>
-          </View>
-        </View>
-        <TouchableOpacity
-          style={st.iconBtn}
-          onPress={toggleLanguage}
-          accessibilityLabel="Cambiar idioma"
-        >
-          <Ionicons name="planet-outline" size={22} color={C.text} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={st.iconBtn}
-          onPress={toggleTheme}
-          accessibilityLabel="Cambiar tema"
-        >
-          <Ionicons
-            name={darkMode ? "sunny-outline" : "moon-outline"}
-            size={22}
-            color={C.text}
-          />
-        </TouchableOpacity>
-        {languageMenuOpen && (
-          <TouchableOpacity
-            style={st.languageMenuBackdrop}
-            activeOpacity={1}
-            onPress={() => setLanguageMenuOpen(false)}
-          >
-            <View style={st.languageMenu}>
-              <TouchableOpacity
-                style={st.languageMenuItem}
-                onPress={handleChangeLanguage}
-                activeOpacity={0.8}
-              >
-                <Text style={st.languageMenuText}>{languageOptionLabel}</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        )}
-        {languageMenuOpen && (
-          <TouchableOpacity
-            style={st.languageMenuBackdrop}
-            activeOpacity={1}
-            onPress={() => setLanguageMenuOpen(false)}
-          >
-            <View style={st.languageMenu}>
-              <TouchableOpacity
-                style={st.languageMenuItem}
-                onPress={handleChangeLanguage}
-                activeOpacity={0.8}
-              >
-                <Text style={st.languageMenuText}>{languageOptionLabel}</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={st.iconBtn}
-          accessibilityLabel="Notificaciones"
-        >
-          <Ionicons name="notifications-outline" size={22} color={C.text} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={st.iconBtn}
-          onPress={onLogout}
-          accessibilityLabel="Cerrar sesión"
-        >
-          <Ionicons name="log-out-outline" size={22} color={C.text} />
-        </TouchableOpacity>
-      </View>
+      <UniversalHeader
+        userName={talentoNombre}
+        userSubtitle={talentoHeadline}
+        profilePhotoUrl={profilePhotoUrl}
+        userId={currentUserId}
+      />
       <View style={{ flex: 1 }}>{renderContent()}</View>
       <View style={st.bottomNav}>
         {BOTTOM_NAV.map((item) => {

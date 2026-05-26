@@ -32,6 +32,8 @@ import {
   updateUserProfile,
 } from "../services/storageService";
 import ProfileViewerModal from "../src/components/ProfileViewerModal";
+import UniversalHeader from "../src/components/UniversalHeader";
+import { useThemeContext } from "../src/context/ThemeContext";
 import { useTranslationContext } from "../src/context/TranslationContext";
 import handleLogout from "../src/services/authService";
 
@@ -76,26 +78,6 @@ type SubPage = "ayuda" | "acercade" | null;
 
 // ─── Static data ────────────────────────────────────────────────────────────────
 
-const HORARIO_DATA = [
-  { dia: "Lunes", hora: "08:00 - 10:00", materia: "POO", aula: "A-12" },
-  {
-    dia: "Miércoles",
-    hora: "10:00 - 12:00",
-    materia: "Bases de datos",
-    aula: "B-05",
-  },
-];
-
-const COURSES = [
-  {
-    id: "1",
-    nombre: "Ing. en Sistemas-G#1",
-    modulo: "Ciclo 01-2026",
-    avance: "65%",
-    searchText: "ing sistemas grupo 1 ciclo 2026",
-  },
-];
-
 const STUDENT_COLORS = [
   "#8b5cf6",
   "#3b82f6",
@@ -105,29 +87,6 @@ const STUDENT_COLORS = [
   "#ec4899",
 ];
 
-const GROUP_STUDENTS = [
-  "María Fernández",
-  "Carlos López",
-  "Andrea Martínez",
-  "Roberto Guzmán",
-  "Sofía Hernández",
-  "Diego Rivera",
-];
-
-const AVISOS = [
-  {
-    titulo: "Pago preliminar vence",
-    fecha: "Hoy",
-    contenido:
-      "Recuerda revisar tu sección de pagos y completar el proceso antes de la fecha límite.",
-  },
-  {
-    titulo: "Horario del examen",
-    fecha: "Esta semana",
-    contenido:
-      "Consulta tu horario y confirma el aula asignada. Si tienes choque, solicita cambio.",
-  },
-];
 
 // ─── Labels & nav config ──────────────────────────────────────────────────────────
 
@@ -273,10 +232,8 @@ export default function DashboardAlumno() {
   const [notifVisible, setNotifVisible] = useState(false);
   const [openAccordions, setOpenAccordions] = useState<Set<number>>(new Set());
   const router = useRouter();
-  const { language, changeLanguage } = useTranslationContext();
-  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
-  C = darkMode ? darkTheme : lightTheme;
+  const { isDark } = useThemeContext();
+  C = isDark ? darkTheme : lightTheme;
   s = createStyles(C);
 
   // ── Modals
@@ -300,73 +257,16 @@ export default function DashboardAlumno() {
     setProfileViewerVisible(true);
   };
 
-  const EXPLORE_EMPRESAS = useMemo(
-    () => [
-      {
-        id: "demo-empresa-1",
-        icon: "💼",
-        name: "TechSV Solutions",
-        sector: "Tecnología · Software",
-        rating: "4.8",
-        horas: 45,
-        badge: "Premium",
-      },
-      {
-        id: "demo-empresa-2",
-        icon: "🔬",
-        name: "BioMed Labs",
-        sector: "Ciencias · Biotecnología",
-        rating: "4.5",
-        horas: 25,
-        badge: "Verificada",
-      },
-      {
-        id: "demo-empresa-3",
-        icon: "📦",
-        name: "LogiSV Corp",
-        sector: "Logística",
-        rating: "4.2",
-        horas: 15,
-        badge: "PYME",
-      },
-      {
-        id: "demo-empresa-4",
-        icon: "🏦",
-        name: "Banco Agrícola",
-        sector: "Finanzas · Banca",
-        rating: "4.7",
-        horas: 60,
-        badge: "Internacional",
-      },
-    ],
-    [],
-  );
-
   const filteredExploreCompanies = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
-    return EXPLORE_EMPRESAS.filter((empresa) => {
-      const haystack = `${empresa.name} ${empresa.sector}`.toLowerCase();
+    return companies.filter((empresa) => {
+      const haystack =
+        `${empresa.nombre} ${empresa.sector ?? ""}`.toLowerCase();
       return haystack.includes(query);
     });
-  }, [searchQuery, EXPLORE_EMPRESAS]);
+  }, [searchQuery, companies]);
 
-  const toggleLanguage = () => {
-    setLanguageMenuOpen((prev) => !prev);
-  };
-
-  const handleChangeLanguage = () => {
-    const target = language === "es" ? "en" : "es";
-    changeLanguage(target);
-    setLanguageMenuOpen(false);
-  };
-
-  const toggleTheme = () => {
-    setDarkMode((prev) => !prev);
-  };
-
-  const languageOptionLabel =
-    language === "es" ? "Cambiar a Inglés" : "Change to Spanish";
 
   const onLogout = async () => {
     try {
@@ -380,20 +280,8 @@ export default function DashboardAlumno() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   // ── Payments
-  const [payments, setPayments] = useState<Payment[]>([
-    {
-      concepto: "Matrícula",
-      estado: "Pendiente",
-      monto: 150,
-      vence: "2026-06-01",
-    },
-    {
-      concepto: "Laboratorio",
-      estado: "Pagado",
-      monto: 60,
-      vence: "2026-04-15",
-    },
-  ]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(true);
   const [pagoForm, setPagoForm] = useState<PagoForm>({
     concepto: "",
     monto: "",
@@ -407,10 +295,36 @@ export default function DashboardAlumno() {
     telefono: "",
   });
 
+  // ── Alumno extended profile state
+  const [alumnoEmail, setAlumnoEmail] = useState("");
+  const [alumnoTel, setAlumnoTel] = useState("");
+  const [alumnoCarrera, setAlumnoCarrera] = useState("");
+  const [alumnoSemestre, setAlumnoSemestre] = useState("");
+
+  // ── Companies for Explorar
+  const [companies, setCompanies] = useState<
+    { id: string; nombre: string; sector: string | null; logo: string | null }[]
+  >([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(true);
+
+  // ── Courses and schedule
+  const [courses, setCourses] = useState<
+    { id: string; nombre: string; modulo: string | null; avance: string | null }[]
+  >([]);
+  const [horario, setHorario] = useState<
+    { dia: string; hora: string; materia: string; aula: string }[]
+  >([]);
+  const [grupoCompaneros, setGrupoCompaneros] = useState<string[]>([]);
+
+  // ── University announcements
+  const [avisos, setAvisos] = useState<
+    { titulo: string; fecha: string; contenido: string }[]
+  >([]);
+
   // ── Config
-  const [cfgNombre, setCfgNombre] = useState("John Doe");
-  const [cfgEmail, setCfgEmail] = useState("jdoe@uni.edu.sv");
-  const [cfgTel, setCfgTel] = useState("+503 7000-0000");
+  const [cfgNombre, setCfgNombre] = useState("");
+  const [cfgEmail, setCfgEmail] = useState("");
+  const [cfgTel, setCfgTel] = useState("");
   const [cfgNotif1, setCfgNotif1] = useState(true);
   const [cfgNotif2, setCfgNotif2] = useState(true);
   const [cfgNotif3, setCfgNotif3] = useState(false);
@@ -420,14 +334,15 @@ export default function DashboardAlumno() {
   const [cfgPwdConfirm, setCfgPwdConfirm] = useState("");
 
   // ── Editar perfil
-  const [editNombre, setEditNombre] = useState("John Doe");
-  const [editCorreo, setEditCorreo] = useState("jdoe@uni.edu.sv");
-  const [editTel, setEditTel] = useState("+503 7000-0000");
+  const [editNombre, setEditNombre] = useState("");
+  const [editCorreo, setEditCorreo] = useState("");
+  const [editTel, setEditTel] = useState("");
   const [editCarrera] = useState("Ing. en Sistemas");
   const [editSemestre] = useState("5.º semestre");
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [alumnoNombre, setAlumnoNombre] = useState("Estudiante");
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -435,15 +350,104 @@ export default function DashboardAlumno() {
         setUserId(data.user.id);
         supabase
           .from("alumnos")
-          .select("foto_perfil")
+          .select(
+            "foto_perfil, nombre_completo, email, telefono, carrera, semestre",
+          )
           .eq("id", data.user.id)
           .single()
-          .then(({ data: profile }) => {
-            if (profile?.foto_perfil) setProfilePhotoUrl(profile.foto_perfil);
+          .then(({ data: p }) => {
+            if (!p) return;
+            if (p.foto_perfil) setProfilePhotoUrl(p.foto_perfil);
+            if (p.nombre_completo) {
+              setAlumnoNombre(p.nombre_completo);
+              setCfgNombre(p.nombre_completo);
+              setEditNombre(p.nombre_completo);
+            }
+            if (p.email) {
+              setAlumnoEmail(p.email);
+              setCfgEmail(p.email);
+              setEditCorreo(p.email);
+            }
+            if (p.telefono) {
+              setAlumnoTel(p.telefono);
+              setCfgTel(p.telefono);
+              setEditTel(p.telefono);
+            }
+            if (p.carrera) setAlumnoCarrera(p.carrera);
+            if (p.semestre) setAlumnoSemestre(p.semestre);
           });
       }
     });
   }, []);
+
+  // Fetch companies for Explorar
+  useEffect(() => {
+    (async () => {
+      setLoadingCompanies(true);
+      const { data } = await supabase
+        .from("empresas")
+        .select("id, nombre, sector, logo")
+        .order("nombre");
+      setCompanies(data ?? []);
+      setLoadingCompanies(false);
+    })();
+  }, []);
+
+  // Fetch per-student data once userId is known
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      // Payments
+      setLoadingPayments(true);
+      const { data: pagos } = await supabase
+        .from("pagos")
+        .select("id, concepto, estado, monto, fecha_vencimiento")
+        .eq("alumno_id", userId)
+        .order("created_at", { ascending: false });
+      if (pagos) {
+        setPayments(
+          pagos.map((p: any) => ({
+            concepto: p.concepto,
+            estado: p.estado,
+            monto: p.monto ?? 0,
+            vence: p.fecha_vencimiento ?? "—",
+          })),
+        );
+      }
+      setLoadingPayments(false);
+
+      // Courses / inscripciones
+      const { data: inscrip } = await supabase
+        .from("inscripciones")
+        .select("id, grupo, ciclo, avance")
+        .eq("alumno_id", userId);
+      if (inscrip) {
+        setCourses(
+          inscrip.map((c: any) => ({
+            id: c.id,
+            nombre: c.grupo ?? "Grupo",
+            modulo: c.ciclo ?? null,
+            avance: c.avance ? `${c.avance}%` : null,
+          })),
+        );
+      }
+
+      // Horario — query from horarios table linked to alumno's grupo
+      const { data: hor } = await supabase
+        .from("horarios")
+        .select("dia, hora, materia, aula")
+        .eq("alumno_id", userId);
+      if (hor) setHorario(hor);
+
+      // Avisos de universidad
+      const { data: avs } = await supabase
+        .from("avisos")
+        .select("titulo, fecha, contenido")
+        .order("created_at", { ascending: false })
+        .limit(10);
+      if (avs) setAvisos(avs);
+    })();
+  }, [userId]);
 
   // ── Horas laborales
   const [horasStarted, setHorasStarted] = useState(false);
@@ -460,13 +464,11 @@ export default function DashboardAlumno() {
   const filteredCourses = useMemo(
     () =>
       searchQuery.trim()
-        ? COURSES.filter((c) =>
-            c.searchText
-              .toLowerCase()
-              .includes(searchQuery.trim().toLowerCase()),
+        ? courses.filter((c) =>
+            c.nombre.toLowerCase().includes(searchQuery.trim().toLowerCase()),
           )
-        : COURSES,
-    [searchQuery],
+        : courses,
+    [searchQuery, courses],
   );
   const money = (n: number) => `$ ${n % 1 === 0 ? n.toFixed(0) : n.toFixed(2)}`;
 
@@ -548,7 +550,9 @@ export default function DashboardAlumno() {
   const renderHome = () => (
     <ScrollView showsVerticalScrollIndicator={false}>
       <View style={s.welcomeBanner}>
-        <Text style={s.welcomeTitle}>¡Bienvenido de nuevo, John!</Text>
+        <Text style={s.welcomeTitle}>
+          ¡Bienvenido de nuevo, {alumnoNombre.split(" ")[0] || "Estudiante"}!
+        </Text>
         <Text
           style={[s.muted, { marginTop: 4, color: "rgba(255,255,255,0.72)" }]}
         >
@@ -583,92 +587,114 @@ export default function DashboardAlumno() {
         </TouchableOpacity>
       </View>
       <Text style={[s.muted, { marginBottom: 14, fontSize: 12 }]}>
-        Empresas recomendadas según tu área académica.
+        Empresas disponibles en Gradly.
       </Text>
-      {[
-        {
-          icon: "💼",
-          name: "TechSV Solutions",
-          sector: "Tecnología · Software",
-          horas: 45,
-          badge: "Premium",
-        },
-        {
-          icon: "📡",
-          name: "Tigo El Salvador",
-          sector: "Telecomunicaciones",
-          horas: 30,
-          badge: "Verificada",
-        },
-        {
-          icon: "🌐",
-          name: "WebFactory CR",
-          sector: "Desarrollo Web · Startup",
-          horas: 20,
-          badge: "Startup",
-        },
-      ].map((e) => (
-        <Card key={e.name} style={{ padding: 16, marginBottom: 12 }}>
-          <View style={[s.row, { gap: 12, marginBottom: 10 }]}>
-            <View style={s.empresaLogo}>
-              <Text style={{ fontSize: 20 }}>{e.icon}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.boldText}>{e.name}</Text>
-              <Text style={[s.muted, { fontSize: 12 }]}>{e.sector}</Text>
-            </View>
-            <View style={s.badgeChip}>
-              <Text style={s.badgeChipText}>{e.badge}</Text>
-            </View>
-          </View>
-          <Text style={[s.muted, { fontSize: 12, marginBottom: 10 }]}>
-            🕐{" "}
-            <Text style={{ color: C.text, fontWeight: "700" }}>{e.horas}</Text>{" "}
-            horas sociales disponibles
+      {loadingCompanies ? (
+        <Card style={{ padding: 16 }}>
+          <Text style={[s.muted, { textAlign: "center" }]}>
+            Cargando empresas...
           </Text>
-          <View style={[s.row, { gap: 8 }]}>
-            <TouchableOpacity
-              style={[s.btnOutline, { flex: 1, paddingVertical: 8 }]}
-            >
-              <Text style={[s.btnOutlineText, { fontSize: 12 }]}>
-                Ver empresa
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.btnPrimary, { flex: 1, paddingVertical: 8 }]}
-            >
-              <Text style={[s.btnPrimaryText, { fontSize: 12 }]}>
-                Solicitar horas
-              </Text>
-            </TouchableOpacity>
-          </View>
         </Card>
-      ))}
+      ) : companies.length === 0 ? (
+        <Card style={{ padding: 16 }}>
+          <Text style={[s.muted, { textAlign: "center" }]}>
+            Sin empresas disponibles.
+          </Text>
+        </Card>
+      ) : (
+        companies.slice(0, 3).map((e) => (
+          <Card key={e.id} style={{ padding: 16, marginBottom: 12 }}>
+            <View style={[s.row, { gap: 12, marginBottom: 10 }]}>
+              <View style={s.empresaLogo}>
+                {e.logo ? (
+                  <Image
+                    source={{ uri: e.logo }}
+                    style={{ width: 36, height: 36, borderRadius: 8 }}
+                  />
+                ) : (
+                  <Text style={{ fontSize: 20, fontWeight: "700", color: C.purple }}>
+                    {e.nombre.charAt(0)}
+                  </Text>
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.boldText}>{e.nombre}</Text>
+                {e.sector ? (
+                  <Text style={[s.muted, { fontSize: 12 }]}>{e.sector}</Text>
+                ) : null}
+              </View>
+            </View>
+            <View style={[s.row, { gap: 8 }]}>
+              <TouchableOpacity
+                style={[s.btnOutline, { flex: 1, paddingVertical: 8 }]}
+                onPress={() => openProfileViewer(e.id, "empresa")}
+              >
+                <Text style={[s.btnOutlineText, { fontSize: 12 }]}>
+                  Ver empresa
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.btnPrimary, { flex: 1, paddingVertical: 8 }]}
+                onPress={async () => {
+                  if (!userId) return;
+                  const { error } = await supabase
+                    .from("solicitudes_horas")
+                    .insert({
+                      alumno_id: userId,
+                      empresa_id: e.id,
+                      estado: "pendiente",
+                    });
+                  showToast(
+                    error ? "Error" : "Solicitud enviada",
+                    error
+                      ? "No se pudo enviar la solicitud."
+                      : `Solicitud enviada a ${e.nombre}.`,
+                  );
+                }}
+              >
+                <Text style={[s.btnPrimaryText, { fontSize: 12 }]}>
+                  Solicitar horas
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        ))
+      )}
 
       <Card style={{ padding: 16, marginBottom: 12 }}>
         <Text style={[s.boldText, { marginBottom: 12 }]}>
-          📋 Solicitudes pendientes
+          📋 Solicitudes de horas pendientes
         </Text>
-        {[
-          { grupo: "Ing. Sistemas – Grupo A", empresa: "TechSV Solutions" },
-          { grupo: "Diseño Gráfico – Grupo B", empresa: "WebFactory CR" },
-        ].map((item) => (
-          <View
-            key={item.grupo}
-            style={[
-              s.row,
-              { justifyContent: "space-between", marginBottom: 10 },
-            ]}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={[s.boldText, { fontSize: 13 }]}>{item.grupo}</Text>
-              <Text style={[s.muted, { fontSize: 11 }]}>{item.empresa}</Text>
-            </View>
-            <View style={s.pendingBadge}>
-              <Text style={s.pendingBadgeText}>Pendiente</Text>
-            </View>
-          </View>
-        ))}
+        {payments.filter((p) => !p.estado.toLowerCase().includes("pag"))
+          .length === 0 ? (
+          <Text style={[s.muted, { fontSize: 12 }]}>
+            Sin solicitudes pendientes.
+          </Text>
+        ) : (
+          payments
+            .filter((p) => !p.estado.toLowerCase().includes("pag"))
+            .map((item, i) => (
+              <View
+                key={i}
+                style={[
+                  s.row,
+                  { justifyContent: "space-between", marginBottom: 10 },
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.boldText, { fontSize: 13 }]}>
+                    {item.concepto}
+                  </Text>
+                  <Text style={[s.muted, { fontSize: 11 }]}>
+                    Vence: {item.vence}
+                  </Text>
+                </View>
+                <View style={s.pendingBadge}>
+                  <Text style={s.pendingBadgeText}>{item.estado}</Text>
+                </View>
+              </View>
+            ))
+        )}
       </Card>
 
       <Card style={{ padding: 16, marginBottom: 12 }}>
@@ -821,79 +847,85 @@ export default function DashboardAlumno() {
 
       {explorarTab === "empresas" && (
         <>
-          {[
-            {
-              icon: "💼",
-              name: "TechSV Solutions",
-              sector: "Tecnología · Software",
-              rating: "4.8",
-              horas: 45,
-              badge: "Premium",
-            },
-            {
-              icon: "🔬",
-              name: "BioMed Labs",
-              sector: "Ciencias · Biotecnología",
-              rating: "4.5",
-              horas: 25,
-              badge: "Verificada",
-            },
-            {
-              icon: "📦",
-              name: "LogiSV Corp",
-              sector: "Logística",
-              rating: "4.2",
-              horas: 15,
-              badge: "PYME",
-            },
-            {
-              icon: "🏦",
-              name: "Banco Agrícola",
-              sector: "Finanzas · Banca",
-              rating: "4.7",
-              horas: 60,
-              badge: "Internacional",
-            },
-          ].map((e) => (
-            <Card key={e.name} style={{ padding: 16, marginBottom: 12 }}>
-              <View style={[s.row, { gap: 12, marginBottom: 10 }]}>
-                <View style={s.empresaLogo}>
-                  <Text style={{ fontSize: 20 }}>{e.icon}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.boldText}>{e.name}</Text>
-                  <Text style={[s.muted, { fontSize: 12 }]}>{e.sector}</Text>
-                  <Text style={[s.muted, { fontSize: 11 }]}>⭐ {e.rating}</Text>
-                </View>
-                <View style={s.badgeChip}>
-                  <Text style={s.badgeChipText}>{e.badge}</Text>
-                </View>
-              </View>
-              <Text style={[s.muted, { fontSize: 12, marginBottom: 10 }]}>
-                🕐{" "}
-                <Text style={{ color: C.text, fontWeight: "700" }}>
-                  {e.horas}
-                </Text>{" "}
-                horas sociales disponibles
+          {loadingCompanies ? (
+            <Card style={{ padding: 16 }}>
+              <Text style={[s.muted, { textAlign: "center" }]}>
+                Cargando empresas...
               </Text>
-              <View style={[s.row, { gap: 8 }]}>
-                <TouchableOpacity
-                  style={[s.btnOutline, { flex: 1, paddingVertical: 8 }]}
-                >
-                  <Text style={[s.btnOutlineText, { fontSize: 12 }]}>
-                    Ver empresa
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.btnPrimary, { flex: 1, paddingVertical: 8 }]}
-                >
-                  <Text style={[s.btnPrimaryText, { fontSize: 12 }]}>
-                    Solicitar horas
-                  </Text>
-                </TouchableOpacity>
-              </View>
             </Card>
-          ))}
+          ) : companies.length === 0 ? (
+            <Card style={{ padding: 16 }}>
+              <Text style={[s.muted, { textAlign: "center" }]}>
+                Sin empresas disponibles.
+              </Text>
+            </Card>
+          ) : (
+            companies.map((e) => (
+              <Card key={e.id} style={{ padding: 16, marginBottom: 12 }}>
+                <View style={[s.row, { gap: 12, marginBottom: 10 }]}>
+                  <View style={s.empresaLogo}>
+                    {e.logo ? (
+                      <Image
+                        source={{ uri: e.logo }}
+                        style={{ width: 36, height: 36, borderRadius: 8 }}
+                      />
+                    ) : (
+                      <Text
+                        style={{
+                          fontSize: 18,
+                          fontWeight: "700",
+                          color: C.purple,
+                        }}
+                      >
+                        {e.nombre.charAt(0)}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.boldText}>{e.nombre}</Text>
+                    {e.sector ? (
+                      <Text style={[s.muted, { fontSize: 12 }]}>
+                        {e.sector}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+                <View style={[s.row, { gap: 8 }]}>
+                  <TouchableOpacity
+                    style={[s.btnOutline, { flex: 1, paddingVertical: 8 }]}
+                    onPress={() => openProfileViewer(e.id, "empresa")}
+                  >
+                    <Text style={[s.btnOutlineText, { fontSize: 12 }]}>
+                      Ver empresa
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.btnPrimary, { flex: 1, paddingVertical: 8 }]}
+                    onPress={async () => {
+                      if (!userId) return;
+                      const { error } = await supabase
+                        .from("solicitudes_horas")
+                        .insert({
+                          alumno_id: userId,
+                          empresa_id: e.id,
+                          estado: "pendiente",
+                        });
+                      showToast(
+                        error ? "Error" : "Solicitud enviada",
+                        error
+                          ? "No se pudo enviar la solicitud."
+                          : `Solicitud enviada a ${e.nombre}.`,
+                      );
+                    }}
+                  >
+                    <Text style={[s.btnPrimaryText, { fontSize: 12 }]}>
+                      Solicitar horas
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </Card>
+            ))
+          )}
         </>
       )}
 
@@ -1023,9 +1055,20 @@ export default function DashboardAlumno() {
               📅 Horario de clases
             </Text>
             <TableHeader cols={["Día", "Hora", "Materia", "Aula"]} />
-            {HORARIO_DATA.map((h, i) => (
-              <TableRow key={i} cells={[h.dia, h.hora, h.materia, h.aula]} />
-            ))}
+            {horario.length === 0 ? (
+              <Text
+                style={[s.muted, { textAlign: "center", paddingVertical: 12 }]}
+              >
+                Sin horario registrado.
+              </Text>
+            ) : (
+              horario.map((h, i) => (
+                <TableRow
+                  key={i}
+                  cells={[h.dia, h.hora, h.materia, h.aula]}
+                />
+              ))
+            )}
           </Card>
           <Card style={{ padding: 16, marginTop: 4 }}>
             <Text style={[s.boldText, { marginBottom: 4 }]}>
@@ -1105,12 +1148,22 @@ export default function DashboardAlumno() {
   const renderPerfil = () => (
     <ScrollView showsVerticalScrollIndicator={false}>
       <View style={s.profileHeader}>
-        <View style={s.profileAvatar}>
-          <Text style={s.profileAvatarText}>JD</Text>
+        <View style={[s.profileAvatar, { overflow: "hidden" }]}>
+          {profilePhotoUrl ? (
+            <Image
+              source={{ uri: profilePhotoUrl }}
+              style={{ width: 72, height: 72, borderRadius: 36 }}
+            />
+          ) : (
+            <Text style={s.profileAvatarText}>
+              {alumnoNombre.charAt(0) || "E"}
+            </Text>
+          )}
         </View>
-        <Text style={s.profileName}>John Doe</Text>
+        <Text style={s.profileName}>{alumnoNombre || "Estudiante"}</Text>
         <Text style={[s.muted, { marginTop: 4 }]}>
-          Ing. en Sistemas · Semestre 5
+          {[alumnoCarrera, alumnoSemestre].filter(Boolean).join(" · ") ||
+            "Estudiante Gradly"}
         </Text>
         <View style={[s.badgeChip, { marginTop: 10 }]}>
           <Text style={s.badgeChipText}>Estudiante activo</Text>
@@ -1119,10 +1172,10 @@ export default function DashboardAlumno() {
 
       <Card style={{ padding: 16 }}>
         {[
-          { label: "Carrera", value: "Ing. en Sistemas" },
-          { label: "Semestre", value: "5.º semestre" },
-          { label: "Correo", value: "jdoe@uni.edu.sv" },
-          { label: "Teléfono", value: "+503 7000-0000" },
+          { label: "Carrera", value: alumnoCarrera || "—" },
+          { label: "Semestre", value: alumnoSemestre || "—" },
+          { label: "Correo", value: alumnoEmail || "—" },
+          { label: "Teléfono", value: alumnoTel || "—" },
         ].map((item) => (
           <View
             key={item.label}
@@ -1334,7 +1387,9 @@ export default function DashboardAlumno() {
                 style={{ width: 72, height: 72, borderRadius: 36 }}
               />
             ) : (
-              <Text style={s.profileAvatarText}>JD</Text>
+              <Text style={s.profileAvatarText}>
+                {alumnoNombre.charAt(0) || "E"}
+              </Text>
             )}
           </TouchableOpacity>
           <Text style={[s.muted, { fontSize: 12, marginTop: 8 }]}>
@@ -1400,11 +1455,17 @@ export default function DashboardAlumno() {
               onPress={async () => {
                 if (!userId) return;
                 const ok = await updateUserProfile(userId, "alumnos", {
-                  nombre: editNombre,
+                  nombre_completo: editNombre,
                   email: editCorreo,
                   telefono: editTel,
                 });
                 if (ok) {
+                  setAlumnoNombre(editNombre);
+                  setAlumnoEmail(editCorreo);
+                  setAlumnoTel(editTel);
+                  setCfgNombre(editNombre);
+                  setCfgEmail(editCorreo);
+                  setCfgTel(editTel);
                   showToast(
                     "Perfil actualizado",
                     "Tus datos fueron guardados.",
@@ -1586,9 +1647,20 @@ export default function DashboardAlumno() {
           </View>
           <TouchableOpacity
             style={[s.btnPrimary, { marginTop: 8 }]}
-            onPress={() =>
-              showToast("Guardado", "Datos actualizados correctamente.")
-            }
+            onPress={async () => {
+              if (!userId) return;
+              const { error } = await supabase
+                .from("alumnos")
+                .update({ nombre_completo: cfgNombre, telefono: cfgTel })
+                .eq("id", userId);
+              if (error)
+                showToast("Error", "No se pudieron guardar los cambios.");
+              else {
+                setAlumnoNombre(cfgNombre);
+                setAlumnoTel(cfgTel);
+                showToast("Guardado", "Datos actualizados correctamente.");
+              }
+            }}
           >
             <Text style={s.btnPrimaryText}>Guardar cambios</Text>
           </TouchableOpacity>
@@ -1633,9 +1705,25 @@ export default function DashboardAlumno() {
           </View>
           <TouchableOpacity
             style={[s.btnPrimary, { marginTop: 8 }]}
-            onPress={() =>
-              showToast("Contraseña actualizada", "Se cambió correctamente.")
-            }
+            onPress={async () => {
+              if (!cfgPwdNew || cfgPwdNew !== cfgPwdConfirm) {
+                showToast("Error", "Las contraseñas no coinciden.");
+                return;
+              }
+              const { error } = await supabase.auth.updateUser({
+                password: cfgPwdNew,
+              });
+              if (error) showToast("Error", error.message);
+              else {
+                setCfgPwdActual("");
+                setCfgPwdNew("");
+                setCfgPwdConfirm("");
+                showToast(
+                  "Contraseña actualizada",
+                  "Se cambió correctamente.",
+                );
+              }
+            }}
           >
             <Text style={s.btnPrimaryText}>Cambiar contraseña</Text>
           </TouchableOpacity>
@@ -2110,8 +2198,15 @@ export default function DashboardAlumno() {
 
   return (
     <SafeAreaView style={s.root}>
-      {/* ── Topbar */}
-      <View style={s.topbar}>
+      {/* ── Topbar universal */}
+      <UniversalHeader
+        userName={alumnoNombre}
+        userSubtitle="Estudiante"
+        profilePhotoUrl={profilePhotoUrl}
+        userId={userId}
+      />
+      {/* ── Sub-nav (back / menu + título de página) */}
+      <View style={[s.topbar, { paddingVertical: 8 }]}>
         <View style={[s.row, { gap: 8 }]}>
           {isSubView || isSidebarExtra ? (
             <TouchableOpacity
@@ -2130,59 +2225,9 @@ export default function DashboardAlumno() {
               <Ionicons name="menu-outline" size={24} color={C.text} />
             </TouchableOpacity>
           )}
-          <View style={s.brandBadge}>
-            <Text style={s.brandBadgeText}>G</Text>
-          </View>
           <TranslatedText style={s.topbarTitle}>
             {PAGE_LABELS[activePage]}
           </TranslatedText>
-        </View>
-        <View style={[s.row, { gap: 10 }]}>
-          <View style={s.topbarUserChip}>
-            <Text style={s.topbarUserName}>John Doe</Text>
-          </View>
-          <TouchableOpacity
-            style={s.iconBtn}
-            onPress={toggleLanguage}
-            accessibilityLabel="Cambiar idioma"
-          >
-            <Ionicons name="planet-outline" size={22} color={C.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={s.iconBtn}
-            onPress={toggleTheme}
-            accessibilityLabel="Cambiar tema"
-          >
-            <Ionicons
-              name={darkMode ? "sunny-outline" : "moon-outline"}
-              size={22}
-              color={C.text}
-            />
-          </TouchableOpacity>
-          {languageMenuOpen && (
-            <TouchableOpacity
-              style={s.languageMenuBackdrop}
-              activeOpacity={1}
-              onPress={() => setLanguageMenuOpen(false)}
-            >
-              <View style={s.languageMenu}>
-                <TouchableOpacity
-                  style={s.languageMenuItem}
-                  onPress={handleChangeLanguage}
-                  activeOpacity={0.8}
-                >
-                  <Text style={s.languageMenuText}>{languageOptionLabel}</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={s.iconBtn}
-            onPress={() => setNotifVisible(true)}
-            accessibilityLabel="Notificaciones"
-          >
-            <Ionicons name="notifications-outline" size={22} color={C.text} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -2290,25 +2335,36 @@ export default function DashboardAlumno() {
               </TouchableOpacity>
             </View>
             <ScrollView style={s.modalBody}>
-              {AVISOS.map((aviso, idx) => (
-                <View
-                  key={idx}
-                  style={[s.card, { padding: 14, marginBottom: 8 }]}
+              {avisos.length === 0 ? (
+                <Text
+                  style={[
+                    s.muted,
+                    { textAlign: "center", paddingVertical: 20 },
+                  ]}
                 >
+                  Sin avisos por el momento.
+                </Text>
+              ) : (
+                avisos.map((aviso, idx) => (
                   <View
-                    style={[
-                      s.row,
-                      { justifyContent: "space-between", marginBottom: 6 },
-                    ]}
+                    key={idx}
+                    style={[s.card, { padding: 14, marginBottom: 8 }]}
                   >
-                    <Text style={s.boldText}>{aviso.titulo}</Text>
-                    <Text style={[s.muted, { fontSize: 11 }]}>
-                      {aviso.fecha}
-                    </Text>
+                    <View
+                      style={[
+                        s.row,
+                        { justifyContent: "space-between", marginBottom: 6 },
+                      ]}
+                    >
+                      <Text style={s.boldText}>{aviso.titulo}</Text>
+                      <Text style={[s.muted, { fontSize: 11 }]}>
+                        {aviso.fecha}
+                      </Text>
+                    </View>
+                    <Text style={s.body}>{aviso.contenido}</Text>
                   </View>
-                  <Text style={s.body}>{aviso.contenido}</Text>
-                </View>
-              ))}
+                ))
+              )}
               <View style={{ height: 8 }} />
             </ScrollView>
           </View>
@@ -2438,33 +2494,39 @@ export default function DashboardAlumno() {
           <Text style={[s.sectionLabel, { marginBottom: 10 }]}>
             Estudiantes del grupo
           </Text>
-          {GROUP_STUDENTS.map((nombre, i) => (
-            <View key={i} style={[s.row, { gap: 12, marginBottom: 10 }]}>
-              <View
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 18,
-                  backgroundColor: STUDENT_COLORS[i % STUDENT_COLORS.length],
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <Text
-                  style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}
+          {grupoCompaneros.length === 0 ? (
+            <Text style={[s.muted, { fontSize: 12 }]}>
+              Sin compañeros registrados en este grupo.
+            </Text>
+          ) : (
+            grupoCompaneros.map((nombre, i) => (
+              <View key={i} style={[s.row, { gap: 12, marginBottom: 10 }]}>
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: STUDENT_COLORS[i % STUDENT_COLORS.length],
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
                 >
-                  {nombre.charAt(0)}
-                </Text>
+                  <Text
+                    style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}
+                  >
+                    {nombre.charAt(0)}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.boldText}>{nombre}</Text>
+                  <Text style={[s.muted, { fontSize: 11 }]}>
+                    Estudiante activo
+                  </Text>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.boldText}>{nombre}</Text>
-                <Text style={[s.muted, { fontSize: 11 }]}>
-                  Estudiante activo
-                </Text>
-              </View>
-            </View>
-          ))}
+            ))
+          )}
 
           <Divider />
           <Text style={[s.sectionLabel, { marginBottom: 10 }]}>
