@@ -281,8 +281,8 @@ await logout();
 Crea un archivo `.env.local` en la raíz del proyecto:
 
 ```env
-EXPO_PUBLIC_SUPABASE_URL=https://kbevyjupphyxrgcvdsgv.supabase.co/rest/v1/
-EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_-CLkZKX7jyJuzOA0QEG4uQ_JopGLyhE
+EXPO_PUBLIC_SUPABASE_URL=https://kbevyjupphyxrgcvdsgv.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=TU_SUPABASE_ANON_KEY
 ```
 
 Para cambiar en futuro desde variable de entorno:

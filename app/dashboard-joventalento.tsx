@@ -25,6 +25,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import BuscadorExplorador from "../components/BuscadorExplorador";
 import TranslatedText from "../components/TranslatedText";
 import { supabase } from "../lib/supabase";
 import {
@@ -508,6 +509,8 @@ export default function DashboardJovenTalento() {
   const [vacantes, setVacantes] = useState<VacanteDB[]>([]);
   const [loadingVacantes, setLoadingVacantes] = useState(true);
   const [agendaCounts, setAgendaCounts] = useState({ postulaciones: 0, horasSociales: 0 });
+  const [trabajos, setTrabajos] = useState<any[]>([]);
+  const [loadingTrabajos, setLoadingTrabajos] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -597,6 +600,16 @@ export default function DashboardJovenTalento() {
         postulaciones: postCount ?? 0,
         horasSociales: horasCount ?? 0,
       });
+
+      // Load trabajos (contrataciones)
+      setLoadingTrabajos(true);
+      const { data: trabs } = await supabase
+        .from("pagos_trabajos")
+        .select("*, vacantes(titulo, area), empresas(nombre, foto_logo)")
+        .eq("trabajador_id", currentUserId)
+        .order("created_at", { ascending: false });
+      setTrabajos(trabs ?? []);
+      setLoadingTrabajos(false);
     })();
   }, [currentUserId]);
 
@@ -1627,6 +1640,17 @@ export default function DashboardJovenTalento() {
           Aun no has publicado ningun proyecto. Comparte tu primer trabajo!
         </Text>
       </Card>
+      <Kicker text="Explorar" />
+      <Text style={[st.sectionTitle, { fontSize: 20, marginBottom: 12 }]}>
+        Descubrir empresas
+      </Text>
+      <BuscadorExplorador
+        viewerUserId={currentUserId ?? ""}
+        theme={C.bg === "#07050f" ? "dark" : "light"}
+        tabs={["empresas"]}
+        containerStyle={{ marginBottom: 20 }}
+      />
+
       <Kicker text="Servicios" />
       <Text style={[st.sectionTitle, { fontSize: 20, marginBottom: 4 }]}>
         Mis servicios freelance
@@ -1771,10 +1795,60 @@ export default function DashboardJovenTalento() {
       showsVerticalScrollIndicator={false}
       contentContainerStyle={st.sectionContent}
     >
-      <SectionTitle text="Pagos" />
+      <SectionTitle text="Pagos y Trabajos" />
       <Text style={[st.muted, { marginBottom: 20 }]}>
-        Gestiona tus ingresos y metodos de retiro.
+        Gestiona tus ingresos, contrataciones y metodos de retiro.
       </Text>
+
+      {/* Mis Trabajos (contrataciones reales) */}
+      <Text style={[st.subsectionTitle, { marginBottom: 12 }]}>Mis Trabajos</Text>
+      {loadingTrabajos ? (
+        <View style={[st.card, { padding: 24, alignItems: "center", marginBottom: 16 }]}>
+          <Ionicons name="time-outline" size={24} color={C.muted} />
+          <Text style={[st.muted, { marginTop: 8, fontSize: 13 }]}>Cargando trabajos...</Text>
+        </View>
+      ) : trabajos.length === 0 ? (
+        <View style={[st.card, { padding: 24, alignItems: "center", marginBottom: 16 }]}>
+          <Ionicons name="briefcase-outline" size={32} color={C.muted} />
+          <Text style={[st.muted, { marginTop: 8, fontSize: 13, textAlign: "center" }]}>
+            Aun no tienes contrataciones. Aplica a vacantes para comenzar.
+          </Text>
+        </View>
+      ) : (
+        <View style={{ marginBottom: 16, gap: 10 }}>
+          {trabajos.map((t) => (
+            <View
+              key={t.id}
+              style={[st.card, { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 }]}
+            >
+              <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: C.purpleDim, alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                {t.empresas?.foto_logo ? (
+                  <Image source={{ uri: t.empresas.foto_logo }} style={{ width: 40, height: 40 }} />
+                ) : (
+                  <Ionicons name="business-outline" size={18} color={C.purple} />
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: C.text, fontWeight: "700", fontSize: 14 }}>
+                  {t.vacantes?.titulo ?? "Trabajo"}
+                </Text>
+                <Text style={[st.muted, { fontSize: 12 }]}>
+                  {t.empresas?.nombre ?? "Empresa"} · {t.vacantes?.area ?? ""}
+                </Text>
+              </View>
+              <View style={[st.badge, {
+                backgroundColor: t.estado === "activo" ? C.greenBg : C.purpleDim,
+                borderColor: t.estado === "activo" ? C.greenBorder : C.purpleBorder,
+              }]}>
+                <Text style={[st.badgeText, { color: t.estado === "activo" ? C.greenBright : C.purple }]}>
+                  {t.estado === "activo" ? "Activo" : t.estado}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
       <View style={[st.card, st.financialCard, { marginBottom: 16 }]}>
         <Text style={[st.subsectionTitle, { marginBottom: 16 }]}>
           Resumen financiero
@@ -2168,18 +2242,26 @@ export default function DashboardJovenTalento() {
           </View>
         ))}
       </Card>
-      <TouchableOpacity
-        style={[st.btnOutline, { marginBottom: 40 }]}
-        onPress={() => setSubPage("config")}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Ionicons name="settings-outline" size={20} color={C.purple} />
-          <Text style={[st.btnOutlineText, { flex: 1, textAlign: "left" }]}>
-            Configuracion
-          </Text>
-          <Ionicons name="chevron-forward-outline" size={16} color={C.muted} />
-        </View>
-      </TouchableOpacity>
+      {[
+        { label: "Configuración", icon: "settings-outline" as const, page: "config" as const },
+        { label: "Ayuda y soporte", icon: "help-circle-outline" as const, page: "ayuda" as const },
+        { label: "Acerca de Gradly", icon: "information-circle-outline" as const, page: "acercade" as const },
+      ].map((item) => (
+        <TouchableOpacity
+          key={item.label}
+          style={[st.btnOutline, { marginBottom: 10 }]}
+          onPress={() => setSubPage(item.page)}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Ionicons name={item.icon} size={20} color={C.purple} />
+            <Text style={[st.btnOutlineText, { flex: 1, textAlign: "left" }]}>
+              {item.label}
+            </Text>
+            <Ionicons name="chevron-forward-outline" size={16} color={C.muted} />
+          </View>
+        </TouchableOpacity>
+      ))}
+      <View style={{ height: 40 }} />
     </ScrollView>
   );
 

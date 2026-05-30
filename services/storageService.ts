@@ -23,11 +23,11 @@ export async function pickAndUploadImage(
       quality: 0.85,
     });
 
-    if (result.cancelled) {
+    if (result.canceled) {
       return null;
     }
 
-    const uri = result.uri;
+    const uri = result.assets[0].uri;
     const response = await fetch(uri);
     if (!response.ok) {
       throw new Error(`Error al leer la imagen local: ${response.status}`);
@@ -43,12 +43,12 @@ export async function pickAndUploadImage(
     }
 
     if (bucket === "public-media") {
-      const { data, error: urlError } = await supabase.storage
+      const { data } = supabase.storage
         .from(bucket)
         .getPublicUrl(destinationPath);
 
-      if (urlError || !data?.publicUrl) {
-        throw urlError || new Error("No se pudo obtener la URL pública.");
+      if (!data?.publicUrl) {
+        throw new Error("No se pudo obtener la URL pública.");
       }
 
       return data.publicUrl;

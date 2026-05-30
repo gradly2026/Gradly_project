@@ -27,6 +27,12 @@ import {
   View,
 } from "react-native";
 import { supabase } from "../lib/supabase";
+import AgendarEntrevistaModal from "../components/AgendarEntrevistaModal";
+import BuscadorExplorador from "../components/BuscadorExplorador";
+import PropuestaCondicionesModal from "../components/PropuestaCondicionesModal";
+import CambiarPasswordModal from "../components/CambiarPasswordModal";
+import RechazarModal from "../components/RechazarModal";
+import UpgradePlanModal from "../components/UpgradePlanModal";
 import UniversalHeader from "../src/components/UniversalHeader";
 import { useThemeContext } from "../src/context/ThemeContext";
 
@@ -133,6 +139,10 @@ export default function DashboardEmpresa() {
   const [formSalMin, setFormSalMin] = useState("");
   const [formSalMax, setFormSalMax] = useState("");
   const [formMostrarSal, setFormMostrarSal] = useState(false);
+  const [formAplicaHoras, setFormAplicaHoras] = useState(false);
+  const [showUpgradePlan, setShowUpgradePlan] = useState(false);
+  const [planActual, setPlanActual] = useState<string>("basico");
+  const [planLimite, setPlanLimite] = useState<number>(3);
   const [savingVacante, setSavingVacante] = useState(false);
   const [selectedVacante, setSelectedVacante] = useState<Vacante | null>(null);
   const [showVacanteDetail, setShowVacanteDetail] = useState(false);
@@ -141,6 +151,10 @@ export default function DashboardEmpresa() {
   const [aplicaciones, setAplicaciones] = useState<Aplicacion[]>([]);
   const [kanbanTab, setKanbanTab] = useState("pendiente");
   const [loadingCand, setLoadingCand] = useState(false);
+  const [selectedCand, setSelectedCand] = useState<Aplicacion | null>(null);
+  const [showAgendarModal, setShowAgendarModal] = useState(false);
+  const [showRechazarModal, setShowRechazarModal] = useState(false);
+  const [contratando, setContratando] = useState<string | null>(null);
 
   // ── Horas Sociales ────────────────────────────────────────────────────────
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([]);
@@ -148,6 +162,8 @@ export default function DashboardEmpresa() {
   const [loadingHoras, setLoadingHoras] = useState(false);
   const [showEvalModal, setShowEvalModal] = useState(false);
   const [evalEstudiante, setEvalEstudiante] = useState<any>(null);
+  const [selectedSolicitud, setSelectedSolicitud] = useState<Solicitud | null>(null);
+  const [showPropuestaModal, setShowPropuestaModal] = useState(false);
   const [evalGrupoId, setEvalGrupoId] = useState<string>("");
   const [evalPuntualidad, setEvalPuntualidad] = useState(0);
   const [evalDisciplina, setEvalDisciplina] = useState(0);
@@ -158,6 +174,7 @@ export default function DashboardEmpresa() {
   const [savingEval, setSavingEval] = useState(false);
 
   // ── Mi Perfil ─────────────────────────────────────────────────────────────
+  const [perfilMode, setPerfilMode] = useState<"view" | "edit">("view");
   const [editNombre, setEditNombre] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [editTel, setEditTel] = useState("");
@@ -168,8 +185,17 @@ export default function DashboardEmpresa() {
   const [editDep, setEditDep] = useState("");
   const [editCiudad, setEditCiudad] = useState("");
   const [editDireccion, setEditDireccion] = useState("");
+  const [editRepNombre, setEditRepNombre] = useState("");
+  const [editRepCargo, setEditRepCargo] = useState("");
+  const [editRepEmail, setEditRepEmail] = useState("");
+  const [editRepTel, setEditRepTel] = useState("");
   const [savingPerfil, setSavingPerfil] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [showAcercaModal, setShowAcercaModal] = useState(false);
+  const [showAyudaModal, setShowAyudaModal] = useState(false);
+  const [showCambiarPass, setShowCambiarPass] = useState(false);
+  const [ayudaMsg, setAyudaMsg] = useState("");
+  const [sendingAyuda, setSendingAyuda] = useState(false);
 
   const toastId = useRef(0);
 
@@ -252,6 +278,10 @@ export default function DashboardEmpresa() {
       setEditDep(data.departamento ?? "");
       setEditCiudad(data.ciudad ?? "");
       setEditDireccion(data.direccion ?? "");
+      setEditRepNombre(data.representante_nombre ?? "");
+      setEditRepCargo(data.representante_cargo ?? "");
+      setEditRepEmail(data.representante_email ?? "");
+      setEditRepTel(data.representante_telefono ?? "");
     }
   };
 
@@ -389,7 +419,34 @@ export default function DashboardEmpresa() {
     setFormModalidad("presencial");
     setFormTipo("tiempo_completo");
     setFormMostrarSal(false);
+    setFormAplicaHoras(false);
     setVacanteStep(1);
+  };
+
+  const checkPlanYAbrirModal = async () => {
+    const activas = vacantes.filter((v) => v.estado === "activa").length;
+    // Load suscripcion if not cached
+    let limite = planLimite;
+    let plan = planActual;
+    try {
+      const { data: sub } = await supabase
+        .from("suscripciones_empresas")
+        .select("plan, max_vacantes")
+        .eq("empresa_id", userId)
+        .maybeSingle();
+      if (sub) {
+        plan = sub.plan ?? "basico";
+        limite = sub.max_vacantes ?? 3;
+        setPlanActual(plan);
+        setPlanLimite(limite);
+      }
+    } catch (_) {}
+    if (activas >= limite) {
+      setShowUpgradePlan(true);
+    } else {
+      resetVacanteForm();
+      setShowVacanteModal(true);
+    }
   };
 
   const guardarVacante = async () => {
@@ -412,6 +469,7 @@ export default function DashboardEmpresa() {
             salario_min: formSalMin ? parseFloat(formSalMin) : null,
             salario_max: formSalMax ? parseFloat(formSalMax) : null,
             mostrar_salario: formMostrarSal,
+            aplica_horas_sociales: formAplicaHoras,
             estado: "activa",
           },
         ])
@@ -452,6 +510,23 @@ export default function DashboardEmpresa() {
     ]);
   };
 
+  const eliminarVacante = async (id: string) => {
+    Alert.alert("Eliminar vacante", "¿Eliminar esta vacante permanentemente?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Eliminar",
+        style: "destructive",
+        onPress: async () => {
+          const { error } = await supabase.from("vacantes").delete().eq("id", id);
+          if (!error) {
+            setVacantes((p) => p.filter((v) => v.id !== id));
+            toast("Vacante eliminada.", "info");
+          }
+        },
+      },
+    ]);
+  };
+
   // ── Candidatos ────────────────────────────────────────────────────────────
 
   const cambiarEstadoAplicacion = async (
@@ -473,6 +548,55 @@ export default function DashboardEmpresa() {
       );
       toast(`Candidato movido a "${nuevoEstado}".`, "ok");
     }
+  };
+
+  const contratar = async (ap: Aplicacion) => {
+    Alert.alert(
+      "Contratar candidato",
+      `¿Confirmas la contratación de ${ap._solicitante?.nombre ?? "este candidato"}?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Contratar",
+          onPress: async () => {
+            setContratando(ap.id);
+            try {
+              await supabase
+                .from("aplicaciones")
+                .update({ estado: "contratada" })
+                .eq("id", ap.id);
+
+              await supabase.from("pagos_trabajos").insert({
+                aplicacion_id: ap.id,
+                empresa_id: userId,
+                trabajador_id: ap.solicitante_id,
+                vacante_id: ap.vacante_id ?? null,
+                estado: "activo",
+              });
+
+              await supabase.from("notificaciones").insert({
+                usuario_id: ap.solicitante_id,
+                tipo: "contratacion",
+                titulo: "¡Felicidades! Has sido contratado",
+                mensaje: ap.vacantes?.titulo
+                  ? `Has sido contratado para "${ap.vacantes.titulo}". La empresa te contactará con los detalles.`
+                  : "Has sido contratado. La empresa te contactará con los detalles.",
+                leida: false,
+              });
+
+              setAplicaciones((p) =>
+                p.map((a) => (a.id === ap.id ? { ...a, estado: "contratada" } : a))
+              );
+              toast("Candidato contratado exitosamente.", "ok");
+            } catch (e: any) {
+              toast(e?.message ?? "Error al contratar.", "err");
+            } finally {
+              setContratando(null);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // ── Horas Sociales ────────────────────────────────────────────────────────
@@ -566,10 +690,15 @@ export default function DashboardEmpresa() {
           departamento: editDep.trim(),
           ciudad: editCiudad.trim(),
           direccion: editDireccion.trim(),
+          representante_nombre: editRepNombre.trim(),
+          representante_cargo: editRepCargo.trim(),
+          representante_email: editRepEmail.trim(),
+          representante_telefono: editRepTel.trim(),
         })
         .eq("id", userId);
       if (error) throw error;
       await loadEmpresa(userId);
+      setPerfilMode("view");
       toast("Perfil actualizado correctamente.", "ok");
     } catch (e: any) {
       toast(e?.message ?? "Error al guardar perfil.", "err");
@@ -694,7 +823,7 @@ export default function DashboardEmpresa() {
       <View style={st.quickActions}>
         <TouchableOpacity
           style={[st.qaBtn, { backgroundColor: C.purple }]}
-          onPress={() => { setShowVacanteModal(true); setTab("vacantes"); }}
+          onPress={() => { checkPlanYAbrirModal(); setTab("vacantes"); }}
         >
           <Ionicons name="add-circle-outline" size={18} color="#fff" />
           <Text style={st.qaBtnText}>Nueva vacante</Text>
@@ -738,6 +867,14 @@ export default function DashboardEmpresa() {
           </TouchableOpacity>
         ))
       )}
+
+      {/* Explorador */}
+      <Text style={[st.sectionLabel, { color: C.muted, marginTop: 8 }]}>EXPLORAR TALENTOS</Text>
+      <BuscadorExplorador
+        viewerUserId={userId ?? ""}
+        theme={isDark ? "dark" : "light"}
+        tabs={["talentos", "alumnos"]}
+      />
     </ScrollView>
   );
 
@@ -750,7 +887,7 @@ export default function DashboardEmpresa() {
     >
       <TouchableOpacity
         style={[st.createBtn, { backgroundColor: C.purple }]}
-        onPress={() => { resetVacanteForm(); setShowVacanteModal(true); }}
+        onPress={checkPlanYAbrirModal}
       >
         <Ionicons name="add-circle-outline" size={20} color="#fff" />
         <Text style={st.createBtnText}>Publicar nueva vacante</Text>
@@ -784,6 +921,9 @@ export default function DashboardEmpresa() {
                   <Ionicons name="close-circle-outline" size={22} color={C.red} />
                 </TouchableOpacity>
               )}
+              <TouchableOpacity onPress={() => eliminarVacante(v.id)}>
+                <Ionicons name="trash-outline" size={20} color={C.muted} />
+              </TouchableOpacity>
             </View>
           </View>
         ))
@@ -838,50 +978,84 @@ export default function DashboardEmpresa() {
               </View>
             ) : (
               filtrados.map((ap) => (
-                <View key={ap.id} style={[st.candCard, { backgroundColor: C.surface, borderColor: C.border }]}>
-                  <View style={[st.candAvatar, { backgroundColor: C.purpleDim }]}>
-                    {ap._solicitante?.foto_perfil ? (
-                      <Image source={{ uri: ap._solicitante.foto_perfil }} style={{ width: 40, height: 40, borderRadius: 20 }} />
-                    ) : (
-                      <Text style={{ color: C.purple, fontSize: 16, fontWeight: "700" }}>
-                        {ap._solicitante?.nombre?.[0]?.toUpperCase() ?? "?"}
-                      </Text>
-                    )}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[{ color: C.text, fontWeight: "700", fontSize: 14 }]}>
-                      {ap._solicitante?.nombre ?? "Sin nombre"}
-                    </Text>
-                    <Text style={[{ color: C.muted, fontSize: 12 }]}>
-                      {ap.vacantes?.titulo ?? "Vacante eliminada"}
-                    </Text>
-                    {(ap.estado === "entrevista" || ap.estado === "contratada") && (
-                      <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
-                        <Text style={{ color: C.purple, fontSize: 11 }}>
-                          📧 {ap._solicitante?.email ?? "—"}
+                <View key={ap.id} style={[st.candCard, { backgroundColor: C.surface, borderColor: C.border, flexDirection: "column", gap: 10 }]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    <View style={[st.candAvatar, { backgroundColor: C.purpleDim }]}>
+                      {ap._solicitante?.foto_perfil ? (
+                        <Image source={{ uri: ap._solicitante.foto_perfil }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                      ) : (
+                        <Text style={{ color: C.purple, fontSize: 16, fontWeight: "700" }}>
+                          {ap._solicitante?.nombre?.[0]?.toUpperCase() ?? "?"}
                         </Text>
-                        {ap._solicitante?.telefono ? (
-                          <Text style={{ color: C.purple, fontSize: 11 }}>
-                            📞 {ap._solicitante.telefono}
-                          </Text>
-                        ) : null}
-                      </View>
-                    )}
-                  </View>
-                  {/* Cambiar estado */}
-                  <TouchableOpacity
-                    onPress={() => {
-                      const cols = KANBAN_COLS.map((c) => c.key);
-                      const idx = cols.indexOf(ap.estado);
-                      const next = cols[idx + 1];
-                      if (!next) return;
-                      cambiarEstadoAplicacion(ap.id, next);
-                    }}
-                  >
-                    <View style={[st.estadoBadge, { backgroundColor: C.purpleDim }]}>
-                      <Ionicons name="arrow-forward-outline" size={14} color={C.purple} />
+                      )}
                     </View>
-                  </TouchableOpacity>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: C.text, fontWeight: "700", fontSize: 14 }}>
+                        {ap._solicitante?.nombre ?? "Sin nombre"}
+                      </Text>
+                      <Text style={{ color: C.muted, fontSize: 12 }}>
+                        {ap.vacantes?.titulo ?? "Vacante eliminada"}
+                      </Text>
+                      {(ap.estado === "entrevista" || ap.estado === "contratada") && (
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                          <Text style={{ color: C.purple, fontSize: 11 }}>
+                            📧 {ap._solicitante?.email ?? "—"}
+                          </Text>
+                          {ap._solicitante?.telefono ? (
+                            <Text style={{ color: C.purple, fontSize: 11 }}>
+                              📞 {ap._solicitante.telefono}
+                            </Text>
+                          ) : null}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Action buttons por estado */}
+                  {ap.estado !== "rechazada" && ap.estado !== "contratada" && (
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      {(ap.estado === "pendiente" || ap.estado === "en_revision") && (
+                        <TouchableOpacity
+                          style={[st.candActionBtn, { backgroundColor: C.purpleDim, borderColor: C.purpleBorder, flex: 1 }]}
+                          onPress={() => {
+                            setSelectedCand(ap);
+                            setShowAgendarModal(true);
+                          }}
+                        >
+                          <Ionicons name="calendar-outline" size={14} color={C.purple} />
+                          <Text style={{ color: C.purple, fontSize: 12, fontWeight: "600" }}>Agendar</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {ap.estado === "entrevista" && (
+                        <TouchableOpacity
+                          style={[st.candActionBtn, { backgroundColor: C.greenBg, borderColor: C.greenBorder, flex: 1 }]}
+                          onPress={() => contratar(ap)}
+                          disabled={contratando === ap.id}
+                        >
+                          {contratando === ap.id ? (
+                            <ActivityIndicator size="small" color={C.green} />
+                          ) : (
+                            <>
+                              <Ionicons name="checkmark-circle-outline" size={14} color={C.green} />
+                              <Text style={{ color: C.green, fontSize: 12, fontWeight: "600" }}>Contratar</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      )}
+
+                      <TouchableOpacity
+                        style={[st.candActionBtn, { backgroundColor: C.redBg, borderColor: C.red }]}
+                        onPress={() => {
+                          setSelectedCand(ap);
+                          setShowRechazarModal(true);
+                        }}
+                      >
+                        <Ionicons name="close-circle-outline" size={14} color={C.red} />
+                        <Text style={{ color: C.red, fontSize: 12, fontWeight: "600" }}>Rechazar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               ))
             )}
@@ -959,25 +1133,42 @@ export default function DashboardEmpresa() {
                     {s.estado === "pendiente" && (
                       <>
                         <TouchableOpacity
+                          style={[st.smallBtn, { backgroundColor: C.purpleDim, borderColor: C.purpleBorder, borderWidth: 1 }]}
+                          onPress={() => {
+                            setSelectedSolicitud(s);
+                            setShowPropuestaModal(true);
+                          }}
+                        >
+                          <Text style={{ color: C.purple, fontSize: 11, fontWeight: "700" }}>Proponer</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
                           style={[st.smallBtn, { backgroundColor: C.green }]}
                           onPress={() => aprobarSolicitud(s.id)}
                         >
                           <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Aprobar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={[st.smallBtn, { backgroundColor: C.purpleDim, borderColor: C.purpleBorder, borderWidth: 1 }]}
+                          style={[st.smallBtn, { backgroundColor: C.redBg, borderColor: C.red, borderWidth: 1 }]}
                           onPress={async () => {
                             await supabase
                               .from("solicitudes_horas")
-                              .update({ estado: "en_revision" })
+                              .update({ estado: "rechazada" })
                               .eq("id", s.id);
-                            setSolicitudes((p) => p.map((x) => x.id === s.id ? { ...x, estado: "en_revision" } : x));
-                            toast("Solicitud en revisión.", "info");
+                            setSolicitudes((p) => p.map((x) => x.id === s.id ? { ...x, estado: "rechazada" } : x));
+                            toast("Solicitud rechazada.", "info");
                           }}
                         >
-                          <Text style={{ color: C.purple, fontSize: 11, fontWeight: "700" }}>Revisar</Text>
+                          <Text style={{ color: C.red, fontSize: 11, fontWeight: "700" }}>Rechazar</Text>
                         </TouchableOpacity>
                       </>
+                    )}
+                    {s.estado === "en_revision" && (
+                      <TouchableOpacity
+                        style={[st.smallBtn, { backgroundColor: C.green }]}
+                        onPress={() => aprobarSolicitud(s.id)}
+                      >
+                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Aprobar</Text>
+                      </TouchableOpacity>
                     )}
                     {s.estado === "aprobada" && (
                       <TouchableOpacity
@@ -1005,9 +1196,9 @@ export default function DashboardEmpresa() {
 
   const renderPerfil = () => (
     <ScrollView contentContainerStyle={st.scroll}>
-      {/* Logo */}
+      {/* Header con logo y botón editar/cancelar */}
       <View style={[st.perfilHeader, { backgroundColor: C.surface, borderColor: C.border }]}>
-        <TouchableOpacity onPress={cambiarLogo} style={[st.logoWrap, { width: 72, height: 72 }]}>
+        <TouchableOpacity onPress={perfilMode === "edit" ? cambiarLogo : undefined} style={[st.logoWrap, { width: 72, height: 72 }]}>
           {uploadingLogo ? (
             <ActivityIndicator color={C.purple} />
           ) : empresa?.foto_logo ? (
@@ -1015,60 +1206,157 @@ export default function DashboardEmpresa() {
           ) : (
             <Ionicons name="business-outline" size={32} color={C.purple} />
           )}
-          <View style={[st.editBadge, { backgroundColor: C.purple }]}>
-            <Ionicons name="camera-outline" size={10} color="#fff" />
-          </View>
+          {perfilMode === "edit" && (
+            <View style={[st.editBadge, { backgroundColor: C.purple }]}>
+              <Ionicons name="camera-outline" size={10} color="#fff" />
+            </View>
+          )}
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={[{ color: C.text, fontWeight: "700", fontSize: 16 }]}>{empresa?.nombre ?? "Mi Empresa"}</Text>
-          <Text style={[{ color: C.muted, fontSize: 12 }]}>{empresa?.industria ?? "—"}</Text>
+          <Text style={{ color: C.text, fontWeight: "700", fontSize: 16 }}>{empresa?.nombre ?? "Mi Empresa"}</Text>
+          <Text style={{ color: C.muted, fontSize: 12 }}>{empresa?.industria ?? "—"}</Text>
         </View>
+        <TouchableOpacity
+          style={[st.editToggleBtn, { borderColor: C.purpleBorder, backgroundColor: perfilMode === "edit" ? C.purpleDim : "transparent" }]}
+          onPress={() => setPerfilMode(perfilMode === "view" ? "edit" : "view")}
+        >
+          <Ionicons name={perfilMode === "edit" ? "close-outline" : "create-outline"} size={16} color={C.purple} />
+          <Text style={{ color: C.purple, fontSize: 12, fontWeight: "600" }}>
+            {perfilMode === "edit" ? "Cancelar" : "Editar"}
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Campos de edición */}
-      {[
-        { label: "Nombre de la empresa", val: editNombre, set: setEditNombre },
-        { label: "Descripción", val: editDesc, set: setEditDesc, multi: true },
-        { label: "Teléfono", val: editTel, set: setEditTel, kb: "phone-pad" as const },
-        { label: "Email corporativo", val: editEmail, set: setEditEmail, kb: "email-address" as const },
-        { label: "Sitio web", val: editWeb, set: setEditWeb, kb: "url" as const },
-        { label: "Instagram", val: editInst, set: setEditInst },
-        { label: "Facebook", val: editFacebook, set: setEditFacebook },
-        { label: "Departamento", val: editDep, set: setEditDep },
-        { label: "Ciudad", val: editCiudad, set: setEditCiudad },
-        { label: "Dirección", val: editDireccion, set: setEditDireccion },
-      ].map((f) => (
-        <View key={f.label} style={{ marginBottom: 14 }}>
-          <Text style={[st.inputLabel, { color: C.muted }]}>{f.label}</Text>
-          <TextInput
-            style={[
-              st.input,
-              { color: C.text, backgroundColor: C.card, borderColor: C.border },
-              f.multi && { height: 80, textAlignVertical: "top" },
-            ]}
-            value={f.val}
-            onChangeText={f.set}
-            multiline={f.multi}
-            keyboardType={f.kb ?? "default"}
-            placeholderTextColor={C.muted}
-          />
-        </View>
-      ))}
+      {perfilMode === "view" ? (
+        /* ── Vista de lectura ── */
+        <View>
+          <Text style={[st.sectionLabel, { color: C.muted }]}>INFORMACIÓN DE LA EMPRESA</Text>
+          {[
+            { label: "Nombre", val: empresa?.nombre },
+            { label: "Descripción", val: empresa?.descripcion },
+            { label: "Teléfono", val: empresa?.telefono },
+            { label: "Email corporativo", val: empresa?.email_corporativo },
+            { label: "Sitio web", val: empresa?.web },
+            { label: "Instagram", val: empresa?.instagram },
+            { label: "Facebook", val: empresa?.facebook },
+            { label: "Departamento", val: empresa?.departamento },
+            { label: "Ciudad", val: empresa?.ciudad },
+            { label: "Dirección", val: empresa?.direccion },
+          ].map((f) =>
+            f.val ? (
+              <View key={f.label} style={[st.viewField, { borderBottomColor: C.border }]}>
+                <Text style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>{f.label}</Text>
+                <Text style={{ color: C.text, fontSize: 14 }}>{f.val}</Text>
+              </View>
+            ) : null
+          )}
 
-      <TouchableOpacity
-        style={[st.createBtn, { backgroundColor: savingPerfil ? C.muted : C.purple }]}
-        onPress={guardarPerfil}
-        disabled={savingPerfil}
-      >
-        {savingPerfil ? (
-          <ActivityIndicator color="#fff" size="small" />
-        ) : (
-          <>
-            <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-            <Text style={st.createBtnText}>Guardar cambios</Text>
-          </>
-        )}
-      </TouchableOpacity>
+          {/* Datos del representante */}
+          {(empresa?.representante_nombre || empresa?.representante_cargo) && (
+            <>
+              <Text style={[st.sectionLabel, { color: C.muted, marginTop: 16 }]}>DATOS DEL REPRESENTANTE</Text>
+              {[
+                { label: "Nombre", val: empresa?.representante_nombre },
+                { label: "Cargo", val: empresa?.representante_cargo },
+                { label: "Email", val: empresa?.representante_email },
+                { label: "Teléfono", val: empresa?.representante_telefono },
+              ].map((f) =>
+                f.val ? (
+                  <View key={f.label} style={[st.viewField, { borderBottomColor: C.border }]}>
+                    <Text style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>{f.label}</Text>
+                    <Text style={{ color: C.text, fontSize: 14 }}>{f.val}</Text>
+                  </View>
+                ) : null
+              )}
+            </>
+          )}
+
+          {/* Acciones de cuenta */}
+          <Text style={[st.sectionLabel, { color: C.muted, marginTop: 20 }]}>CUENTA</Text>
+          {[
+            { label: "Cambiar contraseña", icon: "lock-closed-outline", onPress: () => setShowCambiarPass(true) },
+            { label: "Acerca de Gradly", icon: "information-circle-outline", onPress: () => setShowAcercaModal(true) },
+            { label: "Ayuda y soporte", icon: "help-circle-outline", onPress: () => setShowAyudaModal(true) },
+          ].map((item) => (
+            <TouchableOpacity
+              key={item.label}
+              style={[st.accountRow, { backgroundColor: C.surface, borderColor: C.border }]}
+              onPress={item.onPress}
+            >
+              <Ionicons name={item.icon as any} size={20} color={C.purple} />
+              <Text style={{ color: C.text, fontSize: 14, flex: 1 }}>{item.label}</Text>
+              <Ionicons name="chevron-forward" size={16} color={C.muted} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : (
+        /* ── Modo edición ── */
+        <View>
+          <Text style={[st.sectionLabel, { color: C.muted }]}>INFORMACIÓN DE LA EMPRESA</Text>
+          {[
+            { label: "Nombre de la empresa", val: editNombre, set: setEditNombre },
+            { label: "Descripción", val: editDesc, set: setEditDesc, multi: true },
+            { label: "Teléfono", val: editTel, set: setEditTel, kb: "phone-pad" as const },
+            { label: "Email corporativo", val: editEmail, set: setEditEmail, kb: "email-address" as const },
+            { label: "Sitio web", val: editWeb, set: setEditWeb, kb: "url" as const },
+            { label: "Instagram", val: editInst, set: setEditInst },
+            { label: "Facebook", val: editFacebook, set: setEditFacebook },
+            { label: "Departamento", val: editDep, set: setEditDep },
+            { label: "Ciudad", val: editCiudad, set: setEditCiudad },
+            { label: "Dirección", val: editDireccion, set: setEditDireccion },
+          ].map((f) => (
+            <View key={f.label} style={{ marginBottom: 14 }}>
+              <Text style={[st.inputLabel, { color: C.muted }]}>{f.label}</Text>
+              <TextInput
+                style={[
+                  st.input,
+                  { color: C.text, backgroundColor: C.card, borderColor: C.border },
+                  f.multi && { height: 80, textAlignVertical: "top" },
+                ]}
+                value={f.val}
+                onChangeText={f.set}
+                multiline={f.multi}
+                keyboardType={f.kb ?? "default"}
+                placeholderTextColor={C.muted}
+              />
+            </View>
+          ))}
+
+          <Text style={[st.sectionLabel, { color: C.muted, marginTop: 8 }]}>DATOS DEL REPRESENTANTE</Text>
+          {[
+            { label: "Nombre del representante", val: editRepNombre, set: setEditRepNombre },
+            { label: "Cargo", val: editRepCargo, set: setEditRepCargo },
+            { label: "Email del representante", val: editRepEmail, set: setEditRepEmail, kb: "email-address" as const },
+            { label: "Teléfono del representante", val: editRepTel, set: setEditRepTel, kb: "phone-pad" as const },
+          ].map((f) => (
+            <View key={f.label} style={{ marginBottom: 14 }}>
+              <Text style={[st.inputLabel, { color: C.muted }]}>{f.label}</Text>
+              <TextInput
+                style={[st.input, { color: C.text, backgroundColor: C.card, borderColor: C.border }]}
+                value={f.val}
+                onChangeText={f.set}
+                keyboardType={(f as any).kb ?? "default"}
+                placeholderTextColor={C.muted}
+              />
+            </View>
+          ))}
+
+          <TouchableOpacity
+            style={[st.createBtn, { backgroundColor: savingPerfil ? C.muted : C.purple }]}
+            onPress={guardarPerfil}
+            disabled={savingPerfil}
+          >
+            {savingPerfil ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                <Text style={st.createBtnText}>Guardar cambios</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
     </ScrollView>
   );
 
@@ -1233,6 +1521,13 @@ export default function DashboardEmpresa() {
                   <TextInput value={formSalMin} onChangeText={(t) => setFormSalMin(t.replace(/[^0-9.]/g, ""))} keyboardType="numeric" style={[st.input, { color: C.text, backgroundColor: C.card, borderColor: C.border }]} placeholder="Ej: 400" placeholderTextColor={C.muted} />
                   <Text style={[st.inputLabel, { color: C.muted }]}>Salario máximo (USD, opcional)</Text>
                   <TextInput value={formSalMax} onChangeText={(t) => setFormSalMax(t.replace(/[^0-9.]/g, ""))} keyboardType="numeric" style={[st.input, { color: C.text, backgroundColor: C.card, borderColor: C.border }]} placeholder="Ej: 800" placeholderTextColor={C.muted} />
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[st.inputLabel, { color: C.muted }]}>Aplica horas sociales</Text>
+                      <Text style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>Permitir estudiantes cumplir horas en este puesto</Text>
+                    </View>
+                    <Switch value={formAplicaHoras} onValueChange={setFormAplicaHoras} trackColor={{ false: C.card, true: C.purple }} />
+                  </View>
                 </View>
               )}
             </ScrollView>
@@ -1361,6 +1656,163 @@ export default function DashboardEmpresa() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── UpgradePlanModal ── */}
+      <UpgradePlanModal
+        visible={showUpgradePlan}
+        onClose={() => setShowUpgradePlan(false)}
+        currentPlan={planActual}
+        limitReached={planLimite}
+        theme={isDark ? "dark" : "light"}
+      />
+
+      {/* ── CambiarPasswordModal ── */}
+      <CambiarPasswordModal
+        visible={showCambiarPass}
+        onClose={() => setShowCambiarPass(false)}
+        theme={isDark ? "dark" : "light"}
+      />
+
+      {/* ── AgendarEntrevistaModal ── */}
+      {selectedCand && (
+        <AgendarEntrevistaModal
+          visible={showAgendarModal}
+          onClose={() => { setShowAgendarModal(false); setSelectedCand(null); }}
+          aplicacionId={selectedCand.id}
+          solicitanteId={selectedCand.solicitante_id}
+          empresaId={userId ?? ""}
+          vacanteId={selectedCand.vacante_id}
+          vacanteNombre={selectedCand.vacantes?.titulo}
+          solicitanteNombre={selectedCand._solicitante?.nombre}
+          theme={isDark ? "dark" : "light"}
+          onSuccess={() => {
+            setAplicaciones((p) =>
+              p.map((a) => a.id === selectedCand.id ? { ...a, estado: "entrevista" } : a)
+            );
+            toast("Entrevista agendada.", "ok");
+          }}
+        />
+      )}
+
+      {/* ── RechazarModal ── */}
+      {selectedCand && (
+        <RechazarModal
+          visible={showRechazarModal}
+          onClose={() => { setShowRechazarModal(false); setSelectedCand(null); }}
+          aplicacionId={selectedCand.id}
+          solicitanteId={selectedCand.solicitante_id}
+          vacanteNombre={selectedCand.vacantes?.titulo}
+          solicitanteNombre={selectedCand._solicitante?.nombre}
+          theme={isDark ? "dark" : "light"}
+          onSuccess={() => {
+            setAplicaciones((p) =>
+              p.map((a) => a.id === selectedCand.id ? { ...a, estado: "rechazada" } : a)
+            );
+            toast("Candidato rechazado.", "info");
+          }}
+        />
+      )}
+
+      {/* ── PropuestaCondicionesModal ── */}
+      {selectedSolicitud && (
+        <PropuestaCondicionesModal
+          visible={showPropuestaModal}
+          onClose={() => { setShowPropuestaModal(false); setSelectedSolicitud(null); }}
+          solicitudId={selectedSolicitud.id}
+          empresaId={userId ?? ""}
+          universidadId={selectedSolicitud.universidad_id ?? ""}
+          grupoNombre={selectedSolicitud.grupos?.nombre_grupo}
+          horasRequeridas={selectedSolicitud.grupos?.horas_requeridas}
+          theme={isDark ? "dark" : "light"}
+          onSuccess={() => {
+            setSolicitudes((p) =>
+              p.map((s) => s.id === selectedSolicitud.id ? { ...s, estado: "en_revision" } : s)
+            );
+            toast("Propuesta enviada a la universidad.", "ok");
+          }}
+        />
+      )}
+
+      {/* ── Modal Acerca de ── */}
+      <Modal visible={showAcercaModal} transparent animationType="fade" onRequestClose={() => setShowAcercaModal(false)}>
+        <View style={st.modalOverlay}>
+          <View style={[st.modalSheet, { backgroundColor: C.surface, borderTopColor: C.border, borderRadius: 16, maxHeight: "70%" }]}>
+            <View style={[st.modalHeader, { borderBottomColor: C.border }]}>
+              <Text style={[st.modalTitle, { color: C.text }]}>Acerca de Gradly</Text>
+              <TouchableOpacity onPress={() => setShowAcercaModal(false)}>
+                <Ionicons name="close" size={22} color={C.muted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 20 }}>
+              <Text style={{ color: C.purple, fontSize: 28, fontWeight: "900", marginBottom: 4 }}>Gradly</Text>
+              <Text style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>Versión 1.0.0</Text>
+              <Text style={{ color: C.text, fontSize: 14, lineHeight: 22, marginBottom: 12 }}>
+                Gradly es una plataforma que conecta empresas con jóvenes talentos y estudiantes de El Salvador, facilitando la gestión de vacantes y horas sociales.
+              </Text>
+              <Text style={{ color: C.text, fontSize: 14, lineHeight: 22, marginBottom: 12 }}>
+                Nuestra misión es reducir la brecha entre el mundo académico y el laboral, brindando oportunidades reales a la nueva generación de profesionales.
+              </Text>
+              <Text style={{ color: C.muted, fontSize: 12 }}>© 2025 Gradly. Todos los derechos reservados.</Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal Ayuda ── */}
+      <Modal visible={showAyudaModal} transparent animationType="fade" onRequestClose={() => setShowAyudaModal(false)}>
+        <View style={st.modalOverlay}>
+          <View style={[st.modalSheet, { backgroundColor: C.surface, borderTopColor: C.border, borderRadius: 16 }]}>
+            <View style={[st.modalHeader, { borderBottomColor: C.border }]}>
+              <Text style={[st.modalTitle, { color: C.text }]}>Ayuda y soporte</Text>
+              <TouchableOpacity onPress={() => setShowAyudaModal(false)}>
+                <Ionicons name="close" size={22} color={C.muted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 20 }}>
+              <Text style={{ color: C.text, fontSize: 14, marginBottom: 16, lineHeight: 20 }}>
+                ¿Tienes alguna duda o problema? Escríbenos y te responderemos a la brevedad.
+              </Text>
+              <TextInput
+                style={[st.input, { color: C.text, backgroundColor: C.card, borderColor: C.border, height: 100, textAlignVertical: "top" }]}
+                multiline
+                placeholder="Describe tu consulta o problema..."
+                placeholderTextColor={C.muted}
+                value={ayudaMsg}
+                onChangeText={setAyudaMsg}
+              />
+              <TouchableOpacity
+                style={[st.createBtn, { backgroundColor: sendingAyuda ? C.muted : C.purple, marginTop: 12 }]}
+                disabled={sendingAyuda}
+                onPress={async () => {
+                  if (!ayudaMsg.trim()) { toast("Escribe tu mensaje antes de enviar.", "err"); return; }
+                  setSendingAyuda(true);
+                  try {
+                    await supabase.from("mensajes_ayuda").insert({
+                      user_id: userId,
+                      rol: "empresa",
+                      mensaje: ayudaMsg.trim(),
+                    });
+                    setAyudaMsg("");
+                    setShowAyudaModal(false);
+                    toast("Mensaje enviado. Te contactaremos pronto.", "ok");
+                  } catch {
+                    toast("No se pudo enviar el mensaje.", "err");
+                  } finally {
+                    setSendingAyuda(false);
+                  }
+                }}
+              >
+                {sendingAyuda ? <ActivityIndicator color="#fff" size="small" /> : (
+                  <>
+                    <Ionicons name="send-outline" size={16} color="#fff" />
+                    <Text style={st.createBtnText}>Enviar mensaje</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1562,6 +2014,16 @@ const st = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  candActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
 
   // Horas sociales
   solicitudCard: {
@@ -1589,6 +2051,29 @@ const st = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     marginBottom: 20,
+  },
+  editToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  viewField: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    marginBottom: 2,
+  },
+  accountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 10,
   },
 
   // Inputs

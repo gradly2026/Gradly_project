@@ -14,7 +14,7 @@ Almacena la información del perfil de todos los usuarios (talento, empresa, uni
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT NOT NULL UNIQUE,
-  role TEXT NOT NULL CHECK (role IN ('talento', 'empresa', 'universidad')),
+  role TEXT NOT NULL CHECK (role IN ('talento', 'empresa', 'universidad', 'alumno', 'estudiante', 'admin', 'administrador')),
   username TEXT NOT NULL UNIQUE,
   nombre TEXT NOT NULL,
   telefono TEXT,
@@ -162,6 +162,49 @@ CREATE INDEX idx_universidades_email_institucional ON universidades(email_instit
 
 ---
 
+## 5. Tablas: Administración (Panel Admin)
+
+Estas tablas son requeridas por las pantallas de administración para bitácora, notificaciones y permisos.
+
+```sql
+CREATE TABLE permissions (
+  key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  group_name TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE role_permissions (
+  role TEXT NOT NULL,
+  permission_key TEXT NOT NULL REFERENCES permissions(key) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  PRIMARY KEY (role, permission_key)
+);
+
+CREATE TABLE admin_notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_email TEXT,
+  actor_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT,
+  payload JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+---
+
 ## 📝 Configuración de Políticas de Row Level Security (RLS)
 
 Se recomienda habilitar RLS en todas las tablas para mayor seguridad:
@@ -171,6 +214,10 @@ Se recomienda habilitar RLS en todas las tablas para mayor seguridad:
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE empresas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE universidades ENABLE ROW LEVEL SECURITY;
+ALTER TABLE permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE role_permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- Ejemplo de política: Usuarios solo pueden ver/editar su propio perfil
 CREATE POLICY "Users can view own profile" ON profiles
@@ -178,6 +225,26 @@ CREATE POLICY "Users can view own profile" ON profiles
 
 CREATE POLICY "Users can update own profile" ON profiles
   FOR UPDATE USING (auth.uid() = id);
+
+CREATE POLICY "Admins can view all profiles" ON profiles
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = auth.uid()
+        AND p.role IN ('admin', 'administrador')
+    )
+  );
+
+CREATE POLICY "Admins can update profiles" ON profiles
+  FOR UPDATE USING (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = auth.uid()
+        AND p.role IN ('admin', 'administrador')
+    )
+  );
 
 -- Empresas: Solo el owner puede ver/editar
 CREATE POLICY "Company owner can view own company" ON empresas
@@ -192,6 +259,56 @@ CREATE POLICY "University owner can view own university" ON universidades
 
 CREATE POLICY "University owner can update own university" ON universidades
   FOR UPDATE USING (auth.uid() = owner_id);
+
+CREATE POLICY "Admins can manage permissions" ON permissions
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = auth.uid()
+        AND p.role IN ('admin', 'administrador')
+    )
+  );
+
+CREATE POLICY "Admins can manage role permissions" ON role_permissions
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = auth.uid()
+        AND p.role IN ('admin', 'administrador')
+    )
+  );
+
+CREATE POLICY "Admins can manage admin notifications" ON admin_notifications
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = auth.uid()
+        AND p.role IN ('admin', 'administrador')
+    )
+  );
+
+CREATE POLICY "Admins can insert audit logs" ON audit_logs
+  FOR INSERT WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = auth.uid()
+        AND p.role IN ('admin', 'administrador')
+    )
+  );
+
+CREATE POLICY "Admins can view audit logs" ON audit_logs
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1
+      FROM profiles p
+      WHERE p.id = auth.uid()
+        AND p.role IN ('admin', 'administrador')
+    )
+  );
 ```
 
 ---
@@ -201,8 +318,8 @@ CREATE POLICY "University owner can update own university" ON universidades
 Crea un archivo `.env.local` en la raíz del proyecto:
 
 ```env
-EXPO_PUBLIC_SUPABASE_URL=https://kbevyjupphyxrgcvdsgv.supabase.co/rest/v1/
-EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_-CLkZKX7jyJuzOA0QEG4uQ_JopGLyhE
+EXPO_PUBLIC_SUPABASE_URL=https://kbevyjupphyxrgcvdsgv.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=TU_SUPABASE_ANON_KEY
 ```
 
 **Nota:** Para producción, asegúrate de usar variables de entorno seguras y nunca expongas la clave anon en el código fuente.

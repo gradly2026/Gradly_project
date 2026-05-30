@@ -1,3 +1,4 @@
+import "react-native-url-polyfill/auto";
 import { createClient } from "@supabase/supabase-js";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
@@ -7,9 +8,27 @@ import { Platform } from "react-native";
  * IMPORTANTE: Para producción, utiliza variables de entorno (.env)
  * Reemplaza estos valores con los de tu proyecto Supabase
  */
-export const SUPABASE_URL = "https://kbevyjupphyxrgcvdsgv.supabase.co";
-export const SUPABASE_ANON_KEY =
+const DEFAULT_SUPABASE_URL = "https://kbevyjupphyxrgcvdsgv.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY =
   "sb_publishable_-CLkZKX7jyJuzOA0QEG4uQ_JopGLyhE";
+
+function normalizeSupabaseUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  const withoutRest = trimmed.replace(/\/rest\/v1\/?$/i, "");
+  return withoutRest.replace(/\/+$/, "");
+}
+
+export const SUPABASE_URL = normalizeSupabaseUrl(
+  process.env.EXPO_PUBLIC_SUPABASE_URL ??
+    process.env.SUPABASE_URL ??
+    DEFAULT_SUPABASE_URL,
+);
+
+export const SUPABASE_ANON_KEY =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+  process.env.SUPABASE_ANON_KEY ??
+  DEFAULT_SUPABASE_ANON_KEY;
 
 /**
  * Adaptador de almacenamiento seguro para iOS/Android

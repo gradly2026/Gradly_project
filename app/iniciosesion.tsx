@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { supabase } from "../lib/supabase";
 import { resolveEmailFromUsername } from "../services/authService";
+import AppHeader from "../components/AppHeader";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const OTP_LENGTH = 8;
@@ -243,18 +244,52 @@ export default function InicioSesion() {
       if (authError) throw authError;
       if (!authData.user) throw new Error("No se pudo iniciar sesión");
 
-      // Login successful: get role from profiles table (source of truth)
+      // Login successful: get roll from profiles table (source of truth)
       try {
         const userId = authData.user.id;
         const { data: profileData } = await supabase
           .from("profiles")
-          .select("role")
+          .select("role,roll")
           .eq("id", userId)
           .single();
 
-        const role =
-          profileData?.role ?? authData.user.user_metadata?.role ?? "talento";
-        router.replace(getDashboardRoute(role) as any);
+        const roll =
+          profileData?.roll ??
+          profileData?.role ??
+          authData.user.user_metadata?.role ??
+          "talento";
+
+        // Ban check: query the role-specific table
+        const tableMap: Record<string, string> = {
+          empresa: "empresas",
+          talento: "talentos",
+          estudiante: "alumnos",
+          alumno: "alumnos",
+          universidad: "universidades",
+        };
+        const tabla = tableMap[roll];
+        if (tabla) {
+          const { data: rolData } = await supabase
+            .from(tabla)
+            .select("baneado,motivo_baneo,baneo_hasta")
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (rolData?.baneado) {
+            await supabase.auth.signOut();
+            const hasta = rolData.baneo_hasta
+              ? new Date(rolData.baneo_hasta).toLocaleDateString("es-SV")
+              : "indefinidamente";
+            Alert.alert(
+              "Cuenta suspendida",
+              `Tu cuenta ha sido suspendida.\n\nMotivo: ${rolData.motivo_baneo || "No especificado"}\nHasta: ${hasta}`,
+              [{ text: "Entendido" }]
+            );
+            setLoading(false);
+            return;
+          }
+        }
+
+        router.replace(getDashboardRoute(roll) as any);
         return;
       } catch (err) {
         // fallback to existing 2FA flow if redirect fails
@@ -494,6 +529,7 @@ export default function InicioSesion() {
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
+      <AppHeader />
       <KeyboardAvoidingView
         style={styles.flex1}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -681,25 +717,25 @@ export default function InicioSesion() {
                   )}
                 </TouchableOpacity>
 
-                {/* Divider */}
+                {/* Divider
                 <View style={styles.divider}>
                   <View style={styles.dividerLine} />
                   <Text style={styles.dividerText}>o continúa con</Text>
                   <View style={styles.dividerLine} />
-                </View>
+                </View> */}
 
-                {/* Google OAuth */}
+                {/* Google OAuth
                 <TouchableOpacity
                   style={styles.oauthBtn}
                   accessibilityLabel="Continuar con Google"
                 >
-                  {/* Google "G" SVG approximated with styled text */}
+                  {/* Google "G" SVG approximated with styled text
                   <View style={styles.googleGWrap}>
                     <Text style={styles.googleG}>G</Text>
                   </View>
                   <Text style={styles.oauthText}>Google</Text>
-                </TouchableOpacity>
-
+                </TouchableOpacity> */}
+                  
                 {/* Register link */}
                 <View style={styles.registerRow}>
                   <Text style={styles.registerText}>¿No tienes cuenta? </Text>

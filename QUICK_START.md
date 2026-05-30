@@ -79,8 +79,8 @@ npx expo install @supabase/supabase-js react-native-url-polyfill expo-secure-sto
 Crea `.env.local`:
 
 ```env
-EXPO_PUBLIC_SUPABASE_URL=https://kbevyjupphyxrgcvdsgv.supabase.co/rest/v1/
-EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_-CLkZKX7jyJuzOA0QEG4uQ_JopGLyhE
+EXPO_PUBLIC_SUPABASE_URL=https://kbevyjupphyxrgcvdsgv.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=TU_SUPABASE_ANON_KEY
 ```
 
 ### 4. Probar en Desarrollo

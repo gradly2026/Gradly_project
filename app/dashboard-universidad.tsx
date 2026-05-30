@@ -120,6 +120,9 @@ type SolicitudHorasRow = {
   fecha_fin?: string | null;
   google_maps_url?: string | null;
   created_at?: string | null;
+  horas_ofrecidas?: number | null;
+  horario?: string | null;
+  condiciones?: string | null;
 };
 
 type GrupoDbRow = {
@@ -554,6 +557,10 @@ const obtenerConteoEstudiantes = async (uid: string) => {
   const [editDesc, setEditDesc] = useState("");
   const [editInstagram, setEditInstagram] = useState("");
   const [editLinkedin, setEditLinkedin] = useState("");
+  const [editRepNombre, setEditRepNombre] = useState("");
+  const [editRepCargo, setEditRepCargo] = useState("");
+  const [editRepEmail, setEditRepEmail] = useState("");
+  const [editRepTel, setEditRepTel] = useState("");
 
   // ── Configuración
   const [cfgNombre, setCfgNombre] = useState("");
@@ -3198,7 +3205,7 @@ const obtenerConteoEstudiantes = async (uid: string) => {
             <Text style={[s.subsectionTitle, { marginBottom: 16 }]}>
               Próximos eventos
             </Text>
-            {[].map((ev) => (
+            {([] as { title: string; sub: string }[]).map((ev) => (
               <Card key={ev.title} style={{ marginBottom: 12, padding: 14 }}>
                 <Text style={[s.textSub, { fontSize: 13, fontWeight: "600" }]}>
                   {ev.title}
@@ -4020,14 +4027,24 @@ const obtenerConteoEstudiantes = async (uid: string) => {
             {selectedPropuesta && (
               <Card style={{ marginTop: 14 }}>
                 <Text style={s.subsectionTitle}>Detalle de condiciones</Text>
-                <Text style={[s.textMuted, { marginTop: 10 }]}>
-                  🕐 Horario: {selectedPropuesta.hora_inicio ?? "—"} a{" "}
-                  {selectedPropuesta.hora_fin ?? "—"}
+                {selectedPropuesta.horas_ofrecidas ? (
+                  <Text style={[s.textMuted, { marginTop: 10 }]}>
+                    ⏱ Horas ofrecidas: {selectedPropuesta.horas_ofrecidas}
+                  </Text>
+                ) : null}
+                <Text style={[s.textMuted, { marginTop: 6 }]}>
+                  🕐 Horario: {selectedPropuesta.horario ?? selectedPropuesta.hora_inicio ?? "—"}
+                  {!selectedPropuesta.horario && selectedPropuesta.hora_fin ? ` a ${selectedPropuesta.hora_fin}` : ""}
                 </Text>
                 <Text style={[s.textMuted, { marginTop: 6 }]}>
                   📅 Fechas: {selectedPropuesta.fecha_inicio ?? "—"} a{" "}
                   {selectedPropuesta.fecha_fin ?? "—"}
                 </Text>
+                {selectedPropuesta.condiciones ? (
+                  <Text style={[s.textMuted, { marginTop: 6 }]}>
+                    📋 Condiciones: {selectedPropuesta.condiciones}
+                  </Text>
+                ) : null}
                 <Text style={[s.textMuted, { marginTop: 6 }]}>
                   📍 Maps: {selectedPropuesta.google_maps_url ?? "—"}
                 </Text>
@@ -4510,6 +4527,30 @@ const obtenerConteoEstudiantes = async (uid: string) => {
                 set: setEditLinkedin,
                 placeholder: "https://linkedin.com/...",
               },
+              {
+                label: "Nombre del representante",
+                val: editRepNombre,
+                set: setEditRepNombre,
+                placeholder: "Nombre completo",
+              },
+              {
+                label: "Cargo del representante",
+                val: editRepCargo,
+                set: setEditRepCargo,
+                placeholder: "Ej: Rector / Decano",
+              },
+              {
+                label: "Email del representante",
+                val: editRepEmail,
+                set: setEditRepEmail,
+                placeholder: "correo@universidad.edu.sv",
+              },
+              {
+                label: "Teléfono del representante",
+                val: editRepTel,
+                set: setEditRepTel,
+                placeholder: "7777-7777",
+              },
             ].map((f) => (
               <View key={f.label} style={{ marginBottom: 16 }}>
                 <Text style={s.inputLabel}>{f.label}</Text>
@@ -4545,6 +4586,10 @@ const obtenerConteoEstudiantes = async (uid: string) => {
                     enc_linkedin: editLinkedin || null,
                     banner_url: editBanner || null,
                     logo_url: editLogo || null,
+                    representante_nombre: editRepNombre || null,
+                    representante_cargo: editRepCargo || null,
+                    representante_email: editRepEmail || null,
+                    representante_telefono: editRepTel || null,
                   };
                   const updated = await updateUniversidad(
                     universidadId,

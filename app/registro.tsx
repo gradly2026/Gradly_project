@@ -23,6 +23,7 @@ import {
   registerUniversidad,
   toNullableString,
 } from "../services/authService";
+import AppHeader from "../components/AppHeader";
 
 // ── Design tokens ──────────────────────────────────────────────
 const C = {
@@ -1747,10 +1748,12 @@ export default function Registro() {
 
   // ── RENDER ─────────────────────────────────────────────────────
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: C.bg }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <AppHeader />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={s.scrollContent}
@@ -2589,9 +2592,9 @@ export default function Registro() {
 
           {flow === "empresa" && step === 3 && (
             <View>
-              <Text style={s.stepTitle}>Verificación Antifraude</Text>
+              <Text style={s.stepTitle}>Verificación de documento de identidad</Text>
               <Text style={s.stepSubtitle}>
-                Para proteger a nuestra comunidad
+                Ingresa tu documento de identidad
               </Text>
               <FloatInput
                 label="Número de DUI del representante"
@@ -4211,7 +4214,8 @@ export default function Registro() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 

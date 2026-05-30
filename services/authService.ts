@@ -24,6 +24,7 @@ async function createProfileRecord(params: {
       email: params.email,
       username: params.username,
       role: params.role,
+      roll: params.role,
       nombre: params.nombre ?? null,
     });
     if (error) {
@@ -902,21 +903,40 @@ export async function createGrupoWithStudents(
       },
     });
 
-    const { error: insertError } = await supabase.from("estudiantes").insert({
-      universidad_id: payload.universidadId,
-      grupo_id: group.id,
-      nombre_completo: student.nombre,
-      email: student.email,
-      matricula: payload.carrera,
-    });
-
-    const insertSuccess = !insertError;
     const authSuccess = !signupError;
     const userId = authData?.user?.id ?? null;
 
-    if (!insertSuccess) {
-      console.error("Error insertando estudiante:", insertError?.message);
+    let alumnoInsertError: any = null;
+    if (userId) {
+      const { error } = await supabase.from("alumnos").upsert(
+        {
+          id: userId,
+          user_id: userId,
+          universidad_id: payload.universidadId,
+          nombre: student.nombre,
+          nombre_completo: student.nombre,
+          email: student.email,
+          carrera: payload.carrera,
+          created_at: new Date().toISOString(),
+        } as any,
+        { onConflict: "id" },
+      );
+      alumnoInsertError = error;
     }
+
+    try {
+      await supabase.from("estudiantes").insert({
+        universidad_id: payload.universidadId,
+        grupo_id: group.id,
+        nombre_completo: student.nombre,
+        email: student.email,
+        matricula: payload.carrera,
+      } as any);
+    } catch (e: any) {
+      console.error("Error insertando estudiante:", e?.message ?? e);
+    }
+
+    const insertSuccess = !alumnoInsertError;
 
     let emailSent = false;
     let emailError: string | undefined;
@@ -962,7 +982,10 @@ export async function createGrupoWithStudents(
       password,
       success: insertSuccess,
       error:
-        insertError?.message || signupError?.message || emailError || undefined,
+        alumnoInsertError?.message ||
+        signupError?.message ||
+        emailError ||
+        undefined,
       userId,
       emailSent,
       emailError,

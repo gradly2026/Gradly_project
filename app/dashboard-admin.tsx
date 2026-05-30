@@ -17,7 +17,7 @@ import UniversalHeader from "../src/components/UniversalHeader";
 import handleLogout from "../src/services/authService";
 import { C, s } from "./admin/adminStyles";
 
-type AdminPage = "resumen" | "usuarios" | "config" | "crear";
+type AdminPage = "resumen" | "usuarios" | "reportes" | "ayuda" | "config" | "crear";
 type Role = "talento" | "universidad" | "empresa" | "alumno";
 type Status = "activo" | "pendiente" | "bloqueado";
 
@@ -37,10 +37,37 @@ const SERVICE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtiZXZ5anVwcGh5eHJnY3Zkc2d2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODY4ODA2NCwiZXhwIjoyMDk0MjY0MDY0fQ.wm_Z0dhr2tnlQO4t2Wrdi4AEqU0i-nBrWqNFu_hOQIU";
 
 const mapStatus = (value: string | null | undefined): Status => {
-  if (value === "activo" || value === "pendiente" || value === "bloqueado") {
-    return value;
+  if (!value) return "pendiente";
+  const normalized = String(value).toLowerCase();
+  if (normalized === "activo" || normalized === "active") return "activo";
+  if (normalized === "pendiente" || normalized === "pending") return "pendiente";
+  if (
+    normalized === "bloqueado" ||
+    normalized === "inactive" ||
+    normalized === "blocked" ||
+    normalized === "suspended"
+  ) {
+    return "bloqueado";
   }
   return "pendiente";
+};
+
+const toDbStatus = (status: Status) => {
+  if (status === "activo") return "active";
+  if (status === "bloqueado") return "inactive";
+  return "pending";
+};
+
+const withTimeout = async <T,>(promise: Promise<T>, ms = 15000) => {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("Tiempo de espera agotado.")), ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 };
 
 function useAdminData() {
@@ -238,7 +265,13 @@ export default function DashboardAdmin() {
     supabase.auth.getUser().then(({ data }) => {
       if (data?.user) setAdminUserId(data.user.id);
     });
+    loadKpis();
   }, []);
+
+  useEffect(() => {
+    if (page === "reportes") loadReportes();
+    if (page === "ayuda") loadMensajesAyuda();
+  }, [page]);
 
   const [roleTab, setRoleTab] = useState<Role>("talento");
   const [statusFilter, setStatusFilter] = useState<Status | "todos">("todos");
@@ -246,11 +279,28 @@ export default function DashboardAdmin() {
 
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [banModalOpen, setBanModalOpen] = useState(false);
+  const [banMotivo, setBanMotivo] = useState("");
+  const [banHasta, setBanHasta] = useState("");
   const [adminName, setAdminName] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+
+  // ── Reportes ────────────────────────────────────────────────────────────────
+  const [reportes, setReportes] = useState<any[]>([]);
+  const [loadingReportes, setLoadingReportes] = useState(false);
+
+  // ── Mensajes ayuda ──────────────────────────────────────────────────────────
+  const [mensajesAyuda, setMensajesAyuda] = useState<any[]>([]);
+  const [loadingAyuda, setLoadingAyuda] = useState(false);
+  const [respuestaAyuda, setRespuestaAyuda] = useState("");
+  const [selectedAyuda, setSelectedAyuda] = useState<any | null>(null);
+  const [sendingRespuesta, setSendingRespuesta] = useState(false);
+
+  // ── KPIs ────────────────────────────────────────────────────────────────────
+  const [kpis, setKpis] = useState({ vacantesActivas: 0, solicitudesPendientes: 0, reportesPendientes: 0, mensajesAyudaPendientes: 0 });
+  const [loadingKpis, setLoadingKpis] = useState(false);
 
   const { users, loading, refreshing, refresh, refetch } = useAdminData();
 
@@ -278,12 +328,15 @@ export default function DashboardAdmin() {
     setActionLoading(true);
     try {
       const profileId = u.profileId ?? u.id;
-      const { data, error } = await supabase
-        .from("profiles")
-        .update({ status: nextStatus })
-        .eq("id", profileId)
-        .select()
-        .single();
+      const dbStatus = toDbStatus(nextStatus);
+      const { data, error } = await withTimeout(
+        supabase
+          .from("profiles")
+          .update({ status: dbStatus })
+          .eq("id", profileId)
+          .select("status")
+          .maybeSingle(),
+      );
 
       if (error) {
         Alert.alert(
@@ -293,15 +346,177 @@ export default function DashboardAdmin() {
         return;
       }
 
-      const updatedStatus = (data as any)?.status as Status;
+      if (!data) {
+        Alert.alert(
+          "Error",
+          "No se pudo actualizar el estado. Verifica permisos (RLS) o que el perfil exista.",
+        );
+        return;
+      }
+
+      const updatedStatus = mapStatus((data as any)?.status);
       setSelected((prev) =>
         prev?.id === u.id ? { ...prev, status: updatedStatus } : prev,
       );
-      refetch();
-    } catch {
-      Alert.alert("Error", "No se pudo actualizar el estado.");
+      await refetch();
+    } catch (e: any) {
+      Alert.alert(
+        "Error",
+        e?.message ?? "No se pudo actualizar el estado.",
+      );
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const loadReportes = async () => {
+    setLoadingReportes(true);
+    const { data } = await supabase
+      .from("reportes")
+      .select("*")
+      .order("created_at", { ascending: false });
+    setReportes(data ?? []);
+    setLoadingReportes(false);
+  };
+
+  const loadMensajesAyuda = async () => {
+    setLoadingAyuda(true);
+    const { data } = await supabase
+      .from("mensajes_ayuda")
+      .select("*")
+      .order("created_at", { ascending: false });
+    setMensajesAyuda(data ?? []);
+    setLoadingAyuda(false);
+  };
+
+  const loadKpis = async () => {
+    setLoadingKpis(true);
+    const [{ count: vAct }, { count: solPend }, { count: repPend }, { count: ayudaPend }] =
+      await Promise.all([
+        supabase.from("vacantes").select("*", { count: "exact", head: true }).eq("estado", "activa"),
+        supabase.from("solicitudes_horas").select("*", { count: "exact", head: true }).eq("estado", "pendiente"),
+        supabase.from("reportes").select("*", { count: "exact", head: true }).eq("estado", "pendiente"),
+        supabase.from("mensajes_ayuda").select("*", { count: "exact", head: true }).is("respondido_en", null),
+      ]);
+    setKpis({
+      vacantesActivas: vAct ?? 0,
+      solicitudesPendientes: solPend ?? 0,
+      reportesPendientes: repPend ?? 0,
+      mensajesAyudaPendientes: ayudaPend ?? 0,
+    });
+    setLoadingKpis(false);
+  };
+
+  const banearUsuario = async (u: AdminUser) => {
+    if (!banMotivo.trim()) {
+      Alert.alert("Requerido", "Escribe el motivo del baneo.");
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const TABLE_MAP: Record<Role, string> = {
+        talento: "talentos", alumno: "alumnos", empresa: "empresas", universidad: "universidades",
+      };
+      const tabla = TABLE_MAP[u.role];
+      const { error: banError } = await withTimeout(
+        supabase
+          .from(tabla)
+          .update({
+            baneado: true,
+            motivo_baneo: banMotivo.trim(),
+            baneo_hasta: banHasta.trim() || null,
+          })
+          .eq("id", u.id),
+      );
+      if (banError) throw banError;
+
+      // Also block profile
+      const { error: profileError } = await withTimeout(
+        supabase
+          .from("profiles")
+          .update({ status: toDbStatus("bloqueado") })
+          .eq("id", u.profileId ?? u.id),
+      );
+      if (profileError) throw profileError;
+
+      Alert.alert("Usuario baneado", `${u.nombre} ha sido suspendido.`);
+      setBanModalOpen(false);
+      setBanMotivo("");
+      setBanHasta("");
+      await refetch();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "No se pudo banear.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const desbanearUsuario = async (u: AdminUser) => {
+    setActionLoading(true);
+    try {
+      const TABLE_MAP: Record<Role, string> = {
+        talento: "talentos", alumno: "alumnos", empresa: "empresas", universidad: "universidades",
+      };
+      const tabla = TABLE_MAP[u.role];
+      const { error: unbanError } = await withTimeout(
+        supabase
+          .from(tabla)
+          .update({
+            baneado: false,
+            motivo_baneo: null,
+            baneo_hasta: null,
+          })
+          .eq("id", u.id),
+      );
+      if (unbanError) throw unbanError;
+      const { error: profileError } = await withTimeout(
+        supabase
+          .from("profiles")
+          .update({ status: toDbStatus("activo") })
+          .eq("id", u.profileId ?? u.id),
+      );
+      if (profileError) throw profileError;
+      Alert.alert("Usuario desbaneado", `${u.nombre} ha sido reactivado.`);
+      await refetch();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "No se pudo desbanear.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const resolverReporte = async (reporteId: string) => {
+    await supabase.from("reportes").update({ estado: "resuelto" }).eq("id", reporteId);
+    setReportes((p) => p.map((r) => r.id === reporteId ? { ...r, estado: "resuelto" } : r));
+  };
+
+  const responderAyuda = async () => {
+    if (!selectedAyuda || !respuestaAyuda.trim()) return;
+    setSendingRespuesta(true);
+    try {
+      await supabase.from("mensajes_ayuda").update({
+        respuesta: respuestaAyuda.trim(),
+        respondido_en: new Date().toISOString(),
+      }).eq("id", selectedAyuda.id);
+
+      await supabase.from("notificaciones").insert({
+        usuario_id: selectedAyuda.user_id,
+        tipo: "ayuda",
+        titulo: "Respuesta de soporte",
+        mensaje: respuestaAyuda.trim(),
+        leida: false,
+      });
+
+      setMensajesAyuda((p) => p.map((m) => m.id === selectedAyuda.id
+        ? { ...m, respuesta: respuestaAyuda.trim(), respondido_en: new Date().toISOString() }
+        : m
+      ));
+      setSelectedAyuda(null);
+      setRespuestaAyuda("");
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "No se pudo enviar respuesta.");
+    } finally {
+      setSendingRespuesta(false);
     }
   };
 
@@ -349,7 +564,7 @@ export default function DashboardAdmin() {
         username,
         role: "universidad",
         nombre: adminName.trim(),
-        status: "activo",
+        status: "active",
       });
 
       if (profileError) {
@@ -433,7 +648,7 @@ export default function DashboardAdmin() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={refresh}
+            onRefresh={async () => { await refresh(); await loadKpis(); }}
             tintColor={C.accent70}
           />
         }
@@ -448,8 +663,26 @@ export default function DashboardAdmin() {
           </View>
         </View>
 
+        {/* KPIs de plataforma */}
         <Card style={{ marginTop: 14 }}>
-          <Text style={s.cardTitle}>Indicadores</Text>
+          <Text style={s.cardTitle}>KPIs de plataforma</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+            {[
+              { label: "Vacantes activas", value: kpis.vacantesActivas, color: C.accent70 },
+              { label: "Horas pendientes", value: kpis.solicitudesPendientes, color: C.yellow },
+              { label: "Reportes pendientes", value: kpis.reportesPendientes, color: C.red },
+              { label: "Ayuda sin responder", value: kpis.mensajesAyudaPendientes, color: C.green },
+            ].map((item) => (
+              <View key={item.label} style={{ flex: 1, minWidth: "45%", padding: 14, backgroundColor: "rgba(255,255,255,0.04)", borderRadius: 16 }}>
+                <Text style={[s.textMuted, { fontSize: 11, marginBottom: 6 }]}>{item.label}</Text>
+                <Text style={{ color: item.color, fontSize: 28, fontWeight: "800" }}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
+        </Card>
+
+        <Card style={{ marginTop: 14 }}>
+          <Text style={s.cardTitle}>Usuarios registrados</Text>
           <View
             style={{
               flexDirection: "row",
@@ -571,20 +804,25 @@ export default function DashboardAdmin() {
                 setStatusFilter("pendiente");
               }}
             />
-            <Chip label="Reportes" active={false} onPress={noop} />
-            <Chip label="Auditoría" active={false} onPress={noop} />
-            <Chip label="Invitar usuario" active={false} onPress={noop} />
+            <Chip
+              label="Reportes"
+              active={false}
+              onPress={() => {
+                loadReportes();
+                setPage("reportes");
+              }}
+            />
+            <Chip
+              label="Mensajes ayuda"
+              active={false}
+              onPress={() => {
+                loadMensajesAyuda();
+                setPage("ayuda");
+              }}
+            />
           </View>
         </Card>
-
-        <Card style={{ marginTop: 14, marginBottom: 24 }}>
-          <Text style={s.cardTitle}>Notas</Text>
-          <Text style={[s.textMuted, { marginTop: 10, lineHeight: 20 }]}>
-            Este panel es solo frontend. Las acciones (crear/editar/bloquear)
-            muestran un aviso de “Próximamente” hasta integrar la lógica de
-            backend.
-          </Text>
-        </Card>
+        <View style={{ height: 24 }} />
       </ScrollView>
     );
   };
@@ -808,6 +1046,122 @@ export default function DashboardAdmin() {
     </ScrollView>
   );
 
+  const renderReportes = () => (
+    <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={loadingReportes} onRefresh={loadReportes} tintColor={C.accent70} />}>
+      <View style={s.sectionHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.kicker}>Moderación</Text>
+          <Text style={s.pageTitle}>Reportes</Text>
+        </View>
+      </View>
+      {loadingReportes ? (
+        <ActivityIndicator color={C.accent70} style={{ marginTop: 40 }} />
+      ) : reportes.length === 0 ? (
+        <Card><Text style={s.textMuted}>No hay reportes registrados.</Text></Card>
+      ) : (
+        reportes.map((r) => (
+          <Card key={r.id} style={{ marginBottom: 12 }}>
+            <View style={[s.row, { justifyContent: "space-between", marginBottom: 8 }]}>
+              <Text style={s.cardTitle}>{r.razon ?? "Sin razón"}</Text>
+              <View style={[s.badge, { backgroundColor: r.estado === "resuelto" ? C.greenBg : C.yellowBg, borderColor: r.estado === "resuelto" ? C.green : C.yellow }]}>
+                <Text style={[s.badgeText, { color: r.estado === "resuelto" ? C.green : C.yellow }]}>
+                  {r.estado ?? "pendiente"}
+                </Text>
+              </View>
+            </View>
+            <Text style={[s.textMuted, { fontSize: 12 }]}>Reportado: {r.reportado_id}</Text>
+            <Text style={[s.textMuted, { fontSize: 12 }]}>Rol: {r.reportado_rol}</Text>
+            {r.detalle ? <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>{r.detalle}</Text> : null}
+            {r.estado !== "resuelto" && (
+              <TouchableOpacity
+                style={[s.btnOutline, { marginTop: 10, borderColor: C.green }]}
+                onPress={() => resolverReporte(r.id)}
+              >
+                <Text style={[s.btnOutlineText, { color: C.green }]}>Marcar como resuelto</Text>
+              </TouchableOpacity>
+            )}
+          </Card>
+        ))
+      )}
+    </ScrollView>
+  );
+
+  const renderAyuda = () => (
+    <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={loadingAyuda} onRefresh={loadMensajesAyuda} tintColor={C.accent70} />}>
+      <View style={s.sectionHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.kicker}>Soporte</Text>
+          <Text style={s.pageTitle}>Mensajes de ayuda</Text>
+        </View>
+      </View>
+      {loadingAyuda ? (
+        <ActivityIndicator color={C.accent70} style={{ marginTop: 40 }} />
+      ) : mensajesAyuda.length === 0 ? (
+        <Card><Text style={s.textMuted}>No hay mensajes de ayuda.</Text></Card>
+      ) : (
+        mensajesAyuda.map((m) => (
+          <Card key={m.id} style={{ marginBottom: 12 }}>
+            <View style={[s.row, { justifyContent: "space-between", marginBottom: 6 }]}>
+              <Text style={[s.textMuted, { fontSize: 11 }]}>Rol: {m.rol}</Text>
+              {m.respondido_en ? (
+                <View style={[s.badge, { backgroundColor: C.greenBg, borderColor: C.green }]}>
+                  <Text style={[s.badgeText, { color: C.green }]}>Respondido</Text>
+                </View>
+              ) : (
+                <View style={[s.badge, { backgroundColor: C.yellowBg, borderColor: C.yellow }]}>
+                  <Text style={[s.badgeText, { color: C.yellow }]}>Pendiente</Text>
+                </View>
+              )}
+            </View>
+            <Text style={s.cardTitle}>{m.mensaje}</Text>
+            {m.respuesta ? (
+              <Text style={[s.textMuted, { fontSize: 12, marginTop: 6 }]}>Respuesta: {m.respuesta}</Text>
+            ) : (
+              <TouchableOpacity
+                style={[s.btnOutline, { marginTop: 10 }]}
+                onPress={() => setSelectedAyuda(m)}
+              >
+                <Text style={s.btnOutlineText}>Responder</Text>
+              </TouchableOpacity>
+            )}
+          </Card>
+        ))
+      )}
+
+      {/* Responder modal */}
+      <Modal visible={!!selectedAyuda} transparent animationType="slide" onRequestClose={() => setSelectedAyuda(null)}>
+        <View style={s.modalOverlay}>
+          <View style={s.modal}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Responder mensaje</Text>
+              <TouchableOpacity style={[s.iconBtn, { width: 38, height: 38 }]} onPress={() => setSelectedAyuda(null)}>
+                <Ionicons name="close" size={20} color={C.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 16 }}>
+              <Text style={[s.textMuted, { marginBottom: 12 }]}>{selectedAyuda?.mensaje}</Text>
+              <TextInput
+                style={[s.input, { height: 100, textAlignVertical: "top" }]}
+                multiline
+                placeholder="Escribe tu respuesta..."
+                placeholderTextColor={C.textMuted}
+                value={respuestaAyuda}
+                onChangeText={setRespuestaAyuda}
+              />
+              <TouchableOpacity
+                style={[s.btnPrimary, { marginTop: 8, opacity: sendingRespuesta ? 0.6 : 1 }]}
+                onPress={responderAyuda}
+                disabled={sendingRespuesta}
+              >
+                <Text style={s.btnPrimaryText}>{sendingRespuesta ? "Enviando..." : "Enviar respuesta"}</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+
   const renderConfig = () => (
     <ScrollView showsVerticalScrollIndicator={false}>
       <View style={s.sectionHeader}>
@@ -821,25 +1175,16 @@ export default function DashboardAdmin() {
       </View>
 
       <Card style={{ marginBottom: 14 }}>
-        <Text style={s.cardTitle}>Seguridad</Text>
+        <Text style={s.cardTitle}>Seguridad y accesos</Text>
         <Text style={[s.textMuted, { marginTop: 10, lineHeight: 20 }]}>
-          Aquí se configurarán permisos, logs y reglas por rol (UI lista para
-          conectarse a backend).
+          Panel de administración Gradly. Gestiona usuarios, reportes y mensajes de soporte desde las pestañas inferiores.
         </Text>
         <View style={[s.row, { gap: 10, marginTop: 14, flexWrap: "wrap" }]}>
-          <TouchableOpacity
-            style={s.btnOutline}
-            onPress={noop}
-            activeOpacity={0.8}
-          >
-            <Text style={s.btnOutlineText}>Roles y permisos</Text>
+          <TouchableOpacity style={s.btnOutline} onPress={() => { loadReportes(); setPage("reportes"); }} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Ver reportes</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={s.btnOutline}
-            onPress={noop}
-            activeOpacity={0.8}
-          >
-            <Text style={s.btnOutlineText}>Auditoría</Text>
+          <TouchableOpacity style={s.btnOutline} onPress={() => { loadMensajesAyuda(); setPage("ayuda"); }} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Ver mensajes ayuda</Text>
           </TouchableOpacity>
         </View>
       </Card>
@@ -923,53 +1268,80 @@ export default function DashboardAdmin() {
 
               <Card style={{ marginTop: 12 }}>
                 <Text style={s.cardTitle}>Acciones</Text>
-                <View
-                  style={[s.row, { gap: 10, marginTop: 12, flexWrap: "wrap" }]}
-                >
+                <View style={[s.row, { gap: 10, marginTop: 12, flexWrap: "wrap" }]}>
                   <TouchableOpacity
-                    style={[s.btnPrimary, s.btnSm]}
-                    onPress={noop}
+                    style={[s.btnPrimary, s.btnSm, { backgroundColor: C.yellow }]}
+                    onPress={() => selected && updateProfileStatus(selected, "pendiente")}
                     activeOpacity={0.8}
+                    disabled={actionLoading}
                   >
-                    <Text style={[s.btnPrimaryText, s.btnSmText]}>Editar</Text>
+                    <Text style={[s.btnPrimaryText, s.btnSmText]}>En revisión</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[s.btnOutline, s.btnSm]}
-                    onPress={noop}
+                    style={[s.btnPrimary, s.btnSm, { backgroundColor: C.green }]}
+                    onPress={() => selected && updateProfileStatus(selected, "activo")}
                     activeOpacity={0.8}
+                    disabled={actionLoading}
                   >
-                    <Text style={[s.btnOutlineText, s.btnSmText]}>
-                      Cambiar rol
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      s.btnPrimary,
-                      s.btnSm,
-                      { backgroundColor: C.yellow },
-                    ]}
-                    onPress={() =>
-                      selected && updateProfileStatus(selected, "pendiente")
-                    }
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[s.btnPrimaryText, s.btnSmText]}>
-                      Poner en revisión
-                    </Text>
+                    <Text style={[s.btnPrimaryText, s.btnSmText]}>Activar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[s.btnPrimary, s.btnSm, { backgroundColor: C.red }]}
-                    onPress={() =>
-                      selected && updateProfileStatus(selected, "bloqueado")
-                    }
+                    onPress={() => { setBanModalOpen(true); }}
                     activeOpacity={0.8}
+                    disabled={actionLoading}
                   >
-                    <Text style={[s.btnPrimaryText, s.btnSmText]}>
-                      Bloquear
-                    </Text>
+                    <Text style={[s.btnPrimaryText, s.btnSmText]}>Banear</Text>
                   </TouchableOpacity>
+                  {selected?.status === "bloqueado" && (
+                    <TouchableOpacity
+                      style={[s.btnOutline, s.btnSm]}
+                      onPress={() => selected && desbanearUsuario(selected)}
+                      activeOpacity={0.8}
+                      disabled={actionLoading}
+                    >
+                      <Text style={[s.btnOutlineText, s.btnSmText]}>Desbanear</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </Card>
+
+              {/* Ban Modal */}
+              <Modal visible={banModalOpen} transparent animationType="fade" onRequestClose={() => setBanModalOpen(false)}>
+                <View style={s.modalOverlay}>
+                  <View style={[s.modal, { maxHeight: "60%" }]}>
+                    <View style={s.modalHeader}>
+                      <Text style={s.modalTitle}>Banear usuario</Text>
+                      <TouchableOpacity style={[s.iconBtn, { width: 38, height: 38 }]} onPress={() => setBanModalOpen(false)}>
+                        <Ionicons name="close" size={20} color={C.text} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ padding: 16 }}>
+                      <TextInput
+                        style={[s.input, { marginBottom: 12 }]}
+                        placeholder="Motivo del baneo *"
+                        placeholderTextColor={C.textMuted}
+                        value={banMotivo}
+                        onChangeText={setBanMotivo}
+                      />
+                      <TextInput
+                        style={[s.input, { marginBottom: 12 }]}
+                        placeholder="Bloqueado hasta (DD/MM/AAAA, opcional)"
+                        placeholderTextColor={C.textMuted}
+                        value={banHasta}
+                        onChangeText={setBanHasta}
+                      />
+                      <TouchableOpacity
+                        style={[s.btnPrimary, { backgroundColor: C.red, opacity: actionLoading ? 0.6 : 1 }]}
+                        onPress={() => selected && banearUsuario(selected)}
+                        disabled={actionLoading}
+                      >
+                        <Text style={s.btnPrimaryText}>{actionLoading ? "Baneando..." : "Confirmar baneo"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              </Modal>
 
               <View style={{ height: 18 }} />
             </ScrollView>
@@ -987,6 +1359,10 @@ export default function DashboardAdmin() {
         return renderUsuarios();
       case "crear":
         return renderCrear();
+      case "reportes":
+        return renderReportes();
+      case "ayuda":
+        return renderAyuda();
       case "config":
         return renderConfig();
     }
@@ -1006,21 +1382,10 @@ export default function DashboardAdmin() {
         {(
           [
             { key: "resumen" as const, icon: "home-outline", label: "Resumen" },
-            {
-              key: "usuarios" as const,
-              icon: "people-outline",
-              label: "Usuarios",
-            },
-            {
-              key: "crear" as const,
-              icon: "add-circle-outline",
-              label: "Crear",
-            },
-            {
-              key: "config" as const,
-              icon: "settings-outline",
-              label: "Config",
-            },
+            { key: "usuarios" as const, icon: "people-outline", label: "Usuarios" },
+            { key: "reportes" as const, icon: "flag-outline", label: "Reportes" },
+            { key: "ayuda" as const, icon: "help-circle-outline", label: "Ayuda" },
+            { key: "config" as const, icon: "settings-outline", label: "Config" },
           ] as const
         ).map((it) => {
           const active = page === it.key;

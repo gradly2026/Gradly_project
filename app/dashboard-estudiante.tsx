@@ -24,6 +24,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import BuscadorExplorador from "../components/BuscadorExplorador";
+import CambiarPasswordModal from "../components/CambiarPasswordModal";
 import TranslatedText from "../components/TranslatedText";
 import { supabase } from "../lib/supabase";
 import {
@@ -53,7 +55,7 @@ type Page =
 
 type CursosTab = "lista" | "horario";
 type ExplorarTab = "empresas" | "proyectos";
-type ModalType = "pago" | "curso" | "logout" | "emergencia" | null;
+type ModalType = "pago" | "curso" | "logout" | "emergencia" | "acerca" | "ayuda" | null;
 
 type Payment = {
   concepto: string;
@@ -238,6 +240,9 @@ export default function DashboardAlumno() {
 
   // ── Modals
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [showCambiarPass, setShowCambiarPass] = useState(false);
+  const [ayudaMsg, setAyudaMsg] = useState("");
+  const [sendingAyuda, setSendingAyuda] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState("");
 
   // ── Search
@@ -256,6 +261,12 @@ export default function DashboardAlumno() {
     setProfileUserType(userType);
     setProfileViewerVisible(true);
   };
+
+  // ── Companies for Explorar (declared before filteredExploreCompanies useMemo)
+  const [companies, setCompanies] = useState<
+    { id: string; nombre: string; sector: string | null; logo: string | null }[]
+  >([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(true);
 
   const filteredExploreCompanies = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -282,6 +293,8 @@ export default function DashboardAlumno() {
   // ── Payments
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
+  const [trabajos, setTrabajos] = useState<any[]>([]);
+  const [loadingTrabajos, setLoadingTrabajos] = useState(false);
   const [pagoForm, setPagoForm] = useState<PagoForm>({
     concepto: "",
     monto: "",
@@ -300,12 +313,6 @@ export default function DashboardAlumno() {
   const [alumnoTel, setAlumnoTel] = useState("");
   const [alumnoCarrera, setAlumnoCarrera] = useState("");
   const [alumnoSemestre, setAlumnoSemestre] = useState("");
-
-  // ── Companies for Explorar
-  const [companies, setCompanies] = useState<
-    { id: string; nombre: string; sector: string | null; logo: string | null }[]
-  >([]);
-  const [loadingCompanies, setLoadingCompanies] = useState(true);
 
   // ── Courses and schedule
   const [courses, setCourses] = useState<
@@ -446,6 +453,16 @@ export default function DashboardAlumno() {
         .order("created_at", { ascending: false })
         .limit(10);
       if (avs) setAvisos(avs);
+
+      // Trabajos (contrataciones)
+      setLoadingTrabajos(true);
+      const { data: trabs } = await supabase
+        .from("pagos_trabajos")
+        .select("*, vacantes(titulo, area), empresas(nombre, foto_logo)")
+        .eq("trabajador_id", userId)
+        .order("created_at", { ascending: false });
+      setTrabajos(trabs ?? []);
+      setLoadingTrabajos(false);
     })();
   }, [userId]);
 
@@ -730,6 +747,15 @@ export default function DashboardAlumno() {
         ))}
       </Card>
 
+      <View style={{ paddingHorizontal: 0, marginBottom: 16 }}>
+        <Text style={[s.sectionLabel, { marginBottom: 8 }]}>DESCUBRIR</Text>
+        <BuscadorExplorador
+          viewerUserId={userId ?? ""}
+          theme={isDark ? "dark" : "light"}
+          tabs={["empresas", "talentos"]}
+        />
+      </View>
+
       <Card style={{ padding: 16, marginBottom: 24 }}>
         <Text style={[s.boldText, { marginBottom: 12 }]}>
           Actividad reciente
@@ -812,12 +838,12 @@ export default function DashboardAlumno() {
                 ]}
                 activeOpacity={0.85}
                 onPress={() => {
-                  setSearchQuery(empresa.name);
+                  setSearchQuery(empresa.nombre);
                   openProfileViewer(empresa.id, "empresa");
                 }}
               >
                 <Text style={[s.boldText, { fontSize: 14 }]}>
-                  {empresa.name}
+                  {empresa.nombre}
                 </Text>
                 <Text style={[s.muted, { fontSize: 12, marginTop: 4 }]}>
                   {" "}
@@ -930,47 +956,15 @@ export default function DashboardAlumno() {
       )}
 
       {explorarTab === "proyectos" && (
-        <>
-          {[
-            {
-              name: "Sistema de gestión de inventarios",
-              author: "Carlos Martínez · UDB",
-              tags: ["React", "Node.js"],
-              area: "Ing. Sistemas",
-            },
-            {
-              name: "App de reservas para restaurantes",
-              author: "María López · UCA",
-              tags: ["Flutter", "Firebase"],
-              area: "Ing. Sistemas",
-            },
-            {
-              name: "Branding identidad corporativa",
-              author: "Sofía Ramírez · UTEC",
-              tags: ["Figma", "Illustrator"],
-              area: "Diseño",
-            },
-          ].map((p) => (
-            <Card key={p.name} style={{ padding: 16, marginBottom: 12 }}>
-              <Text style={s.boldText}>{p.name}</Text>
-              <Text style={[s.muted, { fontSize: 12, marginTop: 4 }]}>
-                {p.author}
-              </Text>
-              <View
-                style={[s.row, { flexWrap: "wrap", gap: 6, marginTop: 10 }]}
-              >
-                {p.tags.map((tag) => (
-                  <View key={tag} style={s.tagChip}>
-                    <Text style={s.tagChipText}>{tag}</Text>
-                  </View>
-                ))}
-                <View style={s.tagChip}>
-                  <Text style={s.tagChipText}>{p.area}</Text>
-                </View>
-              </View>
-            </Card>
-          ))}
-        </>
+        <Card style={{ padding: 24, alignItems: "center" }}>
+          <Ionicons name="construct-outline" size={32} color={C.muted as string} />
+          <Text style={[s.boldText, { marginTop: 12, textAlign: "center" }]}>
+            Proyectos — Próximamente
+          </Text>
+          <Text style={[s.muted, { marginTop: 6, fontSize: 12, textAlign: "center" }]}>
+            Pronto podrás explorar y publicar proyectos de otros estudiantes.
+          </Text>
+        </Card>
       )}
       <View style={{ height: 20 }} />
     </ScrollView>
@@ -1242,7 +1236,7 @@ export default function DashboardAlumno() {
         <TouchableOpacity
           key={item.label}
           style={s.profileSection}
-          onPress={() => navigate(item.page)}
+          onPress={() => navigate(item.page as Page)}
           activeOpacity={0.8}
         >
           <View style={[s.row, { gap: 12, flex: 1 }]}>
@@ -1251,6 +1245,21 @@ export default function DashboardAlumno() {
               <Text style={s.boldText}>{item.label}</Text>
               <Text style={[s.muted, { fontSize: 12 }]}>{item.desc}</Text>
             </View>
+            <Ionicons name="chevron-forward" size={16} color={C.muted} />
+          </View>
+        </TouchableOpacity>
+      ))}
+
+      {/* Cuenta */}
+      {[
+        { label: "Cambiar contraseña", icon: "lock-closed-outline" as const, onPress: () => setShowCambiarPass(true) },
+        { label: "Acerca de Gradly", icon: "information-circle-outline" as const, onPress: () => setActiveModal("acerca") },
+        { label: "Ayuda y soporte", icon: "help-circle-outline" as const, onPress: () => setActiveModal("ayuda") },
+      ].map((item) => (
+        <TouchableOpacity key={item.label} style={s.profileSection} onPress={item.onPress} activeOpacity={0.8}>
+          <View style={[s.row, { gap: 12, flex: 1 }]}>
+            <Ionicons name={item.icon} size={20} color={C.muted} />
+            <Text style={[s.boldText, { flex: 1 }]}>{item.label}</Text>
             <Ionicons name="chevron-forward" size={16} color={C.muted} />
           </View>
         </TouchableOpacity>
@@ -1300,6 +1309,45 @@ export default function DashboardAlumno() {
           <Text style={s.btnPrimaryText}>Registrar pago</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Mis Trabajos (contrataciones) */}
+      <Card style={{ padding: 16, marginBottom: 14 }}>
+        <Text style={[s.boldText, { marginBottom: 12 }]}>Mis Trabajos</Text>
+        {loadingTrabajos ? (
+          <Text style={[s.muted, { fontSize: 13 }]}>Cargando trabajos...</Text>
+        ) : trabajos.length === 0 ? (
+          <View style={{ alignItems: "center", paddingVertical: 16 }}>
+            <Ionicons name="briefcase-outline" size={28} color={C.muted as string} />
+            <Text style={[s.muted, { marginTop: 8, fontSize: 13, textAlign: "center" }]}>
+              Aún no tienes contrataciones.
+            </Text>
+          </View>
+        ) : (
+          <View style={{ gap: 10 }}>
+            {trabajos.map((t) => (
+              <View key={t.id} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: C.purpleDim, alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                  {t.empresas?.foto_logo ? (
+                    <Image source={{ uri: t.empresas.foto_logo }} style={{ width: 36, height: 36 }} />
+                  ) : (
+                    <Ionicons name="business-outline" size={16} color={C.purple} />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.boldText, { fontSize: 13 }]}>{t.vacantes?.titulo ?? "Trabajo"}</Text>
+                  <Text style={[s.muted, { fontSize: 11 }]}>{t.empresas?.nombre ?? "Empresa"}</Text>
+                </View>
+                <View style={[{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: t.estado === "activo" ? C.greenBg : C.purpleDim }]}>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: t.estado === "activo" ? C.green : C.purple }}>
+                    {t.estado === "activo" ? "Activo" : t.estado}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+      </Card>
+
       <Card style={{ padding: 16 }}>
         <TableHeader cols={["Concepto", "Estado", "Monto", "Vence"]} />
         {payments.map((p, i) => (
@@ -1341,7 +1389,7 @@ export default function DashboardAlumno() {
         </View>
         <Divider />
         <Text style={s.muted}>
-          Usa "Registrar pago" para agregar un movimiento nuevo.
+          Usa {"\"Registrar pago\""} para agregar un movimiento nuevo.
         </Text>
       </Card>
       <View style={{ height: 20 }} />
@@ -2706,6 +2754,64 @@ export default function DashboardAlumno() {
             }}
           >
             <Text style={s.btnDangerText}>Enviar reporte</Text>
+          </TouchableOpacity>
+        </View>
+      </ModalShell>
+
+      {/* ── CambiarPasswordModal */}
+      <CambiarPasswordModal
+        visible={showCambiarPass}
+        onClose={() => setShowCambiarPass(false)}
+        theme={isDark ? "dark" : "light"}
+      />
+
+      {/* ── Modal Acerca de */}
+      <ModalShell visible={activeModal === "acerca"} title="Acerca de Gradly">
+        <Text style={[s.muted, { marginBottom: 8, color: C.purple, fontSize: 22, fontWeight: "900" }]}>Gradly</Text>
+        <Text style={[s.muted, { fontSize: 12, marginBottom: 12 }]}>Versión 1.0.0</Text>
+        <Text style={[s.body, { marginBottom: 10 }]}>
+          Gradly conecta estudiantes con empresas y universidades de El Salvador, facilitando la gestión de horas sociales y oportunidades laborales.
+        </Text>
+        <Text style={[s.muted, { fontSize: 12 }]}>© 2025 Gradly. Todos los derechos reservados.</Text>
+        <TouchableOpacity style={[s.btnPrimary, { marginTop: 16 }]} onPress={() => setActiveModal(null)}>
+          <Text style={s.btnPrimaryText}>Cerrar</Text>
+        </TouchableOpacity>
+      </ModalShell>
+
+      {/* ── Modal Ayuda */}
+      <ModalShell visible={activeModal === "ayuda"} title="Ayuda y soporte">
+        <Text style={[s.body, { marginBottom: 12 }]}>
+          ¿Tienes alguna duda o problema? Escríbenos y te responderemos a la brevedad.
+        </Text>
+        <TextInput
+          style={[s.input, { height: 90, textAlignVertical: "top", paddingTop: 10 }]}
+          value={ayudaMsg}
+          onChangeText={setAyudaMsg}
+          placeholder="Describe tu consulta..."
+          placeholderTextColor={C.muted}
+          multiline
+        />
+        <View style={[s.row, { justifyContent: "flex-end", gap: 10, marginTop: 14 }]}>
+          <TouchableOpacity style={s.btnOutline} onPress={() => { setActiveModal(null); setAyudaMsg(""); }}>
+            <Text style={s.btnOutlineText}>Cancelar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.btnPrimary, sendingAyuda && { opacity: 0.6 }]}
+            disabled={sendingAyuda}
+            onPress={async () => {
+              if (!ayudaMsg.trim()) return;
+              setSendingAyuda(true);
+              try {
+                await supabase.from("mensajes_ayuda").insert({ user_id: userId, rol: "alumno", mensaje: ayudaMsg.trim() });
+                setAyudaMsg("");
+                setActiveModal(null);
+                showToast("Mensaje enviado", "Te contactaremos pronto.");
+              } finally {
+                setSendingAyuda(false);
+              }
+            }}
+          >
+            <Text style={s.btnPrimaryText}>{sendingAyuda ? "Enviando..." : "Enviar"}</Text>
           </TouchableOpacity>
         </View>
       </ModalShell>
