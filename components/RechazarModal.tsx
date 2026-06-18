@@ -11,7 +11,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../lib/supabase";
+import {
+  addDoc,
+  collection,
+  doc,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+import { db } from "../src/config/firebaseConfig";
 
 interface Props {
   visible: boolean;
@@ -97,13 +104,12 @@ export default function RechazarModal({
     }
     setLoading(true);
     try {
-      await supabase
-        .from("aplicaciones")
-        .update({ estado: "rechazada" })
-        .eq("id", aplicacionId);
+      await updateDoc(doc(db, "aplicaciones", aplicacionId), {
+        estado: "rechazada",
+      });
 
       const razonLabel = RAZONES.find((r) => r.key === razon)?.label ?? razon;
-      await supabase.from("notificaciones").insert({
+      await addDoc(collection(db, "notificaciones"), {
         usuario_id: solicitanteId,
         tipo: "aplicacion",
         titulo: "Aplicación no avanzó",
@@ -111,6 +117,7 @@ export default function RechazarModal({
           ? `Tu aplicación para "${vacanteNombre}" no fue seleccionada. Motivo: ${razonLabel}.${mensaje.trim() ? " " + mensaje.trim() : ""}`
           : `Tu aplicación no fue seleccionada. Motivo: ${razonLabel}.${mensaje.trim() ? " " + mensaje.trim() : ""}`,
         leida: false,
+        fecha: serverTimestamp(),
       });
 
       onSuccess?.();

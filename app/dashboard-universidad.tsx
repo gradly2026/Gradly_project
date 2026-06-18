@@ -1,5391 +1,1868 @@
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
+import { deleteApp, getApps, initializeApp } from 'firebase/app';
+import { createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Clipboard from 'expo-clipboard';
+import { firebaseConfig } from '../src/config/firebaseConfig';
+import { universidadApruebaHoras } from '../src/services/pasantiaService';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import FloatingSearchButton from '../src/components/FloatingSearchButton';
+import FloatingTopBar from '../src/components/FloatingTopBar';
+import StorageAvatar from '../src/components/StorageAvatar';
+import {
+  ActivityIndicator,
   Alert,
-  Image,
-  Linking,
+  Dimensions,
+  FlatList,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
   View,
-} from "react-native";
+} from 'react-native';
+import * as XLSX from 'xlsx';
+import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
+import { VacantesDisponibles } from '../src/components/Matchmaking';
+import { PerfilStatsUniversidad, RedGradlyBanner } from '../src/components/NetworkStats';
+import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTour';
+import { useAuth } from '../src/context/AuthContext';
+import { crearChatGrupoOficial, subscribeUnreadTotal } from '../src/services/chatService';
+import { enviarNotificacion } from '../src/services/notificationService';
+import { auth, db, storage } from '../src/config/firebaseConfig';
+import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
+import { useAuthGuard } from '../src/hooks/useAuthGuard';
+import { shadow } from '../src/utils/shadow';
+import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
+import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
+import { JellyButton } from '../components/ui/liquid-glass/JellyButton';
 
-// Asegúrate de importar tu cliente de supabase, por ejemplo:
-// import { supabase } from '@/lib/supabase'; // <- Ajusta esta ruta según tu proyecto
-import TranslatedText from "../components/TranslatedText";
-import { supabase } from "../lib/supabase";
-import { getUniversityById, updateUniversidad } from "../services/authService";
-import GroupCreationModal from "../src/components/GroupCreationModal";
-import GroupDetailModal, {
-  type GrupoData,
-} from "../src/components/GroupDetailModal";
-import ProfileViewerModal from "../src/components/ProfileViewerModal";
-import UniversalHeader from "../src/components/UniversalHeader";
-import { useThemeContext } from "../src/context/ThemeContext";
-import { useTranslationContext } from "../src/context/TranslationContext";
-import handleLogout from "../src/services/authService";
+// Hook que recrea los estilos según el tema activo (claro/oscuro)
+function useThemedStyles() {
+  const { colors } = useTheme();
+  return useMemo(
+    () => ({ colors, styles: makeStyles(colors), s: makeS(colors) }),
+    [colors],
+  );
+}
 
-const Text = TranslatedText;
+const { width: SCREEN_W } = Dimensions.get('window');
+const IS_WIDE = SCREEN_W >= 768;
 
-// ── Theme
-const darkTheme = {
-  bg: "#07050f",
-  surface: "#0d0b1e",
-  accent: "#8b5cf6",
-  accent70: "rgba(167,139,250,1)",
-  accent40: "rgba(139,92,246,0.35)",
-  accent20: "rgba(139,92,246,0.12)",
-  text: "#ffffff",
-  textSub: "rgba(255,255,255,0.65)",
-  textMid: "rgba(255,255,255,0.55)",
-  textMuted: "rgba(255,255,255,0.38)",
-  border: "rgba(139,92,246,0.22)",
-  cardBg: "rgba(255,255,255,0.03)",
-  green: "rgba(52,211,153,1)",
-  greenBg: "rgba(52,211,153,0.08)",
-  red: "#ef4444",
-  redBg: "rgba(239,68,68,0.10)",
-  yellow: "#f59e0b",
-  yellowBg: "rgba(245,158,11,0.12)",
-  blue: "#3b82f6",
-  blueBg: "rgba(59,130,246,0.12)",
-};
+// ─────────────────────────────────────────────
+// TIPOS
+// ─────────────────────────────────────────────
+type SeccionUni = 'inicio' | 'estudiantes' | 'aprobar' | 'estadisticas';
 
-const lightTheme = {
-  bg: "#f8fafc",
-  surface: "#ffffff",
-  accent: "#7c3aed",
-  accent70: "rgba(139,92,246,0.95)",
-  accent40: "rgba(139,92,246,0.22)",
-  accent20: "rgba(139,92,246,0.12)",
-  text: "#111827",
-  textSub: "rgba(17,24,39,0.75)",
-  textMid: "rgba(17,24,39,0.55)",
-  textMuted: "rgba(17,24,39,0.38)",
-  border: "rgba(139,92,246,0.18)",
-  cardBg: "#f8fafc",
-  green: "#15803d",
-  greenBg: "rgba(52,211,153,0.12)",
-  red: "#b91c1c",
-  redBg: "rgba(239,68,68,0.10)",
-  yellow: "#b45309",
-  yellowBg: "rgba(245,158,11,0.12)",
-  blue: "#2563eb",
-  blueBg: "rgba(59,130,246,0.12)",
-};
-
-let C = darkTheme;
-let s = createStyles(C);
-
-type Section =
-  | "inicio"
-  | "explorar"
-  | "grupos"
-  | "horas"
-  | "empresas"
-  | "notificaciones"
-  | "perfil"
-  | "config"
-  | "gestion"
-  | "ayuda"
-  | "acercade";
-
-type HorasTab = "pendientes" | "en-curso" | "validadas" | "rechazadas";
-type ExploreTab = "empresas" | "universidades" | "proyectos";
-type PerfilTab = "inicio" | "carreras" | "aliadas" | "destacados";
-type PubType = "anuncio" | "oferta" | "evento" | "convocatoria";
-
-type EmpresaDbRow = {
+interface EstudianteRow {
   id: string;
-  nombre: string;
-  industria?: string | null;
-  descripcion?: string | null;
-  plan_seleccionado?: string | null;
-};
+  nombre_completo: string;
+  carrera: string;
+  semestre: number;
+  horas_aprobadas: number;
+  horas_objetivo: number;
+  horas_en_proceso: number;
+  foto_url?: string;
+  activo: boolean;
+}
 
-type SolicitudHorasRow = {
+interface Aplicacion {
   id: string;
+  estudiante_id: string;
+  estudiante_nombre: string;
+  vacante_id: string;
+  empresa_id: string;
   estado: string;
-  iniciado_por: "empresa" | "universidad";
-  grupo_id?: string | null;
-  empresa_id?: string | null;
-  decision_universidad?: "pendiente" | "aprobada" | "rechazada" | null;
-  motivo_rechazo_universidad?: string | null;
-  hora_inicio?: string | null;
-  hora_fin?: string | null;
-  fecha_inicio?: string | null;
-  fecha_fin?: string | null;
-  google_maps_url?: string | null;
-  created_at?: string | null;
-  horas_ofrecidas?: number | null;
-  horario?: string | null;
-  condiciones?: string | null;
+  horas_completadas: number;
+  pago_confirmado: boolean;
+  fecha_aplicacion: any;
+  fecha_inicio?: any;
+  fecha_fin?: any;
+  // campos desnormalizados que cargaremos
+  nombre_empresa?: string;
+  titulo_vacante?: string;
+}
+
+interface PerfilUni {
+  nombre_universidad: string;
+  dominio_correo: string;
+  logo_url?: string;
+  direccion?: string;
+  contacto_nombre?: string;
+  contacto_correo?: string;
+}
+
+// Fila genérica de Excel — los encabezados pueden variar, se detectan por patrón
+interface ExcelRow { [columna: string]: any }
+
+// Columnas permitidas en la plantilla de importación
+const COLUMNAS_EXCEL = {
+  nombres:      { label: 'Nombres completos',          patrones: ['nombre'],                     obligatoria: true },
+  correos:      { label: 'Correos electrónicos',        patrones: ['correo', 'email', 'e-mail'],  obligatoria: true },
+  documento:    { label: 'Documento de identidad',      patrones: ['documento', 'identidad', 'dui', 'cedula', 'cédula'], obligatoria: false },
+  municipio:    { label: 'Municipio',                   patrones: ['municipio'],                  obligatoria: false },
+  departamento: { label: 'Departamento de residencia',  patrones: ['departamento'],               obligatoria: false },
+} as const;
+
+/** Extrae el valor de una fila buscando una columna cuyo encabezado contenga alguno de los patrones. */
+function valorColumna(row: ExcelRow, patrones: readonly string[]): string {
+  for (const k of Object.keys(row)) {
+    const norm = k.trim().toLowerCase();
+    if (patrones.some(p => norm.includes(p))) return String(row[k] ?? '').trim();
+  }
+  return '';
+}
+
+// ── Previsualización de importación ───────────────────────────────
+const RX_EMAIL_EXCEL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+interface FilaPreview {
+  index: number;        // número de fila (1-based)
+  nombre: string;
+  correo: string;
+  documento: string;
+  municipio: string;
+  departamento: string;
+  valido: boolean;
+  error: string;        // motivo cuando es inválida
+}
+
+/** Convierte las filas crudas del Excel en filas validadas para la vista previa. */
+function construirPreview(rows: ExcelRow[]): FilaPreview[] {
+  return rows.map((row, i) => {
+    const nombre       = valorColumna(row, COLUMNAS_EXCEL.nombres.patrones);
+    const correo       = valorColumna(row, COLUMNAS_EXCEL.correos.patrones).toLowerCase();
+    const documento    = valorColumna(row, COLUMNAS_EXCEL.documento.patrones);
+    const municipio    = valorColumna(row, COLUMNAS_EXCEL.municipio.patrones);
+    const departamento = valorColumna(row, COLUMNAS_EXCEL.departamento.patrones);
+    let error = '';
+    if (!nombre || !correo) error = 'Dato obligatorio faltante';
+    else if (!RX_EMAIL_EXCEL.test(correo)) error = 'Correo con formato inválido';
+    return {
+      index: i + 1,
+      nombre,
+      correo,
+      documento,
+      municipio,
+      departamento,
+      valido: !error,
+      error,
+    };
+  });
+}
+
+// Contraseña temporal unificada para el primer acceso de los estudiantes importados.
+const PASSWORD_TEMPORAL = 'Gradly2026!';
+
+// ── Validaciones del formulario de grupo ──
+const RX_GRUPO_NOMBRE  = /^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s-]+$/; // letras, números y guiones
+const RX_GRUPO_LETRAS  = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;      // solo letras y espacios
+
+/** Devuelve mensaje de error ('' si es válido) para cada campo del grupo. */
+const valGrupoNombre = (v: string) => {
+  const t = v.trim();
+  if (!t) return 'El nombre del grupo es obligatorio';
+  if (!RX_GRUPO_NOMBRE.test(t)) return 'Solo letras, números y guiones';
+  return '';
+};
+const valGrupoCarrera = (v: string) => {
+  const t = v.trim();
+  if (!t) return 'La carrera es obligatoria';
+  if (!RX_GRUPO_LETRAS.test(t)) return 'Solo se permiten letras y espacios';
+  return '';
+};
+const valGrupoHoras = (v: string) => {
+  const t = v.trim();
+  if (!t) return 'Las horas a cumplir son obligatorias';
+  if (!/^\d+$/.test(t) || Number(t) <= 0) return 'Ingresa un número mayor a 0';
+  return '';
+};
+const valGrupoDocente = (v: string) => {
+  const t = v.trim();
+  if (!t) return ''; // opcional
+  if (!RX_GRUPO_LETRAS.test(t)) return 'Solo se permiten letras';
+  return '';
 };
 
-type GrupoDbRow = {
+interface Grupo {
   id: string;
   nombre: string;
   carrera: string;
-  created_at?: string | null;
-  studentCount?: number;
-  horasRequeridas?: number | null;
-  empresaAsignada?: string | null;
-  status?: string;
-  badgeType?: string;
-  inicio?: string | null;
-  fin?: string | null;
-};
-
-// ── Sub-components ────────────────────────────────────────────────
-
-function SectionKicker({ children }: { children: ReactNode }) {
-  return <Text style={s.kicker}>{children}</Text>;
+  horasRequeridas: number;
+  docente: string;
+  estudiantes_registrados: number;
 }
 
-function PageTitle({ children }: { children: ReactNode }) {
-  return <Text style={s.pageTitle}>{children}</Text>;
-}
+// ── Heurística de columnas del Excel ──
+const KEYS_NOMBRE = ['estudiante', 'nombre', 'alumno', 'student', 'name'];
+const KEYS_CORREO = ['correo', 'email', 'e-mail', 'mail'];
 
-function Card({ children, style }: { children: ReactNode; style?: any }) {
-  return <View style={[s.card, style]}>{children}</View>;
-}
-
-function Chip({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={[s.chip, active && s.chipActive]}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <Text style={[s.chipText, active && s.chipTextActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function Badge({
-  label,
-  type = "default",
-}: {
-  label: string;
-  type?:
-    | "premium"
-    | "verificada"
-    | "startup"
-    | "pyme"
-    | "internacional"
-    | "default"
-    | "pending"
-    | "inprogress"
-    | "validated"
-    | "completed"
-    | "rejected"
-    | "convenio"
-    | "active"
-    | "review";
-}) {
-  const colorMap: Record<string, { bg: string; border: string; text: string }> =
-    {
-      premium: {
-        bg: "rgba(234,179,8,0.1)",
-        border: "rgba(234,179,8,0.35)",
-        text: "rgba(253,224,71,1)",
-      },
-      verificada: {
-        bg: "rgba(52,211,153,0.08)",
-        border: "rgba(52,211,153,0.3)",
-        text: "rgba(52,211,153,1)",
-      },
-      startup: {
-        bg: "rgba(99,102,241,0.1)",
-        border: "rgba(99,102,241,0.3)",
-        text: "rgba(165,180,252,1)",
-      },
-      pyme: {
-        bg: "rgba(251,146,60,0.1)",
-        border: "rgba(251,146,60,0.3)",
-        text: "rgba(253,186,116,1)",
-      },
-      internacional: {
-        bg: "rgba(59,130,246,0.1)",
-        border: "rgba(59,130,246,0.3)",
-        text: "rgba(147,197,253,1)",
-      },
-      default: {
-        bg: C.accent20,
-        border: "rgba(139,92,246,0.3)",
-        text: C.accent70,
-      },
-      pending: {
-        bg: "rgba(234,179,8,0.1)",
-        border: "rgba(234,179,8,0.3)",
-        text: "rgba(253,224,71,1)",
-      },
-      inprogress: {
-        bg: "rgba(59,130,246,0.1)",
-        border: "rgba(59,130,246,0.3)",
-        text: "rgba(147,197,253,1)",
-      },
-      validated: {
-        bg: "rgba(52,211,153,0.08)",
-        border: "rgba(52,211,153,0.25)",
-        text: "rgba(52,211,153,0.95)",
-      },
-      completed: {
-        bg: "rgba(139,92,246,0.1)",
-        border: "rgba(139,92,246,0.3)",
-        text: "rgba(167,139,250,1)",
-      },
-      rejected: {
-        bg: "rgba(239,68,68,0.1)",
-        border: "rgba(239,68,68,0.3)",
-        text: "rgba(252,165,165,1)",
-      },
-      convenio: {
-        bg: "rgba(52,211,153,0.1)",
-        border: "rgba(52,211,153,0.3)",
-        text: "rgba(52,211,153,1)",
-      },
-      active: {
-        bg: "rgba(52,211,153,0.1)",
-        border: "rgba(52,211,153,0.3)",
-        text: "rgba(52,211,153,1)",
-      },
-      review: {
-        bg: "rgba(251,146,60,0.1)",
-        border: "rgba(251,146,60,0.3)",
-        text: "rgba(253,186,116,1)",
-      },
-    };
-  const col = colorMap[type] ?? colorMap.default;
-  return (
-    <View
-      style={[s.badge, { backgroundColor: col.bg, borderColor: col.border }]}
-    >
-      <TranslatedText style={[s.badgeText, { color: col.text }]}>
-        {label}
-      </TranslatedText>
-    </View>
-  );
-}
-
-function Tag({ label }: { label: string }) {
-  return (
-    <View style={s.tag}>
-      <Text style={s.tagText}>{label}</Text>
-    </View>
-  );
-}
-
-function BtnPrimary({
-  label,
-  onPress,
-  small,
-  style,
-}: {
-  label: string;
-  onPress?: () => void;
-  small?: boolean;
-  style?: any;
-}) {
-  return (
-    <TouchableOpacity
-      style={[s.btnPrimary, small && s.btnSm, style]}
-      onPress={
-        onPress ??
-        (() =>
-          Alert.alert("Próximamente", "Esta función estará disponible pronto."))
-      }
-      activeOpacity={0.8}
-    >
-      <Text style={[s.btnPrimaryText, small && s.btnSmText]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function BtnOutline({
-  label,
-  onPress,
-  small,
-  style,
-  disabled,
-}: {
-  label: string;
-  onPress?: () => void;
-  small?: boolean;
-  style?: any;
-  disabled?: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      style={[s.btnOutline, small && s.btnSm, disabled && s.btnDisabled, style]}
-      onPress={
-        onPress ??
-        (() =>
-          Alert.alert("Próximamente", "Esta función estará disponible pronto."))
-      }
-      activeOpacity={0.8}
-      disabled={disabled}
-    >
-      <Text
-        style={[
-          s.btnOutlineText,
-          small && s.btnSmText,
-          disabled && { color: C.textMuted },
-        ]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-function EmpresaCard({
-  icon,
-  name,
-  sector,
-  rating,
-  reviews,
-  horas,
-  badgeLabel,
-  badgeType,
-  showConvenio,
-  onViewEmpresa,
-  onSolicitarHoras,
-}: {
-  icon: string;
-  name: string;
-  sector: string;
-  rating: string;
-  reviews: string;
-  horas: number;
-  badgeLabel?: string;
-  badgeType?: any;
-  showConvenio?: boolean;
-  onViewEmpresa?: () => void;
-  onSolicitarHoras?: () => void;
-}) {
-  return (
-    <Card style={{ marginBottom: 16 }}>
-      <View style={s.empresaHeader}>
-        <View style={s.empresaLogo}>
-          <Text style={{ fontSize: 22 }}>{icon}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={s.empresaName}>{name}</Text>
-          <Text style={s.empresaSector}>{sector}</Text>
-        </View>
-        {badgeLabel && <Badge label={badgeLabel} type={badgeType} />}
-      </View>
-      <Text style={s.empresaRating}>
-        ⭐ {rating}{" "}
-        <Text style={{ color: C.textMuted }}>({reviews} reseñas)</Text>
-      </Text>
-      <Text style={s.empresaCupos}>
-        🕐 <Text style={{ fontWeight: "700", color: C.text }}>{horas}</Text>{" "}
-        horas sociales disponibles
-      </Text>
-      {showConvenio && <Badge label="Convenio activo" type="convenio" />}
-      <View style={[s.row, { marginTop: 12, gap: 8 }]}>
-        <BtnOutline label="Ver empresa" small onPress={onViewEmpresa} />
-        <BtnPrimary
-          label="Solicitar horas sociales"
-          small
-          onPress={onSolicitarHoras}
-        />
-      </View>
-    </Card>
-  );
-}
-
-// ── MAIN COMPONENT ────────────────────────────────────────────────
-export default function DashboardUniversidad() {
-  const router = useRouter();
-
-  // ── Datos del usuario desde Firebase
-  const [nombreUniv, setNombreUniv] = useState("Cargando...");
-  const [encNombre, setEncNombre] = useState("");
-  const [universidadId, setUniversidadId] = useState("");
-  // Estado para almacenar las universidades traídas de la base de datos
-const [universidadesExplorar, setUniversidadesExplorar] = useState<any[]>([]);
-useEffect(() => {
-  const cargarUniversidadesExplorar = async () => {
-    try {
-      // 1. Obtener el ID del usuario actual con sesión abierta
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      // 2. Consultar la tabla de universidades
-      let query = supabase.from("universidades").select("*");
-      
-      // 3. EXCLUSIÓN CRÍTICA: Si hay un usuario logueado, lo omitimos del listado de exploración
-      if (user) {
-        query = query.neq("id", user.id);
-      }
-      
-      const { data, error } = await query;
-      if (!error && data) {
-        setUniversidadesExplorar(data);
-      }
-    } catch (err) {
-      console.error("Error al obtener universidades de exploración:", err);
-    }
-  };
-
-  cargarUniversidadesExplorar();
-}, []);
-
-  const [universidad, setUniversidad] = useState<any>(null);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      setUniversidadId(user.id);
-      // Obtener registro completo de la universidad
-      getUniversityById(user.id)
-        .then((data) => {
-          if (data) {
-            setNombreUniv(data.nombre ?? "Mi Universidad");
-            setEncNombre(data.enc_nombre ?? "");
-            setUniversidad(data ?? null);
-            // Inicializar campos de edición
-            setEditDesc(data.descripcion ?? "");
-            setEditInstagram(data.instagram ?? "");
-            setEditLinkedin(data.enc_linkedin ?? "");
-            setEditBanner(data.banner_url ?? "");
-            setEditLogo(data.logo_url ?? "");
-            // Inicializar configuración con datos reales
-            setCfgEmail(data.email_institucional ?? "");
-            setCfgTel(data.telefono ?? "");
-          }
-        })
-        .catch(() => {});
-    });
-  }, []);
-
-
-  // 1. Añade este estado junto a los demás estados al inicio de tu componente
-const [totalEstudiantes, setTotalEstudiantes] = useState<number>(0);
-
-// 2. Ejecuta esta función dentro del useEffect de inicialización cuando ya tengas el id del usuario (uid)
-const obtenerConteoEstudiantes = async (uid: string) => {
-  try {
-    const { count, error } = await supabase
-      .from("alumnos")
-      .select("*", { count: "exact", head: true })
-      .eq("universidad_id", uid);
-
-    if (!error && count !== null) {
-      setTotalEstudiantes(count);
-    }
-  } catch (err) {
-    console.error("Error al contar estudiantes:", err);
+/** Busca en una fila la primera columna cuyo encabezado contenga alguno de los patrones. */
+function buscarValor(row: ExcelRow, patrones: string[]): string {
+  for (const k of Object.keys(row)) {
+    const norm = k.trim().toLowerCase();
+    if (patrones.some(p => norm.includes(p))) return String(row[k] ?? '').trim();
   }
+  return '';
+}
+
+/** Contraseña genérica: "Gradly" + 4 dígitos aleatorios + "!". Ej: Gradly4821! */
+function generarPassword(): string {
+  const n = Math.floor(1000 + Math.random() * 9000);
+  return `Gradly${n}!`;
+}
+
+interface EstudianteNuevo {
+  nombre: string;
+  correo: string;
+  password: string;
+}
+
+/** Extrae los pares { nombre, correo, password } válidos de las filas del Excel. */
+function extraerEstudiantes(rows: ExcelRow[]): EstudianteNuevo[] {
+  const out: EstudianteNuevo[] = [];
+  const vistos = new Set<string>();
+  for (const row of rows) {
+    const nombre = buscarValor(row, KEYS_NOMBRE);
+    const correo = buscarValor(row, KEYS_CORREO).toLowerCase();
+    if (!nombre || !correo) continue;
+    if (!RX_EMAIL_EXCEL.test(correo)) continue; // descarta correos mal formados
+    if (vistos.has(correo)) continue;            // evita duplicados
+    vistos.add(correo);
+    out.push({ nombre, correo, password: generarPassword() });
+  }
+  return out;
+}
+
+const MENU: { key: SeccionUni; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'inicio',       label: 'Inicio',            icon: 'home-outline' },
+  { key: 'estudiantes',  label: 'Mis Estudiantes',   icon: 'people-outline' },
+  { key: 'aprobar',      label: 'Aprobar Pasantías', icon: 'checkmark-done-outline' },
+  { key: 'estadisticas', label: 'Estadísticas',      icon: 'bar-chart-outline' },
+];
+
+// ── Onboarding (guía por globos) ──────────────────────────────────
+const TOUR_CLAVES: SeccionUni[] = ['inicio', 'estudiantes', 'aprobar', 'estadisticas'];
+const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
+  inicio: {
+    titulo: '¡Bienvenido a tu panel! 🎓',
+    texto:
+      'Este es tu panel general. Aquí ves de un vistazo el total de estudiantes, las pasantías activas, las horas aprobadas y las solicitudes pendientes.',
+  },
+  estudiantes: {
+    titulo: 'Mis Estudiantes',
+    texto:
+      'Administra a tus estudiantes, su carrera y su progreso de horas sociales. Puedes registrarlos uno a uno o importarlos masivamente desde un Excel.',
+  },
+  aprobar: {
+    titulo: 'Aprobar Pasantías',
+    texto:
+      'Revisa las horas que tus estudiantes completaron y apruébalas o recházalas. Las horas aprobadas suman a su progreso.',
+  },
+  estadisticas: {
+    titulo: 'Estadísticas',
+    texto:
+      'Visualiza métricas y tendencias del avance de tus estudiantes y de tu institución.',
+  },
 };
 
+// ─────────────────────────────────────────────
+// COMPONENTE PRINCIPAL
+// ─────────────────────────────────────────────
+export default function DashboardUniversidad() {
+  useAuthGuard('universidad');
+  const { user, userProfile } = useAuth();
+  const router = useRouter();
+  const { styles, colors } = useThemedStyles();
 
+  const [seccion,      setSeccion]      = useState<SeccionUni>('inicio');
+  const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
+  const [perfil,       setPerfil]       = useState<PerfilUni | null>(null);
+  const [estudiantes,  setEstudiantes]  = useState<EstudianteRow[]>([]);
+  const [apps,         setApps]         = useState<Aplicacion[]>([]);
+  const [showEditPerfil, setShowEditPerfil] = useState(false);
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
-  // ── Navigation state
-  const [section, setSection] = useState<Section>("inicio");
-
-  // ── Horas tabs
-  const [horasTab, setHorasTab] = useState<HorasTab>("pendientes");
-
-  // ── Explorar tabs
-  const [exploreTab, setExploreTab] = useState<ExploreTab>("empresas");
-  const [exploreSearch, setExploreSearch] = useState("");
-
-  // ── Perfil tabs
-  const [perfilTab, setPerfilTab] = useState<PerfilTab>("inicio");
-
-  // ── Publicar type
-  const [pubType, setPubType] = useState<PubType>("anuncio");
-  const [pubVisibility, setPubVisibility] = useState<
-    "publica" | "estudiantes" | "empresas"
-  >("publica");
-
-  // ── Notificaciones
-  const [notifFilter, setNotifFilter] = useState("Todas");
-  const [unreadRead, setUnreadRead] = useState(false);
-  const [notifData, setNotifData] = useState<
-    {
-      id: string;
-      tipo: string | null;
-      titulo: string;
-      mensaje: string;
-      leida: boolean;
-      created_at: string | null;
-    }[]
-  >([]);
-  const [loadingNotifs, setLoadingNotifs] = useState(false);
-
-  // ── Alumnos destacados (para la pestaña "Destacados" del perfil)
-  const [alumnosDestacados, setAlumnosDestacados] = useState<
-    {
-      id: string;
-      nombre_completo: string;
-      carrera: string | null;
-      promedio_rating: number | null;
-    }[]
-  >([]);
-  const [loadingDestacados, setLoadingDestacados] = useState(false);
-  const { isDark } = useThemeContext();
-  C = isDark ? darkTheme : lightTheme;
-  s = createStyles(C);
-
-  // ── Sidebar (mobile simulation — treated as bottom nav)
-  // ── Modal: Crear Grupo
-  const [groupCreationOpen, setGroupCreationOpen] = useState(false);
-
-  // ── Modal: Rechazar
-  const [modalRechazar, setModalRechazar] = useState(false);
-  const [rejectNote, setRejectNote] = useState("");
-
-  // ── Modal: Editar perfil
-  const [modalEditPerfil, setModalEditPerfil] = useState(false);
-  const [editBanner, setEditBanner] = useState("");
-  const [editLogo, setEditLogo] = useState("");
-  const [editDesc, setEditDesc] = useState("");
-  const [editInstagram, setEditInstagram] = useState("");
-  const [editLinkedin, setEditLinkedin] = useState("");
-  const [editRepNombre, setEditRepNombre] = useState("");
-  const [editRepCargo, setEditRepCargo] = useState("");
-  const [editRepEmail, setEditRepEmail] = useState("");
-  const [editRepTel, setEditRepTel] = useState("");
-
-  // ── Configuración
-  const [cfgNombre, setCfgNombre] = useState("");
-  useEffect(() => {
-    if (encNombre) setCfgNombre(encNombre);
-  }, [encNombre]);
-  const [cfgEmail, setCfgEmail] = useState("");
-  const [cfgTel, setCfgTel] = useState("");
-  const [cfgNotif1, setCfgNotif1] = useState(true);
-  const [cfgNotif2, setCfgNotif2] = useState(true);
-  const [cfgNotif3, setCfgNotif3] = useState(false);
-  const [cfgNotif4, setCfgNotif4] = useState(true);
-  const [cfgPwdActual, setCfgPwdActual] = useState("");
-  const [cfgPwdNew, setCfgPwdNew] = useState("");
-  const [cfgPwdConfirm, setCfgPwdConfirm] = useState("");
-
-  // ── Publicar
-  const [pubTitulo, setPubTitulo] = useState("");
-  const [pubDescripcion, setPubDescripcion] = useState("");
-
-  // ── Gestión Práctica filters
-  const [gestionGrupoFilter, setGestionGrupoFilter] = useState("Todos");
-  const [gestionEstudianteFilter, setGestionEstudianteFilter] =
-    useState("Todos");
-  const [gestionHorasTab, setGestionHorasTab] =
-    useState<HorasTab>("pendientes");
-
-  const [profileViewerOpen, setProfileViewerOpen] = useState(false);
-  const [profileViewerUserId, setProfileViewerUserId] = useState<string | null>(
-    null,
-  );
-  const [profileViewerUserType, setProfileViewerUserType] = useState<
-    "talento" | "empresa" | "universidad"
-  >("talento");
-
-  const [grupos, setGrupos] = useState<GrupoData[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState<GrupoData | null>(null);
-  const [groupModalMode, setGroupModalMode] = useState<"view" | "edit" | null>(
-    null,
-  );
-  const [groupEditSaving, setGroupEditSaving] = useState(false);
-
-  // ── Módulo 6: datos reales (empresas / propuestas / solicitar horas)
-  const [empresasDb, setEmpresasDb] = useState<EmpresaDbRow[]>([]);
-  const [isLoadingEmpresas, setIsLoadingEmpresas] = useState(false);
-
-  const [propuestasOpen, setPropuestasOpen] = useState(false);
-  const [propuestas, setPropuestas] = useState<SolicitudHorasRow[]>([]);
-  const [isLoadingPropuestas, setIsLoadingPropuestas] = useState(false);
-  const [selectedPropuesta, setSelectedPropuesta] =
-    useState<SolicitudHorasRow | null>(null);
-  const [isUpdatingPropuesta, setIsUpdatingPropuesta] = useState(false);
-  const [rechazoPropuestaMotivo, setRechazoPropuestaMotivo] = useState("");
-  const [rechazoPropuestaError, setRechazoPropuestaError] = useState("");
-  const [showRechazoPropuestaInput, setShowRechazoPropuestaInput] =
-    useState(false);
-
-  const [solicitarHorasOpen, setSolicitarHorasOpen] = useState(false);
-  const [solicitarStep, setSolicitarStep] = useState<"grupo" | "empresa">(
-    "grupo",
-  );
-  const [empresaSearch, setEmpresaSearch] = useState("");
-  const [gruposDb, setGruposDb] = useState<GrupoDbRow[]>([]);
-  const [isLoadingGruposDb, setIsLoadingGruposDb] = useState(false);
-  const [isLoadingGroupDetail, setIsLoadingGroupDetail] = useState(false);
-  const [selectedGrupoDb, setSelectedGrupoDb] = useState<GrupoDbRow | null>(
-    null,
-  );
-  const [selectedEmpresaDb, setSelectedEmpresaDb] =
-    useState<EmpresaDbRow | null>(null);
-  const [solicitarErrors, setSolicitarErrors] = useState<
-    Record<string, string>
-  >({});
-  const [isSendingSolicitud, setIsSendingSolicitud] = useState(false);
-
-  const handleGroupCreated = (group: GrupoData) => {
-    setGrupos((prev) => [group, ...prev]);
-    loadGruposDb();
-  };
-
-  const loadEmpresasDb = async () => {
-    setIsLoadingEmpresas(true);
-    const resp = (await supabase
-      .from("empresas")
-      .select("id,nombre,industria,descripcion,plan_seleccionado")
-      .order("created_at", { ascending: false })) as any;
-    const { data, error } = resp;
-    setIsLoadingEmpresas(false);
-    if (error) {
-      console.error("Error cargando empresas:", error);
-      setEmpresasDb([]);
-      return;
-    }
-    setEmpresasDb((data ?? []) as EmpresaDbRow[]);
-  };
-
-  const loadGruposDb = async () => {
-    setIsLoadingGruposDb(true);
-
-    let groupsQuery: any = supabase.from("grupos").select("*");
-    if (universidadId) {
-      groupsQuery = groupsQuery.eq("universidad_id", universidadId);
-    }
-    const groupsResp = (await groupsQuery.order("fecha_creacion", {
-      ascending: false,
-    })) as any;
-    const studentsResp = (await supabase
-      .from("estudiantes")
-      .select("grupo_id")) as any;
-
-    const groupIds = ((groupsResp.data ?? []) as any[]).map((g) =>
-      String(g.id),
-    );
-    const solicitudesResp = groupIds.length
-      ? ((await supabase
-          .from("solicitudes_horas")
-          .select("grupo_id,empresa_id,fecha_inicio,fecha_fin,estado")
-          .in("grupo_id", groupIds)
-          .order("created_at", { ascending: false })) as any)
-      : { data: [], error: null };
-
-    const empresasResp = (await supabase
-      .from("empresas")
-      .select("id,nombre")) as any;
-
-    const { data: groupsData, error: groupsError } = groupsResp;
-    const { data: studentsData, error: studentsError } = studentsResp;
-    const { data: solicitudesData, error: solicitudesError } = solicitudesResp;
-    const { data: empresasData, error: empresasError } = empresasResp;
-    setIsLoadingGruposDb(false);
-
-    if (groupsError) {
-      console.error("Error cargando grupos:", groupsError);
-      setGruposDb([]);
-      return;
-    }
-
-    if (studentsError) {
-      console.error("Error cargando estudiantes:", studentsError);
-    }
-
-    const studentCountByGroup = ((studentsData ?? []) as any[]).reduce(
-      (acc: Record<string, number>, item: any) => {
-        const groupId = String(item.grupo_id);
-        acc[groupId] = (acc[groupId] || 0) + 1;
-        return acc;
-      },
-      {},
-    );
-
-    if (solicitudesError) {
-      console.error("Error cargando solicitudes de horas:", solicitudesError);
-    }
-
-    if (empresasError) {
-      console.error("Error cargando empresas para solicitudes:", empresasError);
-    }
-
-    const latestSolicitudByGroup = ((solicitudesData ?? []) as any[]).reduce(
-      (acc: Record<string, any>, item: any) => {
-        const groupId = String(item.grupo_id);
-        if (!acc[groupId]) acc[groupId] = item;
-        return acc;
-      },
-      {},
-    );
-
-    const empresaNamesById = ((empresasData ?? []) as any[]).reduce(
-      (acc: Record<string, string>, empresa: any) => {
-        if (empresa?.id) acc[String(empresa.id)] = empresa.nombre;
-        return acc;
-      },
-      {},
-    );
-
-    const mapped = ((groupsData ?? []) as any[]).map((g) => {
-      const carrera = (g.especialidad || g.carrera || "") as string;
-      const nombreGrupo = (g.nombre_grupo ||
-        g.nombre ||
-        "Grupo sin nombre") as string;
-      const createdAt = g.fecha_creacion || g.created_at || null;
-      const solicitud = latestSolicitudByGroup[String(g.id)];
-      const estadoRaw = solicitud?.estado ? String(solicitud.estado) : "Activo";
-      const status =
-        estadoRaw === "aprobada"
-          ? "Aprobada"
-          : estadoRaw === "cerrada"
-            ? "Completado"
-            : estadoRaw === "Activo"
-              ? "Activo"
-              : "En revisión";
-      const badgeType =
-        estadoRaw === "aprobada"
-          ? "inprogress"
-          : estadoRaw === "cerrada"
-            ? "completed"
-            : estadoRaw === "Activo"
-              ? "active"
-              : "review";
-
-      return {
-        id: String(g.id),
-        nombre:
-          [carrera, nombreGrupo].filter(Boolean).join(" - ") || nombreGrupo,
-        carrera,
-        created_at: createdAt,
-        studentCount: studentCountByGroup[String(g.id)] ?? 0,
-        horasRequeridas: g.horas_requeridas ?? g.horas ?? null,
-        empresaAsignada: solicitud?.empresa_id
-          ? (empresaNamesById[String(solicitud.empresa_id)] ?? null)
-          : null,
-        status,
-        badgeType,
-        inicio: solicitud?.fecha_inicio || null,
-        fin: solicitud?.fecha_fin || null,
-      };
-    });
-    setGruposDb(mapped);
-  };
-
-  const loadPropuestas = async () => {
-    setIsLoadingPropuestas(true);
-    let query: any = supabase
-      .from("solicitudes_horas")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (universidadId) {
-      query = query.eq("universidad_id", universidadId);
-    }
-    const resp = (await query) as any;
-    const { data, error } = resp;
-    setIsLoadingPropuestas(false);
-    if (error) {
-      console.error("Error cargando propuestas:", error);
-      setPropuestas([]);
-      return;
-    }
-    setPropuestas((data ?? []) as SolicitudHorasRow[]);
-  };
-
-  const formatDateString = (value?: string | null) => {
-    if (!value) return "—";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleDateString("es-ES");
-  };
-
-  const loadGroupDetail = async (groupId: string) => {
+  const confirmarCierreSesion = async () => {
     try {
-      const groupResp = (await supabase
-        .from("grupos")
-        .select("*")
-        .eq("id", groupId)
-        .single()) as any;
-      const { data: groupData, error: groupError } = groupResp;
-      if (groupError || !groupData) {
-        throw groupError || new Error("Grupo no encontrado");
-      }
-
-      const studentsResp = (await supabase
-        .from("estudiantes")
-        .select("id,nombre_completo,email,matricula")
-        .eq("grupo_id", groupId)
-        .order("created_at", { ascending: true })) as any;
-      const { data: studentsData, error: studentsError } = studentsResp;
-      if (studentsError) {
-        console.error("Error cargando estudiantes del grupo:", studentsError);
-      }
-
-      const requestResp = (await supabase
-        .from("solicitudes_horas")
-        .select("empresa_id,fecha_inicio,fecha_fin,estado")
-        .eq("grupo_id", groupId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()) as any;
-      const { data: requestData, error: requestError } = requestResp;
-      if (requestError) {
-        console.error("Error cargando solicitud de horas:", requestError);
-      }
-
-      let empresaAsignada: string | null = null;
-      let inicio = "";
-      let fin = "";
-      let badgeType: GrupoData["badgeType"] = "active";
-
-      if (requestData) {
-        if (requestData.empresa_id) {
-          const empresaResp = (await supabase
-            .from("empresas")
-            .select("nombre")
-            .eq("id", requestData.empresa_id)
-            .single()) as any;
-          empresaAsignada = empresaResp.data?.nombre ?? null;
-        }
-        inicio = requestData.fecha_inicio
-          ? formatDateString(requestData.fecha_inicio)
-          : "";
-        fin = requestData.fecha_fin
-          ? formatDateString(requestData.fecha_fin)
-          : "";
-        badgeType =
-          requestData.estado === "aprobada"
-            ? "inprogress"
-            : requestData.estado === "cerrada"
-              ? "completed"
-              : "review";
-      }
-
-      const groupName = [
-        groupData.especialidad || groupData.carrera || "",
-        groupData.nombre_grupo || groupData.nombre || "",
-      ]
-        .filter(Boolean)
-        .join(" - ")
-        .trim();
-
-      return {
-        id: String(groupData.id),
-        name: groupName || "Grupo sin nombre",
-        carrera: (groupData.especialidad || groupData.carrera || "") as string,
-        dateCreated: formatDateString(
-          groupData.fecha_creacion || groupData.created_at,
-        ),
-        inicio,
-        fin,
-        count: ((studentsData ?? []) as any[]).length,
-        status: requestData?.estado ? String(requestData.estado) : "Activo",
-        badgeType,
-        tags: [
-          (groupData.especialidad || groupData.carrera || "") as string,
-        ].filter(Boolean),
-        empresaAsignada,
-        horasRequeridas: groupData.horas_requeridas ?? groupData.horas ?? null,
-        estudiantes: ((studentsData ?? []) as any[]).map((student) => ({
-          id: String(student.id),
-          name: student.nombre_completo || "",
-          carrera: (groupData.especialidad ||
-            groupData.carrera ||
-            "") as string,
-          estado: String(student.matricula || "Activo"),
-          horas: groupData.horas_requeridas ?? groupData.horas ?? null,
-        })),
-      };
-    } catch (error: any) {
-      console.error("Error cargando detalle de grupo:", error);
-      throw error;
-    }
-  };
-
-  /**
-   * Carga los grupos creados por el usuario autenticado desde Supabase
-   * y actualiza el estado `grupos` con los datos reales
-   */
-  const loadGruposAutenticado = async () => {
-    try {
-      // Obtener el usuario autenticado
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        console.warn("No authenticated user found");
-        return;
-      }
-
-      // Obtener grupos del usuario autenticado (universidad_id = user.id)
-      const { data: gruposData, error: gruposError } = await supabase
-        .from("grupos")
-        .select("*")
-        .eq("universidad_id", user.id)
-        .order("fecha_creacion", { ascending: false });
-
-      if (gruposError) {
-        console.error("Error cargando grupos autenticados:", gruposError);
-        return;
-      }
-
-      if (!gruposData || gruposData.length === 0) {
-        console.log("No groups found for authenticated user");
-        setGrupos([]);
-        return;
-      }
-
-      // Para cada grupo, obtener estudiantes y solicitudes de horas
-      const gruposConDetalles = await Promise.all(
-        (gruposData as any[]).map(async (groupData) => {
-          try {
-            // Obtener estudiantes del grupo
-            const { data: estudiantesData } = await supabase
-              .from("estudiantes")
-              .select("*")
-              .eq("grupo_id", groupData.id);
-
-            // Obtener solicitud de horas del grupo
-            const { data: solicitudData } = await supabase
-              .from("solicitudes_horas")
-              .select("*")
-              .eq("grupo_id", groupData.id)
-              .order("created_at", { ascending: false })
-              .limit(1);
-
-            // Obtener nombre de la empresa si existe
-            let empresaNombre = null;
-            if (solicitudData && solicitudData.length > 0) {
-              const empresaId = solicitudData[0].empresa_id;
-              const { data: empresaData } = await supabase
-                .from("empresas")
-                .select("nombre")
-                .eq("id", empresaId)
-                .single();
-              empresaNombre = empresaData?.nombre ?? null;
-            }
-
-            // Mapear datos a estructura GrupoData
-            const estadoRaw = solicitudData?.[0]?.estado ?? "Activo";
-            const statusMap: Record<string, string> = {
-              aprobada: "En curso",
-              cerrada: "Completado",
-              pendiente: "En revisión",
-              rechazada: "Rechazada",
-              Activo: "Activo",
-            };
-
-            const badgeTypeMap: Record<string, GrupoData["badgeType"]> = {
-              aprobada: "inprogress",
-              cerrada: "completed",
-              pendiente: "review",
-              rechazada: "rejected",
-              Activo: "active",
-            };
-
-            return {
-              id: String(groupData.id),
-              name: `${groupData.carrera || ""} - ${groupData.nombre_grupo || groupData.nombre || "Grupo sin nombre"}`.trim(),
-              carrera: groupData.carrera || "",
-              dateCreated: formatDateString(
-                groupData.fecha_creacion || groupData.created_at,
-              ),
-              inicio: solicitudData?.[0]?.fecha_inicio
-                ? formatDateString(solicitudData[0].fecha_inicio)
-                : "Por definir",
-              fin: solicitudData?.[0]?.fecha_fin
-                ? formatDateString(solicitudData[0].fecha_fin)
-                : "Por definir",
-              count: (estudiantesData ?? []).length,
-              status: statusMap[estadoRaw] || "Activo",
-              badgeType:
-                (badgeTypeMap[estadoRaw] as GrupoData["badgeType"]) || "active",
-              tags: [
-                groupData.carrera || "",
-                solicitudData?.[0]?.estado || "Sin solicitud",
-              ].filter(Boolean),
-              empresaAsignada: empresaNombre,
-              estudiantes: (estudiantesData ?? []).map((student: any) => ({
-                id: String(student.id),
-                name: student.nombre_completo || "Estudiante sin nombre",
-                carrera: groupData.carrera || "",
-                estado: student.estado || "Activo",
-                horas: groupData.horas_requeridas ?? null,
-              })),
-            } as GrupoData;
-          } catch (error) {
-            console.error("Error procesando grupo:", groupData.id, error);
-            return null;
-          }
-        }),
-      );
-
-      // Filtrar grupos nulos y actualizar estado
-      const gruposFiltrados = gruposConDetalles.filter(
-        (g) => g !== null,
-      ) as GrupoData[];
-      setGrupos(gruposFiltrados);
-
-      console.log(
-        `✓ Grupos autenticados cargados: ${gruposFiltrados.length} grupos`,
-      );
+      setLogoutModalVisible(false);
+      await signOut(auth);
+      router.replace('/auth/iniciosesion' as any);
     } catch (error) {
-      console.error("Error en loadGruposAutenticado:", error);
+      console.error('Error al cerrar sesión:', error);
     }
   };
 
-  const handleActualizarEstadoPropuesta = async (
-    propuestaId: string,
-    estado: "aprobada" | "cerrada",
-    motivo?: string,
-  ) => {
-    setIsUpdatingPropuesta(true);
-    setRechazoPropuestaError("");
-
-    if (estado === "cerrada" && !motivo?.trim()) {
-      setRechazoPropuestaError("Escribe el motivo real del rechazo.");
-      setIsUpdatingPropuesta(false);
-      return false;
-    }
-
-    const { error } = await supabase
-      .from("solicitudes_horas")
-      .update({
-        estado,
-        decision_universidad: estado === "aprobada" ? "aprobada" : "rechazada",
-        motivo_rechazo_universidad:
-          estado === "cerrada" ? motivo?.trim() : null,
-      })
-      .eq("id", propuestaId);
-    setIsUpdatingPropuesta(false);
-
-    if (error) {
-      console.error("Error actualizando propuesta:", error);
-      Alert.alert("Error", "No fue posible actualizar la propuesta.");
-      return false;
-    }
-    await loadPropuestas();
-    return true;
+  const handleAyuda = () => {
+    Alert.alert('Ayuda', 'Escríbenos a soporte@gradly.app y te ayudaremos con cualquier duda.');
+  };
+  const handleAcerca = () => {
+    Alert.alert('Acerca de Gradly', 'Gradly conecta estudiantes, universidades y empresas para gestionar pasantías y horas sociales.\n\nVersión 1.0.0');
   };
 
-  const handleEnviarSolicitudHoras = async () => {
-    const nextErrors: Record<string, string> = {};
-    if (!selectedGrupoDb?.id) nextErrors.grupo = "Selecciona un grupo";
-    if (!selectedEmpresaDb?.id) nextErrors.empresa = "Selecciona una empresa";
-    if (Object.keys(nextErrors).length > 0) {
-      setSolicitarErrors(nextErrors);
-      return;
-    }
-    setSolicitarErrors({});
-    setIsSendingSolicitud(true);
-
-    if (!universidadId) {
-      Alert.alert(
-        "Error",
-        "No se pudo identificar la universidad. Intenta reiniciar la sesión.",
-      );
-      setIsSendingSolicitud(false);
-      return;
-    }
-
-    const payload = {
-      universidad_id: universidadId,
-      grupo_id: selectedGrupoDb?.id,
-      empresa_id: selectedEmpresaDb?.id,
-      iniciado_por: "universidad",
-      estado: "pendiente",
-      decision_universidad: "pendiente",
-      motivo_rechazo_universidad: null,
-      created_at: new Date().toISOString(),
-    };
-
-    const { error } = await supabase.from("solicitudes_horas").insert(payload);
-    setIsSendingSolicitud(false);
-    if (error) {
-      console.error("Error enviando solicitud de horas:", error);
-      Alert.alert("Error", "No fue posible enviar la propuesta.");
-      return;
-    }
-
-    Alert.alert("Enviado", "La propuesta fue enviada correctamente.");
-    setSolicitarHorasOpen(false);
-    resetSolicitarHorasModal();
+  const abrirEditPerfil = () => {
+    setEditNombre(perfil?.nombre_universidad ?? '');
+    setEditDominio(perfil?.dominio_correo ?? '');
+    setEditDir(perfil?.direccion ?? '');
+    setEditContacto(perfil?.contacto_nombre ?? '');
+    setEditCorreo(perfil?.contacto_correo ?? '');
+    setShowEditPerfil(true);
   };
 
-  const resetSolicitarHorasModal = () => {
-    setSolicitarStep("grupo");
-    setEmpresaSearch("");
-    setSelectedGrupoDb(null);
-    setSelectedEmpresaDb(null);
-    setSolicitarErrors({});
-    setIsSendingSolicitud(false);
-  };
+  // Edit perfil
+  const [editNombre,   setEditNombre]   = useState('');
+  const [editDominio,  setEditDominio]  = useState('');
+  const [editDir,      setEditDir]      = useState('');
+  const [editContacto, setEditContacto] = useState('');
+  const [editCorreo,   setEditCorreo]   = useState('');
+  const [uploadingLogo,setUploadingLogo]= useState(false);
 
-  const openSolicitarHorasModal = (empresa?: EmpresaDbRow) => {
-    setSolicitarHorasOpen(true);
-    resetSolicitarHorasModal();
-    loadGruposDb();
-    // Si viene desde una tarjeta de empresa, dejamos precargada esa empresa
-    if (empresa) {
-      setSelectedEmpresaDb(empresa);
-    }
-  };
+  // ── Firestore ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(
+      doc(db, 'perfiles_universidades', user.uid),
+      snap => { if (snap.exists()) setPerfil(snap.data() as PerfilUni); },
+      error => console.warn('Error en listener (perfil universidad):', error),
+    );
+    return unsub;
+  }, [user]);
+
+  // Badge de mensajes no leídos del usuario
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribeUnreadTotal(user.uid, setMensajesNoLeidos);
+    return unsub;
+  }, [user?.uid]);
 
   useEffect(() => {
-    if (
-      section === "inicio" ||
-      section === "explorar" ||
-      section === "gestion" ||
-      section === "empresas" ||
-      section === "perfil"
-    ) {
-      loadEmpresasDb();
-    }
-    if (section === "grupos" || section === "gestion") {
-      loadGruposDb();
-      loadGruposAutenticado(); // Cargar grupos del usuario autenticado
-    }
-    if (
-      section === "gestion" ||
-      section === "horas" ||
-      section === "inicio"
-    ) {
-      loadPropuestas();
-    }
-    if (section === "notificaciones" && universidadId) {
-      (async () => {
-        setLoadingNotifs(true);
-        const { data } = await supabase
-          .from("notificaciones")
-          .select("id,tipo,titulo,mensaje,leida,created_at")
-          .eq("usuario_id", universidadId)
-          .order("created_at", { ascending: false });
-        setNotifData((data ?? []) as typeof notifData);
-        setLoadingNotifs(false);
-      })();
-    }
-    if (section === "perfil" && universidadId) {
-      (async () => {
-        setLoadingDestacados(true);
-        const { data } = await supabase
-          .from("alumnos")
-          .select("id,nombre_completo,carrera,promedio_rating")
-          .eq("universidad_id", universidadId)
-          .order("promedio_rating", { ascending: false })
-          .limit(4);
-        setAlumnosDestacados(
-          (data ?? []).map((a: any) => ({
-            id: String(a.id),
-            nombre_completo: a.nombre_completo ?? "Alumno",
-            carrera: a.carrera ?? null,
-            promedio_rating: a.promedio_rating ?? null,
-          })),
-        );
-        setLoadingDestacados(false);
-      })();
-    }
-  }, [section, universidadId]);
+    if (!user) return;
+    const q = query(collection(db, 'perfiles_estudiantes'), where('universidad_id', '==', user.uid));
+    const unsub = onSnapshot(
+      q,
+      snap => setEstudiantes(snap.docs.map(d => ({ id: d.id, ...d.data() } as EstudianteRow))),
+      error => console.warn('Error en listener (estudiantes):', error),
+    );
+    return unsub;
+  }, [user]);
 
-  const noop = () =>
-    Alert.alert("Próximamente", "Esta función estará disponible pronto.");
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'aplicaciones'), where('universidad_id', '==', user.uid));
+    const unsub = onSnapshot(
+      q,
+      snap => setApps(snap.docs.map(d => ({ id: d.id, ...d.data() } as Aplicacion))),
+      error => console.warn('Error en listener (aplicaciones):', error),
+    );
+    return unsub;
+  }, [user]);
 
-  const openProfileViewer = (
-    userId: string,
-    userType: "talento" | "empresa" | "universidad",
-  ) => {
-    setProfileViewerUserId(userId);
-    setProfileViewerUserType(userType);
-    setProfileViewerOpen(true);
-  };
+  // ── Métricas ──────────────────────────────────────────────────────
+  const metricas = useMemo(() => ({
+    totalEstudiantes: estudiantes.length,
+    enPasantia:   apps.filter(a => a.estado === 'contratado').length,
+    horasAprobadas: estudiantes.reduce((acc, e) => acc + (e.horas_aprobadas ?? 0), 0),
+    pendAprobacion: apps.filter(a => a.estado === 'finalizado').length,
+  }), [estudiantes, apps]);
 
-  const openGroupViewer = async (groupId: string) => {
-    setIsLoadingGroupDetail(true);
-    try {
-      const detail = await loadGroupDetail(groupId);
-      setSelectedGroup(detail);
-      setGroupModalMode("view");
-    } catch (error: any) {
-      Alert.alert(
-        "Error",
-        error?.message || "No se pudo cargar el detalle del grupo.",
-      );
-    } finally {
-      setIsLoadingGroupDetail(false);
-    }
-  };
-
-  const openGroupEditor = (group: GrupoData) => {
-    setSelectedGroup(group);
-    setGroupModalMode("edit");
-  };
-
-  
-
-  const filteredExploreCompanies = useMemo(() => {
-    const query = exploreSearch.trim().toLowerCase();
-    if (!query) return [];
-    return empresasDb.filter((empresa) => {
-      const haystack =
-        `${empresa.nombre} ${empresa.industria ?? ""} ${empresa.descripcion ?? ""}`.toLowerCase();
-      return haystack.includes(query);
+  // ── Upload logo ────────────────────────────────────────────────────
+  const handleUploadLogo = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permiso necesario'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true, aspect: [1, 1], quality: 0.8,
     });
-  }, [exploreSearch, empresasDb]);
-
-  const handleUpdateGroup = async (updatedGroup: GrupoData) => {
-    setGroupEditSaving(true);
+    if (result.canceled) return;
+    setUploadingLogo(true);
     try {
-      const payload = {
-        nombre: updatedGroup.name,
-        carrera: updatedGroup.carrera,
-        fecha_inicio: updatedGroup.inicio,
-        fecha_fin: updatedGroup.fin,
-        empresa_asignada: updatedGroup.empresaAsignada,
-        status: updatedGroup.status,
-        estudiantes: updatedGroup.estudiantes.map((student) => student.name),
-      };
-      const { error } = await supabase
-        .from("grupos")
-        .update(payload)
-        .eq("id", updatedGroup.id);
-
-      if (error) {
-        throw error;
-      }
-
-      setGrupos((prev) =>
-        prev.map((group) =>
-          group.id === updatedGroup.id ? updatedGroup : group,
-        ),
-      );
-      setGroupModalMode(null);
-      setSelectedGroup(null);
-      Alert.alert(
-        "Grupo actualizado",
-        "Los cambios se guardaron correctamente.",
-      );
-    } catch (err: any) {
-      console.error("Error actualizando grupo:", err);
-      Alert.alert(
-        "Error",
-        "No fue posible guardar los cambios del grupo. Intenta de nuevo.",
-      );
-    } finally {
-      setGroupEditSaving(false);
-    }
+      const resp = await fetch(result.assets[0].uri);
+      const blob = await resp.blob();
+      const storageRef = ref(storage, `logos/${user!.uid}`);
+      await uploadBytes(storageRef, blob);
+      const url = await getDownloadURL(storageRef);
+      // Cache-busting: fuerza a <Image/> a descargar la versión nueva al instante
+      const urlConCache = `${url}${url.includes('?') ? '&' : '?'}t=${new Date().getTime()}`;
+      // Actualizamos AMBOS documentos: el perfil específico y la colección 'usuarios'
+      await Promise.all([
+        updateDoc(doc(db, 'perfiles_universidades', user!.uid), { logo_url: urlConCache }),
+        updateDoc(doc(db, 'usuarios', user!.uid), { foto_url: urlConCache }),
+      ]);
+      // Refleja el cambio en el estado local de inmediato (no esperar al snapshot)
+      setPerfil(prev => (prev ? { ...prev, logo_url: urlConCache } : prev));
+    } catch { Alert.alert('Error', 'No se pudo subir el logo.'); }
+    finally { setUploadingLogo(false); }
   };
 
-  // ── Bottom nav items ──────────────────────────────────────────
-  const navItems: {
-    key: Section;
-    icon: keyof typeof Ionicons.glyphMap;
-    label: string;
-  }[] = [
-    { key: "inicio", icon: "home-outline", label: "Inicio" },
-    { key: "explorar", icon: "compass-outline", label: "Explorar" },
-    { key: "gestion", icon: "people-outline", label: "Gestión" },
-    { key: "perfil", icon: "business-outline", label: "Mi Perfil" },
+  // ── Guardar perfil ────────────────────────────────────────────────
+  const handleSavePerfil = async () => {
+    try {
+      await updateDoc(doc(db, 'perfiles_universidades', user!.uid), {
+        nombre_universidad: editNombre,
+        dominio_correo:     editDominio,
+        direccion:          editDir,
+        contacto_nombre:    editContacto,
+        contacto_correo:    editCorreo,
+      });
+      setShowEditPerfil(false);
+    } catch { Alert.alert('Error', 'No se pudo guardar.'); }
+  };
+
+  // ── Aprobar pasantía (usa universidadApruebaHoras del servicio) ───
+  const handleAprobar = async (app: Aplicacion, horasAjustadas: number) => {
+    try {
+      const nivel = await universidadApruebaHoras(
+        app.id,
+        app.estudiante_id,
+        horasAjustadas,
+        500, // horas objetivo default
+      );
+      Alert.alert('Aprobado', `Se sumaron ${horasAjustadas} horas.\nNivel: ${nivel.titulo}`);
+    } catch { Alert.alert('Error', 'No se pudo aprobar.'); }
+  };
+
+  const handleRechazar = async (app: Aplicacion, motivo: string) => {
+    try {
+      await updateDoc(doc(db, 'aplicaciones', app.id), {
+        estado: 'rechazado', notas: motivo,
+      });
+    } catch { Alert.alert('Error', 'No se pudo rechazar.'); }
+  };
+
+  // ── RENDER ───────────────────────────────────────────────────────
+  const nombreUni = perfil?.nombre_universidad ?? (userProfile as any)?.nombre_completo ?? 'Universidad';
+
+  // ── Onboarding ────────────────────────────────────────────────────
+  const tour = useOnboarding(user?.uid, seccion, TOUR_CLAVES);
+
+  // ── Items del menú flotante ("Mensajes" y "Mi Perfil" al final) ──
+  type NavKey = SeccionUni | 'mensajes' | 'perfil';
+  const navItems: NavItem<NavKey>[] = [
+    ...MENU.map(m => ({
+      key: m.key as NavKey,
+      label: m.label,
+      icon: m.icon,
+      badge: m.key === 'aprobar' ? metricas.pendAprobacion : undefined,
+    })),
+    { key: 'mensajes', label: 'Mensajes', icon: 'chatbubble-ellipses-outline', badge: mensajesNoLeidos },
+    { key: 'perfil', label: 'Mi Perfil', icon: 'person-circle-outline' },
   ];
 
-  // ═══════════════════════════════════════════════════════════════
-  // SECTIONS
-  // ═══════════════════════════════════════════════════════════════
-
-  const renderInicio = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      {/* Header */}
-      <View style={s.sectionHeader}>
-        <View>
-          <SectionKicker>Panel de control</SectionKicker>
-          <PageTitle>
-            Bienvenido/a {encNombre ? `, ${encNombre.split(" ")[0]}` : ""}
-          </PageTitle>
-        </View>
-        {/* <View style={s.dateChip}>
-          <Text style={s.dateChipText}>Activated 04/05/2026</Text>
-        </View> */}
-      </View>
-
-      {/* Métricas */}
-      <View style={s.metricsGrid}>
-        {[
-          {
-            icon: "🎓",
-            num: "1,247",
-            label: "Estudiantes registrados",
-            trend: "↑ 12% este mes",
-            up: true,
-          },
-          {
-            icon: "⏱️",
-            num: "3,840",
-            label: "Horas sociales validadas este mes",
-            trend: "↑ 8% vs. mes anterior",
-            up: true,
-          },
-          {
-            icon: "🤝",
-            num: "38",
-            label: "Empresas con convenio activo",
-            trend: "↑ 3 nuevas este mes",
-            up: true,
-          },
-          {
-            icon: "📋",
-            num: "14",
-            label: "Solicitudes pendientes de aprobación",
-            trend: "⚠ Requieren revisión",
-            up: false,
-          },
-        ].map((m) => (
-          <Card key={m.label} style={s.metricCard}>
-            <View style={s.metricIconBox}>
-              <Text style={s.metricIcon}>{m.icon}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.metricNum}>{m.num}</Text>
-              <Text style={s.metricLabel}>{m.label}</Text>
-              <Text
-                style={[s.metricTrend, { color: m.up ? C.green : C.yellow }]}
-              >
-                {m.trend}
-              </Text>
-            </View>
-          </Card>
-        ))}
-      </View>
-
-      {/* Empresas destacadas */}
-      <Text style={s.subsectionTitle}>Empresas registradas</Text>
-      <Text style={[s.textMuted, { marginBottom: 16 }]}>
-        Este listado se carga desde la tabla{" "}
-        <Text style={s.textSub}>empresas</Text> en Supabase.
-      </Text>
-
-      <View style={[s.row, { gap: 10, flexWrap: "wrap", marginBottom: 16 }]}>
-        <BtnPrimary
-          label="Solicitar horas (nuevo)"
-          small
-          onPress={() => openSolicitarHorasModal()}
-        />
-        <BtnOutline
-          label="Propuestas de empresas"
-          small
-          onPress={() => {
-            setPropuestasOpen(true);
-            loadPropuestas();
-          }}
-        />
-      </View>
-
-      {isLoadingEmpresas ? (
-        <Text style={[s.textMuted, { paddingVertical: 14 }]}>
-          Cargando empresas...
-        </Text>
-      ) : empresasDb.length === 0 ? (
-        <Card style={{ marginBottom: 16 }}>
-          <Text style={[s.textMuted, { textAlign: "center", padding: 18 }]}>
-            No hay empresas registradas aún.
-          </Text>
-        </Card>
-      ) : (
-        empresasDb.map((emp) => {
-          const isPremium = /premium/i.test(emp.plan_seleccionado ?? "");
-          const badgeLabel = isPremium ? "Premium" : undefined;
-          const badgeType = isPremium ? "premium" : undefined;
-          return (
-            <EmpresaCard
-              key={emp.id}
-              icon="🏢"
-              name={emp.nombre}
-              sector={emp.industria ?? "Sin industria"}
-              rating="—"
-              reviews="—"
-              horas={0}
-              badgeLabel={badgeLabel}
-              badgeType={badgeType}
-              onViewEmpresa={() => openProfileViewer(emp.id, "empresa")}
-              onSolicitarHoras={() => openSolicitarHorasModal(emp)}
-            />
-          );
-        })
-      )}
-
-      {/* Paneles laterales */}
-      <Card style={{ marginBottom: 16 }}>
-        <Text style={s.sideCardTitle}>📋 Solicitudes pendientes</Text>
-        {isLoadingPropuestas ? (
-          <Text style={[s.textMuted, { fontSize: 13, padding: 8 }]}>
-            Cargando...
-          </Text>
-        ) : propuestas.filter(
-            (p) =>
-              p.decision_universidad === "pendiente" ||
-              p.estado === "pendiente",
-          ).length === 0 ? (
-          <Text style={[s.textMuted, { fontSize: 13, padding: 8 }]}>
-            No hay solicitudes pendientes.
-          </Text>
-        ) : (
-          propuestas
-            .filter(
-              (p) =>
-                p.decision_universidad === "pendiente" ||
-                p.estado === "pendiente",
-            )
-            .slice(0, 3)
-            .map((item) => (
-              <View key={item.id} style={s.pendingItem}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.pendingGroup}>
-                    {grupos.find((g) => g.id === item.grupo_id)?.name ??
-                      "Grupo desconocido"}
-                  </Text>
-                  <Text style={[s.textMuted, { fontSize: 12 }]}>
-                    {empresasDb.find((e) => e.id === item.empresa_id)?.nombre ??
-                      "Empresa desconocida"}
-                  </Text>
-                </View>
-                <Badge label="Pendiente" type="pending" />
-              </View>
-            ))
-        )}
-        <BtnOutline
-          label="Ver todas →"
-          small
-          style={{ marginTop: 12 }}
-          onPress={() => setSection("horas")}
-        />
-      </Card>
-
-      <Card style={{ marginBottom: 16 }}>
-        <Text style={s.sideCardTitle}>✅ Últimas validaciones</Text>
-        {isLoadingPropuestas ? (
-          <Text style={[s.textMuted, { fontSize: 13, padding: 8 }]}>
-            Cargando...
-          </Text>
-        ) : propuestas.filter(
-            (p) => p.estado === "validada" || p.estado === "cerrada",
-          ).length === 0 ? (
-          <Text style={[s.textMuted, { fontSize: 13, padding: 8 }]}>
-            No hay validaciones recientes.
-          </Text>
-        ) : (
-          propuestas
-            .filter((p) => p.estado === "validada" || p.estado === "cerrada")
-            .slice(0, 3)
-            .map((a) => (
-              <View key={a.id} style={s.activityItem}>
-                <View style={s.activityAvatar}>
-                  <Text style={{ fontSize: 20 }}>✅</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.activityName}>
-                    {grupos.find((g) => g.id === a.grupo_id)?.name ??
-                      "Grupo desconocido"}
-                  </Text>
-                  <Text style={[s.textMuted, { fontSize: 12 }]}>
-                    {empresasDb.find((e) => e.id === a.empresa_id)?.nombre ??
-                      "—"}{" "}
-                    · {formatDateString(a.fecha_fin)}
-                  </Text>
-                </View>
-                <Badge label="Validado" type="validated" />
-              </View>
-            ))
-        )}
-      </Card>
-
-      {/* <Card style={{ marginBottom: 16 }}>
-        <Text style={s.sideCardTitle}>📅 Próximas fechas importantes</Text>
-        {[
-          {
-            icon: "📌",
-            desc: "Cierre de solicitudes de horas – Ciclo 01",
-            date: "15/05/2026",
-          },
-          {
-            icon: "🎓",
-            desc: "Ceremonia de entrega de certificados",
-            date: "22/05/2026",
-          },
-          {
-            icon: "🏢",
-            desc: "Feria de empresas UDB 2026",
-            date: "06/06/2026",
-          },
-        ].map((d) => (
-          <View key={d.date} style={s.dateItem}>
-            <Text style={{ fontSize: 18, marginRight: 12 }}>{d.icon}</Text>
-            <View>
-              <Text style={[s.textSub, { fontSize: 13 }]}>{d.desc}</Text>
-              <Text style={[s.textMuted, { fontSize: 12 }]}>{d.date}</Text>
-            </View>
-          </View>
-        ))}
-      </Card> */}
-
-      {/* Feed
-      <Card style={{ marginBottom: 32 }}>
-        <Text style={s.subsectionTitle}>Actividad reciente</Text>
-        {[
-          {
-            icon: "🎓",
-            text: "3 nuevos estudiantes de Ing. Sistemas se registraron en Gradly",
-            time: "hace 20 minutos",
-          },
-          {
-            icon: "✅",
-            text: "TechSV Solutions validó 120 horas del Grupo A – Ing. Sistemas",
-            time: "hace 1 hora",
-          },
-          {
-            icon: "🤝",
-            text: "Nueva empresa verificada: LogiSV Corp – Logística",
-            time: "hace 3 horas",
-          },
-          {
-            icon: "📋",
-            text: "Solicitud de horas sociales del Grupo B – Diseño enviada a WebFactory CR",
-            time: "hace 5 horas",
-          },
-          {
-            icon: "🎓",
-            text: "Valentina Cruz activó su cuenta en Gradly",
-            time: "ayer 16:42",
-          },
-        ].map((f, i) => (
-          <View key={i} style={s.feedItem}>
-            <View style={s.feedIconBox}>
-              <Text style={s.feedIcon}>{f.icon}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.textSub, { fontSize: 13 }]}>{f.text}</Text>
-              <Text style={[s.textMuted, { fontSize: 12, marginTop: 2 }]}>
-                {f.time}
-              </Text>
-            </View>
-          </View>
-        ))}
-      </Card> */}
-    </ScrollView>
-  );
-
-  const renderExplorar = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <View style={s.sectionHeader}>
-        <View>
-          <SectionKicker>Descubrir</SectionKicker>
-          <PageTitle>Explorar</PageTitle>
-        </View>
-      </View>
-
-      <Card style={{ marginBottom: 16 }}>
-        <View style={s.searchWrap}>
-          <Ionicons name="search-outline" size={18} color={C.textMuted} />
-          <TextInput
-            style={s.searchInput}
-            value={exploreSearch}
-            onChangeText={setExploreSearch}
-            placeholder="Buscar empresas, universidades, proyectos..."
-            placeholderTextColor={C.textMuted}
-          />
-        </View>
-        {exploreSearch.trim().length > 0 && exploreTab === "empresas" && (
-          <View style={{ marginTop: 10 }}>
-            {filteredExploreCompanies.length === 0 ? (
-              <Text style={[s.textMuted, { fontSize: 12 }]}>
-                No se encontraron empresas.
-              </Text>
-            ) : (
-              filteredExploreCompanies.slice(0, 5).map((empresa) => (
-                <TouchableOpacity
-                  key={empresa.id}
-                  style={[
-                    s.card,
-                    { padding: 14, marginBottom: 8, borderColor: C.border },
-                  ]}
-                  onPress={() => openProfileViewer(empresa.id, "empresa")}
-                  activeOpacity={0.85}
-                >
-                  <Text style={[s.textSub, { fontWeight: "700" }]}>
-                    {empresa.nombre}
-                  </Text>
-                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-                    {empresa.industria ?? ""}
-                  </Text>
-                </TouchableOpacity>
-              ))
-            )}
-          </View>
-        )}
-      </Card>
-
-      <View style={[s.row, { gap: 8, flexWrap: "wrap", marginBottom: 20 }]}>
-        {(["empresas", "universidades", "proyectos"] as ExploreTab[]).map(
-          (t) => (
-            <Chip
-              key={t}
-              label={
-                t === "empresas"
-                  ? "🏢 Empresas"
-                  : t === "universidades"
-                    ? "🏛️ Otras universidades"
-                    : "💡 Proyectos"
-              }
-              active={exploreTab === t}
-              onPress={() => setExploreTab(t)}
-            />
-          ),
-        )}
-      </View>
-
-      {exploreTab === "empresas" && (
-        <>
-          {empresasDb.length === 0 ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              \n No hay empresas registradas aún.
-            </Text>
-          ) : (
-            (exploreSearch.trim().length > 0
-              ? filteredExploreCompanies
-              : empresasDb
-            ).map((empresa) => (
-              <EmpresaCard
-                key={empresa.id}
-                icon="🏢"
-                name={empresa.nombre}
-                sector={empresa.industria ?? "Sin industria"}
-                rating={empresa.plan_seleccionado ? "4.5" : "N/A"}
-                reviews="0"
-                horas={0}
-                badgeLabel={empresa.plan_seleccionado ?? "Activo"}
-                badgeType={empresa.plan_seleccionado ? "premium" : "default"}
-                onViewEmpresa={() => openProfileViewer(empresa.id, "empresa")}
-                onSolicitarHoras={() => openSolicitarHorasModal(empresa)}
-              />
-            ))
-          )}
-        </>
-      )}
-
-      {exploreTab === "universidades" && (
-  <>
-    {universidadesExplorar.map((u) => {
-      // Mapeo seguro y dinámico con datos reales de la tabla 'universidades'
-      // Si la base de datos no incluye arreglos de acreditaciones o áreas, usamos datos geográficos/por defecto
-      const listaAcreds = u.acreds || [u.departamento || "El Salvador"];
-      const listaAreas = u.areas || [u.ciudad || "Educación Superior"];
-
-      return (
-        <Card
-          key={u.id}
-          style={{ marginBottom: 16, alignItems: "center" }}
-        >
-          {/* Conservamos el diseño de ícono nativo */}
-          <Text style={{ fontSize: 40, marginBottom: 12 }}>🎓</Text>
-          
-          <Text
-            style={[
-              s.empresaName,
-              { textAlign: "center", marginBottom: 8 },
-            ]}
-          >
-            {u.nombre || "Institución Universitaria"}
-          </Text>
-          
-          {/* Fila 1 de Etiquetas (Acreditaciones / Ubicación) */}
-          <View
-            style={[
-              s.row,
-              { flexWrap: "wrap", gap: 6, justifyContent: "center" },
-            ]}
-          >
-            {listaAcreds.map((a: string, index: number) => (
-              <Tag key={`${u.id}-acred-${index}`} label={a} />
-            ))}
-          </View>
-          
-          {/* Fila 2 de Etiquetas (Áreas / Especialidades) */}
-          <View
-            style={[
-              s.row,
-              {
-                flexWrap: "wrap",
-                gap: 6,
-                justifyContent: "center",
-                marginTop: 6,
-              },
-            ]}
-          >
-            {listaAreas.map((a: string, index: number) => (
-              <Tag key={`${u.id}-area-${index}`} label={a} />
-            ))}
-          </View>
-          
-          {/* Texto de convenios o descripción de la universidad */}
-          <Text style={[s.textMuted, { fontSize: 12, marginTop: 12, textAlign: "center", paddingHorizontal: 8 }]}>
-            {u.bio || "Convenio institucional disponible para vinculación de estudiantes."}
-          </Text>
-        </Card>
-      );
-    })}
-
-    {/* Estado vacío elegante por si no hay registros o solo existía el usuario actual */}
-    {universidadesExplorar.length === 0 && (
-      <Text style={{ color: "rgba(255,255,255,0.4)", textAlign: "center", marginVertical: 24, fontSize: 14 }}>
-        No hay otras universidades registradas en este momento.
-      </Text>
-    )}
-  </>
-)}
-
-      {exploreTab === "proyectos" && (
-        <>
-          {[
-            {
-              name: "Sistema de gestión de inventarios",
-              author: "Carlos Martínez · UDB",
-              tags: ["React", "Node.js"],
-              area: "Ing. Sistemas",
-            },
-            {
-              name: "App de reservas para restaurantes",
-              author: "María López · UCA",
-              tags: ["Flutter", "Firebase"],
-              area: "Ing. Sistemas",
-            },
-            {
-              name: "Branding identidad corporativa",
-              author: "Sofía Ramírez · UTEC",
-              tags: ["Figma", "Illustrator"],
-              area: "Diseño",
-            },
-          ].map((p) => (
-            <Card key={p.name} style={{ marginBottom: 16 }}>
-              <View style={[s.projectThumb, { marginBottom: 12 }]} />
-              <Text style={s.empresaName}>{p.name}</Text>
-              <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-                {p.author}
-              </Text>
-              <View style={[s.row, { gap: 6, flexWrap: "wrap", marginTop: 8 }]}>
-                {p.tags.map((t) => (
-                  <Tag key={t} label={t} />
-                ))}
-              </View>
-              <Badge label={p.area} type="default" />
-            </Card>
-          ))}
-        </>
-      )}
-    </ScrollView>
-  );
-
-  const renderGestion = () => {
-    // Filtros de grupo derivados de datos reales
-    const gruposFilter = ["Todos", ...grupos.map((g) => g.name)];
-
-    // Helpers de lookup cliente
-    const getGrupoNombre = (grupoId?: string | null) =>
-      grupoId
-        ? (grupos.find((g) => g.id === grupoId)?.name ?? "Grupo desconocido")
-        : "—";
-    const getEmpresaNombre = (empresaId?: string | null) =>
-      empresaId
-        ? (empresasDb.find((e) => e.id === empresaId)?.nombre ??
-          "Empresa desconocida")
-        : "—";
-
-    const matchesGrupoFilter = (p: SolicitudHorasRow) =>
-      gestionGrupoFilter === "Todos" ||
-      getGrupoNombre(p.grupo_id) === gestionGrupoFilter;
-
-    // Datos derivados de propuestas reales
-    const pendientesData = propuestas
-      .filter(
-        (p) =>
-          p.decision_universidad === "pendiente" || p.estado === "pendiente",
-      )
-      .filter(matchesGrupoFilter);
-
-    const enCursoData = propuestas
-      .filter(
-        (p) =>
-          p.estado === "aprobada" || p.decision_universidad === "aprobada",
-      )
-      .filter(matchesGrupoFilter);
-
-    const validadasData = propuestas
-      .filter((p) => p.estado === "validada" || p.estado === "cerrada")
-      .filter(matchesGrupoFilter);
-
-    const rechazadasData = propuestas
-      .filter((p) => p.decision_universidad === "rechazada")
-      .filter(matchesGrupoFilter);
-
-    const gruposFiltrados = grupos.filter(
-      (grupo) =>
-        gestionGrupoFilter === "Todos" || grupo.name === gestionGrupoFilter,
-    );
-
-    return (
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* ══ SECCIÓN 1: GRUPOS ══ */}
-        <View
-          style={[
-            s.sectionHeader,
-            {
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "flex-end",
-            },
-          ]}
-        >
-          <View>
-            <SectionKicker>Gestión académica</SectionKicker>
-            <PageTitle>Grupos de estudiantes</PageTitle>
-          </View>
-          <View
-            style={[
-              s.row,
-              { gap: 8, flexWrap: "wrap", justifyContent: "flex-end" },
-            ]}
-          >
-            <BtnOutline
-              label="Propuestas"
-              small
-              onPress={() => {
-                setPropuestasOpen(true);
-                loadPropuestas();
-              }}
-            />
-            <BtnOutline
-              label="Solicitar horas"
-              small
-              onPress={() => openSolicitarHorasModal()}
-            />
-            <BtnPrimary
-              label="+ Crear grupo"
-              onPress={() => setGroupCreationOpen(true)}
-              small
-            />
-          </View>
-        </View>
-
-        {gruposFiltrados.length === 0 ? (
-          <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-            No hay grupos que coincidan con este filtro.
-          </Text>
-        ) : (
-          gruposFiltrados.map((g) => (
-            <Card key={g.id} style={{ marginBottom: 16 }}>
-              <View
-                style={[
-                  s.row,
-                  {
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: 8,
-                  },
-                ]}
-              >
-                <View style={{ flex: 1, marginRight: 12 }}>
-                  <Text style={s.grupoName}>{g.name}</Text>
-                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-                    Creado el {g.dateCreated} · {g.count} estudiantes
-                  </Text>
-                </View>
-
-                <Badge label={g.status} type={g.badgeType as any} />
-              </View>
-              <View
-                style={[s.row, { gap: 6, flexWrap: "wrap", marginBottom: 12 }]}
-              >
-                {g.tags.map((t) => (
-                  <Tag key={t} label={t} />
-                ))}
-              </View>
-              <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
-                <BtnOutline
-                  label="Ver grupo"
-                  small
-                  onPress={() => openGroupViewer(g.id)}
-                />
-                <BtnOutline
-                  label="Enviar a empresa"
-                  small
-                  disabled={!g.empresaAsignada}
-                />
-                <BtnOutline
-                  label="Editar"
-                  small
-                  onPress={() => openGroupEditor(g)}
-                />
-              </View>
-            </Card>
-          ))
-        )}
-
-        {/* ── Acceso a Empresas aliadas ── */}
-        <TouchableOpacity
-          style={[
-            s.card,
-            {
-              flexDirection: "row",
-              alignItems: "center",
-              padding: 18,
-              marginBottom: 32,
-            },
-          ]}
-          onPress={() => setSection("empresas")}
-          activeOpacity={0.8}
-        >
-          <Text style={{ fontSize: 30, marginRight: 16 }}>🏢</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.textSub, { fontSize: 15, fontWeight: "700" }]}>
-              Empresas aliadas
-            </Text>
-            <Text style={[s.textMuted, { fontSize: 13, marginTop: 4 }]}>
-              Gestiona los convenios y empresas aliadas.
-            </Text>
-          </View>
-          <Text style={{ color: C.accent70, fontSize: 20 }}>›</Text>
-        </TouchableOpacity>
-
-        {/* ══ SECCIÓN 2: HORAS SOCIALES ══ */}
-        <View
-          style={{
-            paddingHorizontal: 16,
-            paddingTop: 20,
-            marginBottom: 16,
-            borderTopWidth: 1,
-            borderTopColor: C.border,
-          }}
-        >
-          <SectionKicker>Seguimiento académico</SectionKicker>
-          <PageTitle>Horas Sociales</PageTitle>
-        </View>
-
-        {/* Filtro por grupo */}
-        <Text
-          style={[
-            s.textMuted,
-            {
-              fontSize: 11,
-              letterSpacing: 0.8,
-              paddingHorizontal: 16,
-              marginBottom: 8,
-            },
-          ]}
-        >
-          FILTRAR POR GRUPO
-        </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 14 }}
-        >
-          <View style={[s.row, { gap: 6, paddingHorizontal: 16 }]}>
-            {gruposFilter.map((g) => (
-              <Chip
-                key={g}
-                label={g === "Todos" ? "Todos los grupos" : g}
-                active={gestionGrupoFilter === g}
-                onPress={() => setGestionGrupoFilter(g)}
-              />
-            ))}
-          </View>
-        </ScrollView>
-
-        {/* Tabs de estado */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 16 }}
-        >
-          <View style={[s.row, { gap: 4, paddingHorizontal: 16 }]}>
-            {(
-              [
-                {
-                  key: "pendientes",
-                  label: "Pendientes",
-                  badge: pendientesData.length || undefined,
-                },
-                { key: "en-curso", label: "En curso" },
-                { key: "validadas", label: "Validadas" },
-                { key: "rechazadas", label: "Rechazadas" },
-              ] as { key: HorasTab; label: string; badge?: number }[]
-            ).map((t) => (
-              <TouchableOpacity
-                key={t.key}
-                style={[s.tab, gestionHorasTab === t.key && s.tabActive]}
-                onPress={() => setGestionHorasTab(t.key)}
-              >
-                <Text
-                  style={[
-                    s.tabText,
-                    gestionHorasTab === t.key && s.tabTextActive,
-                  ]}
-                >
-                  {t.label}
-                  {t.badge ? ` (${t.badge})` : ""}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-
-        <View
-          style={[
-            s.row,
-            {
-              gap: 10,
-              paddingHorizontal: 16,
-              marginBottom: 12,
-              flexWrap: "wrap",
-            },
-          ]}
-        >
-          <BtnOutline
-            label="Ver perfil universidad"
-            small
-            disabled={!universidadId}
-            onPress={() => {
-              if (!universidadId) return;
-              openProfileViewer(universidadId, "universidad");
-            }}
-          />
-        </View>
-
-        {/* Tab: Pendientes */}
-        {gestionHorasTab === "pendientes" && (
-          <>
-            {isLoadingPropuestas ? (
-              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                Cargando propuestas...
-              </Text>
-            ) : pendientesData.length === 0 ? (
-              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                No hay solicitudes pendientes para este grupo.
-              </Text>
-            ) : (
-              pendientesData.map((item) => (
-                <Card key={item.id} style={{ marginBottom: 16 }}>
-                  <View style={s.empresaHeader}>
-                    <View style={s.empresaLogo}>
-                      <Text style={{ fontSize: 22 }}>📋</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.empresaName}>
-                        {getGrupoNombre(item.grupo_id)}
-                      </Text>
-                      <Text style={s.empresaSector}>
-                        {getEmpresaNombre(item.empresa_id)}
-                      </Text>
-                    </View>
-                    <Badge label="Pendiente" type="pending" />
-                  </View>
-                  <Text style={[s.textMuted, { fontSize: 13, marginTop: 12 }]}>
-                    📅 {formatDateString(item.fecha_inicio)} –{" "}
-                    {formatDateString(item.fecha_fin)}
-                  </Text>
-                  {item.empresa_id ? (
-                    <BtnOutline
-                      label="Ver empresa"
-                      small
-                      style={{ marginTop: 12 }}
-                      onPress={() =>
-                        openProfileViewer(item.empresa_id!, "empresa")
-                      }
-                    />
-                  ) : null}
-                </Card>
-              ))
-            )}
-          </>
-        )}
-
-        {/* Tab: En curso */}
-        {gestionHorasTab === "en-curso" && (
-          <>
-            {isLoadingPropuestas ? (
-              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                Cargando propuestas...
-              </Text>
-            ) : enCursoData.length === 0 ? (
-              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                No hay propuestas en curso para este grupo.
-              </Text>
-            ) : (
-              enCursoData.map((e) => (
-                <Card key={e.id} style={{ marginBottom: 16 }}>
-                  <View style={s.empresaHeader}>
-                    <View style={s.empresaLogo}>
-                      <Text style={{ fontSize: 22 }}>⏱️</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.empresaName}>
-                        {getGrupoNombre(e.grupo_id)}
-                      </Text>
-                      <Text style={s.empresaSector}>
-                        {getEmpresaNombre(e.empresa_id)}
-                      </Text>
-                    </View>
-                    <Badge label="En curso" type="inprogress" />
-                  </View>
-                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
-                    📅 Inicio: {formatDateString(e.fecha_inicio)} · Fin:{" "}
-                    {formatDateString(e.fecha_fin)}
-                  </Text>
-                  {e.empresa_id ? (
-                    <BtnOutline
-                      label="Ver empresa"
-                      small
-                      style={{ marginTop: 12 }}
-                      onPress={() =>
-                        openProfileViewer(e.empresa_id!, "empresa")
-                      }
-                    />
-                  ) : null}
-                </Card>
-              ))
-            )}
-          </>
-        )}
-
-        {/* Tab: Validadas */}
-        {gestionHorasTab === "validadas" && (
-          <>
-            {isLoadingPropuestas ? (
-              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                Cargando propuestas...
-              </Text>
-            ) : validadasData.length === 0 ? (
-              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                No hay propuestas validadas para este grupo.
-              </Text>
-            ) : (
-              validadasData.map((e) => (
-                <Card
-                  key={e.id}
-                  style={{ marginBottom: 16, borderColor: C.accent40 }}
-                >
-                  <View style={s.certSeal}>
-                    <Text style={s.certSealText}>VALIDADA</Text>
-                  </View>
-                  <View style={s.empresaHeader}>
-                    <View style={s.empresaLogo}>
-                      <Text style={{ fontSize: 22 }}>✅</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.empresaName}>
-                        {getGrupoNombre(e.grupo_id)}
-                      </Text>
-                      <Text style={s.empresaSector}>
-                        {getEmpresaNombre(e.empresa_id)}
-                      </Text>
-                    </View>
-                    <Badge label="Validada" type="validated" />
-                  </View>
-                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
-                    📅 {formatDateString(e.fecha_inicio)} –{" "}
-                    {formatDateString(e.fecha_fin)}
-                  </Text>
-                  {e.empresa_id ? (
-                    <BtnOutline
-                      label="Ver empresa"
-                      small
-                      style={{ marginTop: 12 }}
-                      onPress={() =>
-                        openProfileViewer(e.empresa_id!, "empresa")
-                      }
-                    />
-                  ) : null}
-                </Card>
-              ))
-            )}
-          </>
-        )}
-
-        {/* Tab: Rechazadas */}
-        {gestionHorasTab === "rechazadas" && (
-          <>
-            {isLoadingPropuestas ? (
-              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                Cargando propuestas...
-              </Text>
-            ) : rechazadasData.length === 0 ? (
-              <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-                No hay rechazos para este grupo.
-              </Text>
-            ) : (
-              rechazadasData.map((e) => (
-                <Card key={e.id} style={{ marginBottom: 16 }}>
-                  <View style={s.empresaHeader}>
-                    <View style={s.empresaLogo}>
-                      <Text style={{ fontSize: 22 }}>🚫</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.empresaName}>
-                        {getGrupoNombre(e.grupo_id)}
-                      </Text>
-                      <Text style={s.empresaSector}>
-                        {getEmpresaNombre(e.empresa_id)}
-                      </Text>
-                    </View>
-                    <Badge label="Rechazada" type="rejected" />
-                  </View>
-                  {e.motivo_rechazo_universidad ? (
-                    <View
-                      style={[
-                        s.card,
-                        {
-                          marginTop: 12,
-                          backgroundColor: C.redBg,
-                          borderColor: "rgba(239,68,68,0.25)",
-                        },
-                      ]}
-                    >
-                      <Text style={[s.textMuted, { fontSize: 12 }]}>
-                        Motivo de rechazo:
-                      </Text>
-                      <Text
-                        style={[s.textSub, { fontSize: 13, marginTop: 4 }]}
-                      >
-                        {e.motivo_rechazo_universidad}
-                      </Text>
-                    </View>
-                  ) : null}
-                </Card>
-              ))
-            )}
-          </>
-        )}
-
-        <View style={{ height: 24 }} />
-      </ScrollView>
-    );
-  };
-
-  const renderProfileViewerModal = () => (
-    <ProfileViewerModal
-      visible={profileViewerOpen}
-      userId={profileViewerUserId ?? ""}
-      userType={profileViewerUserType}
-      onClose={() => setProfileViewerOpen(false)}
-    />
-  );
-
-  const renderGrupos = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <TouchableOpacity
-        onPress={() => setSection("gestion")}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: 4,
-        }}
-        activeOpacity={0.7}
-      >
-        <Text style={{ color: C.accent70, fontSize: 16 }}>
-          ‹ Gestión Práctica
-        </Text>
-      </TouchableOpacity>
-      <View
-        style={[
-          s.sectionHeader,
-          {
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "flex-end",
-          },
-        ]}
-      >
-        <View>
-          <SectionKicker>Gestión académica</SectionKicker>
-          <PageTitle>Grupos de estudiantes</PageTitle>
-        </View>
-        <BtnPrimary
-          label="+ Crear grupo"
-          onPress={() => setGroupCreationOpen(true)}
-          small
-        />
-      </View>
-
-      {isLoadingGruposDb ? (
-        <Text style={[s.textMuted, { paddingHorizontal: 16, marginTop: 8 }]}>
-          Cargando grupos...
-        </Text>
-      ) : gruposDb.length === 0 ? (
-        <Text style={[s.textMuted, { paddingHorizontal: 16, marginTop: 8 }]}>
-          No hay grupos registrados en la base de datos.
-        </Text>
-      ) : (
-        gruposDb.map((g) => (
-          <Card key={g.id} style={{ marginBottom: 16 }}>
-            <View
-              style={[
-                s.row,
-                {
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  marginBottom: 8,
-                },
-              ]}
-            >
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={s.grupoName}>{g.nombre}</Text>
-                <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-                  Creado el {formatDateString(g.created_at)} ·{" "}
-                  {g.studentCount ?? 0} estudiante(s)
-                </Text>
-                {g.empresaAsignada ? (
-                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 2 }]}>
-                    Empresa: {g.empresaAsignada}
-                  </Text>
-                ) : null}
-                {g.inicio || g.fin ? (
-                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 2 }]}>
-                    Inicio: {formatDateString(g.inicio)} · Fin:{" "}
-                    {formatDateString(g.fin)}
-                  </Text>
-                ) : null}
-              </View>
-              <Badge
-                label={g.status ?? "Activo"}
-                type={(g.badgeType as any) ?? "active"}
-              />
-            </View>
-            {g.carrera ? (
-              <View
-                style={[s.row, { gap: 6, flexWrap: "wrap", marginBottom: 12 }]}
-              >
-                <Tag key={g.carrera} label={g.carrera} />
-              </View>
-            ) : null}
-            <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
-              <BtnOutline
-                label="Ver grupo"
-                small
-                onPress={() => openGroupViewer(g.id)}
-              />
-              <BtnOutline label="Enviar a empresa" small disabled />
-              <BtnOutline label="Editar" small />
-            </View>
-          </Card>
-        ))
-      )}
-    </ScrollView>
-  );
-
-  const renderHoras = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <TouchableOpacity
-        onPress={() => setSection("gestion")}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: 4,
-        }}
-        activeOpacity={0.7}
-      >
-        <Text style={{ color: C.accent70, fontSize: 16 }}>
-          ‹ Gestión Práctica
-        </Text>
-      </TouchableOpacity>
-      <View style={s.sectionHeader}>
-        <SectionKicker>Seguimiento académico</SectionKicker>
-        <PageTitle>Horas sociales</PageTitle>
-      </View>
-
-      {/* Tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ marginBottom: 20 }}
-      >
-        <View style={[s.row, { gap: 4 }]}>
-          {(
-            [
-              { key: "pendientes", label: "Pendientes", badge: 3 },
-              { key: "en-curso", label: "En curso" },
-              { key: "validadas", label: "Validadas" },
-              { key: "rechazadas", label: "Rechazadas" },
-            ] as { key: HorasTab; label: string; badge?: number }[]
-          ).map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              style={[s.tab, horasTab === t.key && s.tabActive]}
-              onPress={() => setHorasTab(t.key)}
-            >
-              <Text style={[s.tabText, horasTab === t.key && s.tabTextActive]}>
-                {t.label}
-                {t.badge ? ` (${t.badge})` : ""}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
-
-      {horasTab === "pendientes" && (
-        <>
-          {isLoadingPropuestas ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              Cargando propuestas...
-            </Text>
-          ) : propuestas.filter(
-              (p) =>
-                p.decision_universidad === "pendiente" ||
-                p.estado === "pendiente",
-            ).length === 0 ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              No hay solicitudes pendientes.
-            </Text>
-          ) : (
-            propuestas
-              .filter(
-                (p) =>
-                  p.decision_universidad === "pendiente" ||
-                  p.estado === "pendiente",
-              )
-              .map((item) => (
-                <Card key={item.id} style={{ marginBottom: 16 }}>
-                  <View style={s.empresaHeader}>
-                    <View style={s.empresaLogo}>
-                      <Text style={{ fontSize: 22 }}>📋</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.empresaName}>
-                        {grupos.find((g) => g.id === item.grupo_id)?.name ??
-                          "Grupo desconocido"}
-                      </Text>
-                      <Text style={s.empresaSector}>
-                        {empresasDb.find((e) => e.id === item.empresa_id)
-                          ?.nombre ?? "Empresa desconocida"}
-                      </Text>
-                    </View>
-                    <Badge label="Pendiente" type="pending" />
-                  </View>
-                  <Text
-                    style={[s.textMuted, { fontSize: 13, marginTop: 12 }]}
-                  >
-                    📅 {formatDateString(item.fecha_inicio)} –{" "}
-                    {formatDateString(item.fecha_fin)}
-                  </Text>
-                  {item.empresa_id ? (
-                    <BtnOutline
-                      label="Ver empresa"
-                      small
-                      style={{ marginTop: 12 }}
-                      onPress={() =>
-                        openProfileViewer(item.empresa_id!, "empresa")
-                      }
-                    />
-                  ) : null}
-                </Card>
-              ))
-          )}
-        </>
-      )}
-
-      {horasTab === "en-curso" && (
-        <>
-          {isLoadingPropuestas ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              Cargando propuestas...
-            </Text>
-          ) : propuestas.filter(
-              (p) =>
-                p.estado === "aprobada" || p.decision_universidad === "aprobada",
-            ).length === 0 ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              No hay propuestas en curso.
-            </Text>
-          ) : (
-            propuestas
-              .filter(
-                (p) =>
-                  p.estado === "aprobada" ||
-                  p.decision_universidad === "aprobada",
-              )
-              .map((e) => (
-                <Card key={e.id} style={{ marginBottom: 16 }}>
-                  <View style={s.empresaHeader}>
-                    <View style={s.empresaLogo}>
-                      <Text style={{ fontSize: 22 }}>⏱️</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.empresaName}>
-                        {grupos.find((g) => g.id === e.grupo_id)?.name ??
-                          "Grupo desconocido"}
-                      </Text>
-                      <Text style={s.empresaSector}>
-                        {empresasDb.find((emp) => emp.id === e.empresa_id)
-                          ?.nombre ?? "Empresa desconocida"}
-                      </Text>
-                    </View>
-                    <Badge label="En curso" type="inprogress" />
-                  </View>
-                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
-                    📅 Inicio: {formatDateString(e.fecha_inicio)} · Fin:{" "}
-                    {formatDateString(e.fecha_fin)}
-                  </Text>
-                  {e.empresa_id ? (
-                    <BtnOutline
-                      label="Ver empresa"
-                      small
-                      style={{ marginTop: 12 }}
-                      onPress={() =>
-                        openProfileViewer(e.empresa_id!, "empresa")
-                      }
-                    />
-                  ) : null}
-                </Card>
-              ))
-          )}
-        </>
-      )}
-
-      {horasTab === "validadas" && (
-        <>
-          {isLoadingPropuestas ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              Cargando propuestas...
-            </Text>
-          ) : propuestas.filter(
-              (p) => p.estado === "validada" || p.estado === "cerrada",
-            ).length === 0 ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              No hay propuestas validadas.
-            </Text>
-          ) : (
-            propuestas
-              .filter((p) => p.estado === "validada" || p.estado === "cerrada")
-              .map((e) => (
-                <Card
-                  key={e.id}
-                  style={{ marginBottom: 16, borderColor: C.accent40 }}
-                >
-                  <View style={s.certSeal}>
-                    <Text style={s.certSealText}>VALIDADA</Text>
-                  </View>
-                  <View style={s.empresaHeader}>
-                    <View style={s.empresaLogo}>
-                      <Text style={{ fontSize: 22 }}>✅</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.empresaName}>
-                        {grupos.find((g) => g.id === e.grupo_id)?.name ??
-                          "Grupo desconocido"}
-                      </Text>
-                      <Text style={s.empresaSector}>
-                        {empresasDb.find((emp) => emp.id === e.empresa_id)
-                          ?.nombre ?? "Empresa desconocida"}
-                      </Text>
-                    </View>
-                    <Badge label="Validada" type="validated" />
-                  </View>
-                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 8 }]}>
-                    📅 {formatDateString(e.fecha_inicio)} –{" "}
-                    {formatDateString(e.fecha_fin)}
-                  </Text>
-                </Card>
-              ))
-          )}
-        </>
-      )}
-
-      {horasTab === "rechazadas" && (
-        <>
-          {isLoadingPropuestas ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              Cargando propuestas...
-            </Text>
-          ) : propuestas.filter((p) => p.decision_universidad === "rechazada")
-              .length === 0 ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              No hay solicitudes rechazadas.
-            </Text>
-          ) : (
-            propuestas
-              .filter((p) => p.decision_universidad === "rechazada")
-              .map((e) => (
-                <Card key={e.id} style={{ marginBottom: 16 }}>
-                  <View style={s.empresaHeader}>
-                    <View style={s.empresaLogo}>
-                      <Text style={{ fontSize: 22 }}>🚫</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.empresaName}>
-                        {grupos.find((g) => g.id === e.grupo_id)?.name ??
-                          "Grupo desconocido"}
-                      </Text>
-                      <Text style={s.empresaSector}>
-                        {empresasDb.find((emp) => emp.id === e.empresa_id)
-                          ?.nombre ?? "Empresa desconocida"}
-                      </Text>
-                    </View>
-                    <Badge label="Rechazada" type="rejected" />
-                  </View>
-                  {e.motivo_rechazo_universidad ? (
-                    <View
-                      style={[
-                        s.card,
-                        {
-                          marginTop: 12,
-                          backgroundColor: C.redBg,
-                          borderColor: "rgba(239,68,68,0.25)",
-                        },
-                      ]}
-                    >
-                      <Text style={[s.textMuted, { fontSize: 12 }]}>
-                        Motivo de rechazo:
-                      </Text>
-                      <Text
-                        style={[s.textSub, { fontSize: 13, marginTop: 4 }]}
-                      >
-                        {e.motivo_rechazo_universidad}
-                      </Text>
-                    </View>
-                  ) : null}
-                </Card>
-              ))
-          )}
-        </>
-      )}
-    </ScrollView>
-  );
-
-  const renderEmpresas = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <TouchableOpacity
-        onPress={() => setSection("gestion")}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: 4,
-        }}
-        activeOpacity={0.7}
-      >
-        <Text style={{ color: C.accent70, fontSize: 16 }}>
-          ‹ Gestión Práctica
-        </Text>
-      </TouchableOpacity>
-      <View style={s.sectionHeader}>
-        <SectionKicker>Red de convenios</SectionKicker>
-        <PageTitle>Empresas</PageTitle>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ marginBottom: 20 }}
-      >
-        <View style={[s.row, { gap: 8 }]}>
-          {[
-            "Todas",
-            "Convenio activo",
-            "Tecnología",
-            "Finanzas",
-            "Salud",
-            "Logística",
-          ].map((f) => (
-            <Chip key={f} label={f} active={f === "Todas"} onPress={noop} />
-          ))}
-        </View>
-      </ScrollView>
-      {isLoadingEmpresas ? (
-        <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-          Cargando empresas...
-        </Text>
-      ) : empresasDb.length === 0 ? (
-        <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-          No hay empresas registradas aún.
-        </Text>
-      ) : (
-        empresasDb.map((emp) => {
-          const isPremium = /premium/i.test(emp.plan_seleccionado ?? "");
-          return (
-            <EmpresaCard
-              key={emp.id}
-              icon="🏢"
-              name={emp.nombre}
-              sector={emp.industria ?? "Sin industria"}
-              rating="—"
-              reviews="—"
-              horas={0}
-              badgeLabel={isPremium ? "Premium" : undefined}
-              badgeType={isPremium ? "premium" : undefined}
-              onViewEmpresa={() => openProfileViewer(emp.id, "empresa")}
-              onSolicitarHoras={() => openSolicitarHorasModal(emp)}
-            />
-          );
-        })
-      )}
-    </ScrollView>
-  );
-
-  const renderPublicar = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <View style={s.sectionHeader}>
-        <SectionKicker>Comunicación institucional</SectionKicker>
-        <PageTitle>Publicar contenido</PageTitle>
-      </View>
-
-      {/* Tipos de publicación */}
-      <View style={[s.grid2, { marginBottom: 28 }]}>
-        {(
-          [
-            {
-              key: "anuncio",
-              icon: "📢",
-              title: "Anuncio o Noticia",
-              desc: "Comparte información relevante",
-            },
-            {
-              key: "oferta",
-              icon: "🎓",
-              title: "Oferta educativa",
-              desc: "Programas, cursos o especializaciones",
-            },
-            {
-              key: "evento",
-              icon: "📅",
-              title: "Evento",
-              desc: "Ferias, seminarios, talleres",
-            },
-            {
-              key: "convocatoria",
-              icon: "🏢",
-              title: "Convocatoria de horas sociales",
-              desc: "Invita a empresas a recibir estudiantes",
-            },
-          ] as { key: PubType; icon: string; title: string; desc: string }[]
-        ).map((p) => (
-          <TouchableOpacity
-            key={p.key}
-            style={[s.pubTypeCard, pubType === p.key && s.pubTypeCardActive]}
-            onPress={() => setPubType(p.key)}
-            activeOpacity={0.8}
-          >
-            <Text style={{ fontSize: 28, marginBottom: 8 }}>{p.icon}</Text>
-            <Text style={s.empresaName}>{p.title}</Text>
-            <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-              {p.desc}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Card style={{ marginBottom: 32 }}>
-        <Text style={s.inputLabel}>Título de la publicación</Text>
-        <TextInput
-          style={s.input}
-          value={pubTitulo}
-          onChangeText={setPubTitulo}
-          placeholder="Escribe un título claro y descriptivo"
-          placeholderTextColor={C.textMuted}
-        />
-        <Text style={[s.inputLabel, { marginTop: 16 }]}>Descripción</Text>
-        <TextInput
-          style={[s.input, { height: 100, textAlignVertical: "top" }]}
-          value={pubDescripcion}
-          onChangeText={setPubDescripcion}
-          multiline
-          placeholder="Describe el contenido de tu publicación..."
-          placeholderTextColor={C.textMuted}
-        />
-
-        <Text style={[s.inputLabel, { marginTop: 16 }]}>Visibilidad</Text>
-        <View style={[s.row, { gap: 8, flexWrap: "wrap", marginTop: 8 }]}>
-          {(
-            [
-              { key: "publica", label: "🌐 Pública" },
-              { key: "estudiantes", label: "🎓 Solo mis estudiantes" },
-              { key: "empresas", label: "🏢 Solo empresas aliadas" },
-            ] as {
-              key: "publica" | "estudiantes" | "empresas";
-              label: string;
-            }[]
-          ).map((v) => (
-            <Chip
-              key={v.key}
-              label={v.label}
-              active={pubVisibility === v.key}
-              onPress={() => setPubVisibility(v.key)}
-            />
-          ))}
-        </View>
-
-        <BtnPrimary
-          label="Publicar →"
-          style={{ marginTop: 24 }}
-          onPress={noop}
-        />
-        <BtnOutline
-          label="Guardar borrador"
-          style={{ marginTop: 12 }}
-          onPress={noop}
-        />
-      </Card>
-    </ScrollView>
-  );
-
-  const renderNotificaciones = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <View
-        style={[
-          s.sectionHeader,
-          {
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "flex-end",
-          },
-        ]}
-      >
-        <PageTitle>Notificaciones</PageTitle>
-        <BtnOutline
-          label="Marcar todo leído"
-          small
-          onPress={() => setUnreadRead(true)}
-        />
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ marginBottom: 20 }}
-      >
-        <View style={[s.row, { gap: 8 }]}>
-          {[
-            "Todas",
-            "Horas sociales",
-            "Empresas",
-            "Estudiantes",
-            "Sistema",
-          ].map((f) => (
-            <Chip
-              key={f}
-              label={f}
-              active={notifFilter === f}
-              onPress={() => setNotifFilter(f)}
-            />
-          ))}
-        </View>
-      </ScrollView>
-
-      {loadingNotifs ? (
-        <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-          Cargando notificaciones...
-        </Text>
-      ) : notifData.length === 0 ? (
-        <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-          No tienes notificaciones.
-        </Text>
-      ) : (
-        <>
-          {!unreadRead && notifData.filter((n) => !n.leida).length > 0 && (
-            <>
-              <Text
-                style={[
-                  s.textMuted,
-                  {
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: 1,
-                    marginBottom: 12,
-                  },
-                ]}
-              >
-                Sin leer
-              </Text>
-              {notifData
-                .filter((n) => !n.leida)
-                .map((n) => (
-                  <Card key={n.id} style={[{ marginBottom: 10 }, s.notifUnread]}>
-                    <View style={s.notifDot} />
-                    <Text style={{ fontSize: 20, marginRight: 12 }}>🔔</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[s.textSub, { fontSize: 13 }]}>
-                        {n.titulo}
-                      </Text>
-                      <Text style={[s.textMuted, { fontSize: 12, marginTop: 2 }]}>
-                        {n.mensaje}
-                      </Text>
-                      <Text style={[s.textMuted, { fontSize: 11, marginTop: 2 }]}>
-                        {formatDateString(n.created_at)}
-                      </Text>
-                    </View>
-                  </Card>
-                ))}
-            </>
-          )}
-
-          {notifData.filter((n) => n.leida || unreadRead).length > 0 && (
-            <>
-              <Text
-                style={[
-                  s.textMuted,
-                  {
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: 1,
-                    marginBottom: 12,
-                    marginTop: 8,
-                  },
-                ]}
-              >
-                Leídas
-              </Text>
-              {notifData
-                .filter((n) => n.leida || unreadRead)
-                .map((n) => (
-                  <Card key={n.id} style={[{ marginBottom: 10 }, s.notifRead]}>
-                    <Text style={{ fontSize: 20, marginRight: 12 }}>🔔</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[s.textSub, { fontSize: 13 }]}>
-                        {n.titulo}
-                      </Text>
-                      <Text style={[s.textMuted, { fontSize: 12, marginTop: 2 }]}>
-                        {n.mensaje}
-                      </Text>
-                      <Text style={[s.textMuted, { fontSize: 11, marginTop: 2 }]}>
-                        {formatDateString(n.created_at)}
-                      </Text>
-                    </View>
-                  </Card>
-                ))}
-            </>
-          )}
-        </>
-      )}
-    </ScrollView>
-  );
-
-  const renderPerfil = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      {/* Perfil estilo 'Facebook': contenedor principal morado/oscuro */}
-      <View style={s.profileHeaderContainer}>
-        {/* Banner: imagen proveniente de la BD. Si no existe, se muestra un placeholder. */}
-        {universidad?.banner_url ? (
-          <Image
-            source={{ uri: universidad.banner_url }}
-            style={s.bannerImage}
-            resizeMode="cover"
-          />
-        ) : (
-          // Imagen estática de placeholder (reemplazar por DB)
-          <View
-            style={[
-              s.bannerImage,
-              { alignItems: "center", justifyContent: "center" },
-            ]}
-          >
-            <Text style={{ color: C.textMuted }}>No banner disponible</Text>
-          </View>
-        )}
-
-        {/* Logo: imagen de la BD colocada absolute para superponerse en la línea divisoria */}
-        {universidad?.logo_url ? (
-          <Image
-            source={{ uri: universidad.logo_url }}
-            style={s.logoImage}
-            resizeMode="cover"
-          />
-        ) : (
-          // Logo estático (emoji) — comentar en el código: placeholder local
-          <View style={s.logoImage}>
-            <Text style={{ fontSize: 28 }}>🏛️</Text>
-          </View>
-        )}
-
-        <View
-          style={{ paddingHorizontal: 16, paddingTop: 48, paddingBottom: 14 }}
-        >
-          <Text style={[s.pageTitle, { textAlign: "center" }]}>
-            {nombreUniv}
-          </Text>
-          {/* Centrar horizontalmente el texto de verificación */}
-          <View style={{ alignItems: "center", marginTop: 8 }}>
-            <Badge label="Universidad verificada ✓" type="verificada" />
-          </View>
-
-          {/* Descripción: mapear desde la BD */}
-          <Text
-            style={[
-              s.textSub,
-              { fontSize: 13, textAlign: "center", marginTop: 10 },
-            ]}
-          >
-            {universidad?.descripcion ??
-              "Agrega una descripción institucional en Configuración."}
-          </Text>
-
-          <View
-            style={[
-              s.row,
-              {
-                gap: 6,
-                flexWrap: "wrap",
-                justifyContent: "center",
-                marginTop: 12,
-              },
-            ]}
-          >
-            {/* Acreditaciones estáticas: mantener como etiquetas, pueden provenir de BD en iteración futura
-            {(["✓ ACAP", "✓ ISO 9001", "✓ MINED"] as string[]).map((a) => (
-              <Tag key={a} label={a} />
-            ))} */}
-          </View>
-
-         <View style={s.profileStats}>
-  <Text style={s.textMuted}>
-    <Text style={{ color: C.accent70, fontWeight: "700" }}>
-      {totalEstudiantes}
-    </Text>{" "}
-    estudiantes
-  </Text>
-  <Text style={s.textMuted}>
-    <Text style={{ color: C.accent70, fontWeight: "700" }}>
-      {((universidad as any)?.carreras?.length) ?? 0}
-    </Text>{" "}
-    carreras
-  </Text>
-  <Text style={s.textMuted}>
-    <Text style={{ color: C.accent70, fontWeight: "700" }}>
-      {universidad?.empresasAliadas ?? "0"}
-    </Text>{" "}
-    empresas aliadas
-  </Text>
-</View>
-
-          {/* Botón editar perfil institucional — COMENTADO: placeholder estático para edición */}
-          {/* BtnPrimary: Editar perfil institucional (actualmente abre modal local). Reemplazar por flujo de edición institucional. */}
-          <BtnPrimary
-            label="✎ Editar perfil institucional"
-            onPress={() => setModalEditPerfil(true)}
-            style={{ marginTop: 16 }}
-          />
-        </View>
-      </View>
-
-      {/* Profile tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ marginBottom: 20 }}
-      >
-        <View style={[s.row, { gap: 4 }]}>
-          {(
-            [
-              { key: "inicio", label: "Inicio" },
-              { key: "carreras", label: "Carreras" },
-              { key: "aliadas", label: "Empresas aliadas" },
-              { key: "destacados", label: "Estudiantes destacados" },
-            ] as { key: PerfilTab; label: string }[]
-          ).map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              style={[s.tab, perfilTab === t.key && s.tabActive]}
-              onPress={() => setPerfilTab(t.key)}
-            >
-              <Text style={[s.tabText, perfilTab === t.key && s.tabTextActive]}>
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
-
-      {perfilTab === "inicio" && (
-        <>
-          <Card style={{ marginBottom: 16 }}>
-            <Text style={[s.subsectionTitle, { marginBottom: 16 }]}>
-              Contacto y redes
-            </Text>
-
-            {/* Correo institucional */}
-            <View
-              style={[s.row, { marginBottom: 12, alignItems: "flex-start" }]}
-            >
-              <Text style={{ fontSize: 20, marginRight: 12 }}>📧</Text>
-              <View>
-                <Text style={[s.textMuted, { fontSize: 12 }]}>
-                  Correo institucional
-                </Text>
-                <Text style={[s.textSub, { fontSize: 14 }]}>
-                  {universidad?.email_institucional ?? "No registrado"}
-                </Text>
-              </View>
-            </View>
-
-            {/* Ubicación: dirección + ciudad/departamento */}
-            <View
-              style={[s.row, { marginBottom: 12, alignItems: "flex-start" }]}
-            >
-              <Text style={{ fontSize: 20, marginRight: 12 }}>📍</Text>
-              <View>
-                <Text style={[s.textMuted, { fontSize: 12 }]}>Ubicación</Text>
-                <Text style={[s.textSub, { fontSize: 14 }]}>
-                  {universidad?.direccion ?? "No registrada"}
-                </Text>
-                <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-                  {universidad?.ciudad || universidad?.departamento
-                    ? `${universidad?.ciudad ?? ""}${universidad?.ciudad && universidad?.departamento ? ", " : ""}${universidad?.departamento ?? ""}, El Salvador`
-                    : ""}
-                </Text>
-              </View>
-            </View>
-
-            {/* Teléfono */}
-            <View
-              style={[s.row, { marginBottom: 12, alignItems: "flex-start" }]}
-            >
-              <Text style={{ fontSize: 20, marginRight: 12 }}>📱</Text>
-              <View>
-                <Text style={[s.textMuted, { fontSize: 12 }]}>Teléfono</Text>
-                <Text style={[s.textSub, { fontSize: 14 }]}>
-                  {universidad?.telefono ?? "No registrado"}
-                </Text>
-              </View>
-            </View>
-
-            {/* Redes sociales: mostrar iconos/enlaces si existen, sino mostrar mensaje */}
-            <View style={{ marginTop: 8 }}>
-              <Text style={[s.textMuted, { fontSize: 12, marginBottom: 8 }]}>
-                Redes
-              </Text>
-              <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>
-                {(() => {
-                  const keys = [
-                    "instagram",
-                    "tiktok",
-                    "facebook",
-                    "linkedin",
-                    "twitter",
-                  ];
-                  const links = keys.map((k) => ({
-                    key: k,
-                    url: universidad?.[k],
-                  }));
-                  const present = links.filter((l) => l.url);
-                  if (present.length === 0) {
-                    return (
-                      <Text style={s.textMuted}>
-                        Agrega tu enlace de contacto en Configuracion
-                      </Text>
-                    );
-                  }
-                  return present.map((p) => (
-                    <TouchableOpacity
-                      key={p.key}
-                      onPress={() => p.url && Linking.openURL(p.url)}
-                    >
-                      <Text style={[s.textSub, { fontSize: 14 }]}>{p.key}</Text>
-                    </TouchableOpacity>
-                  ));
-                })()}
-              </View>
-            </View>
-          </Card>
-          <Card>
-            <Text style={[s.subsectionTitle, { marginBottom: 16 }]}>
-              Próximos eventos
-            </Text>
-            {([] as { title: string; sub: string }[]).map((ev) => (
-              <Card key={ev.title} style={{ marginBottom: 12, padding: 14 }}>
-                <Text style={[s.textSub, { fontSize: 13, fontWeight: "600" }]}>
-                  {ev.title}
-                </Text>
-                <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-                  {ev.sub}
-                </Text>
-              </Card>
-            ))}
-          </Card>
-        </>
-      )}
-
-      {perfilTab === "carreras" && (
-  <>
-    {((universidad as any)?.carreras || []).map((c: any, index: number) => (
-      <Card key={`${c.nombre || 'carrera'}-${index}`} style={{ marginBottom: 16 }}>
-        <Text style={s.empresaName}>{c.nombre || "Carrera sin nombre"}</Text>
-        <Text style={[s.textMuted, { fontSize: 12, marginVertical: 6 }]}>
-          {c.dur || c.duracion || "Duración no especificada"}
-        </Text>
-        <Badge label={c.modalidad || "Presencial"} type="verificada" />
-        <Text style={[s.textSub, { fontSize: 13, marginTop: 14 }]}>
-          {c.coord || c.coordinador || "Coordinador no asignado"}
-        </Text>
-      </Card>
-    ))}
-    {(!(universidad as any)?.carreras || (universidad as any).carreras.length === 0) && (
-      <Text style={{ color: "rgba(255,255,255,0.4)", textAlign: "center", marginVertical: 24, fontSize: 14 }}>
-        No tienes carreras registradas actualmente.
-      </Text>
-    )}
-  </>
-)}
-
-      {perfilTab === "aliadas" && (
-        isLoadingEmpresas ? (
-          <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-            Cargando empresas...
-          </Text>
-        ) : empresasDb.length === 0 ? (
-          <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-            No hay empresas aliadas registradas.
-          </Text>
-        ) : (
-          <View style={s.grid2}>
-            {empresasDb.map((emp) => (
-              <TouchableOpacity
-                key={emp.id}
-                style={[s.card, s.aliadaCard]}
-                onPress={() => openProfileViewer(emp.id, "empresa")}
-                activeOpacity={0.75}
-              >
-                <Text style={{ fontSize: 36, marginBottom: 8 }}>🏢</Text>
-                <Text
-                  style={[
-                    s.textSub,
-                    { fontSize: 13, fontWeight: "600", textAlign: "center" },
-                  ]}
-                >
-                  {emp.nombre}
-                </Text>
-                {emp.industria ? (
-                  <Text
-                    style={[
-                      s.textMuted,
-                      { fontSize: 11, textAlign: "center", marginTop: 2 },
-                    ]}
-                  >
-                    {emp.industria}
-                  </Text>
-                ) : null}
-              </TouchableOpacity>
-            ))}
-          </View>
-        )
-      )}
-
-      {perfilTab === "destacados" && (
-        <>
-          <Text style={[s.textMuted, { fontSize: 12, marginBottom: 16 }]}>
-            Alumnos con mejor calificación en tu institución.
-          </Text>
-          {loadingDestacados ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              Cargando alumnos...
-            </Text>
-          ) : alumnosDestacados.length === 0 ? (
-            <Text style={[s.textMuted, { textAlign: "center", padding: 24 }]}>
-              No hay alumnos destacados aún.
-            </Text>
-          ) : (
-            alumnosDestacados.map((e) => (
-              <Card
-                key={e.id}
-                style={{ marginBottom: 16, alignItems: "center" }}
-              >
-                <Text style={{ fontSize: 40, marginBottom: 8 }}>🎓</Text>
-                <Text style={[s.textSub, { fontSize: 15, fontWeight: "700" }]}>
-                  {e.nombre_completo}
-                </Text>
-                {e.carrera ? (
-                  <Text style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}>
-                    {e.carrera}
-                  </Text>
-                ) : null}
-                {e.promedio_rating !== null && e.promedio_rating !== undefined ? (
-                  <Text
-                    style={{ color: C.yellow, fontSize: 14, marginTop: 6 }}
-                  >
-                    ⭐ {e.promedio_rating.toFixed(1)}
-                  </Text>
-                ) : null}
-              </Card>
-            ))
-          )}
-        </>
-      )}
-
-      {/* Actions */}
-      <View style={{ paddingHorizontal: 16, paddingBottom: 24, gap: 12 }}>
-        <TouchableOpacity
-          style={[
-            s.card,
-            { flexDirection: "row", alignItems: "center", padding: 16 },
-          ]}
-          onPress={() => setSection("config")}
-          activeOpacity={0.8}
-        >
-          <Text style={{ fontSize: 22, marginRight: 14 }}>⚙️</Text>
-          <Text style={[s.textSub, { fontSize: 15, fontWeight: "600" }]}>
-            Configuración
-          </Text>
-          <Text style={{ color: C.accent70, fontSize: 20, marginLeft: "auto" }}>
-            ›
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            s.card,
-            { flexDirection: "row", alignItems: "center", padding: 16 },
-          ]}
-          onPress={() => handleLogout(router)}
-          activeOpacity={0.8}
-        >
-          <Text style={{ fontSize: 22, marginRight: 14 }}>🚪</Text>
-          <Text
-            style={[
-              s.textSub,
-              { fontSize: 15, fontWeight: "600", color: "#ef4444" },
-            ]}
-          >
-            Cerrar Sesión
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
-  );
-
-  const renderConfig = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <TouchableOpacity
-        onPress={() => setSection("perfil")}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: 4,
-        }}
-        activeOpacity={0.7}
-      >
-        <Text style={{ color: C.accent70, fontSize: 16 }}>‹ Mi Perfil</Text>
-      </TouchableOpacity>
-      <View style={s.sectionHeader}>
-        <SectionKicker>Preferencias</SectionKicker>
-        <PageTitle>Configuración</PageTitle>
-      </View>
-
-      <Card style={{ marginBottom: 16 }}>
-        <Text style={[s.subsectionTitle, { marginBottom: 16 }]}>
-          Datos del coordinador
-        </Text>
-        <Text style={s.inputLabel}>Nombre completo</Text>
-        <TextInput
-          style={s.input}
-          value={cfgNombre}
-          onChangeText={setCfgNombre}
-        />
-        <Text style={[s.inputLabel, { marginTop: 14 }]}>
-          Correo electrónico
-        </Text>
-        <TextInput
-          style={s.input}
-          value={cfgEmail}
-          onChangeText={setCfgEmail}
-          keyboardType="email-address"
-        />
-        <Text style={[s.inputLabel, { marginTop: 14 }]}>Teléfono</Text>
-        <TextInput
-          style={s.input}
-          value={cfgTel}
-          onChangeText={setCfgTel}
-          keyboardType="phone-pad"
-        />
-        <BtnPrimary
-          label="Guardar cambios"
-          style={{ marginTop: 20 }}
-          onPress={async () => {
-            if (!universidadId) return;
-            try {
-              await updateUniversidad(universidadId, {
-                enc_nombre: cfgNombre,
-                email_institucional: cfgEmail,
-                telefono: cfgTel,
-              });
-              Alert.alert("Guardado", "Datos actualizados correctamente.");
-            } catch {
-              Alert.alert("Error", "No se pudo guardar los cambios.");
-            }
-          }}
-        />
-      </Card>
-
-      <Card style={{ marginBottom: 16 }}>
-        <Text style={[s.subsectionTitle, { marginBottom: 16 }]}>Seguridad</Text>
-        <Text style={s.inputLabel}>Contraseña actual</Text>
-        <TextInput
-          style={s.input}
-          value={cfgPwdActual}
-          onChangeText={setCfgPwdActual}
-          secureTextEntry
-          placeholder="••••••••"
-          placeholderTextColor={C.textMuted}
-        />
-        <Text style={[s.inputLabel, { marginTop: 14 }]}>Nueva contraseña</Text>
-        <TextInput
-          style={s.input}
-          value={cfgPwdNew}
-          onChangeText={setCfgPwdNew}
-          secureTextEntry
-          placeholder="••••••••"
-          placeholderTextColor={C.textMuted}
-        />
-        <Text style={[s.inputLabel, { marginTop: 14 }]}>
-          Confirmar nueva contraseña
-        </Text>
-        <TextInput
-          style={s.input}
-          value={cfgPwdConfirm}
-          onChangeText={setCfgPwdConfirm}
-          secureTextEntry
-          placeholder="••••••••"
-          placeholderTextColor={C.textMuted}
-        />
-        <BtnPrimary
-          label="Cambiar contraseña"
-          style={{ marginTop: 20 }}
-          onPress={async () => {
-            if (!cfgPwdNew.trim()) {
-              Alert.alert("Error", "Ingresa la nueva contraseña.");
-              return;
-            }
-            if (cfgPwdNew !== cfgPwdConfirm) {
-              Alert.alert("Error", "Las contraseñas no coinciden.");
-              return;
-            }
-            const { error } = await supabase.auth.updateUser({
-              password: cfgPwdNew,
-            });
-            if (error) {
-              Alert.alert("Error", "No se pudo cambiar la contraseña.");
-            } else {
-              setCfgPwdActual("");
-              setCfgPwdNew("");
-              setCfgPwdConfirm("");
-              Alert.alert("Actualizado", "Contraseña cambiada correctamente.");
-            }
-          }}
-        />
-      </Card>
-
-      {/* <Card style={{ marginBottom: 16 }}>
-        <Text style={[s.subsectionTitle, { marginBottom: 16 }]}>
-          Notificaciones
-        </Text>
-        {[
-          {
-            label: "Nuevas empresas en mi área",
-            val: cfgNotif1,
-            set: setCfgNotif1,
-          },
-          {
-            label: "Solicitudes de horas sociales",
-            val: cfgNotif2,
-            set: setCfgNotif2,
-          },
-          {
-            label: "Actividad de estudiantes",
-            val: cfgNotif3,
-            set: setCfgNotif3,
-          },
-          { label: "Boletines del sistema", val: cfgNotif4, set: setCfgNotif4 },
-        ].map((n) => (
-          <View
-            key={n.label}
-            style={[
-              s.row,
-              {
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 16,
-              },
-            ]}
-          >
-            <Text style={[s.textSub, { fontSize: 14, flex: 1 }]}>
-              {n.label}
-            </Text>
-            <TouchableOpacity
-              style={[s.toggle, n.val && s.toggleOn]}
-              onPress={() => n.set(!n.val)}
-            >
-              <View style={[s.toggleThumb, n.val && s.toggleThumbOn]} />
-            </TouchableOpacity>
-          </View>
-        ))}
-      </Card> */}
-
-      {/* Ayuda / Acerca de */}
-      <View
-        style={{
-          height: 1,
-          backgroundColor: C.border,
-          marginHorizontal: 16,
-          marginVertical: 8,
-        }}
-      />
-      <TouchableOpacity
-        style={[
-          s.card,
-          {
-            marginHorizontal: 16,
-            marginBottom: 12,
-            padding: 14,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 12,
-          },
-        ]}
-        onPress={() => setSection("ayuda")}
-      >
-        <Ionicons name="help-circle-outline" size={20} color={C.accent70} />
-        <Text style={[s.subsectionTitle, { flex: 1, marginBottom: 0 }]}>
-          Ayuda
-        </Text>
-        <Ionicons
-          name="chevron-forward-outline"
-          size={16}
-          color={C.textMuted}
-        />
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[
-          s.card,
-          {
-            marginHorizontal: 16,
-            marginBottom: 30,
-            padding: 14,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 12,
-          },
-        ]}
-        onPress={() => setSection("acercade")}
-      >
-        <Ionicons
-          name="information-circle-outline"
-          size={20}
-          color={C.accent70}
-        />
-        <Text style={[s.subsectionTitle, { flex: 1, marginBottom: 0 }]}>
-          Acerca de Gradly
-        </Text>
-        <Ionicons
-          name="chevron-forward-outline"
-          size={16}
-          color={C.textMuted}
-        />
-      </TouchableOpacity>
-    </ScrollView>
-  );
-
-  /** AYUDA */
-  const renderAyuda = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <TouchableOpacity
-        onPress={() => setSection("config")}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: 4,
-        }}
-        activeOpacity={0.7}
-      >
-        <Text style={{ color: C.accent70, fontSize: 16 }}>‹ Configuración</Text>
-      </TouchableOpacity>
-      <View style={s.sectionHeader}>
-        <SectionKicker>Soporte</SectionKicker>
-        <PageTitle>Ayuda</PageTitle>
-      </View>
-      <Text style={[s.textSub, { marginHorizontal: 16, marginBottom: 20 }]}>
-        Te respondemos en menos de 24 horas hábiles.
-      </Text>
-      <Card style={{ marginBottom: 16 }}>
-        <Text style={[s.subsectionTitle, { marginBottom: 14 }]}>
-          Información de contacto
-        </Text>
-        {[
-          {
-            icon: "mail-outline" as keyof typeof Ionicons.glyphMap,
-            label: "Correo electrónico",
-            value: "hola@gradly.sv",
-          },
-          {
-            icon: "phone-portrait-outline" as keyof typeof Ionicons.glyphMap,
-            label: "WhatsApp",
-            value: "+503 7000-0000",
-          },
-          {
-            icon: "location-outline" as keyof typeof Ionicons.glyphMap,
-            label: "Ubicación",
-            value: "Universidad Don Bosco, Soyapango, El Salvador",
-          },
-          {
-            icon: "time-outline" as keyof typeof Ionicons.glyphMap,
-            label: "Horario",
-            value: "Lunes a Viernes, 08:00 - 17:00",
-          },
-        ].map((ci) => (
-          <View
-            key={ci.label}
-            style={{
-              flexDirection: "row",
-              gap: 12,
-              alignItems: "flex-start",
-              marginBottom: 12,
-            }}
-          >
-            <View
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 8,
-                backgroundColor: C.accent20,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name={ci.icon} size={17} color={C.accent70} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.textSub, { fontSize: 12 }]}>{ci.label}</Text>
-              <Text style={{ color: C.text, fontSize: 14, fontWeight: "600" }}>
-                {ci.value}
-              </Text>
-            </View>
-          </View>
-        ))}
-      </Card>
-      <Text
-        style={[s.subsectionTitle, { marginHorizontal: 16, marginBottom: 12 }]}
-      >
-        Preguntas frecuentes
-      </Text>
-      {[
-        {
-          q: "¿Gradly es gratuito para los jóvenes talentos?",
-          a: "Sí, completamente gratuito. Los jóvenes talentos pueden registrarse y aplicar a vacantes sin ningún costo.",
-        },
-        {
-          q: "¿Cómo funciona la validación de horas sociales?",
-          a: "Las universidades aliadas se integran con Gradly para registrar y validar las horas sociales de los estudiantes.",
-        },
-        {
-          q: "¿Cómo se procesan los pagos a freelancers?",
-          a: "Los pagos se procesan a través de pasarelas seguras con una comisión Gradly del 5%.",
-        },
-        {
-          q: "¿Puedo publicar múltiples vacantes?",
-          a: "Sí, puedes publicar y gestionar todas las vacantes que necesites desde tu panel.",
-        },
-        {
-          q: "¿Cómo se protegen los datos de mis estudiantes?",
-          a: "Gradly cumple con la Ley de Protección de Datos Personales de El Salvador. Los datos se almacenan encriptados.",
-        },
-        {
-          q: "¿Las universidades pueden ver los perfiles de los talentos?",
-          a: "Solo los talentos afiliados a tu universidad son visibles en el panel institucional.",
-        },
-        {
-          q: "¿Qué documentos necesita mi institución para registrarse?",
-          a: "NRC institucional, correo oficial y nombre del coordinador. La verificación tarda 24-48 horas hábiles.",
-        },
-        {
-          q: "¿Gradly está disponible fuera de El Salvador?",
-          a: "Actualmente opera en El Salvador, con expansión planeada a Centroamérica para el segundo semestre de 2026.",
-        },
-      ].map((item, i) => (
-        <Card key={i} style={{ marginBottom: 8, padding: 14 }}>
-          <Text
-            style={{
-              color: C.text,
-              fontSize: 14,
-              fontWeight: "600",
-              marginBottom: 6,
-            }}
-          >
-            {item.q}
-          </Text>
-          <Text style={[s.textSub, { lineHeight: 20 }]}>{item.a}</Text>
-        </Card>
-      ))}
-    </ScrollView>
-  );
-
-  /** ACERCA DE GRADLY */
-  const renderAcercaDe = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <TouchableOpacity
-        onPress={() => setSection("config")}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: 4,
-        }}
-        activeOpacity={0.7}
-      >
-        <Text style={{ color: C.accent70, fontSize: 16 }}>‹ Configuración</Text>
-      </TouchableOpacity>
-      <View style={s.sectionHeader}>
-        <SectionKicker>Acerca de</SectionKicker>
-        <PageTitle>Gradly</PageTitle>
-      </View>
-      <Card
-        style={[
-          {
-            backgroundColor: C.accent20,
-            marginBottom: 20,
-            padding: 24,
-            alignItems: "center",
-          },
-        ]}
-      >
-        <Text
-          style={{
-            color: C.text,
-            fontSize: 20,
-            fontWeight: "900",
-            textAlign: "center",
-            marginBottom: 8,
-          }}
-        >
-          La plataforma que conecta talento con oportunidades
-        </Text>
-        <Text style={[s.textSub, { textAlign: "center" }]}>
-          Nació en El Salvador para cerrar la brecha entre jóvenes talentos,
-          universidades y empresas.
-        </Text>
-      </Card>
-      <Card style={{ marginBottom: 16 }}>
-        <Text style={{ color: C.accent70, fontWeight: "700", marginBottom: 4 }}>
-          Misión
-        </Text>
-        <Text style={[s.textSub, { marginBottom: 12 }]}>
-          Democratizar el acceso al empleo profesional para los jóvenes talentos
-          de América Latina.
-        </Text>
-        <View
-          style={{ height: 1, backgroundColor: C.border, marginVertical: 10 }}
-        />
-        <Text style={{ color: C.accent70, fontWeight: "700", marginBottom: 4 }}>
-          Visión
-        </Text>
-        <Text style={[s.textSub, { marginBottom: 12 }]}>
-          Ser el ecosistema profesional de referencia en América Latina para
-          2030.
-        </Text>
-        <View
-          style={{ height: 1, backgroundColor: C.border, marginVertical: 10 }}
-        />
-        <Text style={{ color: C.accent70, fontWeight: "700", marginBottom: 4 }}>
-          Mercado objetivo
-        </Text>
-        <Text style={s.textSub}>
-          Jóvenes de 18 a 30 años en El Salvador, Guatemala, Honduras y Costa
-          Rica.
-        </Text>
-      </Card>
-      <View
-        style={{
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: 8,
-          marginBottom: 16,
-          paddingHorizontal: 16,
-        }}
-      >
-        {[
-          { num: "500+", label: "Empresas" },
-          { num: "10K+", label: "Talentos" },
-          { num: "80+", label: "Universidades" },
-          { num: "247", label: "Vacantes" },
-        ].map((st) => (
-          <Card
-            key={st.label}
-            style={{
-              alignItems: "center",
-              padding: 16,
-              flex: 1,
-              minWidth: "40%",
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 22,
-                fontWeight: "900",
-                color: C.accent70,
-                marginBottom: 4,
-              }}
-            >
-              {st.num}
-            </Text>
-            <Text style={s.textSub}>{st.label}</Text>
-          </Card>
-        ))}
-      </View>
-      <Text
-        style={[s.subsectionTitle, { marginHorizontal: 16, marginBottom: 12 }]}
-      >
-        El equipo detrás de Gradly
-      </Text>
-      {[
-        {
-          icon: "L",
-          name: "Lindsay Jazmin Coto Marroquín",
-          role: "Frontend Developer & UX Lead",
-        },
-        {
-          icon: "D",
-          name: "Diego Josué Chávez López",
-          role: "Backend Developer & Arquitecto",
-        },
-        {
-          icon: "A",
-          name: "Ashlyn Lisseth Escobar Arana",
-          role: "UI/UX Designer & Product",
-        },
-        {
-          icon: "N",
-          name: "Nathalia Guadalupe Guevara Zelaya",
-          role: "Project Manager & QA Lead",
-        },
-      ].map((tm) => (
-        <Card
-          key={tm.name}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 14,
-            padding: 14,
-            marginBottom: 8,
-          }}
-        >
-          <View
-            style={{
-              width: 46,
-              height: 46,
-              borderRadius: 23,
-              backgroundColor: C.accent20,
-              borderWidth: 1,
-              borderColor: C.accent40,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Text
-              style={{ color: C.accent70, fontWeight: "900", fontSize: 17 }}
-            >
-              {tm.icon}
-            </Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: C.text, fontSize: 14, fontWeight: "700" }}>
-              {tm.name}
-            </Text>
-            <Text style={[s.textSub, { fontSize: 12 }]}>{tm.role}</Text>
-          </View>
-        </Card>
-      ))}
-      <View style={{ height: 20 }} />
-    </ScrollView>
-  );
-
-  // ── Render section content ────────────────────────────────────
-  const renderContent = () => {
-    switch (section) {
-      case "inicio":
-        return renderInicio();
-      case "explorar":
-        return renderExplorar();
-      case "gestion":
-        return renderGestion();
-      case "grupos":
-        return renderGrupos();
-      case "horas":
-        return renderHoras();
-      case "empresas":
-        return renderEmpresas();
-      case "notificaciones":
-        return renderNotificaciones();
-      case "perfil":
-        return renderPerfil();
-      case "config":
-        return renderConfig();
-      case "ayuda":
-        return renderAyuda();
-      case "acercade":
-        return renderAcercaDe();
+  const renderSeccion = () => {
+    switch (seccion) {
+      case 'inicio':       return <SeccionInicio metricas={metricas} perfil={perfil} nombreUni={nombreUni} uid={user!.uid} />;
+      case 'estudiantes':  return <SeccionEstudiantes estudiantes={estudiantes} uid={user!.uid} />;
+      case 'aprobar':      return <SeccionAprobar apps={apps} onAprobar={handleAprobar} onRechazar={handleRechazar} />;
+      case 'estadisticas': return <SeccionEstadisticas estudiantes={estudiantes} apps={apps} />;
+      default:             return null;
     }
   };
 
-  // ═══════════════════════════════════════════════════════════════
-  // MODALS
-  // ═══════════════════════════════════════════════════════════════
-
-  const ModalPropuestasEmpresas = () => (
-    <Modal
-      visible={propuestasOpen}
-      transparent
-      animationType="slide"
-      onRequestClose={() => {
-        setPropuestasOpen(false);
-        setSelectedPropuesta(null);
-      }}
-    >
-      <View style={s.modalOverlay}>
-        <View style={s.modal}>
-          <View
-            style={[
-              s.row,
-              { justifyContent: "space-between", marginBottom: 16 },
-            ]}
-          >
-            <Text style={s.subsectionTitle}>Propuestas de empresas</Text>
-            <TouchableOpacity
-              onPress={() => {
-                setPropuestasOpen(false);
-                setSelectedPropuesta(null);
-              }}
-            >
-              <Ionicons name="close" size={22} color={C.textMuted} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {isLoadingPropuestas ? (
-              <Text style={[s.textMuted, { paddingVertical: 12 }]}>
-                Cargando propuestas...
-              </Text>
-            ) : propuestas.length === 0 ? (
-              <Text style={[s.textMuted, { paddingVertical: 12 }]}>
-                No hay propuestas iniciadas por empresas.
-              </Text>
-            ) : (
-              propuestas.map((p) => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={[
-                    s.card,
-                    {
-                      padding: 14,
-                      marginBottom: 10,
-                      borderColor:
-                        selectedPropuesta?.id === p.id ? C.green : C.border,
-                    },
-                  ]}
-                  onPress={() => {
-                    setSelectedPropuesta(p);
-                    setShowRechazoPropuestaInput(false);
-                    setRechazoPropuestaMotivo(
-                      (p as any).motivo_rechazo_universidad ?? "",
-                    );
-                    setRechazoPropuestaError("");
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <View style={[s.row, { justifyContent: "space-between" }]}>
-                    <View style={{ flex: 1, marginRight: 12 }}>
-                      <Text style={[s.textSub, { fontWeight: "800" }]}>
-                        Grupo:{" "}
-                        {p.grupo_id ? String(p.grupo_id).slice(0, 8) : "—"}
-                      </Text>
-                      <Text
-                        style={[s.textMuted, { fontSize: 12, marginTop: 4 }]}
-                      >
-                        Estado: {p.estado}
-                      </Text>
-                    </View>
-                    <Badge label="Empresa" type="default" />
-                  </View>
-                </TouchableOpacity>
-              ))
-            )}
-
-            {selectedPropuesta && (
-              <Card style={{ marginTop: 14 }}>
-                <Text style={s.subsectionTitle}>Detalle de condiciones</Text>
-                {selectedPropuesta.horas_ofrecidas ? (
-                  <Text style={[s.textMuted, { marginTop: 10 }]}>
-                    ⏱ Horas ofrecidas: {selectedPropuesta.horas_ofrecidas}
-                  </Text>
-                ) : null}
-                <Text style={[s.textMuted, { marginTop: 6 }]}>
-                  🕐 Horario: {selectedPropuesta.horario ?? selectedPropuesta.hora_inicio ?? "—"}
-                  {!selectedPropuesta.horario && selectedPropuesta.hora_fin ? ` a ${selectedPropuesta.hora_fin}` : ""}
-                </Text>
-                <Text style={[s.textMuted, { marginTop: 6 }]}>
-                  📅 Fechas: {selectedPropuesta.fecha_inicio ?? "—"} a{" "}
-                  {selectedPropuesta.fecha_fin ?? "—"}
-                </Text>
-                {selectedPropuesta.condiciones ? (
-                  <Text style={[s.textMuted, { marginTop: 6 }]}>
-                    📋 Condiciones: {selectedPropuesta.condiciones}
-                  </Text>
-                ) : null}
-                <Text style={[s.textMuted, { marginTop: 6 }]}>
-                  📍 Maps: {selectedPropuesta.google_maps_url ?? "—"}
-                </Text>
-                {selectedPropuesta.google_maps_url ? (
-                  <BtnOutline
-                    label="Abrir ubicación"
-                    small
-                    style={{ marginTop: 10 }}
-                    onPress={() =>
-                      Linking.openURL(
-                        selectedPropuesta.google_maps_url as string,
-                      )
-                    }
-                  />
-                ) : null}
-                {(selectedPropuesta as any).motivo_rechazo_universidad ? (
-                  <Text style={[s.textMuted, { marginTop: 10 }]}>
-                    Motivo de rechazo de la universidad:{" "}
-                    {(selectedPropuesta as any).motivo_rechazo_universidad}
-                  </Text>
-                ) : null}
-
-                <View style={[s.row, { gap: 10, marginTop: 16 }]}>
-                  <TouchableOpacity
-                    style={[
-                      s.btnPrimary,
-                      { flex: 1, opacity: isUpdatingPropuesta ? 0.7 : 1 },
-                    ]}
-                    disabled={isUpdatingPropuesta}
-                    onPress={async () => {
-                      const ok = await handleActualizarEstadoPropuesta(
-                        selectedPropuesta.id,
-                        "aprobada",
-                      );
-                      if (ok) setSelectedPropuesta(null);
-                    }}
-                  >
-                    <Text style={s.btnPrimaryText}>Aceptar propuesta</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      s.btnPrimary,
-                      {
-                        flex: 1,
-                        backgroundColor: C.red,
-                        opacity: isUpdatingPropuesta ? 0.7 : 1,
-                      },
-                    ]}
-                    disabled={isUpdatingPropuesta}
-                    onPress={() => {
-                      setShowRechazoPropuestaInput(true);
-                      setRechazoPropuestaError("");
-                    }}
-                  >
-                    <Text style={s.btnPrimaryText}>Rechazar propuesta</Text>
-                  </TouchableOpacity>
-                </View>
-                {showRechazoPropuestaInput && (
-                  <View style={{ marginTop: 14 }}>
-                    <Text style={s.inputLabel}>Motivo de rechazo</Text>
-                    <TextInput
-                      style={[
-                        s.input,
-                        {
-                          borderColor: rechazoPropuestaError ? C.red : C.border,
-                          marginTop: 6,
-                          minHeight: 80,
-                          textAlignVertical: "top",
-                        },
-                      ]}
-                      value={rechazoPropuestaMotivo}
-                      onChangeText={(value) => {
-                        setRechazoPropuestaMotivo(value);
-                        setRechazoPropuestaError("");
-                      }}
-                      placeholder="Explica por qué rechazas la propuesta"
-                      placeholderTextColor={C.textMuted}
-                      multiline
-                    />
-                    {rechazoPropuestaError ? (
-                      <Text style={[s.errorText, { marginTop: 8 }]}>
-                        ⚠️ {rechazoPropuestaError}
-                      </Text>
-                    ) : null}
-                    <View style={[s.row, { gap: 12, marginTop: 12 }]}>
-                      <BtnOutline
-                        label="Cancelar"
-                        style={{ flex: 1 }}
-                        onPress={() => {
-                          setShowRechazoPropuestaInput(false);
-                          setRechazoPropuestaMotivo(
-                            (selectedPropuesta as any)
-                              ?.motivo_rechazo_universidad ?? "",
-                          );
-                        }}
-                      />
-                      <TouchableOpacity
-                        style={[s.btnPrimary, { flex: 1 }]}
-                        disabled={isUpdatingPropuesta}
-                        onPress={async () => {
-                          const ok = await handleActualizarEstadoPropuesta(
-                            selectedPropuesta.id,
-                            "cerrada",
-                            rechazoPropuestaMotivo,
-                          );
-                          if (ok) {
-                            setSelectedPropuesta(null);
-                            setShowRechazoPropuestaInput(false);
-                          }
-                        }}
-                      >
-                        <Text style={s.btnPrimaryText}>Confirmar rechazo</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-              </Card>
-            )}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  const ModalSolicitarHoras = () => {
-    const normalizedEmpresaSearch = empresaSearch.trim().toLowerCase();
-    const filteredEmpresas = empresasDb.filter((e) => {
-      if (!normalizedEmpresaSearch) return true;
-      const haystack =
-        `${e.nombre} ${e.industria ?? ""} ${e.descripcion ?? ""}`.toLowerCase();
-      return haystack.includes(normalizedEmpresaSearch);
-    });
-
-    const grupoBorderColor = solicitarErrors.grupo
-      ? C.red
-      : selectedGrupoDb
-        ? C.green
-        : C.border;
-    const empresaBorderColor = solicitarErrors.empresa
-      ? C.red
-      : selectedEmpresaDb
-        ? C.green
-        : C.border;
-
+  // ── Guard de ciclo de vida: evita render/crasheos con UID null ──
+  // (todos los hooks ya se ejecutaron arriba, así que es seguro retornar aquí)
+  if (!user || !user.uid) {
     return (
-      <Modal
-        visible={solicitarHorasOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => {
-          setSolicitarHorasOpen(false);
-          resetSolicitarHorasModal();
-        }}
-      >
-        <View style={s.modalOverlay}>
-          <View style={s.modal}>
-            <View
-              style={[
-                s.row,
-                { justifyContent: "space-between", marginBottom: 16 },
-              ]}
-            >
-              <Text style={s.subsectionTitle}>Solicitar horas</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setSolicitarHorasOpen(false);
-                  resetSolicitarHorasModal();
-                }}
-              >
-                <Ionicons name="close" size={22} color={C.textMuted} />
+      <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <LiquidBackground>
+    <View style={[styles.root, { backgroundColor: 'transparent' }]}>
+      <StatusBar style="light" />
+
+      {/* ── CONTENIDO ── */}
+      <View style={styles.main}>
+        <View style={styles.mainHeader}>
+          <TouchableOpacity onPress={abrirEditPerfil} activeOpacity={0.8}>
+            <StorageAvatar
+              url={perfil?.logo_url}
+              storagePath={user ? `logos/${user.uid}` : null}
+              size={40}
+              fallbackIcon="school"
+            />
+          </TouchableOpacity>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.mainTitle} numberOfLines={1}>
+              {MENU.find(m => m.key === seccion)?.label ?? 'Inicio'}
+            </Text>
+            <Text style={styles.mainSubtitle} numberOfLines={1}>{nombreUni}</Text>
+          </View>
+        </View>
+        {renderSeccion()}
+      </View>
+
+      {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ── */}
+      <FloatingTopBar userId={user?.uid} />
+
+      {/* ── BÚSQUEDA FLOTANTE (oculta en "Mis Estudiantes", que tiene su propia barra) ── */}
+      {seccion !== 'estudiantes' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
+
+      {/* ── MENÚ FLOTANTE (Glassmorphism) ── */}
+      <FloatingNavBar
+        items={navItems}
+        activeKey={seccion}
+        onChange={(k) =>
+          k === 'perfil'
+            ? abrirEditPerfil()
+            : k === 'mensajes'
+              ? router.push('/mensajes' as any)
+              : setSeccion(k)
+        }
+      />
+
+      {/* ── MODAL: Editar Perfil ── */}
+      <Modal visible={showEditPerfil} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.sheetCard}>
+            <Text style={styles.modalTitle}>Perfil de la universidad</Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 8 }}>
+            {/* ── Panel de estadísticas (gráficas) ── */}
+            <View style={{ marginBottom: 6 }}>
+              <PerfilStatsUniversidad universidadId={user!.uid} />
+            </View>
+            <TouchableOpacity style={styles.logoUploadBtn} onPress={handleUploadLogo} disabled={uploadingLogo}>
+              {uploadingLogo
+                ? <ActivityIndicator color={COLORS.primaryLight} />
+                : <Ionicons name="image-outline" size={20} color={COLORS.primaryLight} />
+              }
+              <Text style={styles.logoUploadText}>Cambiar logo</Text>
+            </TouchableOpacity>
+            {[
+              { label: 'Nombre de la universidad', value: editNombre, set: setEditNombre },
+              { label: 'Dominio de correo (ej. @uca.edu.sv)', value: editDominio, set: setEditDominio },
+              { label: 'Dirección', value: editDir, set: setEditDir },
+              { label: 'Contacto principal', value: editContacto, set: setEditContacto },
+              { label: 'Correo del contacto', value: editCorreo, set: setEditCorreo },
+            ].map(f => (
+              <View key={f.label}>
+                <Text style={styles.fieldLabel}>{f.label}</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={f.value}
+                  onChangeText={f.set}
+                  placeholderTextColor={COLORS.textMuted}
+                  selectionColor={COLORS.primary}
+                />
+              </View>
+            ))}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowEditPerfil(false)}>
+                <Text style={styles.modalCancelText}>Cancelar</Text>
               </TouchableOpacity>
+              <JellyButton style={styles.modalSave} contentStyle={{ paddingVertical: 0 }} onPress={handleSavePerfil}>
+                <Text style={styles.modalSaveText}>Guardar</Text>
+              </JellyButton>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {solicitarStep === "grupo" ? (
-                <>
-                  <Text style={s.inputLabel}>Selecciona un grupo</Text>
-                  {solicitarErrors.grupo ? (
-                    <Text style={[s.errorText, { marginTop: 8 }]}>
-                      ⚠️ {solicitarErrors.grupo}
-                    </Text>
-                  ) : null}
-                  {solicitarErrors.grupo ? (
-                    <Text style={[s.errorText, { marginTop: 8 }]}>
-                      ⚠️ {solicitarErrors.grupo}
-                    </Text>
-                  ) : null}
-
-                  <View style={{ marginTop: 12 }}>
-                    {isLoadingGruposDb ? (
-                      <Text style={s.textMuted}>Cargando grupos...</Text>
-                    ) : gruposDb.length === 0 ? (
-                      <Text style={s.textMuted}>
-                        No hay grupos creados por esta universidad.
-                      </Text>
-                    ) : (
-                      gruposDb.map((g) => (
-                        <TouchableOpacity
-                          key={g.id}
-                          style={[
-                            s.card,
-                            {
-                              padding: 14,
-                              marginBottom: 10,
-                              borderColor:
-                                selectedGrupoDb?.id === g.id
-                                  ? C.green
-                                  : C.border,
-                            },
-                          ]}
-                          onPress={() => {
-                            setSelectedGrupoDb(g);
-                            setSolicitarErrors((prev) => ({
-                              ...prev,
-                              grupo: "",
-                            }));
-                          }}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={[s.textSub, { fontWeight: "800" }]}>
-                            {g.nombre}
-                          </Text>
-                          <Text
-                            style={[
-                              s.textMuted,
-                              { fontSize: 12, marginTop: 4 },
-                            ]}
-                          >
-                            {g.carrera}
-                          </Text>
-                        </TouchableOpacity>
-                      ))
-                    )}
-                  </View>
-
-                  <View style={[s.row, { gap: 12, marginTop: 14 }]}>
-                    <BtnOutline
-                      label="Descartar"
-                      style={{ flex: 1 }}
-                      onPress={() => {
-                        setSolicitarHorasOpen(false);
-                        resetSolicitarHorasModal();
-                      }}
-                    />
-                    <TouchableOpacity
-                      style={[
-                        s.btnPrimary,
-                        {
-                          flex: 1,
-                          opacity: selectedGrupoDb ? 1 : 0.6,
-                        },
-                      ]}
-                      disabled={!selectedGrupoDb}
-                      onPress={() => {
-                        setSolicitarStep("empresa");
-                        if (empresasDb.length === 0) loadEmpresasDb();
-                      }}
-                    >
-                      <Text style={s.btnPrimaryText}>Enviar propuesta →</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              ) : (
-                <>
-                  <Card style={{ marginBottom: 14 }}>
-                    <Text style={s.subsectionTitle}>Grupo seleccionado</Text>
-                    <Text style={[s.textMuted, { marginTop: 8 }]}>
-                      {selectedGrupoDb?.nombre ?? "—"}
-                    </Text>
-                    <Text style={[s.textMuted, { marginTop: 4 }]}>
-                      {selectedGrupoDb?.carrera ?? ""}
-                    </Text>
-                  </Card>
-
-                  <Text style={s.inputLabel}>Buscar empresa (tiempo real)</Text>
-                  <TextInput
-                    style={[
-                      s.input,
-                      { borderColor: empresaBorderColor, marginTop: 6 },
-                    ]}
-                    value={empresaSearch}
-                    onChangeText={(v) => {
-                      setEmpresaSearch(v);
-                      setSolicitarErrors((prev) => ({ ...prev, empresa: "" }));
-                    }}
-                    placeholder="Nombre, categoría o descripción..."
-                    placeholderTextColor={C.textMuted}
-                  />
-                  {solicitarErrors.empresa ? (
-                    <Text style={[s.errorText, { marginTop: 8 }]}>
-                      ⚠️ {solicitarErrors.empresa}
-                    </Text>
-                  ) : null}
-
-                  <View style={{ marginTop: 12 }}>
-                    {isLoadingEmpresas ? (
-                      <Text style={s.textMuted}>Cargando empresas...</Text>
-                    ) : filteredEmpresas.length === 0 ? (
-                      <Text style={s.textMuted}>
-                        No hay empresas para este filtro.
-                      </Text>
-                    ) : (
-                      filteredEmpresas.slice(0, 30).map((e) => (
-                        <TouchableOpacity
-                          key={e.id}
-                          style={[
-                            s.card,
-                            {
-                              padding: 14,
-                              marginBottom: 10,
-                              borderColor:
-                                selectedEmpresaDb?.id === e.id
-                                  ? C.green
-                                  : C.border,
-                            },
-                          ]}
-                          onPress={() => {
-                            setSelectedEmpresaDb(e);
-                            setSolicitarErrors((prev) => ({
-                              ...prev,
-                              empresa: "",
-                            }));
-                          }}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={[s.textSub, { fontWeight: "800" }]}>
-                            {e.nombre}
-                          </Text>
-                          <Text
-                            style={[
-                              s.textMuted,
-                              { fontSize: 12, marginTop: 4 },
-                            ]}
-                          >
-                            {(e.industria ?? "Sin industria") as string}
-                          </Text>
-                        </TouchableOpacity>
-                      ))
-                    )}
-                  </View>
-
-                  <View style={[s.row, { gap: 12, marginTop: 14 }]}>
-                    <BtnOutline
-                      label="← Cambiar grupo"
-                      style={{ flex: 1 }}
-                      onPress={() => setSolicitarStep("grupo")}
-                    />
-                    <TouchableOpacity
-                      style={[
-                        s.btnPrimary,
-                        {
-                          flex: 1,
-                          opacity:
-                            selectedGrupoDb &&
-                            selectedEmpresaDb &&
-                            !isSendingSolicitud
-                              ? 1
-                              : 0.6,
-                        },
-                      ]}
-                      disabled={
-                        !selectedGrupoDb ||
-                        !selectedEmpresaDb ||
-                        isSendingSolicitud
-                      }
-                      onPress={handleEnviarSolicitudHoras}
-                    >
-                      <Text style={s.btnPrimaryText}>
-                        {isSendingSolicitud
-                          ? "Enviando..."
-                          : "Enviar propuesta"}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
+            {/* ── Cuenta: ayuda · acerca de · cerrar sesión (al final) ── */}
+            <View style={styles.perfilFooter}>
+              <TouchableOpacity style={styles.footerBtn} onPress={handleAyuda}>
+                <Ionicons name="help-circle-outline" size={18} color={colors.primaryLight} />
+                <Text style={styles.footerBtnText}>Ayuda</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.footerBtn} onPress={handleAcerca}>
+                <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} />
+                <Text style={styles.footerBtnText}>Acerca de Gradly</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.logoutFooterBtn}
+                onPress={() => setLogoutModalVisible(true)}
+              >
+                <Ionicons name="log-out-outline" size={18} color={colors.error} />
+                <Text style={styles.logoutFooterText}>Cerrar sesión</Text>
+              </TouchableOpacity>
+            </View>
             </ScrollView>
           </View>
         </View>
       </Modal>
+
+      {/* ── Onboarding (guía por globos) ── */}
+      <OnboardingBubble
+        visible={tour.visible}
+        titulo={TOUR_PASOS[seccion].titulo}
+        texto={TOUR_PASOS[seccion].texto}
+        paso={tour.paso}
+        total={tour.total}
+        esUltimo={tour.esUltimo}
+        onContinuar={tour.marcar}
+        onSaltar={tour.saltar}
+      />
+
+      {/* ── MODAL: Confirmar cierre de sesión (Liquid Glass) ── */}
+      <Modal transparent visible={logoutModalVisible} animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#1a162b', borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
+            <Text style={{ fontSize: 18, color: '#fff', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>Cerrar Sesión</Text>
+            <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: 24 }}>¿Estás seguro de que deseas salir de tu cuenta?</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }} onPress={() => setLogoutModalVisible(false)}>
+                <Text style={{ color: '#fff', fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: '#ef4444', alignItems: 'center' }} onPress={confirmarCierreSesion}>
+                <Text style={{ color: '#fff', fontWeight: '600' }}>Salir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+    </LiquidBackground>
+  );
+}
+
+// ─────────────────────────────────────────────
+// SECCIÓN: INICIO
+// ─────────────────────────────────────────────
+function SeccionInicio({ metricas, perfil, nombreUni, uid }: any) {
+  const { s } = useThemedStyles();
+  return (
+    <ScrollView contentContainerStyle={s.scroll}>
+      {/* ── Estadísticas de la Red Gradly ── */}
+      <RedGradlyBanner />
+
+      <GlassCard style={{ marginBottom: 16 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', padding: 20 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.bannerTitle}>Bienvenido</Text>
+          <Text style={s.bannerNombre}>{nombreUni}</Text>
+        </View>
+        {perfil?.logo_url && (
+          <View style={s.logoWrap}>
+            <Ionicons name="school" size={28} color={COLORS.primaryLight} />
+          </View>
+        )}
+      </GlassCard>
+
+      <View style={s.metricasGrid}>
+        <MetricCard icon="people-outline"         label="Estudiantes"       value={metricas.totalEstudiantes} color={COLORS.primaryLight} />
+        <MetricCard icon="briefcase-outline"       label="En pasantía"      value={metricas.enPasantia}       color={COLORS.success} />
+        <MetricCard icon="time-outline"            label="Horas aprobadas"  value={metricas.horasAprobadas}   color={COLORS.accent} />
+        <MetricCard icon="alert-circle-outline"    label="Pend. aprobación" value={metricas.pendAprobacion}   color={COLORS.warning} />
+      </View>
+
+      {/* ── Matchmaking: vacantes disponibles y postulaciones ── */}
+      <View style={{ marginTop: 8 }}>
+        <VacantesDisponibles universidadId={uid} />
+      </View>
+    </ScrollView>
+  );
+}
+
+function MetricCard({ icon, label, value, color }: any) {
+  const { s } = useThemedStyles();
+  return (
+    <GlassCard style={{ flex: 1, minWidth: 120 }} contentStyle={{ padding: 14, gap: 4 }}>
+      <Ionicons name={icon} size={24} color={color} />
+      <Text style={[s.metricValue, { color }]}>{value}</Text>
+      <Text style={s.metricLabel}>{label}</Text>
+    </GlassCard>
+  );
+}
+
+// ─────────────────────────────────────────────
+// SECCIÓN: ESTUDIANTES + IMPORTAR EXCEL
+// ─────────────────────────────────────────────
+function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]; uid: string }) {
+  const { styles, s, colors } = useThemedStyles();
+  const router = useRouter();
+
+  // ── Búsqueda ──
+  const [busqueda, setBusqueda] = useState('');
+  const [busquedaAplicada, setBusquedaAplicada] = useState('');
+
+  // ── Pestañas ──
+  const [tab, setTab] = useState<'grupos' | 'estudiantes'>('grupos');
+
+  // ── Grupos (tiempo real) ──
+  const [grupos, setGrupos] = useState<Grupo[]>([]);
+
+  // ── Formulario de creación de grupo (Paso 1) ──
+  const [gNombre, setGNombre]   = useState('');
+  const [gCarrera, setGCarrera] = useState('');
+  const [gHoras, setGHoras]     = useState('');
+  const [gDocente, setGDocente] = useState('');
+
+  // ── Flujo de modales ──
+  const [showModalGrupo, setShowModalGrupo]       = useState(false); // Paso 1
+  const [showModalExcel, setShowModalExcel]       = useState(false); // Paso 2
+  const [showProgreso, setShowProgreso]           = useState(false); // Creando cuentas
+  const [showCredenciales, setShowCredenciales]   = useState(false); // Resultado
+  const [progreso, setProgreso] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
+  const [credenciales, setCredenciales] = useState<EstudianteNuevo[]>([]);
+  const [grupoCreadoNombre, setGrupoCreadoNombre] = useState('');
+
+  // ── Validaciones en tiempo real del formulario de grupo ──
+  const errNombre  = valGrupoNombre(gNombre);
+  const errCarrera = valGrupoCarrera(gCarrera);
+  const errHoras   = valGrupoHoras(gHoras);
+  const errDocente = valGrupoDocente(gDocente);
+  const formGrupoValido = !errNombre && !errCarrera && !errHoras && !errDocente;
+
+  // ── Suscripción en tiempo real a los grupos de esta universidad ──
+  useEffect(() => {
+    const q = query(collection(db, 'grupos'), where('universidad_id', '==', uid));
+    const unsub = onSnapshot(
+      q,
+      snap => {
+        const lista = snap.docs
+          .map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              nombre: (data.nombre as string) ?? 'Sin nombre',
+              carrera: (data.carrera as string) ?? '',
+              horasRequeridas: (data.horasRequeridas as number) ?? 0,
+              docente: (data.docente as string) ?? 'Sin asignar',
+              estudiantes_registrados: (data.estudiantes_registrados as number) ?? 0,
+            };
+          })
+          .sort((a, b) => a.nombre.localeCompare(b.nombre));
+        setGrupos(lista);
+      },
+      error => console.warn('Error en listener (grupos):', error),
     );
+    return unsub;
+  }, [uid]);
+
+  // ── Filtrado por la búsqueda aplicada (al pulsar "Buscar") ──
+  const gruposFiltrados = useMemo(() => {
+    const q = busquedaAplicada.trim().toLowerCase();
+    if (!q) return grupos;
+    return grupos.filter(g => g.nombre.toLowerCase().includes(q) || g.carrera.toLowerCase().includes(q));
+  }, [grupos, busquedaAplicada]);
+
+  const estudiantesFiltrados = useMemo(() => {
+    const q = busquedaAplicada.trim().toLowerCase();
+    if (!q) return estudiantes;
+    return estudiantes.filter(e =>
+      e.nombre_completo.toLowerCase().includes(q) || (e.carrera ?? '').toLowerCase().includes(q),
+    );
+  }, [estudiantes, busquedaAplicada]);
+
+  const resetForm = () => { setGNombre(''); setGCarrera(''); setGHoras(''); setGDocente(''); };
+
+  // ── Chat grupal oficial: crea (o reutiliza) la sala y la abre ──
+  const [creandoChatGrupo, setCreandoChatGrupo] = useState<string | null>(null);
+  const abrirChatGrupo = async (grupo: Grupo) => {
+    if (creandoChatGrupo) return;
+    setCreandoChatGrupo(grupo.id);
+    try {
+      const chatId = await crearChatGrupoOficial({
+        universidadId: uid,
+        grupoId: grupo.id,
+        grupoNombre: grupo.nombre,
+      });
+      router.push({
+        pathname: '/ChatScreen',
+        params: { chatId, peerName: grupo.nombre },
+      } as any);
+    } catch (error) {
+      console.warn('Error creando chat grupal:', error);
+      Alert.alert('Error', 'No se pudo crear el chat del grupo. Intenta de nuevo.');
+    } finally {
+      setCreandoChatGrupo(null);
+    }
   };
 
-  const ModalRechazar = () => (
-    <Modal
-      visible={modalRechazar}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setModalRechazar(false)}
-    >
-      <View style={s.modalOverlay}>
-        <View style={[s.modal, { maxWidth: 480 }]}>
-          <View
-            style={[
-              s.row,
-              { justifyContent: "space-between", marginBottom: 16 },
-            ]}
-          >
-            <Text style={s.subsectionTitle}>Rechazar solicitud</Text>
-            <TouchableOpacity onPress={() => setModalRechazar(false)}>
-              <Ionicons name="close" size={22} color={C.textMuted} />
-            </TouchableOpacity>
-          </View>
-          <Text style={s.inputLabel}>Motivo del rechazo</Text>
-          <TextInput
-            style={[
-              s.input,
-              { height: 100, textAlignVertical: "top", marginTop: 8 },
-            ]}
-            value={rejectNote}
-            onChangeText={setRejectNote}
-            multiline
-            placeholder="Describe el motivo del rechazo para que el estudiante pueda entender la decisión..."
-            placeholderTextColor={C.textMuted}
-          />
-          <View style={[s.row, { gap: 12, marginTop: 16 }]}>
-            <BtnOutline
-              label="Cancelar"
-              style={{ flex: 1 }}
-              onPress={() => setModalRechazar(false)}
-            />
-            <TouchableOpacity
-              style={[s.btnPrimary, { flex: 1, backgroundColor: C.red }]}
-              onPress={() => {
-                setModalRechazar(false);
-                Alert.alert("Rechazado", "La solicitud fue rechazada.");
-              }}
-            >
-              <Text style={s.btnPrimaryText}>Confirmar rechazo</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+  // ── Paso 0 → 1: abrir el formulario de grupo ──
+  const abrirFlujo = () => {
+    resetForm();
+    setShowModalGrupo(true);
+  };
 
-  const ModalEditPerfil = () => (
-    <Modal
-      visible={modalEditPerfil}
-      transparent
-      animationType="slide"
-      onRequestClose={() => setModalEditPerfil(false)}
-    >
-      <View style={s.modalOverlay}>
-        <View style={s.modal}>
-          <View
-            style={[
-              s.row,
-              { justifyContent: "space-between", marginBottom: 16 },
-            ]}
-          >
-            <Text style={s.subsectionTitle}>Editar perfil institucional</Text>
-            <TouchableOpacity onPress={() => setModalEditPerfil(false)}>
-              <Ionicons name="close" size={22} color={C.textMuted} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {[
-              {
-                label: "Banner (URL de imagen)",
-                val: editBanner,
-                set: setEditBanner,
-                placeholder: "https://...",
-              },
-              {
-                label: "Logo institucional (URL)",
-                val: editLogo,
-                set: setEditLogo,
-                placeholder: "https://...",
-              },
-              {
-                label: "Instagram",
-                val: editInstagram,
-                set: setEditInstagram,
-                placeholder: "https://instagram.com/...",
-              },
-              {
-                label: "LinkedIn",
-                val: editLinkedin,
-                set: setEditLinkedin,
-                placeholder: "https://linkedin.com/...",
-              },
-              {
-                label: "Nombre del representante",
-                val: editRepNombre,
-                set: setEditRepNombre,
-                placeholder: "Nombre completo",
-              },
-              {
-                label: "Cargo del representante",
-                val: editRepCargo,
-                set: setEditRepCargo,
-                placeholder: "Ej: Rector / Decano",
-              },
-              {
-                label: "Email del representante",
-                val: editRepEmail,
-                set: setEditRepEmail,
-                placeholder: "correo@universidad.edu.sv",
-              },
-              {
-                label: "Teléfono del representante",
-                val: editRepTel,
-                set: setEditRepTel,
-                placeholder: "7777-7777",
-              },
-            ].map((f) => (
-              <View key={f.label} style={{ marginBottom: 16 }}>
-                <Text style={s.inputLabel}>{f.label}</Text>
-                <TextInput
-                  style={[s.input, { marginTop: 6 }]}
-                  value={f.val}
-                  onChangeText={f.set}
-                  placeholder={f.placeholder}
-                  placeholderTextColor={C.textMuted}
-                />
-              </View>
-            ))}
-            <Text style={s.inputLabel}>Descripción institucional</Text>
-            <TextInput
-              style={[
-                s.input,
-                { height: 80, textAlignVertical: "top", marginTop: 6 },
-              ]}
-              value={editDesc}
-              onChangeText={setEditDesc}
-              multiline
-              placeholder="Describe tu institución..."
-              placeholderTextColor={C.textMuted}
-            />
-            <BtnPrimary
-              label="Guardar cambios"
-              style={{ marginTop: 20 }}
-              onPress={async () => {
-                try {
-                  const payload: Record<string, any> = {
-                    descripcion: editDesc || null,
-                    instagram: editInstagram || null,
-                    enc_linkedin: editLinkedin || null,
-                    banner_url: editBanner || null,
-                    logo_url: editLogo || null,
-                    representante_nombre: editRepNombre || null,
-                    representante_cargo: editRepCargo || null,
-                    representante_email: editRepEmail || null,
-                    representante_telefono: editRepTel || null,
-                  };
-                  const updated = await updateUniversidad(
-                    universidadId,
-                    payload,
-                  );
-                  setUniversidad(updated ?? universidad);
-                  setModalEditPerfil(false);
-                  Alert.alert("Guardado", "Perfil actualizado.");
-                } catch (err: any) {
-                  console.error("update error", err);
-                  Alert.alert(
-                    "Error",
-                    err?.message || "No se pudo actualizar.",
-                  );
-                }
-              }}
-            />
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
+  // ── Paso 1 → 2: validar grupo (sin guardar todavía) y mostrar reglas del Excel ──
+  const handleSiguienteGrupo = () => {
+    if (!formGrupoValido) return;
+    setShowModalGrupo(false);
+    setShowModalExcel(true);
+  };
 
-  // ═══════════════════════════════════════════════════════════════
-  // MAIN RENDER
-  // ═══════════════════════════════════════════════════════════════
+  // ── Paso 2: elegir el archivo, leerlo (multiplataforma) y arrancar la creación ──
+  const handleSeleccionarArchivo = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv', '*/*'],
+    });
+    if (result.canceled) return;
+
+    let rows: ExcelRow[];
+    try {
+      const fileUri = result.assets[0].uri;
+      let workbook: XLSX.WorkBook;
+      if (Platform.OS === 'web') {
+        const blob = await (await fetch(fileUri)).blob();
+        const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as ArrayBuffer);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsArrayBuffer(blob);
+        });
+        workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+      } else {
+        const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
+        workbook = XLSX.read(base64, { type: 'base64' });
+      }
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json<ExcelRow>(sheet);
+    } catch {
+      Alert.alert('Error', 'No se pudo leer el archivo. Asegúrate de que sea .xlsx o .csv.');
+      return;
+    }
+
+    const nuevos = extraerEstudiantes(rows);
+    if (nuevos.length === 0) {
+      Alert.alert(
+        'Sin datos válidos',
+        'No se encontraron columnas de "Nombres" y "Correos" con datos válidos. Revisa el archivo e inténtalo de nuevo.',
+      );
+      return;
+    }
+    setShowModalExcel(false);
+    await crearCuentas(nuevos);
+  };
+
+  // ── Creación masiva en Firebase usando una app secundaria (no cierra la sesión) ──
+  const crearCuentas = async (lista: EstudianteNuevo[]) => {
+    setProgreso({ done: 0, total: lista.length });
+    setShowProgreso(true);
+
+    // App secundaria: registrar estudiantes sin desconectar a la universidad.
+    const secondaryApp = getApps().find(a => a.name === 'Secondary')
+      ?? initializeApp(firebaseConfig, 'Secondary');
+    const secondaryAuth = getAuth(secondaryApp);
+
+    try {
+      // 1) Guardamos el grupo y obtenemos su ID.
+      const grupoRef = await addDoc(collection(db, 'grupos'), {
+        nombre:          gNombre.trim(),
+        carrera:         gCarrera.trim(),
+        horasRequeridas: Number(gHoras.trim()),
+        docente:         gDocente.trim() || 'Sin asignar',
+        universidad_id:  uid,
+        fecha_creacion:  serverTimestamp(),
+        estudiantes_registrados: 0,
+      });
+      const grupoId = grupoRef.id;
+      const nombreGrupo = gNombre.trim();
+      const carreraGrupo = gCarrera.trim();
+      const horasGrupo = Number(gHoras.trim());
+
+      // 2) Creamos cada cuenta de estudiante en la app secundaria.
+      const creados: EstudianteNuevo[] = [];
+      for (const est of lista) {
+        try {
+          const cred = await createUserWithEmailAndPassword(secondaryAuth, est.correo, est.password);
+          const uidEst = cred.user.uid;
+
+          await setDoc(doc(db, 'usuarios', uidEst), {
+            nombre_completo: est.nombre,
+            correo:          est.correo,
+            rol:             'estudiante',
+            fecha_registro:  serverTimestamp(),
+            activo:          true,
+            grupo_id:        grupoId,
+            universidad_id:  uid,
+          });
+
+          await setDoc(doc(db, 'perfiles_estudiantes', uidEst), {
+            nombre_completo:  est.nombre,
+            correo:           est.correo,
+            universidad_id:   uid,
+            grupo_id:         grupoId,
+            carrera:          carreraGrupo,
+            horas_objetivo:   horasGrupo || 500,
+            horas_aprobadas:  0,
+            horas_en_proceso: 0,
+            skills:           [],
+            activo:           true,
+          });
+
+          creados.push(est);
+        } catch (e) {
+          // Correo ya registrado u otro error puntual: se omite y se continúa.
+          console.warn('No se pudo crear el estudiante', est.correo, e);
+        }
+        setProgreso(p => ({ done: p.done + 1, total: lista.length }));
+      }
+
+      // 3) Actualizamos el contador real del grupo.
+      try {
+        await updateDoc(doc(db, 'grupos', grupoId), { estudiantes_registrados: creados.length });
+      } catch { /* informativo */ }
+
+      // Confirmación a la universidad (no bloquea la creación del grupo).
+      try {
+        await enviarNotificacion(
+          uid,
+          'Grupo creado',
+          `El grupo "${nombreGrupo}" se creó con ${creados.length} estudiante(s) registrado(s).`,
+          'success',
+          grupoId,
+        );
+      } catch { /* la notificación no debe afectar el flujo principal */ }
+
+      setCredenciales(creados);
+      setGrupoCreadoNombre(nombreGrupo);
+      resetForm();
+      setShowCredenciales(true);
+    } catch (e) {
+      console.warn('Error en la creación masiva de estudiantes:', e);
+      Alert.alert('Error', 'Ocurrió un problema al crear las cuentas. Intenta de nuevo.');
+    } finally {
+      // Aseguramos el logout secundario y liberamos la app temporal SIEMPRE.
+      await signOut(secondaryAuth).catch(() => {});
+      await deleteApp(secondaryApp).catch(() => {});
+      setShowProgreso(false);
+    }
+  };
+
+  // ── Copiar credenciales al portapapeles ──
+  const handleCopiar = async () => {
+    const texto = credenciales
+      .map(c => `${c.nombre} | ${c.correo} | ${c.password}`)
+      .join('\n');
+    await Clipboard.setStringAsync(
+      `Credenciales · Grupo ${grupoCreadoNombre}\n\n${texto}`,
+    );
+    Alert.alert('Copiado', 'Las credenciales se copiaron al portapapeles.');
+  };
+
+  const cerrarCredenciales = () => {
+    setShowCredenciales(false);
+    setCredenciales([]);
+    setTab('estudiantes'); // Las listas se actualizan solas por onSnapshot.
+  };
+
+  const aplicarBusqueda = () => setBusquedaAplicada(busqueda);
+
   return (
-    <View style={s.root}>
-      {/* Topbar */}
-      <UniversalHeader
-        userName={nombreUniv}
-        userSubtitle="Universidad"
-        profilePhotoUrl={universidad?.logo_url ?? null}
-        userId={universidadId || null}
-      />
-
-      {/* Content */}
-      <View style={s.content}>{renderContent()}</View>
-
-      {/* Bottom nav (mobile) */}
-      <View style={s.bottomNav}>
-        {navItems.map((item) => {
-          const isActive =
-            section === item.key ||
-            (item.key === "gestion" &&
-              ["grupos", "horas", "empresas"].includes(section)) ||
-            (item.key === "perfil" &&
-              ["config", "ayuda", "acercade"].includes(section));
-          return (
-            <TouchableOpacity
-              key={item.key}
-              style={[s.bottomNavItem, isActive && s.bottomNavItemActive]}
-              onPress={() => setSection(item.key)}
-              activeOpacity={0.75}
-            >
-              <Ionicons
-                name={item.icon}
-                size={22}
-                color={isActive ? C.accent70 : C.textMuted}
-              />
-              <TranslatedText
-                style={[s.bottomNavLabel, isActive && s.bottomNavLabelActive]}
-              >
-                {item.label}
-              </TranslatedText>
-            </TouchableOpacity>
-          );
-        })}
+    <View style={{ flex: 1 }}>
+      {/* ── Barra de búsqueda + botón Buscar ── */}
+      <View style={s.searchArea}>
+        <View style={s.searchWrap}>
+          <Ionicons name="search-outline" size={16} color={COLORS.textMuted} />
+          <TextInput
+            style={s.searchInput}
+            value={busqueda}
+            onChangeText={setBusqueda}
+            onSubmitEditing={aplicarBusqueda}
+            returnKeyType="search"
+            placeholder="Buscar grupos o estudiantes..."
+            placeholderTextColor={COLORS.textMuted}
+            selectionColor={COLORS.primary}
+          />
+        </View>
+        <JellyButton
+          style={s.buscarBtn}
+          contentStyle={{ paddingVertical: 0, paddingHorizontal: 16, height: 40, alignItems: 'center', justifyContent: 'center' }}
+          onPress={aplicarBusqueda}
+        >
+          <Text style={s.buscarBtnText}>Buscar</Text>
+        </JellyButton>
       </View>
 
-      {/* Modals */}
-      {renderProfileViewerModal()}
-      <ModalPropuestasEmpresas />
-      <ModalSolicitarHoras />
-      <GroupDetailModal
-        visible={groupModalMode !== null}
-        mode={groupModalMode ?? "view"}
-        group={selectedGroup}
-        onClose={() => {
-          setGroupModalMode(null);
-          setSelectedGroup(null);
-        }}
-        onSave={handleUpdateGroup}
-        saving={groupEditSaving}
-      />
-      <GroupCreationModal
-        visible={groupCreationOpen}
-        universidadId={universidadId}
-        onClose={() => setGroupCreationOpen(false)}
-        onCreated={handleGroupCreated}
-      />
-      <ModalRechazar />
-      <ModalEditPerfil />
+      {/* ── Cuadro de gestión (Liquid Glass) + botón principal ── */}
+      <GlassCard style={s.gestionBox} contentStyle={{ padding: 16, gap: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Ionicons name="cloud-upload-outline" size={20} color={colors.primaryLight} />
+          <Text style={s.gestionTitle}>Gestión de estudiantes</Text>
+        </View>
+        <Text style={s.gestionText}>
+          Crea un grupo (carrera y horas a cumplir) y carga a tus estudiantes desde un Excel.
+          Se generarán automáticamente sus cuentas y credenciales de acceso.
+        </Text>
+        <JellyButton
+          style={s.gestionMainBtn}
+          contentStyle={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 11 }}
+          onPress={abrirFlujo}
+        >
+          <Ionicons name="add-circle-outline" size={18} color={COLORS.textPrimary} />
+          <Text style={s.gestionMainBtnText}>Crear Grupo y Cargar Estudiantes</Text>
+        </JellyButton>
+      </GlassCard>
+
+      {/* ── Pestañas: Grupos / Estudiantes ── */}
+      <View style={s.tabRow}>
+        <TouchableOpacity
+          style={[s.tabBtn, tab === 'grupos' && s.tabBtnActive]}
+          onPress={() => setTab('grupos')}
+          activeOpacity={0.8}
+        >
+          <Text style={[s.tabText, tab === 'grupos' && s.tabTextActive]}>Grupos Creados ({grupos.length})</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.tabBtn, tab === 'estudiantes' && s.tabBtnActive]}
+          onPress={() => setTab('estudiantes')}
+          activeOpacity={0.8}
+        >
+          <Text style={[s.tabText, tab === 'estudiantes' && s.tabTextActive]}>Estudiantes Registrados ({estudiantes.length})</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Contenido de la pestaña activa ── */}
+      {tab === 'grupos' ? (
+        <FlatList
+          data={gruposFiltrados}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 110, gap: 8 }}
+          renderItem={({ item }) => (
+            <GlassCard contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
+              <View style={s.estudianteAvatar}>
+                <Ionicons name="people" size={18} color={colors.primaryLight} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre}</Text>
+                <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera} · {item.docente}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                <Text style={s.estudianteHoras}>{item.horasRequeridas}h</Text>
+                <Text style={s.estudianteMeta}>{item.estudiantes_registrados} est.</Text>
+              </View>
+              <TouchableOpacity
+                style={s.grupoChatBtn}
+                onPress={() => abrirChatGrupo(item)}
+                disabled={creandoChatGrupo === item.id}
+                accessibilityLabel="Abrir chat del grupo"
+              >
+                {creandoChatGrupo === item.id ? (
+                  <ActivityIndicator size="small" color={colors.primaryLight} />
+                ) : (
+                  <Ionicons name="chatbubbles" size={18} color={colors.primaryLight} />
+                )}
+              </TouchableOpacity>
+            </GlassCard>
+          )}
+          ListEmptyComponent={<Text style={s.emptyText}>Aún no has creado grupos.</Text>}
+        />
+      ) : (
+        <FlatList
+          data={estudiantesFiltrados}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 110, gap: 8 }}
+          renderItem={({ item }) => {
+            const pct = Math.round((item.horas_aprobadas / (item.horas_objetivo || 500)) * 100);
+            return (
+              <GlassCard contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }}>
+                <View style={s.estudianteAvatar}>
+                  <Text style={s.estudianteInitial}>{item.nombre_completo?.[0]?.toUpperCase() ?? '?'}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre_completo}</Text>
+                  <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera || 'Sin carrera'}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  <Text style={s.estudianteHoras}>{item.horas_aprobadas}h</Text>
+                  <View style={s.miniBarTrack}>
+                    <View style={[s.miniBarFill, { width: `${Math.min(pct, 100)}%` as any }]} />
+                  </View>
+                  <View style={[s.estadoBadge, !item.activo && s.estadoBadgeOff]}>
+                    <Text style={[s.estadoText, !item.activo && { color: COLORS.textMuted }]}>
+                      {item.activo ? 'Activo' : 'Pendiente'}
+                    </Text>
+                  </View>
+                </View>
+              </GlassCard>
+            );
+          }}
+          ListEmptyComponent={<Text style={s.emptyText}>Sin estudiantes registrados.</Text>}
+        />
+      )}
+
+      {/* ── MODAL · PASO 1: Crear grupo (validación en tiempo real) ── */}
+      <Modal visible={showModalGrupo} transparent animationType="slide" onRequestClose={() => setShowModalGrupo(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.sheetCard, { maxHeight: '88%' }]}>
+            <Text style={styles.modalTitle}>Paso 1 · Datos del grupo</Text>
+            <Text style={styles.modalDesc}>
+              Define el grupo o aula. Aún no se guarda; en el siguiente paso cargarás el Excel.
+            </Text>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 4, paddingVertical: 6 }}>
+              {(() => {
+                const tiene = gNombre.trim().length > 0; const malo = tiene && !!errNombre;
+                return (
+                  <View style={{ marginBottom: 6 }}>
+                    <Text style={styles.fieldLabel}>NOMBRE DEL GRUPO *</Text>
+                    <TextInput
+                      style={[styles.modalInput, malo ? s.campoErr : (tiene ? s.campoOk : null)]}
+                      value={gNombre} onChangeText={setGNombre}
+                      placeholder='Ej. "Sistemas G1"'
+                      placeholderTextColor={COLORS.textMuted} selectionColor={COLORS.primary}
+                    />
+                    {malo && <Text style={s.campoErrText}>{errNombre}</Text>}
+                  </View>
+                );
+              })()}
+
+              {(() => {
+                const tiene = gCarrera.trim().length > 0; const malo = tiene && !!errCarrera;
+                return (
+                  <View style={{ marginBottom: 6 }}>
+                    <Text style={styles.fieldLabel}>CARRERA / ESPECIALIDAD *</Text>
+                    <TextInput
+                      style={[styles.modalInput, malo ? s.campoErr : (tiene ? s.campoOk : null)]}
+                      value={gCarrera} onChangeText={setGCarrera}
+                      placeholder="Ej. Ingeniería en Sistemas"
+                      placeholderTextColor={COLORS.textMuted} selectionColor={COLORS.primary}
+                    />
+                    {malo && <Text style={s.campoErrText}>{errCarrera}</Text>}
+                  </View>
+                );
+              })()}
+
+              {(() => {
+                const tiene = gHoras.trim().length > 0; const malo = tiene && !!errHoras;
+                return (
+                  <View style={{ marginBottom: 6 }}>
+                    <Text style={styles.fieldLabel}>HORAS A CUMPLIR (PASANTÍA / SOCIALES) *</Text>
+                    <TextInput
+                      style={[styles.modalInput, malo ? s.campoErr : (tiene ? s.campoOk : null)]}
+                      value={gHoras} onChangeText={t => setGHoras(t.replace(/[^0-9]/g, ''))}
+                      placeholder="Ej. 500" keyboardType="number-pad"
+                      placeholderTextColor={COLORS.textMuted} selectionColor={COLORS.primary}
+                    />
+                    {malo && <Text style={s.campoErrText}>{errHoras}</Text>}
+                  </View>
+                );
+              })()}
+
+              {(() => {
+                const tiene = gDocente.trim().length > 0; const malo = tiene && !!errDocente;
+                return (
+                  <View style={{ marginBottom: 6 }}>
+                    <Text style={styles.fieldLabel}>DOCENTE / SUPERVISOR A CARGO (opcional)</Text>
+                    <TextInput
+                      style={[styles.modalInput, malo ? s.campoErr : (tiene ? s.campoOk : null)]}
+                      value={gDocente} onChangeText={setGDocente}
+                      placeholder="Ej. Lic. Ana Martínez"
+                      placeholderTextColor={COLORS.textMuted} selectionColor={COLORS.primary}
+                    />
+                    {malo && <Text style={s.campoErrText}>{errDocente}</Text>}
+                  </View>
+                );
+              })()}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowModalGrupo(false)}>
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <JellyButton
+                style={[styles.modalSave, !formGrupoValido && { opacity: 0.5 }]}
+                contentStyle={{ paddingVertical: 0 }}
+                onPress={formGrupoValido ? handleSiguienteGrupo : undefined}
+              >
+                <Text style={styles.modalSaveText}>Siguiente</Text>
+              </JellyButton>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL · PASO 2: Reglas del Excel ── */}
+      <Modal visible={showModalExcel} transparent animationType="slide" onRequestClose={() => setShowModalExcel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.sheetCard}>
+            <Text style={styles.modalTitle}>Paso 2 · Carga el Excel</Text>
+            <Text style={styles.modalDesc}>
+              Tu archivo debe contener al menos estas dos columnas. Se detectan automáticamente
+              sin importar mayúsculas/minúsculas.
+            </Text>
+
+            <BlurView intensity={20} tint="dark" style={s.excelInfoBox}>
+              <View style={s.excelInfoRow}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                <Text style={s.excelInfoText}>Nombres completos  · obligatoria</Text>
+              </View>
+              <View style={s.excelInfoRow}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                <Text style={s.excelInfoText}>Correos electrónicos  · obligatoria</Text>
+              </View>
+              <Text style={s.excelInfoNote}>
+                Solo se importarán las filas con nombre y un correo válido. A cada estudiante se le
+                generará una contraseña temporal única.
+              </Text>
+            </BlurView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowModalExcel(false)}>
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <JellyButton style={styles.modalSave} contentStyle={{ paddingVertical: 0 }} onPress={handleSeleccionarArchivo}>
+                <Text style={styles.modalSaveText}>Aceptar y Seleccionar Archivo</Text>
+              </JellyButton>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL · Progreso de creación ── */}
+      <Modal visible={showProgreso} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { alignItems: 'center', gap: 14 }]}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.modalTitle}>Creando cuentas…</Text>
+            <Text style={[styles.modalDesc, { textAlign: 'center' }]}>
+              {progreso.done} de {progreso.total} estudiantes
+            </Text>
+            <View style={[s.progressTrack, { alignSelf: 'stretch' }]}>
+              <View style={[s.progressFill, { width: `${Math.round((progreso.done / Math.max(progreso.total, 1)) * 100)}%` as any }]} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL · Credenciales generadas ── */}
+      <Modal visible={showCredenciales} transparent animationType="slide" onRequestClose={cerrarCredenciales}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.sheetCard, { flex: 1, maxHeight: '88%' }]}>
+            <View style={{ alignItems: 'center', gap: 6, paddingTop: 4 }}>
+              <Ionicons name="checkmark-circle" size={44} color={COLORS.success} />
+              <Text style={s.importSuccessTitle}>¡Cuentas creadas!</Text>
+              <Text style={[styles.modalDesc, { textAlign: 'center' }]}>
+                {credenciales.length} estudiante{credenciales.length === 1 ? '' : 's'} en el grupo{' '}
+                <Text style={{ color: COLORS.primaryLight }}>{grupoCreadoNombre}</Text>.
+              </Text>
+            </View>
+
+            <FlatList
+              data={credenciales}
+              keyExtractor={(item, i) => item.correo + i}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ gap: 6, paddingVertical: 6 }}
+              showsVerticalScrollIndicator
+              renderItem={({ item }) => (
+                <View style={s.credItem}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.previewItemName} numberOfLines={1}>{item.nombre}</Text>
+                    <Text style={s.credCorreo} numberOfLines={1}>{item.correo}</Text>
+                  </View>
+                  <View style={s.credPassChip}>
+                    <Text style={s.credPassText}>{item.password}</Text>
+                  </View>
+                </View>
+              )}
+              ListEmptyComponent={<Text style={styles.modalDesc}>No se creó ninguna cuenta (¿correos ya registrados?).</Text>}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancel} onPress={handleCopiar}>
+                <Ionicons name="copy-outline" size={16} color={COLORS.textMuted} />
+                <Text style={[styles.modalCancelText, { marginLeft: 6 }]}>Copiar</Text>
+              </TouchableOpacity>
+              <JellyButton style={styles.modalSave} contentStyle={{ paddingVertical: 0 }} onPress={cerrarCredenciales}>
+                <Text style={styles.modalSaveText}>Listo</Text>
+              </JellyButton>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// STYLES
-// ═══════════════════════════════════════════════════════════════
-function createStyles(C: typeof darkTheme) {
-  return StyleSheet.create({
-    root: { flex: 1, backgroundColor: C.bg },
+// ─────────────────────────────────────────────
+// SECCIÓN: APROBAR PASANTÍAS
+// ─────────────────────────────────────────────
+function SeccionAprobar({ apps, onAprobar, onRechazar }: {
+  apps: Aplicacion[];
+  onAprobar: (a: Aplicacion, horas: number) => void;
+  onRechazar: (a: Aplicacion, motivo: string) => void;
+}) {
+  const { styles, s } = useThemedStyles();
+  const pendientes = apps.filter(a => a.estado === 'finalizado');
+  const [aprobarApp, setAprobarApp] = useState<Aplicacion | null>(null);
+  const [rechazarApp, setRechazarApp] = useState<Aplicacion | null>(null);
+  const [horasAjustadas, setHorasAjustadas] = useState('');
+  const [motivo, setMotivo] = useState('');
 
-    // ── Topbar
-    topbar: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: 16,
-      paddingTop: 52,
-      paddingBottom: 12,
-      backgroundColor: "rgba(13,11,30,0.96)",
-      borderBottomWidth: 1,
-      borderBottomColor: "rgba(139,92,246,0.12)",
-    },
-    topbarLeft: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      flex: 1,
-      flexWrap: "wrap",
-    },
-    topbarAvatar: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: C.accent20,
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.3)",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    topbarName: {
-      color: "rgba(255,255,255,0.85)",
-      fontSize: 14,
-      fontWeight: "600",
-    },
-    languageMenuBackdrop: {
-      position: "absolute",
-      top: 76,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      zIndex: 20,
-    },
-    languageMenu: {
-      position: "absolute",
-      top: 0,
-      right: 16,
-      backgroundColor: C.surface,
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: C.border,
-      paddingVertical: 6,
-      minWidth: 180,
-      shadowColor: "#000",
-      shadowOpacity: 0.08,
-      shadowRadius: 18,
-      elevation: 10,
-    },
-    languageMenuItem: {
-      paddingVertical: 10,
-      paddingHorizontal: 16,
-    },
-    languageMenuText: {
-      color: C.text,
-      fontSize: 14,
-      fontWeight: "600",
-    },
-    logoutBtn: {
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.1)",
-      borderRadius: 10,
-      padding: 10,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-    },
+  const ahora = new Date();
 
-    // ── Horizontal nav strip (sidebar equivalent)
-    sidebarScroll: {
-      backgroundColor: "rgba(13,11,30,0.96)",
-      borderBottomWidth: 1,
-      borderBottomColor: "rgba(139,92,246,0.1)",
-      maxHeight: 48,
-    },
-    sidebarScrollContent: { paddingHorizontal: 8, alignItems: "center" },
-    sideNavItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderBottomWidth: 3,
-      borderBottomColor: "transparent",
-    },
-    sideNavItemActive: { borderBottomColor: C.accent },
-    sideNavLabel: {
-      color: "rgba(255,255,255,0.55)",
-      fontSize: 13,
-      fontWeight: "500",
-    },
-    sideNavLabelActive: { color: C.accent70, fontWeight: "600" },
-    navBadge: {
-      backgroundColor: "rgba(139,92,246,0.85)",
-      borderRadius: 20,
-      paddingHorizontal: 7,
-      paddingVertical: 2,
-      marginLeft: 4,
-      minWidth: 18,
-      alignItems: "center",
-    },
-    navBadgeText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  return (
+    <View style={{ flex: 1 }}>
+      <FlatList
+        data={pendientes}
+        keyExtractor={item => item.id}
+        contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
+        renderItem={({ item }) => {
+          const fechaApp = item.fecha_aplicacion?.toDate?.() ?? new Date();
+          const diasEspera = Math.floor((ahora.getTime() - fechaApp.getTime()) / 86_400_000);
+          const urgente = diasEspera > 7;
+          return (
+            <GlassCard style={[{ marginBottom: 8 }, urgente && s.aprobacionCardUrgente]} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.aprobNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
+                <Text style={s.aprobMeta}>{item.nombre_empresa ?? 'Empresa'} · {item.titulo_vacante ?? 'Pasantía'}</Text>
+                <Text style={s.aprobMeta}>Horas: {item.horas_completadas ?? 0}</Text>
+                <Text style={s.aprobMeta}>Pago: {item.pago_confirmado ? '✓ Pagado' : '⏳ Pendiente'}</Text>
+                {urgente && <Text style={s.aprobUrgente}>⚠️ Esperando {diasEspera} días</Text>}
+              </View>
+              <View style={{ gap: 8 }}>
+                <JellyButton
+                  style={s.aprobBtn}
+                  contentStyle={{ paddingVertical: 8, paddingHorizontal: 14 }}
+                  onPress={() => { setHorasAjustadas(String(item.horas_completadas ?? 0)); setAprobarApp(item); }}
+                >
+                  <Text style={s.aprobBtnText}>Aprobar</Text>
+                </JellyButton>
+                <JellyButton
+                  style={s.rechazarBtn}
+                  contentStyle={{ paddingVertical: 8, paddingHorizontal: 14 }}
+                  onPress={() => { setMotivo(''); setRechazarApp(item); }}
+                >
+                  <Text style={s.rechazarText}>Rechazar</Text>
+                </JellyButton>
+              </View>
+            </GlassCard>
+          );
+        }}
+        ListEmptyComponent={<Text style={s.emptyText}>Sin pasantías pendientes de aprobación.</Text>}
+      />
 
-    // ── Main content
-    content: {
-      flex: 1,
-      paddingHorizontal: 16,
-      paddingTop: 24,
-      paddingBottom: 16,
-    },
+      {/* Modal aprobar */}
+      <Modal visible={!!aprobarApp} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Confirmar aprobación</Text>
+            <Text style={styles.modalDesc}>
+              Estudiante: {aprobarApp?.estudiante_nombre}{'\n'}
+              Empresa: {aprobarApp?.nombre_empresa ?? 'Empresa'}
+            </Text>
+            <Text style={styles.fieldLabel}>Horas a sumar al estudiante</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={horasAjustadas}
+              onChangeText={setHorasAjustadas}
+              keyboardType="number-pad"
+              placeholderTextColor={COLORS.textMuted}
+              selectionColor={COLORS.primary}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setAprobarApp(null)}>
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <JellyButton
+                style={styles.modalSave}
+                contentStyle={{ paddingVertical: 0 }}
+                onPress={() => { aprobarApp && onAprobar(aprobarApp, parseInt(horasAjustadas) || 0); setAprobarApp(null); }}
+              >
+                <Text style={styles.modalSaveText}>Aprobar y sumar</Text>
+              </JellyButton>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
-    // ── Bottom nav (mobile)
-    bottomNav: {
-      flexDirection: "row",
-      backgroundColor: "rgba(13,11,30,0.96)",
-      borderTopWidth: 1,
-      borderTopColor: "rgba(139,92,246,0.15)",
-      paddingBottom: 20,
-      paddingTop: 10,
-      paddingHorizontal: 8,
-      justifyContent: "space-around",
-    },
-    bottomNavItem: {
-      flex: 1,
-      alignItems: "center",
-      gap: 3,
-      paddingVertical: 4,
-      borderRadius: 10,
-      minWidth: 52,
-    },
-    bottomNavItemActive: { backgroundColor: C.accent20 },
-    bottomNavLabel: {
-      color: "rgba(255,255,255,0.4)",
-      fontSize: 9,
-      fontWeight: "500",
-    },
-    bottomNavLabelActive: { color: C.accent70 },
-
-    // ── Section header — row with wrap so date chip wraps below on tiny screens
-    sectionHeader: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      justifyContent: "space-between",
-      flexWrap: "wrap",
-      gap: 12,
-      marginBottom: 24,
-    },
-    kicker: {
-      color: C.accent70,
-      fontSize: 11,
-      fontWeight: "700",
-      textTransform: "uppercase",
-      letterSpacing: 1.5,
-      marginBottom: 4,
-    },
-    pageTitle: {
-      color: C.text,
-      fontSize: 26,
-      fontWeight: "800",
-      lineHeight: 31,
-    },
-    dateChip: {
-      paddingHorizontal: 14,
-      paddingVertical: 5,
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.25)",
-      backgroundColor: "rgba(139,92,246,0.1)",
-      alignSelf: "flex-start",
-      marginTop: 6,
-    },
-    dateChipText: { color: "rgba(167,139,250,0.9)", fontSize: 12 },
-    subsectionTitle: { color: C.text, fontSize: 16, fontWeight: "700" },
-    textSub: { color: "rgba(255,255,255,0.8)" },
-    textMuted: { color: "rgba(255,255,255,0.45)" },
-
-    // ── Card
-    card: {
-      backgroundColor: "rgba(13,11,30,0.85)",
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.15)",
-      padding: 18,
-      flexDirection: "column",
-    },
-
-    // ── Metrics (vertical stack, each card full-width)
-    metricsGrid: { gap: 12, marginBottom: 28 },
-    metricCard: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      gap: 16,
-      padding: 20,
-    },
-    metricIconBox: {
-      width: 48,
-      height: 48,
-      borderRadius: 12,
-      backgroundColor: "rgba(139,92,246,0.1)",
-      alignItems: "center",
-      justifyContent: "center",
-      flexShrink: 0,
-    },
-    metricIcon: { fontSize: 24 },
-    metricNum: {
-      color: C.text,
-      fontSize: 26,
-      fontWeight: "800",
-      lineHeight: 28,
-    },
-    metricLabel: {
-      color: "rgba(255,255,255,0.5)",
-      fontSize: 12,
-      marginTop: 4,
-      lineHeight: 16,
-    },
-    metricTrend: { fontSize: 11, fontWeight: "600", marginTop: 6 },
-
-    // ── Empresa card
-    empresaHeader: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      gap: 12,
-      marginBottom: 12,
-    },
-    empresaLogo: {
-      width: 44,
-      height: 44,
-      borderRadius: 10,
-      backgroundColor: C.accent20,
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.25)",
-      alignItems: "center",
-      justifyContent: "center",
-      flexShrink: 0,
-    },
-    empresaName: { color: C.text, fontSize: 14, fontWeight: "700" },
-    empresaSector: {
-      color: "rgba(255,255,255,0.45)",
-      fontSize: 11,
-      marginTop: 2,
-    },
-    empresaRating: {
-      color: "rgba(255,255,255,0.65)",
-      fontSize: 12,
-      marginBottom: 8,
-    },
-    empresaCupos: {
-      color: "rgba(255,255,255,0.55)",
-      fontSize: 12,
-      marginBottom: 12,
-    },
-
-    // ── Badge
-    badge: {
-      borderRadius: 20,
-      borderWidth: 1,
-      paddingHorizontal: 9,
-      paddingVertical: 3,
-      alignSelf: "flex-start",
-      flexDirection: "row",
-      alignItems: "center",
-    },
-    badgeText: { fontSize: 10, fontWeight: "700" },
-
-    // ── Tag
-    tag: {
-      backgroundColor: C.accent20,
-      borderRadius: 6,
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.3)",
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-    },
-    tagText: { color: C.accent70, fontSize: 11 },
-
-    // ── Filter chip
-    chip: {
-      paddingHorizontal: 16,
-      paddingVertical: 6,
-      borderRadius: 24,
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.1)",
-      backgroundColor: "rgba(255,255,255,0.04)",
-    },
-    chipActive: {
-      backgroundColor: "rgba(139,92,246,0.18)",
-      borderColor: "rgba(139,92,246,0.5)",
-    },
-    chipText: {
-      color: "rgba(255,255,255,0.55)",
-      fontSize: 12,
-      fontWeight: "500",
-    },
-    chipTextActive: { color: C.accent70, fontWeight: "700" },
-
-    // ── Buttons
-    btnPrimary: {
-      backgroundColor: C.accent,
-      borderRadius: 10,
-      paddingVertical: 13,
-      paddingHorizontal: 20,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    btnPrimaryText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-    btnOutline: {
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.25)",
-      borderRadius: 10,
-      paddingVertical: 11,
-      paddingHorizontal: 16,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    btnOutlineText: { color: C.accent70, fontWeight: "600", fontSize: 13 },
-    btnSm: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: 8 },
-    btnSmText: { fontSize: 12 },
-    btnDisabled: { opacity: 0.4 },
-    btnValidate: {
-      backgroundColor: "rgba(52,211,153,0.1)",
-      borderWidth: 1,
-      borderColor: "rgba(52,211,153,0.35)",
-      borderRadius: 10,
-      paddingVertical: 7,
-      paddingHorizontal: 14,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    btnValidateText: {
-      color: "rgba(52,211,153,1)",
-      fontSize: 12,
-      fontWeight: "600",
-    },
-    btnReject: {
-      backgroundColor: "rgba(239,68,68,0.08)",
-      borderWidth: 1,
-      borderColor: "rgba(239,68,68,0.3)",
-      borderRadius: 10,
-      paddingVertical: 7,
-      paddingHorizontal: 14,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    btnRejectText: {
-      color: "rgba(252,165,165,1)",
-      fontSize: 12,
-      fontWeight: "600",
-    },
-
-    // ── Inputs
-    inputLabel: {
-      color: "rgba(255,255,255,0.6)",
-      fontSize: 12,
-      fontWeight: "600",
-      marginBottom: 8,
-    },
-    input: {
-      backgroundColor: "rgba(255,255,255,0.04)",
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.2)",
-      borderRadius: 10,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      color: "rgba(255,255,255,0.85)",
-      fontSize: 13,
-    },
-    errorText: {
-      color: C.red,
-      fontSize: 12,
-      fontWeight: "600",
-    },
-    searchWrap: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-      backgroundColor: "rgba(255,255,255,0.04)",
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.18)",
-      borderRadius: 40,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-    },
-    searchInput: { flex: 1, color: "rgba(255,255,255,0.85)", fontSize: 13 },
-
-    // ── Tab strip
-    tab: {
-      paddingHorizontal: 20,
-      paddingVertical: 12,
-      borderBottomWidth: 2,
-      borderBottomColor: "transparent",
-    },
-    tabActive: { borderBottomColor: C.accent },
-    tabText: {
-      color: "rgba(255,255,255,0.5)",
-      fontSize: 13,
-      fontWeight: "500",
-    },
-    tabTextActive: { color: C.accent70, fontWeight: "700" },
-
-    // ── List items with bottom-border separators
-    sideCardTitle: {
-      color: C.text,
-      fontSize: 13,
-      fontWeight: "700",
-      marginBottom: 14,
-    },
-    pendingItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: "rgba(139,92,246,0.08)",
-    },
-    pendingGroup: {
-      color: "rgba(255,255,255,0.8)",
-      fontSize: 12,
-      fontWeight: "600",
-    },
-    activityItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: "rgba(139,92,246,0.08)",
-    },
-    activityAvatar: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
-      backgroundColor: C.accent20,
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.25)",
-      alignItems: "center",
-      justifyContent: "center",
-      flexShrink: 0,
-    },
-    activityName: {
-      color: "rgba(255,255,255,0.8)",
-      fontSize: 12,
-      fontWeight: "600",
-    },
-    dateItem: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: "rgba(139,92,246,0.08)",
-    },
-    feedItem: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      paddingVertical: 10,
-      gap: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: "rgba(139,92,246,0.08)",
-    },
-    feedIconBox: {
-      width: 32,
-      height: 32,
-      borderRadius: 8,
-      backgroundColor: "rgba(139,92,246,0.08)",
-      alignItems: "center",
-      justifyContent: "center",
-      flexShrink: 0,
-    },
-    feedIcon: { fontSize: 16 },
-
-    // ── Progress bar
-    progressWrap: {
-      height: 6,
-      backgroundColor: "rgba(255,255,255,0.08)",
-      borderRadius: 6,
-      marginTop: 8,
-      overflow: "hidden",
-    },
-    progressBar: { height: 6, backgroundColor: C.accent70, borderRadius: 6 },
-
-    // ── Certified seal
-    certSeal: {
-      alignSelf: "flex-end",
-      backgroundColor: "rgba(52,211,153,0.08)",
-      borderWidth: 1,
-      borderColor: "rgba(52,211,153,0.25)",
-      borderRadius: 4,
-      paddingHorizontal: 7,
-      paddingVertical: 3,
-      marginBottom: 8,
-    },
-    certSealText: {
-      color: "rgba(52,211,153,1)",
-      fontSize: 8,
-      fontWeight: "800",
-      letterSpacing: 1,
-      textTransform: "uppercase",
-    },
-
-    // ── Notifications
-    notifUnread: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      borderLeftWidth: 3,
-      borderLeftColor: C.accent,
-    },
-    notifRead: { opacity: 0.6, flexDirection: "row", alignItems: "flex-start" },
-    notifDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: C.accent,
-      marginRight: 8,
-      marginTop: 4,
-      flexShrink: 0,
-    },
-
-    // ── Profile banner (gradient-like dark purple)
-    profileBanner: {
-      alignItems: "center",
-      paddingVertical: 32,
-      paddingHorizontal: 20,
-      backgroundColor: "rgba(30,20,60,0.95)",
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.2)",
-      marginBottom: 20,
-      overflow: "hidden",
-    },
-    profileBannerAvatar: {
-      width: 80,
-      height: 80,
-      borderRadius: 40,
-      backgroundColor: C.accent20,
-      borderWidth: 2,
-      borderColor: C.accent,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    // Nuevo: contenedor tipo 'perfil' con banner y logo superpuesto
-    profileHeaderContainer: {
-      backgroundColor: "rgba(30,20,60,0.98)",
-      borderRadius: 14,
-      overflow: "hidden",
-      marginBottom: 20,
-    },
-    // Banner que ocupa la mitad superior del contenedor
-    bannerImage: {
-      width: "100%",
-      height: 140,
-      backgroundColor: "rgba(109,40,217,0.18)",
-    },
-    // Logo absolute, se superpone en la línea divisoria (mitad dentro/mitad fuera)
-    logoImage: {
-      width: 96,
-      height: 96,
-      borderRadius: 20,
-      borderWidth: 3,
-      borderColor: "rgba(255,255,255,0.9)",
-      backgroundColor: C.accent20,
-      position: "absolute",
-      left: 16,
-      top: 100,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    profileStats: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 16,
-      paddingTop: 16,
-      borderTopWidth: 1,
-      borderTopColor: "rgba(139,92,246,0.12)",
-      flexWrap: "wrap",
-      justifyContent: "center",
-      width: "100%",
-    },
-
-    // ── Grupos
-    grupoName: { color: C.text, fontSize: 14, fontWeight: "700" },
-
-    // ── Grid helpers (row + wrap → 2-col on mobile)
-    grid2: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-    row: { flexDirection: "row", alignItems: "center" },
-
-    // ── Pub type card (2-col via flexWrap)
-    pubTypeCard: {
-      flex: 1,
-      minWidth: "45%",
-      backgroundColor: "rgba(13,11,30,0.85)",
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.15)",
-      padding: 24,
-      alignItems: "center",
-    },
-    pubTypeCardActive: {
-      borderColor: "rgba(139,92,246,0.6)",
-      backgroundColor: "rgba(139,92,246,0.12)",
-    },
-
-    // ── Project thumb
-    projectThumb: {
-      height: 100,
-      borderRadius: 10,
-      backgroundColor: "rgba(109,40,217,0.25)",
-    },
-
-    // ── Aliada card (2-col via flexWrap)
-    aliadaCard: {
-      flex: 1,
-      minWidth: "45%",
-      alignItems: "center",
-      paddingVertical: 24,
-    },
-
-    // ── Toggle (40 px per CSS spec)
-    toggle: {
-      width: 40,
-      height: 22,
-      borderRadius: 22,
-      backgroundColor: "rgba(255,255,255,0.1)",
-      justifyContent: "center",
-      paddingHorizontal: 3,
-    },
-    toggleOn: { backgroundColor: "rgba(139,92,246,0.5)" },
-    toggleThumb: {
-      width: 16,
-      height: 16,
-      borderRadius: 8,
-      backgroundColor: "rgba(255,255,255,0.5)",
-      alignSelf: "flex-start",
-    },
-    toggleThumbOn: { alignSelf: "flex-end", backgroundColor: C.accent70 },
-
-    // ── Modal (bottom sheet)
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: "rgba(7,5,15,0.75)",
-      justifyContent: "flex-end",
-    },
-    modal: {
-      backgroundColor: C.surface,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.2)",
-      padding: 28,
-      maxHeight: "90%",
-    },
-
-    // ── Stepper
-    stepCircle: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.15)",
-      backgroundColor: "rgba(255,255,255,0.06)",
-    },
-    stepActive: {
-      borderColor: "rgba(139,92,246,0.6)",
-      backgroundColor: "rgba(139,92,246,0.25)",
-    },
-    stepDone: {
-      borderColor: "rgba(52,211,153,0.5)",
-      backgroundColor: "rgba(52,211,153,0.15)",
-    },
-    stepIdle: {
-      borderColor: "rgba(255,255,255,0.15)",
-      backgroundColor: "rgba(255,255,255,0.06)",
-    },
-    stepNum: {
-      color: "rgba(255,255,255,0.4)",
-      fontSize: 12,
-      fontWeight: "700",
-    },
-    stepLine: {
-      flex: 1,
-      height: 1,
-      backgroundColor: "rgba(139,92,246,0.2)",
-      alignSelf: "center",
-      marginHorizontal: 10,
-    },
-  });
+      {/* Modal rechazar */}
+      <Modal visible={!!rechazarApp} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Rechazar pasantía</Text>
+            <Text style={styles.fieldLabel}>Motivo del rechazo (obligatorio)</Text>
+            <TextInput
+              style={[styles.modalInput, { height: 80, textAlignVertical: 'top' }]}
+              value={motivo}
+              onChangeText={setMotivo}
+              placeholder="Describe el motivo..."
+              placeholderTextColor={COLORS.textMuted}
+              multiline selectionColor={COLORS.primary}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setRechazarApp(null)}>
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <JellyButton
+                style={[styles.modalDelete]}
+                contentStyle={{ paddingVertical: 0 }}
+                onPress={() => {
+                  if (!motivo.trim()) { Alert.alert('Motivo requerido'); return; }
+                  rechazarApp && onRechazar(rechazarApp, motivo);
+                  setRechazarApp(null);
+                }}
+              >
+                <Text style={styles.modalDeleteText}>Rechazar</Text>
+              </JellyButton>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
 }
+
+// ─────────────────────────────────────────────
+// SECCIÓN: ESTADÍSTICAS
+// ─────────────────────────────────────────────
+function SeccionEstadisticas({ estudiantes, apps }: { estudiantes: EstudianteRow[]; apps: Aplicacion[] }) {
+  const { s } = useThemedStyles();
+  const carreras = useMemo(() => {
+    const map: Record<string, number> = {};
+    apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado' || a.estado === 'aprobado')
+      .forEach(a => {
+        const e = estudiantes.find(est => est.id === a.estudiante_id);
+        if (e?.carrera) map[e.carrera] = (map[e.carrera] ?? 0) + 1;
+      });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  }, [estudiantes, apps]);
+
+  const maxVal = Math.max(...carreras.map(c => c[1]), 1);
+
+  return (
+    <ScrollView contentContainerStyle={s.scroll}>
+      <Text style={s.statTitle}>Carreras con más pasantías</Text>
+      {carreras.length === 0
+        ? <Text style={s.emptyText}>Sin datos suficientes.</Text>
+        : carreras.map(([carrera, count]) => (
+            <View key={carrera} style={s.barRow}>
+              <Text style={s.barLabel} numberOfLines={1}>{carrera}</Text>
+              <View style={s.barTrack}>
+                <View style={[s.barFill, { width: `${(count / maxVal) * 100}%` as any }]} />
+              </View>
+              <Text style={s.barValue}>{count}</Text>
+            </View>
+          ))
+      }
+
+      <Text style={[s.statTitle, { marginTop: 24 }]}>Resumen general</Text>
+      <View style={s.metricasGrid}>
+        <MetricCard icon="people-outline"   label="Total estudiantes"  value={estudiantes.length}                                   color={COLORS.primaryLight} />
+        <MetricCard icon="checkmark-circle-outline" label="Pasantías aprobadas" value={apps.filter(a=>a.estado==='aprobado').length} color={COLORS.success} />
+        <MetricCard icon="time-outline"     label="Horas totales"      value={estudiantes.reduce((acc,e)=>acc+(e.horas_aprobadas??0),0)} color={COLORS.accent} />
+      </View>
+    </ScrollView>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ESTILOS
+// ─────────────────────────────────────────────
+const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: COLORS.backgroundDark },
+  headerAvatar: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: COLORS.primary12,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
+  headerBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.white4, marginLeft: 8,
+  },
+  mainSubtitle: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  sidebar: {
+    width: 240, backgroundColor: COLORS.backgroundCard,
+    borderRightWidth: 1, borderRightColor: COLORS.border,
+    paddingTop: Platform.OS === 'ios' ? 52 : 32,
+  },
+  sidebarOverlay: {
+    position: 'absolute', top: 0, left: 0, bottom: 0, zIndex: 100,
+    ...shadow({ color: '#000', x: 4, y: 0, blur: 12, opacity: 0.5, elevation: 0 }),
+  },
+  sidebarHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingBottom: 20, marginBottom: 8,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  sidebarAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.primary12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  sidebarNombre: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  sidebarDominio: { fontSize: 10, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10, marginHorizontal: 8,
+  },
+  menuItemActive: { backgroundColor: COLORS.primary },
+  menuLabel: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.textMuted, flex: 1 },
+  menuLabelActive: { color: COLORS.textPrimary },
+  alertBadge: {
+    backgroundColor: COLORS.warning, borderRadius: 10,
+    minWidth: 18, height: 18,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  alertBadgeText: { fontSize: 10, fontFamily: FONTS.interSemiBold, color: '#000' },
+  logoutItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 16, borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+  logoutLabel: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.error },
+
+  main: { flex: 1 },
+  mainHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 56 : 40,
+    paddingLeft: 20, paddingRight: 150, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.backgroundCard,
+  },
+  mainTitle: { fontSize: 20, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center', padding: 20,
+  },
+  sheetCard: {
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 20, padding: 20,
+    borderWidth: 1, borderColor: COLORS.border,
+    maxHeight: '85%', gap: 8,
+  },
+  modalCard: {
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 20, padding: 24,
+    borderWidth: 1, borderColor: COLORS.border, gap: 10,
+  },
+  modalTitle: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  modalDesc: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 18 },
+  fieldLabel: {
+    fontSize: 11, fontFamily: FONTS.interMedium,
+    color: COLORS.primaryLight, marginBottom: 5, marginTop: 6, letterSpacing: 0.3,
+  },
+  modalInput: {
+    backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
+    height: 46, paddingHorizontal: 14,
+    fontSize: 14, fontFamily: FONTS.interRegular, color: COLORS.textPrimary,
+  },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  modalCancel: {
+    flex: 1, height: 44, borderRadius: 12,
+    backgroundColor: COLORS.white4, borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalCancelText: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
+  modalSave: {
+    flex: 1, height: 44, borderRadius: 12,
+    backgroundColor: COLORS.primaryDark, alignItems: 'center', justifyContent: 'center',
+  },
+  modalSaveText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  modalDelete: {
+    flex: 1, height: 44, borderRadius: 12,
+    backgroundColor: 'rgba(239,68,68,0.15)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalDeleteText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.error },
+  logoUploadBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.primary12, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1, borderColor: COLORS.primary35, alignSelf: 'flex-start',
+  },
+  logoUploadText: { fontSize: 13, fontFamily: FONTS.interMedium, color: COLORS.primaryLight },
+
+  // Footer de cuenta (ayuda · acerca · cerrar sesión)
+  perfilFooter: {
+    marginTop: 14, paddingTop: 14, gap: 8,
+    borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+  footerBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    height: 46, paddingHorizontal: 14, borderRadius: 12,
+    backgroundColor: COLORS.white4, borderWidth: 1, borderColor: COLORS.border,
+  },
+  footerBtnText: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
+  logoutFooterBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    height: 46, paddingHorizontal: 14, borderRadius: 12,
+    backgroundColor: 'rgba(239,68,68,0.10)',
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
+  },
+  logoutFooterText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.error },
+});
+
+const makeS = (COLORS: GradlyColors) => StyleSheet.create({
+  scroll: { padding: 16, paddingBottom: 110 },
+
+  banner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 16, padding: 20, marginBottom: 16,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  bannerTitle: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
+  bannerNombre: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary, marginTop: 2 },
+  logoWrap: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: COLORS.primary12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  metricasGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  metricCard: {
+    flex: 1, minWidth: 120,
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 14, padding: 14, gap: 4,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  metricValue: { fontSize: 28, fontFamily: FONTS.rajdhaniBold },
+  metricLabel: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+
+  // Estudiantes
+  searchArea: {
+    flexDirection: 'row', gap: 10, padding: 12, paddingBottom: 8,
+  },
+  searchWrap: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
+    paddingHorizontal: 12, height: 40,
+  },
+  searchInput: {
+    flex: 1, fontSize: 13,
+    fontFamily: FONTS.interRegular, color: COLORS.textPrimary,
+  },
+  excelBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: COLORS.success + '15',
+    borderRadius: 10, paddingHorizontal: 12, height: 40,
+    borderWidth: 1, borderColor: COLORS.success + '33',
+  },
+  excelText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.success },
+
+  // ── Grupos / aulas ──
+  grupoArea: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
+  grupoLabel: {
+    fontSize: 10, fontFamily: FONTS.interSemiBold, letterSpacing: 0.5,
+    color: COLORS.primaryLight,
+  },
+  grupoRow: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'space-between' },
+  grupoWarn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.warning + '15', borderRadius: 10,
+    borderWidth: 1, borderColor: COLORS.warning + '40', padding: 10,
+  },
+  grupoWarnText: { flex: 1, fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.warning, lineHeight: 16 },
+  importarFullBtn: {
+    backgroundColor: COLORS.success + '15', borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.success + '33',
+  },
+  // Tarjeta de grupo (lista horizontal seleccionable)
+  grupoCard: { width: 160, borderColor: COLORS.border },
+  grupoCardActive: { borderColor: COLORS.success + '88', backgroundColor: COLORS.success + '12' },
+  grupoCardNombre: { flex: 1, fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  grupoCardMeta: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  grupoCardHoras: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+  // Validación de campos del formulario de grupo
+  campoOk:  { borderColor: COLORS.success },
+  campoErr: { borderColor: COLORS.error },
+  campoErrText: { fontSize: 11, fontFamily: FONTS.interMedium, color: COLORS.error, marginTop: 4 },
+
+  // ── Búsqueda con botón ──
+  buscarBtn: { backgroundColor: COLORS.primary, borderRadius: 10 },
+  buscarBtnText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+
+  // ── Cuadro de gestión (Liquid Glass) ──
+  gestionBox: { marginHorizontal: 12, marginBottom: 10 },
+  gestionTitle: { fontSize: 15, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  gestionText: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 17 },
+  gestionMainBtn: { backgroundColor: COLORS.primaryDark, borderRadius: 12 },
+  gestionMainBtnText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+
+  // ── Pestañas (Tabs) ──
+  tabRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, marginBottom: 8 },
+  tabBtn: {
+    flex: 1, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.backgroundSurface, borderWidth: 1, borderColor: COLORS.border,
+  },
+  tabBtnActive: { backgroundColor: COLORS.primary12, borderColor: COLORS.primary35 },
+  tabText: { fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
+  tabTextActive: { color: COLORS.primaryLight, fontFamily: FONTS.interSemiBold },
+
+  grupoDestino: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.primary12, borderRadius: 10,
+    borderWidth: 1, borderColor: COLORS.primary35, padding: 10, marginTop: 2,
+  },
+  grupoDestinoText: { flex: 1, fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
+
+  // ── Credenciales temporales (pantalla de éxito) ──
+  credAviso: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: COLORS.primary12, borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.primary35, padding: 12,
+  },
+  credAvisoText: { flex: 1, fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textPrimary, lineHeight: 17 },
+  credItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.backgroundSurface, borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.border, padding: 12,
+  },
+  credCorreo: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  credPassChip: {
+    backgroundColor: COLORS.primary12, borderRadius: 8,
+    borderWidth: 1, borderColor: COLORS.primary35, paddingHorizontal: 8, paddingVertical: 4,
+  },
+  credPassText: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+
+  // Cuadro informativo de columnas del Excel (Liquid Glass)
+  excelInfoBox: {
+    marginHorizontal: 12, marginBottom: 8, padding: 14, borderRadius: 16,
+    overflow: 'hidden', gap: 6,
+    borderWidth: 1, borderColor: COLORS.primary35,
+    backgroundColor: COLORS.primary12,
+  },
+  excelInfoHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  excelInfoTitle: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  excelInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  excelInfoText: { fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
+  excelInfoNote: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 6, lineHeight: 16 },
+
+  progressBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.backgroundSurface,
+    marginHorizontal: 12, borderRadius: 8, padding: 10,
+    borderWidth: 1, borderColor: COLORS.border, marginBottom: 8,
+  },
+  progressText: { fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
+
+  filtroChip: {
+    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
+    backgroundColor: COLORS.backgroundSurface,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  filtroChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  filtroText: { fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
+  filtroTextActive: { color: COLORS.textPrimary },
+
+  estudianteRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: COLORS.border, marginBottom: 8,
+  },
+  estudianteAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.primary12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  grupoChatBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: COLORS.primary12,
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 4,
+  },
+  estudianteInitial: { fontSize: 16, fontFamily: FONTS.soraBold, color: COLORS.primaryLight },
+  estudianteNombre: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  estudianteMeta: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  estudianteHoras: { fontSize: 14, fontFamily: FONTS.rajdhaniBold, color: COLORS.primaryLight },
+  miniBarTrack: {
+    width: 60, height: 4, backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 2, overflow: 'hidden',
+  },
+  miniBarFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 2 },
+  estadoBadge: {
+    backgroundColor: COLORS.success + '15', borderRadius: 8,
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderWidth: 1, borderColor: COLORS.success + '33',
+  },
+  estadoBadgeOff: { backgroundColor: COLORS.white4, borderColor: COLORS.border },
+  estadoText: { fontSize: 10, fontFamily: FONTS.interSemiBold, color: COLORS.success },
+
+  previewRow: {
+    backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 8, padding: 8, marginBottom: 4,
+  },
+  previewText: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+
+  // ── Vista previa de importación de Excel ──
+  previewSummary: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 4 },
+  previewChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    borderWidth: 1,
+  },
+  previewChipTotal: { backgroundColor: COLORS.backgroundSurface, borderColor: COLORS.border },
+  previewChipOk: { backgroundColor: 'rgba(34,197,94,0.10)', borderColor: 'rgba(34,197,94,0.35)' },
+  previewChipBad: { backgroundColor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.35)' },
+  previewChipText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted },
+
+  previewItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderRadius: 12, padding: 12, borderWidth: 1,
+  },
+  previewItemOk: { backgroundColor: 'rgba(34,197,94,0.06)', borderColor: 'rgba(34,197,94,0.25)' },
+  previewItemBad: { backgroundColor: 'rgba(239,68,68,0.07)', borderColor: 'rgba(239,68,68,0.40)' },
+  previewItemName: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  previewItemMail: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  previewItemError: { fontSize: 11, fontFamily: FONTS.interMedium, color: COLORS.error, marginTop: 2 },
+  previewItemIdx: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+
+  progressTrack: {
+    height: 6, borderRadius: 3, backgroundColor: COLORS.backgroundSurface, overflow: 'hidden',
+  },
+  progressFill: { height: '100%', borderRadius: 3, backgroundColor: COLORS.primary },
+
+  importSuccess: { alignItems: 'center', gap: 10, paddingVertical: 24 },
+  importSuccessTitle: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+
+  // Aprobar
+  aprobacionCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 12, padding: 16,
+    borderWidth: 1, borderColor: COLORS.border, marginBottom: 10,
+  },
+  aprobacionCardUrgente: { borderColor: COLORS.warning + '55' },
+  aprobNombre: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  aprobMeta: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  aprobUrgente: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.warning, marginTop: 4 },
+  aprobBtn: {
+    backgroundColor: COLORS.primaryDark,
+    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7,
+    alignItems: 'center',
+  },
+  aprobBtnText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  rechazarBtn: {
+    backgroundColor: 'rgba(239,68,68,0.10)', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', alignItems: 'center',
+  },
+  rechazarText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.error },
+
+  // Estadísticas
+  statTitle: { fontSize: 15, fontFamily: FONTS.soraSemiBold, color: COLORS.textPrimary, marginBottom: 12 },
+  barRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10,
+  },
+  barLabel: {
+    width: 100, fontSize: 12,
+    fontFamily: FONTS.interRegular, color: COLORS.textMuted,
+  },
+  barTrack: {
+    flex: 1, height: 10, backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 5, overflow: 'hidden',
+  },
+  barFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 5 },
+  barValue: { fontSize: 12, fontFamily: FONTS.rajdhaniSemiBold, color: COLORS.primaryLight, width: 24, textAlign: 'right' },
+
+  emptyText: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, textAlign: 'center', padding: 24 },
+
+  // Shared
+  sectionTitle: { fontSize: 15, fontFamily: FONTS.soraSemiBold, color: COLORS.textPrimary, marginBottom: 10 },
+});

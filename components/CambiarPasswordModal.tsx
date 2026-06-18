@@ -10,7 +10,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../lib/supabase";
+import {
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
+} from "firebase/auth";
+import { auth } from "../src/config/firebaseConfig";
 import { esPassword } from "../hooks/useFieldValidation";
 
 interface Props {
@@ -125,25 +130,20 @@ export default function CambiarPasswordModal({
     if (!validate()) return;
     setLoading(true);
     try {
-      // Re-authenticate with current password to verify it
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      // Reautenticar con la contraseña actual para verificarla (Firebase lo exige
+      // antes de cambiar credenciales sensibles).
+      const user = auth.currentUser;
       if (!user?.email) throw new Error("No se pudo obtener el usuario.");
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: currentPass,
-      });
-      if (signInError) {
+      try {
+        const cred = EmailAuthProvider.credential(user.email, currentPass);
+        await reauthenticateWithCredential(user, cred);
+      } catch {
         setErrCurrent("Contraseña actual incorrecta.");
         return;
       }
 
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: newPass,
-      });
-      if (updateError) throw updateError;
+      await updatePassword(user, newPass);
 
       Alert.alert("Éxito", "Tu contraseña se actualizó correctamente.");
       handleClose();

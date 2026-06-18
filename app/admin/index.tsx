@@ -13,8 +13,30 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { supabase } from "../../lib/supabase";
-import { C, s } from "./adminStyles";
+import { signOut } from "firebase/auth";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+import { auth, db } from "../../src/config/firebaseConfig";
+import { C, s } from "../../src/styles/adminStyles";
+
+// Convierte un Timestamp de Firestore (o string) a ISO para los tipos del panel.
+const tsToIso = (v: any): string => {
+  if (!v) return "";
+  if (typeof v?.toDate === "function") return v.toDate().toISOString();
+  if (typeof v === "string") return v;
+  return "";
+};
 
 type AdminPage = "resumen" | "usuarios" | "reportes" | "notificaciones" | "roles" | "logs" | "config";
 type Role = "talento" | "universidad" | "empresa" | "alumno";
@@ -175,16 +197,15 @@ export default function AdminPreview() {
   const logAction = useCallback(
     async (action: string, entityType: string, entityId: string | null, payload: any) => {
       try {
-        const { data: authData } = await supabase.auth.getUser();
-        const email = authData.user?.email ?? null;
-        const actorId = authData.user?.id ?? null;
-        await supabase.from("audit_logs").insert({
-          actor_email: email,
-          actor_id: actorId,
+        const current = auth.currentUser;
+        await addDoc(collection(db, "audit_logs"), {
+          actor_email: current?.email ?? null,
+          actor_id: current?.uid ?? null,
           action,
           entity_type: entityType,
           entity_id: entityId,
           payload,
+          created_at: serverTimestamp(),
         });
       } catch {
       }
@@ -194,28 +215,25 @@ export default function AdminPreview() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id,email,role,username,nombre,telefono,departamento,ciudad,status,created_at")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        Alert.alert("Error", error.message);
-        return;
-      }
-
-      const mapped: AdminUser[] = (data ?? []).map((r: any) => ({
-        id: r.id,
-        role: r.role,
-        status: r.status,
-        nombre: r.nombre,
-        email: r.email,
-        username: r.username,
-        telefono: r.telefono,
-        departamento: r.departamento,
-        ciudad: r.ciudad,
-        created_at: r.created_at,
-      }));
+      const snap = await getDocs(collection(db, "usuarios"));
+      const mapped: AdminUser[] = snap.docs.map((d) => {
+        const r: any = d.data();
+        const status: Status =
+          r.status ?? (r.activo === false ? "inactive" : "active");
+        return {
+          id: d.id,
+          role: r.rol,
+          status,
+          nombre: r.nombre_completo ?? r.nombre ?? "",
+          email: r.correo ?? r.email ?? "",
+          username: r.username ?? "",
+          telefono: r.telefono ?? null,
+          departamento: r.departamento ?? null,
+          ciudad: r.ciudad ?? null,
+          created_at: tsToIso(r.fecha_registro),
+        };
+      });
+      mapped.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
       setUsers(mapped);
     } catch {
       Alert.alert("Error", "No se pudo cargar la lista de usuarios.");
@@ -231,16 +249,21 @@ export default function AdminPreview() {
   const fetchLogs = useCallback(async () => {
     setLogsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("audit_logs")
-        .select("id,actor_email,action,entity_type,entity_id,payload,created_at")
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (error) {
-        Alert.alert("Error", error.message);
-        return;
-      }
-      setLogs((data as any) ?? []);
+      const snap = await getDocs(query(collection(db, "audit_logs"), limit(200)));
+      const list: AuditLog[] = snap.docs.map((d) => {
+        const r: any = d.data();
+        return {
+          id: d.id,
+          actor_email: r.actor_email ?? null,
+          action: r.action ?? "",
+          entity_type: r.entity_type ?? "",
+          entity_id: r.entity_id ?? null,
+          payload: r.payload ?? null,
+          created_at: tsToIso(r.created_at),
+        };
+      });
+      list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+      setLogs(list);
     } catch {
       Alert.alert("Error", "No se pudo cargar la bitácora.");
     } finally {
@@ -251,16 +274,22 @@ export default function AdminPreview() {
   const fetchNotifications = useCallback(async () => {
     setNotificationsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("admin_notifications")
-        .select("id,type,title,body,is_read,created_at")
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (error) {
-        Alert.alert("Error", error.message);
-        return;
-      }
-      setNotifications((data as any) ?? []);
+      const snap = await getDocs(
+        query(collection(db, "admin_notifications"), limit(200)),
+      );
+      const list: AdminNotification[] = snap.docs.map((d) => {
+        const r: any = d.data();
+        return {
+          id: d.id,
+          type: r.type ?? "",
+          title: r.title ?? "",
+          body: r.body ?? null,
+          is_read: !!r.is_read,
+          created_at: tsToIso(r.created_at),
+        };
+      });
+      list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+      setNotifications(list);
     } catch {
       Alert.alert("Error", "No se pudo cargar notificaciones.");
     } finally {
@@ -272,26 +301,32 @@ export default function AdminPreview() {
     async (role: PermissionRole) => {
       setPermissionsLoading(true);
       try {
-        const [{ data: permData, error: permErr }, { data: rpData, error: rpErr }] = await Promise.all([
-          supabase
-            .from("permissions")
-            .select("key,label,group_name,description")
-            .order("group_name", { ascending: true })
-            .order("key", { ascending: true }),
-          supabase.from("role_permissions").select("role,permission_key").eq("role", role),
+        const [permSnap, rpSnap] = await Promise.all([
+          getDocs(collection(db, "permissions")),
+          getDocs(
+            query(collection(db, "role_permissions"), where("role", "==", role)),
+          ),
         ]);
 
-        if (permErr) {
-          Alert.alert("Error", permErr.message);
-          return;
-        }
-        if (rpErr) {
-          Alert.alert("Error", rpErr.message);
-          return;
-        }
+        const perms: Permission[] = permSnap.docs.map((d) => {
+          const r: any = d.data();
+          return {
+            key: r.key ?? d.id,
+            label: r.label ?? "",
+            group_name: r.group_name ?? null,
+            description: r.description ?? null,
+          };
+        });
+        perms.sort(
+          (a, b) =>
+            (a.group_name ?? "").localeCompare(b.group_name ?? "") ||
+            a.key.localeCompare(b.key),
+        );
 
-        setPermissions((permData as any) ?? []);
-        setRolePermissions(new Set(((rpData as any) ?? []).map((r: any) => r.permission_key)));
+        setPermissions(perms);
+        setRolePermissions(
+          new Set(rpSnap.docs.map((d) => (d.data() as any).permission_key)),
+        );
       } catch {
         Alert.alert("Error", "No se pudo cargar permisos.");
       } finally {
@@ -304,14 +339,13 @@ export default function AdminPreview() {
   const setProfileStatus = useCallback(
     async (u: AdminUser, nextStatus: Status) => {
       try {
-        const { data, error } = await supabase.from("profiles").update({ status: nextStatus }).eq("id", u.id).select().single();
-        if (error) {
-          Alert.alert("Error", error.message);
-          return;
-        }
-        setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, status: (data as any).status } : x)));
-        setSelected((prev) => (prev?.id === u.id ? { ...prev, status: (data as any).status } : prev));
-        await logAction("profile.status.update", "profiles", u.id, { from: u.status, to: nextStatus });
+        await updateDoc(doc(db, "usuarios", u.id), {
+          status: nextStatus,
+          activo: nextStatus === "active",
+        });
+        setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, status: nextStatus } : x)));
+        setSelected((prev) => (prev?.id === u.id ? { ...prev, status: nextStatus } : prev));
+        await logAction("profile.status.update", "usuarios", u.id, { from: u.status, to: nextStatus });
       } catch {
         Alert.alert("Error", "No se pudo actualizar el estado.");
       }
@@ -322,14 +356,10 @@ export default function AdminPreview() {
   const setProfileRole = useCallback(
     async (u: AdminUser, nextRole: Role) => {
       try {
-        const { data, error } = await supabase.from("profiles").update({ role: nextRole }).eq("id", u.id).select().single();
-        if (error) {
-          Alert.alert("Error", error.message);
-          return;
-        }
-        setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, role: (data as any).role } : x)));
-        setSelected((prev) => (prev?.id === u.id ? { ...prev, role: (data as any).role } : prev));
-        await logAction("profile.role.update", "profiles", u.id, { from: u.role, to: nextRole });
+        await updateDoc(doc(db, "usuarios", u.id), { rol: nextRole });
+        setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, role: nextRole } : x)));
+        setSelected((prev) => (prev?.id === u.id ? { ...prev, role: nextRole } : prev));
+        await logAction("profile.role.update", "usuarios", u.id, { from: u.role, to: nextRole });
       } catch {
         Alert.alert("Error", "No se pudo actualizar el rol.");
       }
@@ -342,11 +372,15 @@ export default function AdminPreview() {
       const has = rolePermissions.has(permissionKey);
       try {
         if (has) {
-          const { error } = await supabase.from("role_permissions").delete().eq("role", role).eq("permission_key", permissionKey);
-          if (error) {
-            Alert.alert("Error", error.message);
-            return;
-          }
+          // Borrar los documentos role_permissions que coincidan con role + key.
+          const dupSnap = await getDocs(
+            query(
+              collection(db, "role_permissions"),
+              where("role", "==", role),
+              where("permission_key", "==", permissionKey),
+            ),
+          );
+          await Promise.all(dupSnap.docs.map((d) => deleteDoc(d.ref)));
           setRolePermissions((prev) => {
             const next = new Set(prev);
             next.delete(permissionKey);
@@ -354,11 +388,10 @@ export default function AdminPreview() {
           });
           await logAction("role_permissions.delete", "role_permissions", null, { role, permission_key: permissionKey });
         } else {
-          const { error } = await supabase.from("role_permissions").insert({ role, permission_key: permissionKey });
-          if (error) {
-            Alert.alert("Error", error.message);
-            return;
-          }
+          await addDoc(collection(db, "role_permissions"), {
+            role,
+            permission_key: permissionKey,
+          });
           setRolePermissions((prev) => new Set(prev).add(permissionKey));
           await logAction("role_permissions.insert", "role_permissions", null, { role, permission_key: permissionKey });
         }
@@ -373,11 +406,11 @@ export default function AdminPreview() {
     try {
       const ids = notifications.filter((n) => !n.is_read).map((n) => n.id);
       if (ids.length === 0) return;
-      const { error } = await supabase.from("admin_notifications").update({ is_read: true }).in("id", ids);
-      if (error) {
-        Alert.alert("Error", error.message);
-        return;
-      }
+      await Promise.all(
+        ids.map((id) =>
+          updateDoc(doc(db, "admin_notifications", id), { is_read: true }),
+        ),
+      );
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       await logAction("admin_notifications.read_all", "admin_notifications", null, { count: ids.length });
     } catch {
@@ -395,26 +428,27 @@ export default function AdminPreview() {
         departamento: editDepartamento.trim() || null,
         ciudad: editCiudad.trim() || null,
       };
-      const { data, error } = await supabase.from("profiles").update(patch).eq("id", selected.id).select().single();
-      if (error) {
-        Alert.alert("Error", error.message);
-        return;
-      }
+      await updateDoc(doc(db, "usuarios", selected.id), {
+        nombre_completo: patch.nombre,
+        telefono: patch.telefono,
+        departamento: patch.departamento,
+        ciudad: patch.ciudad,
+      });
       setUsers((prev) =>
         prev.map((u) =>
           u.id === selected.id
             ? {
                 ...u,
-                nombre: (data as any).nombre,
-                telefono: (data as any).telefono,
-                departamento: (data as any).departamento,
-                ciudad: (data as any).ciudad,
+                nombre: patch.nombre,
+                telefono: patch.telefono,
+                departamento: patch.departamento,
+                ciudad: patch.ciudad,
               }
             : u,
         ),
       );
       setEditOpen(false);
-      await logAction("profile.update", "profiles", selected.id, patch);
+      await logAction("profile.update", "usuarios", selected.id, patch);
     } catch {
       Alert.alert("Error", "No se pudo guardar el perfil.");
     } finally {
@@ -433,12 +467,14 @@ export default function AdminPreview() {
   useEffect(() => {
     (async () => {
       try {
-        const { data: authData } = await supabase.auth.getUser();
-        const user = authData.user;
+        const user = auth.currentUser;
         if (!user) return;
         setMeEmail(user.email ?? null);
-        const { data } = await supabase.from("profiles").select("nombre").eq("id", user.id).single();
-        const nombre = (data as any)?.nombre?.trim?.() ? String((data as any).nombre) : null;
+        const snap = await getDoc(doc(db, "usuarios", user.uid));
+        const data: any = snap.exists() ? snap.data() : null;
+        const nombre = data?.nombre_completo?.trim?.()
+          ? String(data.nombre_completo)
+          : null;
         if (nombre) setMeName(nombre);
         else if (user.email) setMeName(user.email);
       } catch {
@@ -568,7 +604,7 @@ export default function AdminPreview() {
           <View style={{ flex: 1 }}>
             <Text style={s.kicker}>Admin</Text>
             <Text style={s.pageTitle}>Resumen</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Usuarios desde Supabase (profiles).</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Usuarios desde Firestore (colección usuarios).</Text>
           </View>
           <TouchableOpacity style={s.btnOutline} onPress={() => setPage("notificaciones")} activeOpacity={0.8}>
             <Text style={s.btnOutlineText}>Ver inbox</Text>
@@ -999,8 +1035,8 @@ export default function AdminPreview() {
         <TouchableOpacity
           style={[s.btnPrimary, { marginTop: 14, backgroundColor: C.red }]}
           onPress={async () => {
-            await supabase.auth.signOut();
-            Alert.alert("Sesión cerrada", "Se cerró sesión en Supabase.");
+            await signOut(auth);
+            Alert.alert("Sesión cerrada", "Se cerró la sesión correctamente.");
           }}
           activeOpacity={0.85}
         >

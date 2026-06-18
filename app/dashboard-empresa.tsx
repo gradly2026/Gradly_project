@@ -1,2168 +1,2651 @@
-/**
- * dashboard-empresa.tsx
- * Portal de empresa — React Native (Expo)
- *
- * Bottom nav: Inicio · Vacantes · Candidatos · Horas Sociales · Mi Perfil
- * Todos los datos provienen de Supabase — cero hardcode.
- */
-
-import { Ionicons } from "@expo/vector-icons";
-import * as FileSystem from "expo-file-system";
-import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import {
+  cambiarEstadoAplicacion,
+  empresaFirmaConstancia,
+} from '../src/services/pasantiaService';
+import { abrirChatDirectoEmpresaEstudiante } from '../src/services/chatService';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import FloatingSearchButton from '../src/components/FloatingSearchButton';
+import FloatingTopBar from '../src/components/FloatingTopBar';
+import StorageAvatar from '../src/components/StorageAvatar';
 import {
   ActivityIndicator,
   Alert,
-  Image,
+  Dimensions,
+  FlatList,
+  Linking,
   Modal,
-  RefreshControl,
-  SafeAreaView,
+  Platform,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-} from "react-native";
-import { supabase } from "../lib/supabase";
-import AgendarEntrevistaModal from "../components/AgendarEntrevistaModal";
-import BuscadorExplorador from "../components/BuscadorExplorador";
-import PropuestaCondicionesModal from "../components/PropuestaCondicionesModal";
-import CambiarPasswordModal from "../components/CambiarPasswordModal";
-import RechazarModal from "../components/RechazarModal";
-import UpgradePlanModal from "../components/UpgradePlanModal";
-import UniversalHeader from "../src/components/UniversalHeader";
-import { useThemeContext } from "../src/context/ThemeContext";
+} from 'react-native';
+import FeedbackGate from '../src/components/FeedbackGate';
+import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
+import HistorialPasantes from '../src/components/HistorialPasantes';
+import RangoCard from '../src/components/RangoCard';
+import { SolicitudesEmpresa } from '../src/components/Matchmaking';
+import { PerfilStatsEmpresa, RedGradlyBanner } from '../src/components/NetworkStats';
+import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTour';
+import { useAuth } from '../src/context/AuthContext';
+import { subscribeUnreadTotal } from '../src/services/chatService';
+import { enviarNotificacion } from '../src/services/notificationService';
+import { auth, db, storage } from '../src/config/firebaseConfig';
+import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
+import { useAuthGuard } from '../src/hooks/useAuthGuard';
+import { shadow } from '../src/utils/shadow';
+import MapViewer from '../src/components/MapViewer';
+import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
+import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
+import { JellyButton } from '../components/ui/liquid-glass/JellyButton';
+import {
+  maskExp,
+  maskTarjeta,
+  valCvv,
+  valExp,
+  valTarjetaNum,
+  valTitular,
+} from '../utils/cardValidation';
 
-// ── Tipos ────────────────────────────────────────────────────────────────────
-
-type Tab = "inicio" | "vacantes" | "candidatos" | "horas" | "perfil";
-type EmpresaData = Record<string, any>;
-type Vacante = Record<string, any>;
-type Aplicacion = Record<string, any>;
-type Solicitud = Record<string, any>;
-
-type ToastItem = { id: number; msg: string; type: "ok" | "err" | "info" };
-
-// ── Paleta ───────────────────────────────────────────────────────────────────
-
-const darkC = {
-  bg: "#07050f",
-  surface: "#0d0b1e",
-  card: "#141226",
-  border: "rgba(139,92,246,0.18)",
-  purple: "#8b5cf6",
-  purpleDark: "#7c3aed",
-  purpleDim: "rgba(139,92,246,0.10)",
-  purpleBorder: "rgba(139,92,246,0.35)",
-  text: "#f4f1ff",
-  muted: "rgba(255,255,255,0.50)",
-  green: "#10b981",
-  greenBg: "rgba(16,185,129,0.10)",
-  greenBorder: "rgba(16,185,129,0.30)",
-  red: "#ef4444",
-  redBg: "rgba(239,68,68,0.10)",
-  yellow: "#f59e0b",
-  yellowBg: "rgba(245,158,11,0.10)",
+// Información de planes para la vista "Mi Perfil" (solo presentación).
+const PLAN_DISPLAY: Record<'gratuito' | 'mensual' | 'premium', { nombre: string; precio: string; beneficios: string[] }> = {
+  gratuito: {
+    nombre: 'Gratuito',
+    precio: '$0/mes',
+    beneficios: ['Hasta 2 vacantes activas', '1 alianza con universidad', 'Soporte por correo'],
+  },
+  mensual: {
+    nombre: 'Mensual',
+    precio: '$15/mes',
+    beneficios: ['Hasta 10 vacantes activas', 'Hasta 5 alianzas', 'Estadísticas de tus vacantes'],
+  },
+  premium: {
+    nombre: 'Premium',
+    precio: '$150/año',
+    beneficios: ['Vacantes ilimitadas', 'Alianzas ilimitadas', 'Insignia de Empresa Verificada ✓'],
+  },
 };
 
-const lightC = {
-  bg: "#f8fafc",
-  surface: "#ffffff",
-  card: "#f0f4ff",
-  border: "rgba(139,92,246,0.15)",
-  purple: "#7c3aed",
-  purpleDark: "#6d28d9",
-  purpleDim: "rgba(139,92,246,0.08)",
-  purpleBorder: "rgba(139,92,246,0.28)",
-  text: "#111827",
-  muted: "rgba(17,24,39,0.50)",
-  green: "#059669",
-  greenBg: "rgba(5,150,105,0.08)",
-  greenBorder: "rgba(5,150,105,0.25)",
-  red: "#dc2626",
-  redBg: "rgba(220,38,38,0.08)",
-  yellow: "#d97706",
-  yellowBg: "rgba(217,119,6,0.08)",
-};
-
-// ── Bottom nav items ──────────────────────────────────────────────────────────
-
-const NAV: { key: Tab; label: string; icon: string }[] = [
-  { key: "inicio", label: "Inicio", icon: "home-outline" },
-  { key: "vacantes", label: "Vacantes", icon: "briefcase-outline" },
-  { key: "candidatos", label: "Candidatos", icon: "people-outline" },
-  { key: "horas", label: "Horas", icon: "time-outline" },
-  { key: "perfil", label: "Mi Perfil", icon: "business-outline" },
-];
-
-const KANBAN_COLS = [
-  { key: "pendiente", label: "Pendiente", color: "#f59e0b" },
-  { key: "en_revision", label: "En revisión", color: "#8b5cf6" },
-  { key: "entrevista", label: "Entrevista", color: "#3b82f6" },
-  { key: "contratada", label: "Contratada", color: "#10b981" },
-  { key: "rechazada", label: "Rechazada", color: "#ef4444" },
-];
-
-// ── Componente principal ───────────────────────────────────────────────────────
-
-export default function DashboardEmpresa() {
-  const router = useRouter();
-  const { isDark } = useThemeContext();
-  const C = isDark ? darkC : lightC;
-
-  // ── Estado global ─────────────────────────────────────────────────────────
-  const [userId, setUserId] = useState<string | null>(null);
-  const [empresa, setEmpresa] = useState<EmpresaData | null>(null);
-  const [tab, setTab] = useState<Tab>("inicio");
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-
-  // ── Inicio — métricas ─────────────────────────────────────────────────────
-  const [metVacantes, setMetVacantes] = useState(0);
-  const [metCandidatos, setMetCandidatos] = useState(0);
-  const [metHoras, setMetHoras] = useState(0);
-  const [metEvaluaciones, setMetEvaluaciones] = useState(0);
-
-  // ── Vacantes ──────────────────────────────────────────────────────────────
-  const [vacantes, setVacantes] = useState<Vacante[]>([]);
-  const [showVacanteModal, setShowVacanteModal] = useState(false);
-  const [vacanteStep, setVacanteStep] = useState<1 | 2 | 3>(1);
-  const [formTitulo, setFormTitulo] = useState("");
-  const [formArea, setFormArea] = useState("");
-  const [formModalidad, setFormModalidad] = useState("presencial");
-  const [formTipo, setFormTipo] = useState("tiempo_completo");
-  const [formDesc, setFormDesc] = useState("");
-  const [formSalMin, setFormSalMin] = useState("");
-  const [formSalMax, setFormSalMax] = useState("");
-  const [formMostrarSal, setFormMostrarSal] = useState(false);
-  const [formAplicaHoras, setFormAplicaHoras] = useState(false);
-  const [showUpgradePlan, setShowUpgradePlan] = useState(false);
-  const [planActual, setPlanActual] = useState<string>("basico");
-  const [planLimite, setPlanLimite] = useState<number>(3);
-  const [savingVacante, setSavingVacante] = useState(false);
-  const [selectedVacante, setSelectedVacante] = useState<Vacante | null>(null);
-  const [showVacanteDetail, setShowVacanteDetail] = useState(false);
-
-  // ── Candidatos ────────────────────────────────────────────────────────────
-  const [aplicaciones, setAplicaciones] = useState<Aplicacion[]>([]);
-  const [kanbanTab, setKanbanTab] = useState("pendiente");
-  const [loadingCand, setLoadingCand] = useState(false);
-  const [selectedCand, setSelectedCand] = useState<Aplicacion | null>(null);
-  const [showAgendarModal, setShowAgendarModal] = useState(false);
-  const [showRechazarModal, setShowRechazarModal] = useState(false);
-  const [contratando, setContratando] = useState<string | null>(null);
-
-  // ── Horas Sociales ────────────────────────────────────────────────────────
-  const [solicitudes, setSolicitudes] = useState<Solicitud[]>([]);
-  const [horasTab, setHorasTab] = useState("pendiente");
-  const [loadingHoras, setLoadingHoras] = useState(false);
-  const [showEvalModal, setShowEvalModal] = useState(false);
-  const [evalEstudiante, setEvalEstudiante] = useState<any>(null);
-  const [selectedSolicitud, setSelectedSolicitud] = useState<Solicitud | null>(null);
-  const [showPropuestaModal, setShowPropuestaModal] = useState(false);
-  const [evalGrupoId, setEvalGrupoId] = useState<string>("");
-  const [evalPuntualidad, setEvalPuntualidad] = useState(0);
-  const [evalDisciplina, setEvalDisciplina] = useState(0);
-  const [evalResponsabilidad, setEvalResponsabilidad] = useState(0);
-  const [evalRespeto, setEvalRespeto] = useState(0);
-  const [evalDesempeno, setEvalDesempeno] = useState(0);
-  const [evalComentario, setEvalComentario] = useState("");
-  const [savingEval, setSavingEval] = useState(false);
-
-  // ── Mi Perfil ─────────────────────────────────────────────────────────────
-  const [perfilMode, setPerfilMode] = useState<"view" | "edit">("view");
-  const [editNombre, setEditNombre] = useState("");
-  const [editDesc, setEditDesc] = useState("");
-  const [editTel, setEditTel] = useState("");
-  const [editEmail, setEditEmail] = useState("");
-  const [editWeb, setEditWeb] = useState("");
-  const [editInst, setEditInst] = useState("");
-  const [editFacebook, setEditFacebook] = useState("");
-  const [editDep, setEditDep] = useState("");
-  const [editCiudad, setEditCiudad] = useState("");
-  const [editDireccion, setEditDireccion] = useState("");
-  const [editRepNombre, setEditRepNombre] = useState("");
-  const [editRepCargo, setEditRepCargo] = useState("");
-  const [editRepEmail, setEditRepEmail] = useState("");
-  const [editRepTel, setEditRepTel] = useState("");
-  const [savingPerfil, setSavingPerfil] = useState(false);
-  const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [showAcercaModal, setShowAcercaModal] = useState(false);
-  const [showAyudaModal, setShowAyudaModal] = useState(false);
-  const [showCambiarPass, setShowCambiarPass] = useState(false);
-  const [ayudaMsg, setAyudaMsg] = useState("");
-  const [sendingAyuda, setSendingAyuda] = useState(false);
-
-  const toastId = useRef(0);
-
-  // ── Toast ─────────────────────────────────────────────────────────────────
-
-  const toast = useCallback(
-    (msg: string, type: "ok" | "err" | "info" = "ok") => {
-      const id = ++toastId.current;
-      setToasts((p) => [...p, { id, msg, type }]);
-      setTimeout(
-        () => setToasts((p) => p.filter((t) => t.id !== id)),
-        3500,
-      );
-    },
-    [],
+// Hook que recrea los estilos según el tema activo (claro/oscuro)
+function useThemedStyles() {
+  const { colors } = useTheme();
+  return useMemo(
+    () => ({ colors, styles: makeStyles(colors), s: makeS(colors) }),
+    [colors],
   );
+}
 
-  // ── Carga inicial ─────────────────────────────────────────────────────────
+const { width: SCREEN_W } = Dimensions.get('window');
+const IS_WIDE = SCREEN_W >= 768;
 
-  useEffect(() => {
-    loadAll();
-  }, []);
+// ─────────────────────────────────────────────
+// TIPOS
+// ─────────────────────────────────────────────
+type SeccionEmpresa = 'inicio' | 'vacantes' | 'kanban' | 'activas' | 'pagos' | 'historial';
 
-  const loadAll = async () => {
+interface Vacante {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  modalidad: string;
+  tipo: string;
+  area: string;
+  horas_requeridas: number;
+  horas_semanales: number;
+  skills_requeridas: string[];
+  fecha_limite: any;
+  activa: boolean;
+  aplicantes_count: number;
+  ubicacion_coords?: { latitude: number; longitude: number } | null;
+  ubicacion_texto?: { direccion: string; municipio: string; departamento: string; pais: string } | null;
+}
+
+interface Aplicacion {
+  id: string;
+  estudiante_id: string;
+  estudiante_nombre: string;
+  estudiante_foto: string;
+  vacante_id: string;
+  estado: string;
+  fecha_aplicacion: any;
+  horas_completadas: number;
+  pago_confirmado: boolean;
+  titulo_vacante?: string;
+  universidad_id?: string;
+  fecha_inicio?: any;
+  fecha_fin?: any;
+}
+
+interface PerfilEmpresa {
+  nombre_empresa: string;
+  industria: string;
+  premium: boolean;
+  estado_suscripcion: string;
+  tarjeta_numero: string;
+  tarjeta_alias: string;
+  logo_url?: string;
+  // Plan y restricciones de negocio (inyectadas en el registro).
+  plan?: 'gratuito' | 'mensual' | 'premium';
+  limiteVacantes?: number;
+  limiteAlianzas?: number;
+  verificado?: boolean;
+}
+
+const MENU: { key: SeccionEmpresa; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'inicio',    label: 'Inicio',           icon: 'home-outline' },
+  { key: 'vacantes',  label: 'Mis Vacantes',     icon: 'briefcase-outline' },
+  { key: 'kanban',    label: 'Reclutamiento',    icon: 'people-outline' },
+  { key: 'activas',   label: 'Pasantías Activas',icon: 'checkmark-circle-outline' },
+  { key: 'historial', label: 'Historial de Pasantes', icon: 'time-outline' },
+  { key: 'pagos',     label: 'Pagos',            icon: 'card-outline' },
+];
+
+// ── Onboarding (guía por globos) ──────────────────────────────────
+const TOUR_CLAVES: SeccionEmpresa[] = ['inicio', 'vacantes', 'kanban', 'activas', 'pagos'];
+const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
+  inicio: {
+    titulo: '¡Bienvenido a tu panel! 🏢',
+    texto:
+      'Este es tu panel general. Aquí ves un resumen de tu actividad: vacantes publicadas, aplicaciones recibidas y pasantías en curso.',
+  },
+  vacantes: {
+    titulo: 'Mis Vacantes',
+    texto:
+      'Crea y gestiona tus ofertas de pasantía o proyecto. Puedes activarlas o pausarlas cuando quieras.',
+  },
+  kanban: {
+    titulo: 'Reclutamiento',
+    texto:
+      'Mueve a los candidatos entre etapas: pendiente, en revisión, entrevista y contratado. Todo desde un tablero visual.',
+  },
+  activas: {
+    titulo: 'Pasantías Activas',
+    texto:
+      'Da seguimiento a las pasantías en curso y firma las constancias de horas de tus estudiantes.',
+  },
+  pagos: {
+    titulo: 'Pagos',
+    texto:
+      'Gestiona los pagos a estudiantes y administra tu método de pago de forma segura.',
+  },
+  historial: {
+    titulo: 'Historial de Pasantes',
+    texto:
+      'Reencuentra a los estudiantes que finalizaron sus pasantías contigo y re-contáctalos para ofrecerles empleo.',
+  },
+};
+
+const MODALIDADES = ['Presencial', 'Remoto', 'Híbrido'];
+
+// Estilos del bloque de mapa (estética Liquid Glass: fondo oscuro translúcido, bordes violetas)
+const mapStyles = StyleSheet.create({
+  glassBox: {
+    marginBottom: 14,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(26,22,43,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.4)',
+  },
+  glassTitle: { color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 15, marginBottom: 4 },
+  glassHint:  { color: 'rgba(255,255,255,0.6)', fontFamily: FONTS.interRegular, fontSize: 12, marginBottom: 12 },
+  primaryBtn: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  primaryBtnText: { color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 14 },
+  mapContainer: {
+    height: 300,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  detailBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.2)',
+    gap: 4,
+  },
+  detailLine:  { color: 'rgba(255,255,255,0.85)', fontFamily: FONTS.interRegular, fontSize: 13 },
+  detailLabel: { color: COLORS.primaryLight, fontFamily: FONTS.interSemiBold },
+});
+const TIPOS = ['Pasantía', 'Proyecto', 'Tiempo parcial'];
+const AREAS = ['Tecnología', 'Marketing', 'Diseño', 'Finanzas', 'Salud', 'Educación', 'Manufactura', 'Otra'];
+
+// ─────────────────────────────────────────────
+// VALIDADORES DE "NUEVA VACANTE" (puros: devuelven '' si es válido)
+// Reutilizados tanto en los onChangeText (tiempo real) como en la
+// validación maestra de handlePublicarVacante.
+// ─────────────────────────────────────────────
+const RE_SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;          // letras (con tilde/ñ) y espacios
+const RE_SKILLS       = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s,]+$/;        // letras, espacios y comas
+const RE_DESC_PROHIB  = /[?!@çÇ\\|*]/;                          // caracteres prohibidos en descripción
+
+const valTitulo = (v: string): string => {
+  if (!v.trim()) return 'El título es obligatorio.';
+  if (!RE_SOLO_LETRAS.test(v.trim())) return 'Solo se permiten letras y espacios (sin números ni símbolos).';
+  return '';
+};
+const valAreaOtra = (v: string): string => {
+  if (!v.trim()) return 'Especifica el área.';
+  if (!RE_SOLO_LETRAS.test(v.trim())) return 'Solo se permiten letras y espacios.';
+  return '';
+};
+const valDesc = (v: string): string => {
+  if (!v.trim()) return 'La descripción es obligatoria.';
+  if (RE_DESC_PROHIB.test(v)) return 'No se permiten los caracteres: ? ! @ ç Ç \\ | *';
+  return '';
+};
+const valHoras = (v: string): string => {
+  if (!v.trim()) return 'Campo obligatorio.';
+  if (!/^\d+$/.test(v)) return 'Solo números enteros.';
+  const n = Number(v);
+  if (n < 100 || n > 500) return 'Debe ser un valor entre 100 y 500.';
+  return '';
+};
+const valHorasSem = (v: string): string => {
+  if (!v.trim()) return 'Campo obligatorio.';
+  if (!/^\d+$/.test(v)) return 'Solo números enteros.';
+  const n = Number(v);
+  if (n < 1 || n > 30) return 'Debe ser un valor entre 1 y 30.';
+  return '';
+};
+const valSkills = (v: string): string => {
+  if (!v.trim()) return 'Agrega al menos una skill.';
+  if (!RE_SKILLS.test(v)) return 'Solo letras, espacios y comas (sin números ni símbolos).';
+  return '';
+};
+// Fecha límite: hoy+5 días (mínimo) y hoy+5días+3meses (máximo). Date nativo local
+// (constructor por componentes => medianoche local, sin desfases de zona horaria).
+const valFecha = (v: string): string => {
+  if (!v.trim()) return 'La fecha límite es obligatoria.';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return 'Formato incompleto (YYYY-MM-DD).';
+  const [y, m, d] = v.split('-').map(Number);
+  const fecha = new Date(y, m - 1, d);
+  if (fecha.getFullYear() !== y || fecha.getMonth() !== m - 1 || fecha.getDate() !== d) {
+    return 'Fecha inválida.';
+  }
+  const hoy = new Date();
+  const min = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 5);
+  const max = new Date(min.getFullYear(), min.getMonth() + 3, min.getDate());
+  if (fecha < min) return 'Debe ser al menos 5 días después de hoy.';
+  if (fecha > max) return 'El plazo máximo es de 3 meses.';
+  return '';
+};
+// Auto-formato YYYY-MM-DD a partir de solo dígitos (máx 8: YYYYMMDD).
+const formatFecha = (raw: string): string => {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length >= 6) return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+  if (digits.length >= 4) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return digits;
+};
+const KANBAN_COLS: { key: string; label: string; color: string }[] = [
+  { key: 'pendiente',   label: 'Pendientes',   color: COLORS.textMuted },
+  { key: 'en_revision', label: 'En Revisión',  color: COLORS.warning },
+  { key: 'entrevista',  label: 'Entrevista',   color: COLORS.primaryLight },
+  { key: 'contratado',  label: 'Contratado',   color: COLORS.success },
+];
+
+
+// ─────────────────────────────────────────────
+// COMPONENTE PRINCIPAL
+// ─────────────────────────────────────────────
+export default function DashboardEmpresa() {
+  useAuthGuard('empresa');
+  const { user, userProfile } = useAuth();
+  const router = useRouter();
+  const { styles, colors, s } = useThemedStyles();
+  const [showPerfil, setShowPerfil] = useState(false);
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  const confirmarCierreSesion = async () => {
     try {
-      setLoading(true);
-      const {
-        data: { user },
-        error: authErr,
-      } = await supabase.auth.getUser();
-      if (authErr || !user) {
-        router.replace("/iniciosesion");
-        return;
-      }
-      setUserId(user.id);
-      await Promise.all([
-        loadEmpresa(user.id),
-        loadVacantes(user.id),
-        loadMetricas(user.id),
-        loadAplicaciones(user.id),
-        loadSolicitudes(user.id),
-      ]);
-    } catch (e: any) {
-      toast(e?.message ?? "Error al cargar datos", "err");
-    } finally {
-      setLoading(false);
+      setLogoutModalVisible(false);
+      await signOut(auth);
+      router.replace('/auth/iniciosesion' as any);
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
     }
   };
 
-  const onRefresh = async () => {
-    if (!userId) return;
-    setRefreshing(true);
-    await Promise.all([
-      loadEmpresa(userId),
-      loadVacantes(userId),
-      loadMetricas(userId),
-      loadAplicaciones(userId),
-      loadSolicitudes(userId),
-    ]).catch(() => {});
-    setRefreshing(false);
+  const handleAyuda = () => {
+    Alert.alert('Ayuda', 'Escríbenos a soporte@gradly.app y te ayudaremos con cualquier duda.');
+  };
+  const handleAcerca = () => {
+    Alert.alert('Acerca de Gradly', 'Gradly conecta estudiantes, universidades y empresas para gestionar pasantías y horas sociales.\n\nVersión 1.0.0');
   };
 
-  // ── Loaders ───────────────────────────────────────────────────────────────
-
-  const loadEmpresa = async (id: string) => {
-    const { data, error } = await supabase
-      .from("empresas")
-      .select("*")
-      .eq("id", id)
-      .single();
-    if (!error && data) {
-      setEmpresa(data);
-      setEditNombre(data.nombre ?? "");
-      setEditDesc(data.descripcion ?? "");
-      setEditTel(data.telefono ?? "");
-      setEditEmail(data.email_corporativo ?? "");
-      setEditWeb(data.web ?? "");
-      setEditInst(data.instagram ?? "");
-      setEditFacebook(data.facebook ?? "");
-      setEditDep(data.departamento ?? "");
-      setEditCiudad(data.ciudad ?? "");
-      setEditDireccion(data.direccion ?? "");
-      setEditRepNombre(data.representante_nombre ?? "");
-      setEditRepCargo(data.representante_cargo ?? "");
-      setEditRepEmail(data.representante_email ?? "");
-      setEditRepTel(data.representante_telefono ?? "");
-    }
-  };
-
-  const loadVacantes = async (id: string) => {
-    const { data } = await supabase
-      .from("vacantes")
-      .select("*")
-      .eq("empresa_id", id)
-      .order("created_at", { ascending: false });
-    if (data) setVacantes(data);
-  };
-
-  const loadMetricas = async (id: string) => {
-    const inicioMes = new Date();
-    inicioMes.setDate(1);
-    inicioMes.setHours(0, 0, 0, 0);
-
-    const [
-      { count: vAct },
-      { data: vIds },
-      { count: hAct },
-      { count: evMes },
-    ] = await Promise.all([
-      supabase
-        .from("vacantes")
-        .select("*", { count: "exact", head: true })
-        .eq("empresa_id", id)
-        .eq("estado", "activa"),
-      supabase.from("vacantes").select("id").eq("empresa_id", id),
-      supabase
-        .from("solicitudes_horas")
-        .select("*", { count: "exact", head: true })
-        .eq("empresa_id", id)
-        .eq("estado", "aprobada"),
-      supabase
-        .from("evaluaciones_alumnos")
-        .select("*", { count: "exact", head: true })
-        .eq("empresa_id", id)
-        .gte("created_at", inicioMes.toISOString()),
-    ]);
-
-    setMetVacantes(vAct ?? 0);
-    setMetHoras(hAct ?? 0);
-    setMetEvaluaciones(evMes ?? 0);
-
-    if (vIds && vIds.length > 0) {
-      const ids = vIds.map((v) => v.id);
-      const { count: cMes } = await supabase
-        .from("aplicaciones")
-        .select("*", { count: "exact", head: true })
-        .in("vacante_id", ids)
-        .gte("created_at", inicioMes.toISOString());
-      setMetCandidatos(cMes ?? 0);
-    } else {
-      setMetCandidatos(0);
-    }
-  };
-
-  const loadAplicaciones = async (id: string) => {
-    setLoadingCand(true);
-    const { data: vIds } = await supabase
-      .from("vacantes")
-      .select("id")
-      .eq("empresa_id", id);
-
-    if (!vIds || vIds.length === 0) {
-      setAplicaciones([]);
-      setLoadingCand(false);
-      return;
-    }
-
-    const ids = vIds.map((v) => v.id);
-    const { data } = await supabase
-      .from("aplicaciones")
-      .select("*, vacantes(titulo, area)")
-      .in("vacante_id", ids)
-      .order("created_at", { ascending: false });
-
-    if (data) {
-      // Enriquecer con datos del solicitante (talento o alumno)
-      const enriched = await Promise.all(
-        data.map(async (ap) => {
-          const { data: talento } = await supabase
-            .from("talentos")
-            .select("nombre, email, foto_perfil, telefono")
-            .eq("id", ap.solicitante_id)
-            .maybeSingle();
-          if (talento) return { ...ap, _solicitante: talento };
-
-          const { data: alumno } = await supabase
-            .from("alumnos")
-            .select("nombre_completo, email, foto_perfil, telefono")
-            .eq("id", ap.solicitante_id)
-            .maybeSingle();
-          if (alumno)
-            return {
-              ...ap,
-              _solicitante: {
-                nombre: alumno.nombre_completo,
-                email: alumno.email,
-                foto_perfil: alumno.foto_perfil,
-                telefono: alumno.telefono,
-              },
-            };
-
-          return ap;
-        }),
-      );
-      setAplicaciones(enriched);
-    }
-    setLoadingCand(false);
-  };
-
-  const loadSolicitudes = async (id: string) => {
-    setLoadingHoras(true);
-    const { data } = await supabase
-      .from("solicitudes_horas")
-      .select(
-        "*, universidades(nombre, foto_banner), grupos(nombre_grupo, especialidad, horas_requeridas)",
-      )
-      .eq("empresa_id", id)
-      .order("created_at", { ascending: false });
-    if (data) setSolicitudes(data);
-    setLoadingHoras(false);
-  };
-
-  // ── Crear vacante ─────────────────────────────────────────────────────────
-
-  const resetVacanteForm = () => {
-    setFormTitulo("");
-    setFormArea("");
-    setFormDesc("");
-    setFormSalMin("");
-    setFormSalMax("");
-    setFormModalidad("presencial");
-    setFormTipo("tiempo_completo");
-    setFormMostrarSal(false);
-    setFormAplicaHoras(false);
-    setVacanteStep(1);
-  };
-
-  const checkPlanYAbrirModal = async () => {
-    const activas = vacantes.filter((v) => v.estado === "activa").length;
-    // Load suscripcion if not cached
-    let limite = planLimite;
-    let plan = planActual;
-    try {
-      const { data: sub } = await supabase
-        .from("suscripciones_empresas")
-        .select("plan, max_vacantes")
-        .eq("empresa_id", userId)
-        .maybeSingle();
-      if (sub) {
-        plan = sub.plan ?? "basico";
-        limite = sub.max_vacantes ?? 3;
-        setPlanActual(plan);
-        setPlanLimite(limite);
-      }
-    } catch (_) {}
-    if (activas >= limite) {
-      setShowUpgradePlan(true);
-    } else {
-      resetVacanteForm();
-      setShowVacanteModal(true);
-    }
-  };
-
-  const guardarVacante = async () => {
-    if (!formTitulo.trim() || !formArea.trim() || !formDesc.trim()) {
-      toast("Completa título, área y descripción.", "err");
-      return;
-    }
-    setSavingVacante(true);
-    try {
-      const { data, error } = await supabase
-        .from("vacantes")
-        .insert([
-          {
-            empresa_id: userId,
-            titulo: formTitulo.trim(),
-            area: formArea.trim(),
-            modalidad: formModalidad,
-            tipo: formTipo,
-            descripcion: formDesc.trim(),
-            salario_min: formSalMin ? parseFloat(formSalMin) : null,
-            salario_max: formSalMax ? parseFloat(formSalMax) : null,
-            mostrar_salario: formMostrarSal,
-            aplica_horas_sociales: formAplicaHoras,
-            estado: "activa",
-          },
-        ])
-        .select()
-        .single();
-      if (error) throw error;
-      setVacantes((p) => [data, ...p]);
-      setMetVacantes((n) => n + 1);
-      setShowVacanteModal(false);
-      resetVacanteForm();
-      toast("Vacante publicada correctamente.", "ok");
-    } catch (e: any) {
-      toast(e?.message ?? "Error al publicar vacante.", "err");
-    } finally {
-      setSavingVacante(false);
-    }
-  };
-
-  const cerrarVacante = async (id: string) => {
-    Alert.alert("Cerrar vacante", "¿Deseas cerrar esta vacante?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Cerrar",
-        style: "destructive",
-        onPress: async () => {
-          const { error } = await supabase
-            .from("vacantes")
-            .update({ estado: "cerrada" })
-            .eq("id", id);
-          if (!error) {
-            setVacantes((p) =>
-              p.map((v) => (v.id === id ? { ...v, estado: "cerrada" } : v)),
-            );
-            toast("Vacante cerrada.", "info");
-          }
-        },
-      },
-    ]);
-  };
-
-  const eliminarVacante = async (id: string) => {
-    Alert.alert("Eliminar vacante", "¿Eliminar esta vacante permanentemente?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Eliminar",
-        style: "destructive",
-        onPress: async () => {
-          const { error } = await supabase.from("vacantes").delete().eq("id", id);
-          if (!error) {
-            setVacantes((p) => p.filter((v) => v.id !== id));
-            toast("Vacante eliminada.", "info");
-          }
-        },
-      },
-    ]);
-  };
-
-  // ── Candidatos ────────────────────────────────────────────────────────────
-
-  const cambiarEstadoAplicacion = async (
-    id: string,
-    nuevoEstado: string,
-    nota?: string,
-  ) => {
-    const { error } = await supabase
-      .from("aplicaciones")
-      .update({ estado: nuevoEstado, nota_empresa: nota ?? null })
-      .eq("id", id);
-    if (!error) {
-      setAplicaciones((p) =>
-        p.map((a) =>
-          a.id === id
-            ? { ...a, estado: nuevoEstado, nota_empresa: nota ?? null }
-            : a,
-        ),
-      );
-      toast(`Candidato movido a "${nuevoEstado}".`, "ok");
-    }
-  };
-
-  const contratar = async (ap: Aplicacion) => {
-    Alert.alert(
-      "Contratar candidato",
-      `¿Confirmas la contratación de ${ap._solicitante?.nombre ?? "este candidato"}?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Contratar",
-          onPress: async () => {
-            setContratando(ap.id);
-            try {
-              await supabase
-                .from("aplicaciones")
-                .update({ estado: "contratada" })
-                .eq("id", ap.id);
-
-              await supabase.from("pagos_trabajos").insert({
-                aplicacion_id: ap.id,
-                empresa_id: userId,
-                trabajador_id: ap.solicitante_id,
-                vacante_id: ap.vacante_id ?? null,
-                estado: "activo",
-              });
-
-              await supabase.from("notificaciones").insert({
-                usuario_id: ap.solicitante_id,
-                tipo: "contratacion",
-                titulo: "¡Felicidades! Has sido contratado",
-                mensaje: ap.vacantes?.titulo
-                  ? `Has sido contratado para "${ap.vacantes.titulo}". La empresa te contactará con los detalles.`
-                  : "Has sido contratado. La empresa te contactará con los detalles.",
-                leida: false,
-              });
-
-              setAplicaciones((p) =>
-                p.map((a) => (a.id === ap.id ? { ...a, estado: "contratada" } : a))
-              );
-              toast("Candidato contratado exitosamente.", "ok");
-            } catch (e: any) {
-              toast(e?.message ?? "Error al contratar.", "err");
-            } finally {
-              setContratando(null);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // ── Horas Sociales ────────────────────────────────────────────────────────
-
-  const aprobarSolicitud = async (id: string) => {
-    const { error } = await supabase
-      .from("solicitudes_horas")
-      .update({ estado: "aprobada" })
-      .eq("id", id);
-    if (!error) {
-      setSolicitudes((p) =>
-        p.map((s) => (s.id === id ? { ...s, estado: "aprobada" } : s)),
-      );
-      setMetHoras((n) => n + 1);
-      toast("Solicitud aprobada.", "ok");
-    }
-  };
-
-  const guardarEvaluacion = async () => {
-    if (!evalEstudiante || !userId) return;
-    const campos = [
-      evalPuntualidad,
-      evalDisciplina,
-      evalResponsabilidad,
-      evalRespeto,
-      evalDesempeno,
-    ];
-    if (campos.some((v) => v === 0)) {
-      toast("Califica todos los criterios (1-5 estrellas).", "err");
-      return;
-    }
-    setSavingEval(true);
-    try {
-      const { error } = await supabase
-        .from("evaluaciones_alumnos")
-        .upsert(
-          {
-            empresa_id: userId,
-            estudiante_id: evalEstudiante.id,
-            grupo_id: evalGrupoId || null,
-            puntualidad: evalPuntualidad,
-            disciplina: evalDisciplina,
-            responsabilidad: evalResponsabilidad,
-            respeto: evalRespeto,
-            desempeno: evalDesempeno,
-            comentario: evalComentario.trim() || null,
-          },
-          { onConflict: "empresa_id,estudiante_id" },
-        );
-      if (error) throw error;
-      // Notificación al alumno
-      await supabase.from("notificaciones").insert({
-        usuario_id: evalEstudiante.id,
-        tipo: "evaluacion",
-        titulo: "Nueva evaluación recibida",
-        mensaje: `La empresa ${empresa?.nombre ?? ""} te evaluó. ¡Revisa tu perfil!`,
-      });
-      setShowEvalModal(false);
-      setEvalEstudiante(null);
-      setEvalComentario("");
-      setEvalPuntualidad(0);
-      setEvalDisciplina(0);
-      setEvalResponsabilidad(0);
-      setEvalRespeto(0);
-      setEvalDesempeno(0);
-      setMetEvaluaciones((n) => n + 1);
-      toast("Evaluación guardada.", "ok");
-    } catch (e: any) {
-      toast(e?.message ?? "Error al guardar evaluación.", "err");
-    } finally {
-      setSavingEval(false);
-    }
-  };
-
-  // ── Mi Perfil ─────────────────────────────────────────────────────────────
-
-  const guardarPerfil = async () => {
-    if (!userId) return;
-    setSavingPerfil(true);
-    try {
-      const { error } = await supabase
-        .from("empresas")
-        .update({
-          nombre: editNombre.trim(),
-          descripcion: editDesc.trim(),
-          telefono: editTel.trim(),
-          email_corporativo: editEmail.trim(),
-          web: editWeb.trim(),
-          instagram: editInst.trim(),
-          facebook: editFacebook.trim(),
-          departamento: editDep.trim(),
-          ciudad: editCiudad.trim(),
-          direccion: editDireccion.trim(),
-          representante_nombre: editRepNombre.trim(),
-          representante_cargo: editRepCargo.trim(),
-          representante_email: editRepEmail.trim(),
-          representante_telefono: editRepTel.trim(),
-        })
-        .eq("id", userId);
-      if (error) throw error;
-      await loadEmpresa(userId);
-      setPerfilMode("view");
-      toast("Perfil actualizado correctamente.", "ok");
-    } catch (e: any) {
-      toast(e?.message ?? "Error al guardar perfil.", "err");
-    } finally {
-      setSavingPerfil(false);
-    }
-  };
-
-  const cambiarLogo = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      toast("Se necesita acceso a la galería.", "err");
-      return;
-    }
+  // ── Cambiar logo/foto de la empresa ────────────────────────────────
+  const handleUploadLogo = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permiso necesario', 'Necesitamos acceso a tu galería.'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
+      allowsEditing: true, aspect: [1, 1], quality: 0.8,
     });
-    if (result.canceled || !result.assets?.[0]) return;
-
+    if (result.canceled) return;
     setUploadingLogo(true);
     try {
-      const uri = result.assets[0].uri;
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: "base64",
-      });
-      const fileName = `${userId}/logo_${Date.now()}.jpg`;
-      const { error: upErr } = await supabase.storage
-        .from("avatars")
-        .upload(fileName, base64, { contentType: "image/jpeg", upsert: true });
-      if (upErr) throw upErr;
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("avatars").getPublicUrl(fileName);
-
-      await supabase
-        .from("empresas")
-        .update({ foto_logo: publicUrl })
-        .eq("id", userId);
-      setEmpresa((p: any) => ({ ...p, foto_logo: publicUrl }));
-      toast("Logo actualizado.", "ok");
-    } catch (e: any) {
-      toast(e?.message ?? "Error al subir logo.", "err");
+      // OBLIGATORIO: convertir la imagen con fetch antes de subirla a Storage
+      const response = await fetch(result.assets[0].uri);
+      const blob = await response.blob();
+      const storageRef = ref(storage, `logos_empresas/${user!.uid}/logo.jpg`);
+      await uploadBytes(storageRef, blob);
+      const downloadURL = await getDownloadURL(storageRef);
+      // Cache-busting para forzar refresco visual inmediato
+      const urlActualizada = `${downloadURL}${downloadURL.includes('?') ? '&' : '?'}t=${new Date().getTime()}`;
+      // Actualizamos AMBOS documentos: perfil específico y colección 'usuarios'
+      await Promise.all([
+        updateDoc(doc(db, 'perfiles_empresas', user!.uid), { logo_url: urlActualizada }),
+        updateDoc(doc(db, 'usuarios', user!.uid), { foto_url: urlActualizada }),
+      ]);
+      // Estado local inmediato
+      setPerfil(prev => (prev ? { ...prev, logo_url: urlActualizada } : prev));
+    } catch {
+      Alert.alert('Error', 'No se pudo subir el logo.');
     } finally {
       setUploadingLogo(false);
     }
   };
 
-  // ── Helpers de render ─────────────────────────────────────────────────────
-
-  const stateColor = (estado: string) => {
-    const col = KANBAN_COLS.find((k) => k.key === estado);
-    return col?.color ?? C.muted;
+  // ── Planes comerciales visibles (precio dinámico según período) ────
+  const obtenerPlanesVisibles = () => {
+    return [
+      {
+        id: 'mensual', // Guarda como 'mensual' en Firestore para mantener compatibilidad
+        nombre: 'Plan Básico',
+        precio: periodoPlanes === 'mensual' ? '$9.99/mes' : '$49.99/año',
+        beneficios: [
+          'Hasta 10 vacantes activas simultáneas',
+          'Hasta 5 alianzas estratégicas con universidades',
+          'Acceso completo a métricas básicas de postulantes',
+          'Soporte estándar vía correo electrónico',
+        ],
+      },
+      {
+        id: 'premium', // Guarda como 'premium' en Firestore para mantener compatibilidad
+        nombre: 'Plan Premium',
+        precio: periodoPlanes === 'mensual' ? '$24.99/mes' : '$149.99/año',
+        beneficios: [
+          'Vacantes activas e históricas ILIMITADAS',
+          'Alianzas con universidades ILIMITADAS',
+          'Insignia de Empresa Verificada (Gold Star)',
+          'Acceso prioritario a graduados destacados',
+          'Soporte 24/7 con ejecutivo asignado',
+        ],
+      },
+    ];
   };
 
-  const fmtDate = (d: string) =>
-    new Date(d).toLocaleDateString("es-SV", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+  // ── Procesar mejora de plan (pago simulado) ────────────────────────
+  const confirmarMejoraPlan = async () => {
+    if (!planToUpgrade || !user) return;
+    setUpgradeProcessing(true);
+    try {
+      // Determinamos si es un "upgrade" (mejora) para mostrar el modal de bienvenida
+      const isUpgrade = (perfil?.plan === 'gratuito') || (perfil?.plan === 'mensual' && planToUpgrade === 'premium');
 
-  // ── Sección INICIO ────────────────────────────────────────────────────────
-
-  const renderInicio = () => (
-    <ScrollView
-      contentContainerStyle={[st.scroll]}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={C.purple}
-        />
+      const dataUpdates: any = { plan: planToUpgrade };
+      if (planToUpgrade === 'mensual') {
+        dataUpdates.limiteVacantes = 10;
+        dataUpdates.limiteAlianzas = 5;
+        dataUpdates.premium = false;
+      } else if (planToUpgrade === 'premium') {
+        dataUpdates.limiteVacantes = 9999;
+        dataUpdates.limiteAlianzas = 9999;
+        dataUpdates.premium = true;
+        dataUpdates.verificado = true; // El plan Premium incluye insignia de verificado
       }
-    >
-      {/* Banner empresa */}
-      <View style={[st.empresaBanner, { backgroundColor: C.surface, borderColor: C.border }]}>
-        <TouchableOpacity onPress={cambiarLogo} style={st.logoWrap}>
-          {uploadingLogo ? (
-            <ActivityIndicator color={C.purple} />
-          ) : empresa?.foto_logo ? (
-            <Image source={{ uri: empresa.foto_logo }} style={st.logoImg} />
-          ) : (
-            <Ionicons name="business-outline" size={28} color={C.purple} />
-          )}
-          <View style={[st.editBadge, { backgroundColor: C.purple }]}>
-            <Ionicons name="camera-outline" size={10} color="#fff" />
-          </View>
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={[st.empresaNombre, { color: C.text }]}>
-            {empresa?.nombre ?? "Mi Empresa"}
-          </Text>
-          <Text style={[st.empresaSector, { color: C.muted }]}>
-            {empresa?.industria ?? empresa?.sector ?? "—"}
-          </Text>
-        </View>
-      </View>
 
-      {/* 4 métricas */}
-      <Text style={[st.sectionLabel, { color: C.muted }]}>RESUMEN DEL MES</Text>
-      <View style={st.metricsGrid}>
-        {[
-          { label: "Vacantes activas", val: metVacantes, icon: "briefcase-outline", color: C.purple },
-          { label: "Candidatos (mes)", val: metCandidatos, icon: "people-outline", color: C.green },
-          { label: "Horas activas", val: metHoras, icon: "time-outline", color: C.yellow },
-          { label: "Evaluaciones (mes)", val: metEvaluaciones, icon: "star-outline", color: "#f59e0b" },
-        ].map((m) => (
-          <View key={m.label} style={[st.metCard, { backgroundColor: C.surface, borderColor: C.border }]}>
-            <Ionicons name={m.icon as any} size={22} color={m.color} />
-            <Text style={[st.metVal, { color: m.color }]}>{m.val}</Text>
-            <Text style={[st.metLabel, { color: C.muted }]}>{m.label}</Text>
-          </View>
-        ))}
-      </View>
+      // Actualizamos la BD
+      await updateDoc(doc(db, 'perfiles_empresas', user.uid), dataUpdates);
 
-      {/* Acciones rápidas */}
-      <Text style={[st.sectionLabel, { color: C.muted }]}>ACCIONES RÁPIDAS</Text>
-      <View style={st.quickActions}>
-        <TouchableOpacity
-          style={[st.qaBtn, { backgroundColor: C.purple }]}
-          onPress={() => { checkPlanYAbrirModal(); setTab("vacantes"); }}
-        >
-          <Ionicons name="add-circle-outline" size={18} color="#fff" />
-          <Text style={st.qaBtnText}>Nueva vacante</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[st.qaBtn, { backgroundColor: C.surface, borderColor: C.purpleBorder, borderWidth: 1 }]}
-          onPress={() => setTab("candidatos")}
-        >
-          <Ionicons name="people-outline" size={18} color={C.purple} />
-          <Text style={[st.qaBtnText, { color: C.purple }]}>Ver candidatos</Text>
-        </TouchableOpacity>
-      </View>
+      setShowConfirmUpgradeModal(false);
+      setShowUpgradeSuccessModal(true);
 
-      {/* Vacantes recientes */}
-      <Text style={[st.sectionLabel, { color: C.muted }]}>VACANTES RECIENTES</Text>
-      {vacantes.slice(0, 3).length === 0 ? (
-        <View style={[st.emptyCard, { backgroundColor: C.surface, borderColor: C.purpleBorder }]}>
-          <Ionicons name="briefcase-outline" size={32} color={C.muted} />
-          <Text style={[st.emptyText, { color: C.muted }]}>
-            Aún no has publicado vacantes.
-          </Text>
-        </View>
-      ) : (
-        vacantes.slice(0, 3).map((v) => (
-          <TouchableOpacity
-            key={v.id}
-            style={[st.vacanteRow, { backgroundColor: C.surface, borderColor: C.border }]}
-            onPress={() => { setSelectedVacante(v); setShowVacanteDetail(true); }}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={[st.vacanteTitle, { color: C.text }]}>{v.titulo}</Text>
-              <Text style={[st.vacanteSub, { color: C.muted }]}>
-                {v.area} · {v.modalidad?.toUpperCase()}
-              </Text>
-            </View>
-            <View style={[st.estadoBadge, { backgroundColor: v.estado === "activa" ? C.greenBg : C.redBg }]}>
-              <Text style={{ fontSize: 11, color: v.estado === "activa" ? C.green : C.red, fontWeight: "600" }}>
-                {v.estado === "activa" ? "Activa" : "Cerrada"}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))
-      )}
+      // Cadenas de modales y recarga visual
+      setTimeout(() => {
+        setShowUpgradeSuccessModal(false);
+        setShowPlanUpgradeModal(false);
+        if (isUpgrade) {
+          setNewPlanInfo(planToUpgrade);
+          setShowWelcomePlanModal(true);
+          setSeccion('inicio'); // Recarga a la sección de inicio
+        }
+      }, 2500);
 
-      {/* Explorador */}
-      <Text style={[st.sectionLabel, { color: C.muted, marginTop: 8 }]}>EXPLORAR TALENTOS</Text>
-      <BuscadorExplorador
-        viewerUserId={userId ?? ""}
-        theme={isDark ? "dark" : "light"}
-        tabs={["talentos", "alumnos"]}
-      />
-    </ScrollView>
-  );
-
-  // ── Sección VACANTES ──────────────────────────────────────────────────────
-
-  const renderVacantes = () => (
-    <ScrollView
-      contentContainerStyle={st.scroll}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} />}
-    >
-      <TouchableOpacity
-        style={[st.createBtn, { backgroundColor: C.purple }]}
-        onPress={checkPlanYAbrirModal}
-      >
-        <Ionicons name="add-circle-outline" size={20} color="#fff" />
-        <Text style={st.createBtnText}>Publicar nueva vacante</Text>
-      </TouchableOpacity>
-
-      {vacantes.length === 0 ? (
-        <View style={[st.emptyCard, { backgroundColor: C.surface, borderColor: C.purpleBorder }]}>
-          <Ionicons name="briefcase-outline" size={36} color={C.muted} />
-          <Text style={[st.emptyText, { color: C.muted }]}>No tienes vacantes publicadas aún.</Text>
-        </View>
-      ) : (
-        vacantes.map((v) => (
-          <View key={v.id} style={[st.vacanteCard, { backgroundColor: C.surface, borderColor: C.border }]}>
-            <TouchableOpacity
-              style={{ flex: 1 }}
-              onPress={() => { setSelectedVacante(v); setShowVacanteDetail(true); }}
-            >
-              <Text style={[st.vacanteTitle, { color: C.text }]}>{v.titulo}</Text>
-              <Text style={[st.vacanteSub, { color: C.muted }]}>
-                {v.area} · {v.modalidad?.toUpperCase()} · {fmtDate(v.created_at)}
-              </Text>
-            </TouchableOpacity>
-            <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-              <View style={[st.estadoBadge, { backgroundColor: v.estado === "activa" ? C.greenBg : C.redBg }]}>
-                <Text style={{ fontSize: 11, color: v.estado === "activa" ? C.green : C.red, fontWeight: "600" }}>
-                  {v.estado === "activa" ? "Activa" : "Cerrada"}
-                </Text>
-              </View>
-              {v.estado === "activa" && (
-                <TouchableOpacity onPress={() => cerrarVacante(v.id)}>
-                  <Ionicons name="close-circle-outline" size={22} color={C.red} />
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity onPress={() => eliminarVacante(v.id)}>
-                <Ionicons name="trash-outline" size={20} color={C.muted} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))
-      )}
-    </ScrollView>
-  );
-
-  // ── Sección CANDIDATOS ────────────────────────────────────────────────────
-
-  const renderCandidatos = () => {
-    const filtrados = aplicaciones.filter((a) => a.estado === kanbanTab);
-
-    return (
-      <View style={{ flex: 1 }}>
-        {/* Tabs kanban */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ paddingHorizontal: 16, paddingTop: 12, maxHeight: 52 }}
-          contentContainerStyle={{ gap: 8 }}
-        >
-          {KANBAN_COLS.map((col) => {
-            const cnt = aplicaciones.filter((a) => a.estado === col.key).length;
-            const active = kanbanTab === col.key;
-            return (
-              <TouchableOpacity
-                key={col.key}
-                style={[
-                  st.kanbanTab,
-                  { borderColor: col.color, backgroundColor: active ? col.color : "transparent" },
-                ]}
-                onPress={() => setKanbanTab(col.key)}
-              >
-                <Text style={{ color: active ? "#fff" : col.color, fontSize: 12, fontWeight: "600" }}>
-                  {col.label} ({cnt})
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {loadingCand ? (
-          <ActivityIndicator color={C.purple} style={{ marginTop: 40 }} />
-        ) : (
-          <ScrollView contentContainerStyle={st.scroll}>
-            {filtrados.length === 0 ? (
-              <View style={[st.emptyCard, { backgroundColor: C.surface, borderColor: C.purpleBorder }]}>
-                <Ionicons name="people-outline" size={36} color={C.muted} />
-                <Text style={[st.emptyText, { color: C.muted }]}>
-                  No hay candidatos en esta etapa.
-                </Text>
-              </View>
-            ) : (
-              filtrados.map((ap) => (
-                <View key={ap.id} style={[st.candCard, { backgroundColor: C.surface, borderColor: C.border, flexDirection: "column", gap: 10 }]}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                    <View style={[st.candAvatar, { backgroundColor: C.purpleDim }]}>
-                      {ap._solicitante?.foto_perfil ? (
-                        <Image source={{ uri: ap._solicitante.foto_perfil }} style={{ width: 40, height: 40, borderRadius: 20 }} />
-                      ) : (
-                        <Text style={{ color: C.purple, fontSize: 16, fontWeight: "700" }}>
-                          {ap._solicitante?.nombre?.[0]?.toUpperCase() ?? "?"}
-                        </Text>
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: C.text, fontWeight: "700", fontSize: 14 }}>
-                        {ap._solicitante?.nombre ?? "Sin nombre"}
-                      </Text>
-                      <Text style={{ color: C.muted, fontSize: 12 }}>
-                        {ap.vacantes?.titulo ?? "Vacante eliminada"}
-                      </Text>
-                      {(ap.estado === "entrevista" || ap.estado === "contratada") && (
-                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
-                          <Text style={{ color: C.purple, fontSize: 11 }}>
-                            📧 {ap._solicitante?.email ?? "—"}
-                          </Text>
-                          {ap._solicitante?.telefono ? (
-                            <Text style={{ color: C.purple, fontSize: 11 }}>
-                              📞 {ap._solicitante.telefono}
-                            </Text>
-                          ) : null}
-                        </View>
-                      )}
-                    </View>
-                  </View>
-
-                  {/* Action buttons por estado */}
-                  {ap.estado !== "rechazada" && ap.estado !== "contratada" && (
-                    <View style={{ flexDirection: "row", gap: 8 }}>
-                      {(ap.estado === "pendiente" || ap.estado === "en_revision") && (
-                        <TouchableOpacity
-                          style={[st.candActionBtn, { backgroundColor: C.purpleDim, borderColor: C.purpleBorder, flex: 1 }]}
-                          onPress={() => {
-                            setSelectedCand(ap);
-                            setShowAgendarModal(true);
-                          }}
-                        >
-                          <Ionicons name="calendar-outline" size={14} color={C.purple} />
-                          <Text style={{ color: C.purple, fontSize: 12, fontWeight: "600" }}>Agendar</Text>
-                        </TouchableOpacity>
-                      )}
-
-                      {ap.estado === "entrevista" && (
-                        <TouchableOpacity
-                          style={[st.candActionBtn, { backgroundColor: C.greenBg, borderColor: C.greenBorder, flex: 1 }]}
-                          onPress={() => contratar(ap)}
-                          disabled={contratando === ap.id}
-                        >
-                          {contratando === ap.id ? (
-                            <ActivityIndicator size="small" color={C.green} />
-                          ) : (
-                            <>
-                              <Ionicons name="checkmark-circle-outline" size={14} color={C.green} />
-                              <Text style={{ color: C.green, fontSize: 12, fontWeight: "600" }}>Contratar</Text>
-                            </>
-                          )}
-                        </TouchableOpacity>
-                      )}
-
-                      <TouchableOpacity
-                        style={[st.candActionBtn, { backgroundColor: C.redBg, borderColor: C.red }]}
-                        onPress={() => {
-                          setSelectedCand(ap);
-                          setShowRechazarModal(true);
-                        }}
-                      >
-                        <Ionicons name="close-circle-outline" size={14} color={C.red} />
-                        <Text style={{ color: C.red, fontSize: 12, fontWeight: "600" }}>Rechazar</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              ))
-            )}
-          </ScrollView>
-        )}
-      </View>
-    );
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'No se pudo procesar el pago o actualizar el plan.');
+    } finally {
+      setUpgradeProcessing(false);
+    }
   };
 
-  // ── Sección HORAS SOCIALES ────────────────────────────────────────────────
+  const [seccion,     setSeccion]     = useState<SeccionEmpresa>('inicio');
+  const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
+  const [perfil,      setPerfil]      = useState<PerfilEmpresa | null>(null);
+  const [vacantes,    setVacantes]    = useState<Vacante[]>([]);
+  const [apps,        setApps]        = useState<Aplicacion[]>([]);
+  const [vacanteSeleccionada, setVacanteSeleccionada] = useState<Vacante | null>(null);
 
-  const renderHoras = () => {
-    const filtradas = solicitudes.filter((s) => s.estado === horasTab);
-    const tabLabels = ["pendiente", "en_revision", "aprobada", "cerrada"];
+  // Modales
+  const [showNuevaVacante,  setShowNuevaVacante]  = useState(false);
+  const [showCardModal,     setShowCardModal]      = useState(false);
+  const [showFirmaModal,    setShowFirmaModal]     = useState<Aplicacion | null>(null);
+  const [showPagoModal,     setPagoModal]          = useState<Aplicacion | null>(null);
+  const [pagoProcesando,    setPagoProcesando]     = useState(false);
+  const [pagoMonto,         setPagoMonto]          = useState('');
+  const [firmaConfirmada,   setFirmaConfirmada]    = useState(false);
 
-    return (
-      <View style={{ flex: 1 }}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ paddingHorizontal: 16, paddingTop: 12, maxHeight: 52 }}
-          contentContainerStyle={{ gap: 8 }}
-        >
-          {tabLabels.map((t) => {
-            const cnt = solicitudes.filter((s) => s.estado === t).length;
-            const active = horasTab === t;
-            return (
-              <TouchableOpacity
-                key={t}
-                style={[
-                  st.kanbanTab,
-                  { borderColor: C.purpleBorder, backgroundColor: active ? C.purple : "transparent" },
-                ]}
-                onPress={() => setHorasTab(t)}
-              >
-                <Text style={{ color: active ? "#fff" : C.purple, fontSize: 12, fontWeight: "600" }}>
-                  {t.charAt(0).toUpperCase() + t.slice(1).replace("_", " ")} ({cnt})
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+  // Formulario nueva vacante
+  const [nvTitulo,   setNvTitulo]   = useState('');
+  const [nvArea,     setNvArea]     = useState('');
+  const [nvModalidad,setNvModalidad]= useState('');
+  const [nvTipo,     setNvTipo]     = useState('');
+  const [nvDesc,     setNvDesc]     = useState('');
+  const [nvHoras,    setNvHoras]    = useState('');
+  const [nvHorasSem, setNvHorasSem] = useState('');
+  const [nvSkills,   setNvSkills]   = useState('');
+  const [nvFechaLim, setNvFechaLim] = useState('');
+  // Campo dinámico cuando el área seleccionada es "Otra".
+  const [nvAreaOtra, setNvAreaOtra] = useState('');
+  // Errores de validación en tiempo real por campo ('' = válido).
+  const [nvErrors, setNvErrors] = useState<Record<string, string>>({});
 
-        {loadingHoras ? (
-          <ActivityIndicator color={C.purple} style={{ marginTop: 40 }} />
-        ) : (
-          <ScrollView contentContainerStyle={st.scroll}>
-            {filtradas.length === 0 ? (
-              <View style={[st.emptyCard, { backgroundColor: C.surface, borderColor: C.purpleBorder }]}>
-                <Ionicons name="time-outline" size={36} color={C.muted} />
-                <Text style={[st.emptyText, { color: C.muted }]}>
-                  No hay solicitudes en esta etapa.
-                </Text>
-              </View>
-            ) : (
-              filtradas.map((s) => (
-                <View key={s.id} style={[st.solicitudCard, { backgroundColor: C.surface, borderColor: C.border }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[{ color: C.text, fontWeight: "700", fontSize: 14 }]}>
-                      {s.universidades?.nombre ?? "Universidad"}
-                    </Text>
-                    <Text style={[{ color: C.muted, fontSize: 12 }]}>
-                      {s.grupos?.nombre_grupo ?? "Grupo"} · {s.grupos?.especialidad ?? ""}
-                    </Text>
-                    <Text style={[{ color: C.muted, fontSize: 11, marginTop: 2 }]}>
-                      {s.grupos?.horas_requeridas ?? "?"} horas requeridas
-                    </Text>
-                    {s.fecha_inicio && (
-                      <Text style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
-                        {fmtDate(s.fecha_inicio)} – {s.fecha_fin ? fmtDate(s.fecha_fin) : "—"}
-                      </Text>
-                    )}
-                  </View>
-                  <View style={{ gap: 6 }}>
-                    {s.estado === "pendiente" && (
-                      <>
-                        <TouchableOpacity
-                          style={[st.smallBtn, { backgroundColor: C.purpleDim, borderColor: C.purpleBorder, borderWidth: 1 }]}
-                          onPress={() => {
-                            setSelectedSolicitud(s);
-                            setShowPropuestaModal(true);
-                          }}
-                        >
-                          <Text style={{ color: C.purple, fontSize: 11, fontWeight: "700" }}>Proponer</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[st.smallBtn, { backgroundColor: C.green }]}
-                          onPress={() => aprobarSolicitud(s.id)}
-                        >
-                          <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Aprobar</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[st.smallBtn, { backgroundColor: C.redBg, borderColor: C.red, borderWidth: 1 }]}
-                          onPress={async () => {
-                            await supabase
-                              .from("solicitudes_horas")
-                              .update({ estado: "rechazada" })
-                              .eq("id", s.id);
-                            setSolicitudes((p) => p.map((x) => x.id === s.id ? { ...x, estado: "rechazada" } : x));
-                            toast("Solicitud rechazada.", "info");
-                          }}
-                        >
-                          <Text style={{ color: C.red, fontSize: 11, fontWeight: "700" }}>Rechazar</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                    {s.estado === "en_revision" && (
-                      <TouchableOpacity
-                        style={[st.smallBtn, { backgroundColor: C.green }]}
-                        onPress={() => aprobarSolicitud(s.id)}
-                      >
-                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Aprobar</Text>
-                      </TouchableOpacity>
-                    )}
-                    {s.estado === "aprobada" && (
-                      <TouchableOpacity
-                        style={[st.smallBtn, { backgroundColor: C.purple }]}
-                        onPress={() => {
-                          setEvalGrupoId(s.grupo_id ?? "");
-                          setEvalEstudiante({ id: s.grupo_id, nombre: s.grupos?.nombre_grupo });
-                          setShowEvalModal(true);
-                        }}
-                      >
-                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>Evaluar</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              ))
-            )}
-          </ScrollView>
-        )}
-      </View>
-    );
+  // ── Mapa interactivo / ubicación de la vacante ──
+  const [mapRegion, setMapRegion] = useState({ latitude: 13.6929, longitude: -89.2182, latitudeDelta: 0.0922, longitudeDelta: 0.0421 });
+  const [markerPos, setMarkerPos] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [ubicacionDetalle, setUbicacionDetalle] = useState({ direccion: '', municipio: '', departamento: '', pais: '' });
+  const [procesandoUbicacion, setProcesandoUbicacion] = useState(false);
+  const [savingVac,  setSavingVac]  = useState(false);
+
+  // Estado del modal dinámico (Liquid Glass) para el guardado de la vacante
+  const [estadoGuardado, setEstadoGuardado] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [mensajeErrorGuardado, setMensajeErrorGuardado] = useState('');
+
+  // Tarjeta (mismas reglas estrictas que el registro)
+  const [cardNumero,  setCardNumero]  = useState('');
+  const [cardExp,     setCardExp]     = useState('');
+  const [cardCvv,     setCardCvv]     = useState('');
+  const [cardTitular, setCardTitular] = useState('');
+  const [cardErrs,    setCardErrs]    = useState<Record<string, string>>({});
+  const [cardSaving,  setCardSaving]  = useState(false);
+
+  // Detalle de plan
+  const [showPlanDetail, setShowPlanDetail] = useState(false);
+
+  // Estados para el flujo de facturación y planes
+  const [showPlanUpgradeModal, setShowPlanUpgradeModal] = useState(false);
+  const [planToUpgrade, setPlanToUpgrade] = useState<'mensual' | 'premium' | null>(null);
+  const [showConfirmUpgradeModal, setShowConfirmUpgradeModal] = useState(false);
+  const [upgradeProcessing, setUpgradeProcessing] = useState(false);
+  const [showUpgradeSuccessModal, setShowUpgradeSuccessModal] = useState(false);
+  const [showWelcomePlanModal, setShowWelcomePlanModal] = useState(false);
+  const [newPlanInfo, setNewPlanInfo] = useState<'mensual' | 'premium' | null>(null);
+  const [periodoPlanes, setPeriodoPlanes] = useState<'mensual' | 'anual'>('mensual');
+
+  // ── Vista detallada de un candidato (sección Reclutar / Kanban) ──
+  const [candidatoSeleccionado, setCandidatoSeleccionado] = useState<any | null>(null);
+  const [showRechazoModal, setShowRechazoModal] = useState(false);
+  const [motivoRechazo, setMotivoRechazo] = useState('');
+  const [ratingEstudiante, setRatingEstudiante] = useState(0);
+
+  // ── Firestore subscriptions ──────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(doc(db, 'perfiles_empresas', user.uid), snap => {
+      if (snap.exists()) setPerfil(snap.data() as PerfilEmpresa);
+    });
+    return unsub;
+  }, [user]);
+
+  // Badge de mensajes no leídos del usuario
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribeUnreadTotal(user.uid, setMensajesNoLeidos);
+    return unsub;
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'vacantes'), where('empresa_id', '==', user.uid));
+    const unsub = onSnapshot(q, snap => {
+      setVacantes(snap.docs.map(d => ({ id: d.id, ...d.data() } as Vacante)));
+    });
+    return unsub;
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'aplicaciones'), where('empresa_id', '==', user.uid));
+    const unsub = onSnapshot(q, snap => {
+      setApps(snap.docs.map(d => ({ id: d.id, ...d.data() } as Aplicacion)));
+    });
+    return unsub;
+  }, [user]);
+
+  // ── Métricas ─────────────────────────────────────────────────────
+  const metricas = useMemo(() => ({
+    vacantesActivas: vacantes.filter(v => v.activa).length,
+    pendientes:      apps.filter(a => a.estado === 'pendiente').length,
+    activos:         apps.filter(a => a.estado === 'contratado').length,
+    horasValidadas:  apps.reduce((acc, a) => acc + (a.horas_completadas ?? 0), 0),
+  }), [vacantes, apps]);
+
+  // ── Límite de vacantes según el plan ─────────────────────────────
+  const limiteVacantes   = perfil?.limiteVacantes ?? 2;
+  const vacantesRestantes = Math.max(0, limiteVacantes - metricas.vacantesActivas);
+  const puedeCrearVacante = vacantesRestantes > 0;
+
+  // ── Punto único de aplicación de coordenadas (precedencia: la última acción manda) ─
+  // Los métodos (GPS, toque en mapa) llaman aquí y sobreescriben los estados compartidos.
+  // Geocodificación inversa gratuita vía Nominatim (OpenStreetMap), sin API key.
+  const aplicarCoordenadas = async (lat: number, lng: number) => {
+    // 1) Sincronización visual inmediata: pin + región enfocada.
+    setMarkerPos({ latitude: lat, longitude: lng });
+    setMapRegion(prev => ({ ...prev, latitude: lat, longitude: lng, latitudeDelta: 0.01, longitudeDelta: 0.01 }));
+    setProcesandoUbicacion(true);
+
+    try {
+      // En web el navegador prohíbe modificar 'User-Agent' (provoca error CORS),
+      // así que solo lo enviamos en móvil. En web basta con el idioma.
+      const headersPeticion: Record<string, string> = Platform.OS === 'web'
+        ? { 'Accept-Language': 'es' }
+        : { 'User-Agent': 'MiAppExpo/1.0', 'Accept-Language': 'es' };
+
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+        { headers: headersPeticion }
+      );
+      const data = await response.json();
+
+      if (data && data.address) {
+        // Aviso NO destructivo: si Nominatim devuelve explícitamente otro país,
+        // avisamos pero conservamos las coordenadas (nunca borramos markerPos).
+        // Si no trae country_code (respuesta parcial / límite de peticiones),
+        // asumimos válida para no perder el punto marcado.
+        if (data.address.country_code && data.address.country_code !== 'sv') {
+          Alert.alert('Atención', 'La ubicación marcada parece estar fuera de El Salvador. Verifica el punto antes de publicar.');
+        }
+        setUbicacionDetalle({
+          direccion: data.display_name || '',
+          municipio: data.address.city || data.address.town || data.address.village || data.address.municipality || '',
+          departamento: data.address.state || '',
+          pais: data.address.country || 'El Salvador'
+        });
+      } else {
+        // Geocodificación sin detalle: conservamos las coordenadas (markerPos ya
+        // quedó fijado) y mostramos un texto neutro, sin exponer lat/lng en la UI.
+        setUbicacionDetalle({
+          direccion: 'Ubicación seleccionada',
+          municipio: '',
+          departamento: '',
+          pais: 'El Salvador',
+        });
+      }
+    } catch (error) {
+      console.error("Error Nominatim:", error);
+      // La geocodificación es solo informativa: si falla, conservamos las
+      // coordenadas (markerPos ya quedó fijado) sin exponer lat/lng en la UI.
+      setUbicacionDetalle({
+        direccion: 'Ubicación seleccionada',
+        municipio: '',
+        departamento: '',
+        pais: 'El Salvador',
+      });
+    } finally {
+      setProcesandoUbicacion(false);
+    }
   };
 
-  // ── Sección MI PERFIL ─────────────────────────────────────────────────────
+  // ── Método A: capturar ubicación GPS actual (web + móvil) ───────
+  const capturarUbicacion = async () => {
+    try {
+      setProcesandoUbicacion(true);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permisos', 'Necesitamos acceso a la ubicación.');
+        setProcesandoUbicacion(false);
+        return;
+      }
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      // Delegamos en el punto único: fija pin, reenfoca el mapa y resuelve el detalle.
+      await aplicarCoordenadas(location.coords.latitude, location.coords.longitude);
+    } catch (error: any) {
+      Alert.alert('Error de Mapa', error?.message || 'No se pudo obtener la ubicación.');
+      setProcesandoUbicacion(false);
+    }
+  };
 
-  const renderPerfil = () => (
-    <ScrollView contentContainerStyle={st.scroll}>
-      {/* Header con logo y botón editar/cancelar */}
-      <View style={[st.perfilHeader, { backgroundColor: C.surface, borderColor: C.border }]}>
-        <TouchableOpacity onPress={perfilMode === "edit" ? cambiarLogo : undefined} style={[st.logoWrap, { width: 72, height: 72 }]}>
-          {uploadingLogo ? (
-            <ActivityIndicator color={C.purple} />
-          ) : empresa?.foto_logo ? (
-            <Image source={{ uri: empresa.foto_logo }} style={{ width: 72, height: 72, borderRadius: 12 }} />
-          ) : (
-            <Ionicons name="business-outline" size={32} color={C.purple} />
-          )}
-          {perfilMode === "edit" && (
-            <View style={[st.editBadge, { backgroundColor: C.purple }]}>
-              <Ionicons name="camera-outline" size={10} color="#fff" />
-            </View>
-          )}
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: C.text, fontWeight: "700", fontSize: 16 }}>{empresa?.nombre ?? "Mi Empresa"}</Text>
-          <Text style={{ color: C.muted, fontSize: 12 }}>{empresa?.industria ?? "—"}</Text>
-        </View>
-        <TouchableOpacity
-          style={[st.editToggleBtn, { borderColor: C.purpleBorder, backgroundColor: perfilMode === "edit" ? C.purpleDim : "transparent" }]}
-          onPress={() => setPerfilMode(perfilMode === "view" ? "edit" : "view")}
-        >
-          <Ionicons name={perfilMode === "edit" ? "close-outline" : "create-outline"} size={16} color={C.purple} />
-          <Text style={{ color: C.purple, fontSize: 12, fontWeight: "600" }}>
-            {perfilMode === "edit" ? "Cancelar" : "Editar"}
-          </Text>
-        </TouchableOpacity>
-      </View>
+  // ── Método B: toque directo en el mapa ──────────────────────────
+  const marcarDesdeMapa = (coord: { latitude: number; longitude: number }) => {
+    aplicarCoordenadas(coord.latitude, coord.longitude);
+  };
 
-      {perfilMode === "view" ? (
-        /* ── Vista de lectura ── */
-        <View>
-          <Text style={[st.sectionLabel, { color: C.muted }]}>INFORMACIÓN DE LA EMPRESA</Text>
-          {[
-            { label: "Nombre", val: empresa?.nombre },
-            { label: "Descripción", val: empresa?.descripcion },
-            { label: "Teléfono", val: empresa?.telefono },
-            { label: "Email corporativo", val: empresa?.email_corporativo },
-            { label: "Sitio web", val: empresa?.web },
-            { label: "Instagram", val: empresa?.instagram },
-            { label: "Facebook", val: empresa?.facebook },
-            { label: "Departamento", val: empresa?.departamento },
-            { label: "Ciudad", val: empresa?.ciudad },
-            { label: "Dirección", val: empresa?.direccion },
-          ].map((f) =>
-            f.val ? (
-              <View key={f.label} style={[st.viewField, { borderBottomColor: C.border }]}>
-                <Text style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>{f.label}</Text>
-                <Text style={{ color: C.text, fontSize: 14 }}>{f.val}</Text>
-              </View>
-            ) : null
-          )}
+  // ── Validación en tiempo real (onChange por campo) ───────────────
+  const setErr = (key: string, msg: string) => setNvErrors(prev => ({ ...prev, [key]: msg }));
 
-          {/* Datos del representante */}
-          {(empresa?.representante_nombre || empresa?.representante_cargo) && (
-            <>
-              <Text style={[st.sectionLabel, { color: C.muted, marginTop: 16 }]}>DATOS DEL REPRESENTANTE</Text>
-              {[
-                { label: "Nombre", val: empresa?.representante_nombre },
-                { label: "Cargo", val: empresa?.representante_cargo },
-                { label: "Email", val: empresa?.representante_email },
-                { label: "Teléfono", val: empresa?.representante_telefono },
-              ].map((f) =>
-                f.val ? (
-                  <View key={f.label} style={[st.viewField, { borderBottomColor: C.border }]}>
-                    <Text style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>{f.label}</Text>
-                    <Text style={{ color: C.text, fontSize: 14 }}>{f.val}</Text>
-                  </View>
-                ) : null
-              )}
-            </>
-          )}
+  const onChangeTitulo   = (v: string) => { setNvTitulo(v);   setErr('titulo', valTitulo(v)); };
+  const onChangeDesc     = (v: string) => { setNvDesc(v);     setErr('desc', valDesc(v)); };
+  const onChangeSkills   = (v: string) => { setNvSkills(v);   setErr('skills', valSkills(v)); };
+  const onChangeAreaOtra = (v: string) => { setNvAreaOtra(v); setErr('areaOtra', valAreaOtra(v)); };
 
-          {/* Acciones de cuenta */}
-          <Text style={[st.sectionLabel, { color: C.muted, marginTop: 20 }]}>CUENTA</Text>
-          {[
-            { label: "Cambiar contraseña", icon: "lock-closed-outline", onPress: () => setShowCambiarPass(true) },
-            { label: "Acerca de Gradly", icon: "information-circle-outline", onPress: () => setShowAcercaModal(true) },
-            { label: "Ayuda y soporte", icon: "help-circle-outline", onPress: () => setShowAyudaModal(true) },
-          ].map((item) => (
-            <TouchableOpacity
-              key={item.label}
-              style={[st.accountRow, { backgroundColor: C.surface, borderColor: C.border }]}
-              onPress={item.onPress}
-            >
-              <Ionicons name={item.icon as any} size={20} color={C.purple} />
-              <Text style={{ color: C.text, fontSize: 14, flex: 1 }}>{item.label}</Text>
-              <Ionicons name="chevron-forward" size={16} color={C.muted} />
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : (
-        /* ── Modo edición ── */
-        <View>
-          <Text style={[st.sectionLabel, { color: C.muted }]}>INFORMACIÓN DE LA EMPRESA</Text>
-          {[
-            { label: "Nombre de la empresa", val: editNombre, set: setEditNombre },
-            { label: "Descripción", val: editDesc, set: setEditDesc, multi: true },
-            { label: "Teléfono", val: editTel, set: setEditTel, kb: "phone-pad" as const },
-            { label: "Email corporativo", val: editEmail, set: setEditEmail, kb: "email-address" as const },
-            { label: "Sitio web", val: editWeb, set: setEditWeb, kb: "url" as const },
-            { label: "Instagram", val: editInst, set: setEditInst },
-            { label: "Facebook", val: editFacebook, set: setEditFacebook },
-            { label: "Departamento", val: editDep, set: setEditDep },
-            { label: "Ciudad", val: editCiudad, set: setEditCiudad },
-            { label: "Dirección", val: editDireccion, set: setEditDireccion },
-          ].map((f) => (
-            <View key={f.label} style={{ marginBottom: 14 }}>
-              <Text style={[st.inputLabel, { color: C.muted }]}>{f.label}</Text>
-              <TextInput
-                style={[
-                  st.input,
-                  { color: C.text, backgroundColor: C.card, borderColor: C.border },
-                  f.multi && { height: 80, textAlignVertical: "top" },
-                ]}
-                value={f.val}
-                onChangeText={f.set}
-                multiline={f.multi}
-                keyboardType={f.kb ?? "default"}
-                placeholderTextColor={C.muted}
-              />
-            </View>
-          ))}
+  // Horas: solo dígitos; máx 3 cifras (totales) y 2 cifras (semanales).
+  const onChangeHoras    = (v: string) => { const c = v.replace(/\D/g, '').slice(0, 3); setNvHoras(c);    setErr('horas', valHoras(c)); };
+  const onChangeHorasSem = (v: string) => { const c = v.replace(/\D/g, '').slice(0, 2); setNvHorasSem(c); setErr('horasSem', valHorasSem(c)); };
 
-          <Text style={[st.sectionLabel, { color: C.muted, marginTop: 8 }]}>DATOS DEL REPRESENTANTE</Text>
-          {[
-            { label: "Nombre del representante", val: editRepNombre, set: setEditRepNombre },
-            { label: "Cargo", val: editRepCargo, set: setEditRepCargo },
-            { label: "Email del representante", val: editRepEmail, set: setEditRepEmail, kb: "email-address" as const },
-            { label: "Teléfono del representante", val: editRepTel, set: setEditRepTel, kb: "phone-pad" as const },
-          ].map((f) => (
-            <View key={f.label} style={{ marginBottom: 14 }}>
-              <Text style={[st.inputLabel, { color: C.muted }]}>{f.label}</Text>
-              <TextInput
-                style={[st.input, { color: C.text, backgroundColor: C.card, borderColor: C.border }]}
-                value={f.val}
-                onChangeText={f.set}
-                keyboardType={(f as any).kb ?? "default"}
-                placeholderTextColor={C.muted}
-              />
-            </View>
-          ))}
+  // Fecha: auto-formato YYYY-MM-DD mientras escribe.
+  const onChangeFecha    = (raw: string) => { const f = formatFecha(raw); setNvFechaLim(f); setErr('fecha', valFecha(f)); };
 
-          <TouchableOpacity
-            style={[st.createBtn, { backgroundColor: savingPerfil ? C.muted : C.purple }]}
-            onPress={guardarPerfil}
-            disabled={savingPerfil}
-          >
-            {savingPerfil ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-                <Text style={st.createBtnText}>Guardar cambios</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-    </ScrollView>
-  );
+  // Selecciones (chips): limpian su error; al cambiar de "Otra" se resetea el sub-campo.
+  const onSelectArea = (v: string) => {
+    setNvArea(v);
+    setNvErrors(prev => ({
+      ...prev,
+      area: v ? '' : 'Selecciona un área.',
+      ...(v !== 'Otra' ? { areaOtra: '' } : {}),
+    }));
+    if (v !== 'Otra') setNvAreaOtra('');
+  };
+  const onSelectModalidad = (v: string) => { setNvModalidad(v); setErr('modalidad', ''); };
+  const onSelectTipo      = (v: string) => { setNvTipo(v);      setErr('tipo', ''); };
 
-  // ── Estrellas helper ──────────────────────────────────────────────────────
+  // Validez global del formulario (recalcula sobre los valores actuales, no sobre
+  // nvErrors, para cubrir también los campos que el usuario aún no ha tocado).
+  // Se usa para atenuar/deshabilitar el botón Publicar (sin alerts).
+  const formularioValido = useMemo(() => {
+    if (valTitulo(nvTitulo)) return false;
+    if (!nvArea) return false;
+    if (nvArea === 'Otra' && valAreaOtra(nvAreaOtra)) return false;
+    if (!nvModalidad) return false;
+    if (!nvTipo) return false;
+    if (valDesc(nvDesc)) return false;
+    if (valHoras(nvHoras)) return false;
+    if (valHorasSem(nvHorasSem)) return false;
+    if (valSkills(nvSkills)) return false;
+    if (valFecha(nvFechaLim)) return false;
+    // Ubicación obligatoria para Presencial / Híbrido (mapa o GPS).
+    if ((nvModalidad === 'Presencial' || nvModalidad === 'Híbrido') && !markerPos) return false;
+    return true;
+  }, [nvTitulo, nvArea, nvAreaOtra, nvModalidad, nvTipo, nvDesc, nvHoras, nvHorasSem, nvSkills, nvFechaLim, markerPos]);
 
-  const Stars = ({ val, set }: { val: number; set: (n: number) => void }) => (
-    <View style={{ flexDirection: "row", gap: 6 }}>
-      {[1, 2, 3, 4, 5].map((n) => (
-        <TouchableOpacity key={n} onPress={() => set(n)}>
-          <Ionicons
-            name={n <= val ? "star" : "star-outline"}
-            size={26}
-            color={n <= val ? "#f59e0b" : C.muted}
-          />
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+  // ── Publicar vacante ─────────────────────────────────────────────
+  const handlePublicarVacante = async () => {
+    if (!puedeCrearVacante) {
+      Alert.alert(
+        'Límite alcanzado',
+        `Tu plan permite ${limiteVacantes} vacantes activas. Pausa una vacante o mejora tu plan para publicar más.`,
+      );
+      return;
+    }
+    // ── Validación maestra: recalcula TODOS los campos y aborta si hay errores ──
+    const errs: Record<string, string> = {
+      titulo:    valTitulo(nvTitulo),
+      area:      nvArea ? '' : 'Selecciona un área.',
+      modalidad: nvModalidad ? '' : 'Selecciona una modalidad.',
+      tipo:      nvTipo ? '' : 'Selecciona un tipo.',
+      desc:      valDesc(nvDesc),
+      horas:     valHoras(nvHoras),
+      horasSem:  valHorasSem(nvHorasSem),
+      skills:    valSkills(nvSkills),
+      fecha:     valFecha(nvFechaLim),
+    };
+    if (nvArea === 'Otra') errs.areaOtra = valAreaOtra(nvAreaOtra);
 
-  // ── Loading screen ────────────────────────────────────────────────────────
+    setNvErrors(errs);
+    if (Object.values(errs).some(Boolean)) {
+      Alert.alert('Revisa el formulario', 'Hay campos con errores o vacíos. Corrige los campos marcados en rojo.');
+      return;
+    }
 
-  if (loading) {
+    // Ubicación obligatoria para plazas Presencial / Híbrido
+    // (válida tanto por toque en el mapa como por "Capturar mi Ubicación Actual").
+    if ((nvModalidad === 'Presencial' || nvModalidad === 'Híbrido') && !markerPos) {
+      Alert.alert('Ubicación requerida', 'Marca la ubicación de la plaza en el mapa o usa "Capturar mi Ubicación Actual".');
+      return;
+    }
+
+    const horasTotales = Number(nvHoras);
+    const horasSemana  = Number(nvHorasSem);
+
+    // FIXED: activamos el modal dinámico PRIMERO (esto oculta el modal de vacante por el Fix 2),
+    //        y solo después marcamos savingVac para el indicador del botón.
+    setEstadoGuardado('loading');
+    setSavingVac(true);
+    try {
+      const nombre = perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? '';
+
+      // Construcción del objeto estrictamente limpio (Firestore bloquea valores undefined).
+      const payloadVacante: Record<string, any> = {
+        empresa_id:         user!.uid,
+        nombre_empresa:     nombre,
+        logo_empresa_url:   perfil?.logo_url || (user as any)?.photoURL || '',
+        titulo:             nvTitulo.trim(),
+        descripcion:        nvDesc.trim(),
+        modalidad:          nvModalidad,
+        tipo:               nvTipo,
+        area:               nvArea === 'Otra' ? nvAreaOtra.trim() : nvArea,
+        horas_requeridas:   horasTotales,
+        horas_semanales:    horasSemana,
+        skills_requeridas:  nvSkills.split(',').map(s => s.trim()).filter(Boolean),
+        fecha_publicacion:  serverTimestamp(),
+        fecha_creacion:     serverTimestamp(),
+        fecha_limite:       nvFechaLim || null,
+        activa:             true,
+        aplicantes_count:   0,
+        contratados_count:  0,
+        ubicacion_coords:   markerPos ? { latitude: markerPos.latitude, longitude: markerPos.longitude } : null,
+        ubicacion_texto:    markerPos ? {
+          direccion:    ubicacionDetalle.direccion || '',
+          municipio:    ubicacionDetalle.municipio || '',
+          departamento: ubicacionDetalle.departamento || '',
+          pais:         ubicacionDetalle.pais || '',
+        } : null,
+      };
+
+      // Sanitización extrema: elimina cualquier campo undefined que reviente el addDoc.
+      Object.keys(payloadVacante).forEach(key => {
+        if (payloadVacante[key] === undefined) delete payloadVacante[key];
+      });
+
+      const vacanteRef = await addDoc(collection(db, 'vacantes'), payloadVacante);
+      // Confirmación a la empresa (no bloquea el guardado de la vacante).
+      try {
+        await enviarNotificacion(
+          user?.uid ?? '',
+          'Vacante publicada',
+          `Tu vacante "${payloadVacante.titulo ?? ''}" se publicó correctamente y ya es visible para el talento.`,
+          'success',
+          vacanteRef.id,
+        );
+      } catch { /* la notificación no debe afectar el flujo principal */ }
+      // Éxito: mostramos el modal dinámico. El cierre/limpieza ocurre al aceptar
+      // (botón "Aceptar y Cerrar") o por el auto-cierre programado.
+      setEstadoGuardado('success');
+    } catch (error: any) {
+      console.error('Error BD Vacante:', error);
+      setMensajeErrorGuardado(error?.message || 'Ocurrió un problema inesperado.');
+      setEstadoGuardado('error');
+    }
+    finally { setSavingVac(false); }
+  };
+
+  // Cierra el modal de "Nueva vacante" y limpia el formulario tras un guardado exitoso.
+  const finalizarGuardadoExitoso = () => {
+    setEstadoGuardado('idle');
+    setShowNuevaVacante(false);
+    setNvTitulo(''); setNvArea(''); setNvModalidad(''); setNvTipo('');
+    setNvDesc(''); setNvHoras(''); setNvHorasSem(''); setNvSkills(''); setNvFechaLim('');
+    setNvAreaOtra(''); setNvErrors({});
+    setMarkerPos(null);
+    setUbicacionDetalle({ direccion: '', municipio: '', departamento: '', pais: '' });
+  };
+
+  // Auto-cierre de los modales de mensaje final (éxito/error) tras mostrarse.
+  // FIXED: inline la lógica de limpieza para evitar closure stale sobre
+  //        finalizarGuardadoExitoso (que no estaba en las dependencias del efecto).
+  useEffect(() => {
+    if (estadoGuardado === 'success') {
+      const t = setTimeout(() => {
+        // Mismo cuerpo que finalizarGuardadoExitoso, pero capturado correctamente.
+        setEstadoGuardado('idle');
+        setShowNuevaVacante(false);
+        setNvTitulo(''); setNvArea(''); setNvModalidad(''); setNvTipo('');
+        setNvDesc(''); setNvHoras(''); setNvHorasSem(''); setNvSkills(''); setNvFechaLim('');
+        setNvAreaOtra(''); setNvErrors({});
+        setMarkerPos(null);
+        setUbicacionDetalle({ direccion: '', municipio: '', departamento: '', pais: '' });
+      }, 2500);
+      return () => clearTimeout(t);
+    }
+    if (estadoGuardado === 'error') {
+      const t = setTimeout(() => setEstadoGuardado('idle'), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [estadoGuardado]);
+
+  // ── Toggle vacante activa ─────────────────────────────────────────
+  const toggleVacante = async (v: Vacante) => {
+    try {
+      await updateDoc(doc(db, 'vacantes', v.id), { activa: !v.activa });
+    } catch { Alert.alert('Error', 'No se pudo actualizar.'); }
+  };
+
+  // ── Mover Kanban (usa cambiarEstadoAplicacion del servicio) ──────
+  const moverEstado = async (app: Aplicacion, nuevoEstado: string) => {
+    if (nuevoEstado === 'contratado') {
+      Alert.alert('Confirmar contratación', `¿Contratar a ${app.estudiante_nombre}?`, [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Confirmar',
+          onPress: async () => {
+            try {
+              await cambiarEstadoAplicacion(app.id, nuevoEstado, app.vacante_id);
+            } catch { Alert.alert('Error', 'No se pudo actualizar.'); }
+          },
+        },
+      ]);
+    } else {
+      try {
+        await cambiarEstadoAplicacion(app.id, nuevoEstado);
+      } catch { Alert.alert('Error', 'No se pudo actualizar.'); }
+    }
+  };
+
+  // ── Acciones sobre un candidato (vista detallada del Kanban) ──────
+  const handleMandarEntrevista = async () => {
+    if (!candidatoSeleccionado) return;
+    try {
+      await updateDoc(doc(db, 'aplicaciones', candidatoSeleccionado.id), { estado: 'entrevista' });
+      // Notificar al estudiante
+      await addDoc(collection(db, 'notificaciones_app'), {
+        destinatario_id: candidatoSeleccionado.estudiante_id,
+        titulo: '¡Avanzaste a Entrevista!',
+        mensaje: `La empresa ha movido tu postulación a fase de Entrevista.`,
+        tipo: 'actualizacion_aplicacion',
+        leido: false,
+        fecha: serverTimestamp(),
+        referencia_id: candidatoSeleccionado.id,
+      });
+      Alert.alert('Éxito', 'Candidato movido a Entrevista');
+      setCandidatoSeleccionado(null);
+    } catch (error) { Alert.alert('Error', 'No se pudo actualizar.'); }
+  };
+
+  const handleRechazarCandidato = async () => {
+    if (!candidatoSeleccionado || motivoRechazo.trim() === '') return Alert.alert('Error', 'Escribe un motivo válido.');
+    try {
+      await updateDoc(doc(db, 'aplicaciones', candidatoSeleccionado.id), { estado: 'rechazado', motivo_rechazo: motivoRechazo });
+      await addDoc(collection(db, 'notificaciones_app'), {
+        destinatario_id: candidatoSeleccionado.estudiante_id,
+        titulo: 'Postulación rechazada',
+        mensaje: `Motivo: ${motivoRechazo}`,
+        tipo: 'actualizacion_aplicacion',
+        leido: false,
+        fecha: serverTimestamp(),
+        referencia_id: candidatoSeleccionado.id,
+      });
+      Alert.alert('Postulación rechazada', 'Se ha notificado al estudiante.');
+      setShowRechazoModal(false);
+      setMotivoRechazo('');
+      setCandidatoSeleccionado(null);
+    } catch (error) { Alert.alert('Error', 'No se pudo rechazar.'); }
+  };
+
+  const handleCalificarEstudiante = async (estrellas: number) => {
+    if (!candidatoSeleccionado) return;
+    setRatingEstudiante(estrellas);
+    try {
+      await addDoc(collection(db, 'evaluaciones_estudiantes'), {
+        estudiante_id: candidatoSeleccionado.estudiante_id,
+        empresa_id: user?.uid,
+        calificacion: estrellas,
+        fecha: serverTimestamp(),
+      });
+      Alert.alert('Gracias', 'Calificación guardada exitosamente.');
+    } catch (error) { Alert.alert('Error', 'No se pudo guardar la calificación.'); }
+  };
+
+  const descargarCV = (cvUrl: string) => {
+    if (cvUrl) { Linking.openURL(cvUrl); } else { Alert.alert('Sin CV', 'El estudiante no ha adjuntado un CV.'); }
+  };
+
+  // ── Chatear con el candidato seleccionado (chat directo empresa↔estudiante) ──
+  const handleChatearCandidato = async () => {
+    const estudianteId = candidatoSeleccionado?.estudiante_id;
+    if (!user?.uid || !estudianteId) {
+      Alert.alert('No disponible', 'No se pudo identificar al candidato para iniciar el chat.');
+      return;
+    }
+    const estudianteNombre = candidatoSeleccionado?.estudiante_nombre || 'Estudiante';
+    try {
+      const chatId = await abrirChatDirectoEmpresaEstudiante({
+        empresaId: user.uid,
+        empresaNombre: perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa',
+        estudianteId,
+        estudianteNombre,
+        contexto: 'candidatura',
+      });
+      setCandidatoSeleccionado(null);
+      router.push({ pathname: '/ChatScreen', params: { chatId, peerName: estudianteNombre } } as any);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo abrir el chat con el candidato.');
+    }
+  };
+
+  // ── Firmar constancia (usa empresaFirmaConstancia del servicio) ───
+  const handleFirmar = async (app: Aplicacion) => {
+    try {
+      await empresaFirmaConstancia(app.id, user!.uid, app.estudiante_id);
+      setFirmaConfirmada(true);
+      setTimeout(() => { setFirmaConfirmada(false); setShowFirmaModal(null); }, 2000);
+    } catch { Alert.alert('Error', 'No se pudo firmar la constancia.'); }
+  };
+
+  // ── Pago simulado ─────────────────────────────────────────────────
+  const handlePagar = async (app: Aplicacion) => {
+    if (!pagoMonto || isNaN(Number(pagoMonto))) { Alert.alert('Monto inválido'); return; }
+    setPagoProcesando(true);
+    await new Promise(r => setTimeout(r, 2000)); // simulación
+    try {
+      const ref_ = `GRL-${Date.now().toString(36).toUpperCase()}`;
+      const transQ = await getDocs(
+        query(collection(db, 'transacciones'), where('aplicacion_id', '==', app.id))
+      );
+      if (!transQ.empty) {
+        await updateDoc(transQ.docs[0].ref, {
+          estado: 'completado', monto: Number(pagoMonto),
+          referencia: ref_, fecha: serverTimestamp(),
+        });
+      }
+      await updateDoc(doc(db, 'aplicaciones', app.id), { pago_confirmado: true });
+      Alert.alert('Pago simulado exitoso ✓', `Referencia: ${ref_}`);
+      setPagoModal(null); setPagoMonto('');
+    } catch { Alert.alert('Error', 'No se pudo procesar el pago.'); }
+    finally { setPagoProcesando(false); }
+  };
+
+  // ── Abrir/cerrar modal de tarjeta ─────────────────────────────────
+  const abrirCardModal = () => {
+    setCardNumero(''); setCardExp(''); setCardCvv(''); setCardTitular('');
+    setCardErrs({});
+    setShowCardModal(true);
+  };
+
+  // Validación en vivo de cada campo de la tarjeta.
+  const setCardErr = (k: string, m: string) =>
+    setCardErrs(e => { const n = { ...e }; if (m) n[k] = m; else delete n[k]; return n; });
+
+  // ── Guardar tarjeta (Luhn + vencimiento + CVV + titular) ──────────
+  const handleGuardarTarjeta = async () => {
+    const e: Record<string, string> = {};
+    const mn = valTarjetaNum(cardNumero); if (mn) e.numero = mn;
+    const me = valExp(cardExp);           if (me) e.exp = me;
+    const mc = valCvv(cardCvv);           if (mc) e.cvv = mc;
+    const mt = valTitular(cardTitular);   if (mt) e.titular = mt;
+    setCardErrs(e);
+    if (Object.keys(e).length > 0) return;
+
+    setCardSaving(true);
+    try {
+      const digits = cardNumero.replace(/\D/g, '');
+      // Pasarela simulada: solo guardamos datos enmascarados, sin cobros.
+      await updateDoc(doc(db, 'perfiles_empresas', user!.uid), {
+        tarjeta_numero: digits.slice(-4),
+        tarjeta_alias:  cardTitular.trim() || 'Mi tarjeta',
+      });
+      setShowCardModal(false);
+      setCardNumero(''); setCardExp(''); setCardCvv(''); setCardTitular('');
+      Alert.alert('Tarjeta actualizada', 'Tu método de pago se guardó correctamente.');
+    } catch {
+      Alert.alert('Error', 'No se pudo guardar la tarjeta.');
+    } finally {
+      setCardSaving(false);
+    }
+  };
+
+  // ── Onboarding ────────────────────────────────────────────────────
+  const tour = useOnboarding(user?.uid, seccion, TOUR_CLAVES);
+
+  // ── Items del menú flotante (etiquetas cortas para la barra) ──────
+  const NAV_LABELS: Record<SeccionEmpresa, string> = {
+    inicio: 'Inicio', vacantes: 'Vacantes', kanban: 'Reclutar',
+    activas: 'Activas', historial: 'Historial', pagos: 'Pagos',
+  };
+  // "Mensajes" y "Mi Perfil" se añaden SIEMPRE como últimas opciones.
+  type NavKey = SeccionEmpresa | 'mensajes' | 'perfil';
+  const navItems: NavItem<NavKey>[] = [
+    ...MENU.map(m => ({
+      key: m.key as NavKey,
+      label: NAV_LABELS[m.key],
+      icon: m.icon,
+      badge: m.key === 'kanban' ? metricas.pendientes : undefined,
+    })),
+    { key: 'mensajes', label: 'Mensajes', icon: 'chatbubble-ellipses-outline', badge: mensajesNoLeidos },
+    { key: 'perfil', label: 'Mi Perfil', icon: 'person-circle-outline' },
+  ];
+
+  // ── RENDER SECCIONES ─────────────────────────────────────────────
+  const renderSeccion = () => {
+    switch (seccion) {
+      case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} />;
+      case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => setShowNuevaVacante(true)} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
+      case 'kanban':   return <SeccionKanban apps={apps} onMover={moverEstado} onSeleccionar={(a) => { setRatingEstudiante(0); setCandidatoSeleccionado(a); }} />;
+      case 'activas':  return <SeccionActivas apps={apps} onFirmar={setShowFirmaModal} />;
+      case 'historial': return <HistorialPasantes empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
+      case 'pagos':    return <SeccionPagos apps={apps} perfil={perfil} onPagar={setPagoModal} onCardChange={abrirCardModal} />;
+      default:         return null;
+    }
+  };
+
+  // ─────────────────────────────────────────────
+  const nombreEmpresa = perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa';
+
+  // ── Guard de ciclo de vida: evita render/crasheos con UID null ──
+  // (todos los hooks ya se ejecutaron arriba, así que es seguro retornar aquí)
+  if (!user || !user.uid) {
     return (
-      <SafeAreaView style={[st.root, { backgroundColor: C.bg, justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator size="large" color={C.purple} />
-        <Text style={[{ color: C.muted, marginTop: 12, fontSize: 13 }]}>
-          Cargando datos...
-        </Text>
-      </SafeAreaView>
+      <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
     );
   }
 
-  // ── Render principal ──────────────────────────────────────────────────────
-
   return (
-    <SafeAreaView style={[st.root, { backgroundColor: C.bg }]}>
-      {/* Header universal */}
-      <UniversalHeader
-        userName={empresa?.nombre ?? "Empresa"}
-        userSubtitle={empresa?.industria ?? empresa?.sector ?? "Empresa"}
-        profilePhotoUrl={empresa?.foto_logo ?? null}
-        userId={userId}
-      />
+    <LiquidBackground>
+    <View style={[styles.root, { backgroundColor: 'transparent' }]}>
+      <StatusBar style="light" />
 
-      {/* Contenido */}
-      <View style={{ flex: 1 }}>
-        {tab === "inicio" && renderInicio()}
-        {tab === "vacantes" && renderVacantes()}
-        {tab === "candidatos" && renderCandidatos()}
-        {tab === "horas" && renderHoras()}
-        {tab === "perfil" && renderPerfil()}
+      {/* ── CONTENIDO ── */}
+      <View style={styles.main}>
+        {/* Header superior */}
+        <View style={styles.mainHeader}>
+          <TouchableOpacity onPress={() => setShowPerfil(true)} activeOpacity={0.8}>
+            <StorageAvatar
+              url={perfil?.logo_url}
+              storagePath={user ? `logos_empresas/${user.uid}/logo.jpg` : null}
+              size={40}
+              fallbackIcon="business"
+            />
+          </TouchableOpacity>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.mainTitle} numberOfLines={1}>
+              {MENU.find(m => m.key === seccion)?.label ?? 'Inicio'}
+            </Text>
+            <Text style={styles.mainGreeting} numberOfLines={1}>
+              {perfil?.premium ? '⭐ Premium' : 'Plan Básico'} · {nombreEmpresa}
+            </Text>
+          </View>
+        </View>
+
+        {renderSeccion()}
       </View>
 
-      {/* Bottom nav */}
-      <View style={[st.bottomNav, { backgroundColor: C.surface, borderTopColor: C.border }]}>
-        {NAV.map((item) => {
-          const active = tab === item.key;
+      {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ── */}
+      <FloatingTopBar userId={user?.uid} />
+
+      {/* ── BÚSQUEDA FLOTANTE ── */}
+      <FloatingSearchButton placeholder="Buscar candidatos o vacantes..." />
+
+      {/* ── FORMULARIO OBLIGATORIO DE EXPERIENCIA (pasantías finalizadas) ── */}
+      <FeedbackGate />
+
+      {/* ── MENÚ FLOTANTE (Glassmorphism) ── */}
+      <FloatingNavBar
+        items={navItems}
+        activeKey={seccion}
+        onChange={(k) =>
+          k === 'perfil'
+            ? setShowPerfil(true)
+            : k === 'mensajes'
+              ? router.push('/mensajes' as any)
+              : setSeccion(k)
+        }
+      />
+
+      {/* ── MODAL: Mi Perfil (cuenta) ── */}
+      <Modal visible={showPerfil} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.sheetCard}>
+            <Text style={styles.modalTitle}>Mi perfil</Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 8 }}>
+            <View style={styles.perfilCard}>
+              <TouchableOpacity onPress={handleUploadLogo} disabled={uploadingLogo} activeOpacity={0.8}>
+                <StorageAvatar
+                  url={perfil?.logo_url}
+                  storagePath={user ? `logos_empresas/${user.uid}/logo.jpg` : null}
+                  size={56}
+                  fallbackIcon="business"
+                />
+                <View style={styles.logoEditBadge}>
+                  {uploadingLogo
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Ionicons name="camera" size={12} color="#fff" />}
+                </View>
+              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.perfilNombre} numberOfLines={1}>{nombreEmpresa}</Text>
+                  {perfil?.verificado && (
+                    <Ionicons name="checkmark-circle" size={18} color={COLORS.primaryLight} />
+                  )}
+                </View>
+                <Text style={styles.perfilMeta} numberOfLines={1}>
+                  {perfil?.industria ?? 'Empresa'} · {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
+                </Text>
+                <TouchableOpacity onPress={handleUploadLogo} disabled={uploadingLogo}>
+                  <Text style={styles.logoEditText}>{uploadingLogo ? 'Subiendo…' : 'Cambiar logo'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* ── Rango gamificado de la empresa ── */}
+            <RangoCard
+              xp={Number((perfil as any)?.puntos_experiencia ?? 0)}
+              calificacion={Number((perfil as any)?.calificacion_promedio ?? 0)}
+              pasantias={Number((perfil as any)?.pasantias_completadas ?? 0)}
+              rol="empresa"
+              theme="dark"
+            />
+
+            {/* ── Plan actual (Liquid Glass) ── */}
+            {(() => {
+              const planKey = (perfil?.plan ?? 'gratuito') as 'gratuito' | 'mensual' | 'premium';
+              const info = PLAN_DISPLAY[planKey];
+              const ilimitado = (perfil?.limiteVacantes ?? 0) >= 9999;
+              return (
+                <BlurView intensity={30} tint="dark" style={styles.planBox}>
+                  <View style={styles.planBoxHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Ionicons name="ribbon-outline" size={18} color={colors.primaryLight} />
+                      <Text style={styles.planBoxLabel}>Plan actual</Text>
+                    </View>
+                    {perfil?.verificado && (
+                      <View style={styles.planBoxVerif}>
+                        <Ionicons name="checkmark-circle" size={13} color={COLORS.success} />
+                        <Text style={styles.planBoxVerifText}>Verificada</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.planBoxName}>{info.nombre} · {info.precio}</Text>
+                  <View style={styles.planBoxStats}>
+                    <View style={styles.planBoxStat}>
+                      <Text style={styles.planBoxStatNum}>{ilimitado ? '∞' : (perfil?.limiteVacantes ?? 2)}</Text>
+                      <Text style={styles.planBoxStatLbl}>Vacantes</Text>
+                    </View>
+                    <View style={styles.planBoxStat}>
+                      <Text style={styles.planBoxStatNum}>{ilimitado ? '∞' : (perfil?.limiteAlianzas ?? 1)}</Text>
+                      <Text style={styles.planBoxStatLbl}>Alianzas</Text>
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                    {planKey !== 'premium' && (
+                      <TouchableOpacity style={[styles.planBoxBtn, { flex: 1, backgroundColor: colors.primary, borderColor: colors.primary }]} onPress={() => setShowPlanUpgradeModal(true)}>
+                        <Text style={[styles.planBoxBtnText, { color: '#fff' }]}>Mejorar tu plan</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity style={[styles.planBoxBtn, { flex: 1 }]} onPress={() => setShowPlanUpgradeModal(true)}>
+                      <Text style={styles.planBoxBtnText}>Ver detalles del plan</Text>
+                      <Ionicons name="chevron-forward" size={14} color={colors.primaryLight} />
+                    </TouchableOpacity>
+                  </View>
+                </BlurView>
+              );
+            })()}
+
+            {/* ── Método de pago ── */}
+            {(() => {
+              const tieneTarjeta = !!perfil?.tarjeta_numero;
+              return (
+                <View style={styles.payCard}>
+                  <View style={styles.payCardHeader}>
+                    <Ionicons name="card-outline" size={18} color={colors.primaryLight} />
+                    <Text style={styles.payCardTitle}>Método de pago</Text>
+                  </View>
+                  {tieneTarjeta ? (
+                    <Text style={styles.payCardNumber}>**** **** **** {perfil?.tarjeta_numero}</Text>
+                  ) : (
+                    <Text style={styles.payCardEmpty}>No hay tarjeta registrada</Text>
+                  )}
+                  {!!perfil?.tarjeta_alias && tieneTarjeta && (
+                    <Text style={styles.payCardAlias}>{perfil.tarjeta_alias}</Text>
+                  )}
+                  <TouchableOpacity style={styles.payCardBtn} onPress={abrirCardModal}>
+                    <Ionicons name={tieneTarjeta ? 'sync-outline' : 'add-outline'} size={16} color={colors.primaryLight} />
+                    <Text style={styles.payCardBtnText}>
+                      {tieneTarjeta ? 'Cambiar método de pago' : 'Agregar método de pago'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
+
+            {/* ── Panel de estadísticas (gráficas) ── */}
+            <PerfilStatsEmpresa empresaId={user!.uid} />
+
+            {/* ── Cuenta: ayuda · acerca · cerrar sesión (al final) ── */}
+            <View style={styles.perfilFooter}>
+              <TouchableOpacity style={styles.footerBtn} onPress={handleAyuda}>
+                <Ionicons name="help-circle-outline" size={18} color={colors.primaryLight} />
+                <Text style={styles.footerBtnText}>Ayuda</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.footerBtn} onPress={handleAcerca}>
+                <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} />
+                <Text style={styles.footerBtnText}>Acerca de Gradly</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.logoutFooterBtn}
+                onPress={() => setLogoutModalVisible(true)}
+              >
+                <Ionicons name="log-out-outline" size={18} color={colors.error} />
+                <Text style={styles.logoutFooterText}>Cerrar sesión</Text>
+              </TouchableOpacity>
+            </View>
+            </ScrollView>
+
+            <TouchableOpacity style={[styles.modalCancel, { marginTop: 12 }]} onPress={() => setShowPerfil(false)}>
+              <Text style={styles.modalCancelText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL: Detalles de Vacante (incluye mapa solo lectura) ── */}
+      <Modal visible={!!vacanteSeleccionada} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.sheetCard}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={styles.modalTitle}>Detalles de Vacante</Text>
+              <TouchableOpacity onPress={() => setVacanteSeleccionada(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close" size={24} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+              <Text style={{ color: '#fff', fontFamily: FONTS.soraBold, fontSize: 18 }}>{vacanteSeleccionada?.titulo}</Text>
+
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                <View style={styles.pickerChip}><Text style={styles.pickerText}>{vacanteSeleccionada?.area}</Text></View>
+                <View style={styles.pickerChip}><Text style={styles.pickerText}>{vacanteSeleccionada?.tipo}</Text></View>
+                <View style={styles.pickerChip}><Text style={styles.pickerText}>{vacanteSeleccionada?.modalidad}</Text></View>
+              </View>
+
+              <Text style={styles.fieldLabel}>Descripción</Text>
+              <Text style={styles.modalDesc}>{vacanteSeleccionada?.descripcion}</Text>
+
+              <Text style={styles.fieldLabel}>Requisitos y Horas</Text>
+              <Text style={styles.modalDesc}>• Skills: {vacanteSeleccionada?.skills_requeridas?.join(', ')}</Text>
+              <Text style={styles.modalDesc}>• Total: {vacanteSeleccionada?.horas_requeridas} h  |  Semanales: {vacanteSeleccionada?.horas_semanales} h</Text>
+
+              {(vacanteSeleccionada?.modalidad === 'Presencial' || vacanteSeleccionada?.modalidad === 'Híbrido') && vacanteSeleccionada?.ubicacion_coords && (
+                <View style={mapStyles.glassBox}>
+                  <Text style={mapStyles.glassTitle}>Ubicación registrada</Text>
+                  <View pointerEvents="none" style={mapStyles.mapContainer}>
+                    <MapViewer
+                      mapRegion={{
+                        latitude: vacanteSeleccionada.ubicacion_coords.latitude,
+                        longitude: vacanteSeleccionada.ubicacion_coords.longitude,
+                        latitudeDelta: 0.01,
+                        longitudeDelta: 0.01,
+                      }}
+                      markerPos={vacanteSeleccionada.ubicacion_coords}
+                    />
+                  </View>
+                  {vacanteSeleccionada.ubicacion_texto && (
+                    <View style={mapStyles.detailBox}>
+                      <Text style={mapStyles.detailLine}><Text style={mapStyles.detailLabel}>Dirección: </Text>{vacanteSeleccionada.ubicacion_texto.direccion || '—'}</Text>
+                      <Text style={mapStyles.detailLine}><Text style={mapStyles.detailLabel}>Municipio: </Text>{vacanteSeleccionada.ubicacion_texto.municipio || '—'}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL: Nueva Vacante ──
+          FIXED: se oculta mientras estadoGuardado !== 'idle' para que el Modal
+          dinámico de guardado no quede tapado por este en Android / web. */}
+      <Modal visible={showNuevaVacante && estadoGuardado === 'idle'} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.sheetCard}>
+            <Text style={styles.modalTitle}>Nueva pasantía</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <FieldInput
+                label="Título*" value={nvTitulo} onChange={onChangeTitulo}
+                placeholder="Pasantía de Desarrollo Web"
+                error={nvErrors.titulo} valid={!nvErrors.titulo && !!nvTitulo.trim()}
+              />
+              <PickerRow label="Área*" options={AREAS} selected={nvArea} onSelect={onSelectArea} error={nvErrors.area} />
+              {nvArea === 'Otra' && (
+                <FieldInput
+                  label="Especifica el área*" value={nvAreaOtra} onChange={onChangeAreaOtra}
+                  placeholder="Ej. Logística"
+                  error={nvErrors.areaOtra} valid={!nvErrors.areaOtra && !!nvAreaOtra.trim()}
+                />
+              )}
+              <PickerRow label="Modalidad*" options={MODALIDADES} selected={nvModalidad} onSelect={onSelectModalidad} error={nvErrors.modalidad} />
+
+              {(nvModalidad === 'Presencial' || nvModalidad === 'Híbrido') && (
+                <View style={mapStyles.glassBox}>
+                  <Text style={mapStyles.glassTitle}>Ubicación de la vacante</Text>
+                  <Text style={mapStyles.glassHint}>Marca el punto exacto del lugar de trabajo (solo El Salvador).</Text>
+
+                  {/* a) Capturar ubicación actual */}
+                  <TouchableOpacity style={mapStyles.primaryBtn} onPress={capturarUbicacion} disabled={procesandoUbicacion}>
+                    <Text style={mapStyles.primaryBtnText}>📍  Capturar mi Ubicación Actual</Text>
+                  </TouchableOpacity>
+
+                  {procesandoUbicacion && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <ActivityIndicator color={COLORS.primaryLight} size="small" />
+                      <Text style={mapStyles.glassHint}>Procesando ubicación...</Text>
+                    </View>
+                  )}
+
+                  {/* c) Contenedor del mapa (toque para marcar — Método B) */}
+                  <View style={mapStyles.mapContainer}>
+                    <MapViewer mapRegion={mapRegion} markerPos={markerPos} onMapPress={marcarDesdeMapa} />
+                  </View>
+                  <Text style={mapStyles.glassHint}>Toca el mapa para colocar el marcador en el punto exacto.</Text>
+
+                  {/* d) Detalles de la ubicación */}
+                  {!!ubicacionDetalle.pais && (
+                    <View style={mapStyles.detailBox}>
+                      <Text style={mapStyles.detailLine}><Text style={mapStyles.detailLabel}>Dirección: </Text>{ubicacionDetalle.direccion || '—'}</Text>
+                      <Text style={mapStyles.detailLine}><Text style={mapStyles.detailLabel}>Municipio: </Text>{ubicacionDetalle.municipio || '—'}</Text>
+                      <Text style={mapStyles.detailLine}><Text style={mapStyles.detailLabel}>Departamento: </Text>{ubicacionDetalle.departamento || '—'}</Text>
+                      <Text style={mapStyles.detailLine}><Text style={mapStyles.detailLabel}>País: </Text>{ubicacionDetalle.pais}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              <PickerRow label="Tipo*" options={TIPOS} selected={nvTipo} onSelect={onSelectTipo} error={nvErrors.tipo} />
+              <FieldInput
+                label="Descripción*" value={nvDesc} onChange={onChangeDesc}
+                placeholder="Descripción de la vacante..." multiline
+                error={nvErrors.desc} valid={!nvErrors.desc && !!nvDesc.trim()}
+                infoText="💡 Agrega detalles relevantes acerca de la vacante, responsabilidades y beneficios."
+              />
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <FieldInput
+                    label="Horas totales*" value={nvHoras} onChange={onChangeHoras}
+                    placeholder="150" keyboardType="number-pad" maxLength={3}
+                    error={nvErrors.horas} valid={!nvErrors.horas && !!nvHoras.trim()}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <FieldInput
+                    label="Horas/semana*" value={nvHorasSem} onChange={onChangeHorasSem}
+                    placeholder="20" keyboardType="number-pad" maxLength={2}
+                    error={nvErrors.horasSem} valid={!nvErrors.horasSem && !!nvHorasSem.trim()}
+                  />
+                </View>
+              </View>
+              <FieldInput
+                label="Skills (separadas por coma)*" value={nvSkills} onChange={onChangeSkills}
+                placeholder="React, TypeScript, Node.js"
+                error={nvErrors.skills} valid={!nvErrors.skills && !!nvSkills.trim()}
+              />
+              <FieldInput
+                label="Fecha límite*" value={nvFechaLim} onChange={onChangeFecha}
+                placeholder="YYYY-MM-DD" keyboardType="number-pad" maxLength={10}
+                error={nvErrors.fecha} valid={!nvErrors.fecha && !!nvFechaLim.trim()}
+                infoText="💡 La fecha debe ser al menos 5 días después de hoy, con un plazo máximo de 3 meses."
+              />
+            </ScrollView>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowNuevaVacante(false)}>
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSave, (savingVac || !formularioValido) && { opacity: 0.5 }]}
+                onPress={handlePublicarVacante}
+                disabled={savingVac || !formularioValido}
+              >
+                {savingVac ? <ActivityIndicator color={COLORS.textPrimary} /> : <Text style={styles.modalSaveText}>Publicar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL: Firma constancia ── */}
+      <Modal visible={!!showFirmaModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {firmaConfirmada ? (
+              <View style={{ alignItems: 'center', gap: 12 }}>
+                <Ionicons name="checkmark-circle" size={56} color={COLORS.success} />
+                <Text style={styles.modalTitle}>Constancia firmada</Text>
+                <Text style={styles.modalDesc}>Se generó una transacción pendiente de pago.</Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>Firmar constancia</Text>
+                <Text style={styles.modalDesc}>
+                  Estudiante: {showFirmaModal?.estudiante_nombre}{'\n'}
+                  Horas completadas: {showFirmaModal?.horas_completadas ?? 0}{'\n'}
+                  ¿Confirmas que la pasantía fue completada?
+                </Text>
+                <View style={styles.modalActions}>
+                  <TouchableOpacity style={styles.modalCancel} onPress={() => setShowFirmaModal(null)}>
+                    <Text style={styles.modalCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalSave}
+                    onPress={() => showFirmaModal && handleFirmar(showFirmaModal)}
+                  >
+                    <Text style={styles.modalSaveText}>Firmar</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL: Pago simulado ── */}
+      <Modal visible={!!showPagoModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Procesar pago</Text>
+            <Text style={styles.modalDesc}>Estudiante: {showPagoModal?.estudiante_nombre}</Text>
+            <Text style={styles.fieldLabel}>Monto a pagar ($)</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={pagoMonto}
+              onChangeText={setPagoMonto}
+              placeholder="0.00"
+              keyboardType="decimal-pad"
+              placeholderTextColor={COLORS.textMuted}
+              selectionColor={COLORS.primary}
+            />
+            <Text style={styles.modalDesc}>
+              Tarjeta registrada: •••• {perfil?.tarjeta_numero ?? '????'}
+            </Text>
+            {pagoProcesando ? (
+              <View style={{ alignItems: 'center', padding: 16 }}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={{ color: COLORS.textMuted, marginTop: 8, fontFamily: FONTS.interRegular }}>Procesando...</Text>
+              </View>
+            ) : (
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalCancel} onPress={() => { setPagoModal(null); setPagoMonto(''); }}>
+                  <Text style={styles.modalCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.modalSave} onPress={() => showPagoModal && handlePagar(showPagoModal)}>
+                  <Text style={styles.modalSaveText}>Pagar ahora</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL: Actualizar tarjeta (validación estricta) ── */}
+      <Modal visible={showCardModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Actualizar método de pago</Text>
+
+            <Text style={styles.fieldLabel}>Número de tarjeta</Text>
+            <TextInput style={[styles.modalInput, cardErrs.numero && styles.inputErr]} value={cardNumero}
+              onChangeText={t => { const v = maskTarjeta(t); setCardNumero(v); setCardErr('numero', valTarjetaNum(v)); }}
+              placeholder="1234 5678 9012 3456" placeholderTextColor={COLORS.textMuted}
+              keyboardType="number-pad" maxLength={19} selectionColor={COLORS.primary} />
+            {!!cardErrs.numero && <Text style={styles.inputErrText}>{cardErrs.numero}</Text>}
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>Vencimiento (MM/AA)</Text>
+                <TextInput style={[styles.modalInput, cardErrs.exp && styles.inputErr]} value={cardExp}
+                  onChangeText={t => { const v = maskExp(t); setCardExp(v); setCardErr('exp', valExp(v)); }}
+                  placeholder="MM/AA" placeholderTextColor={COLORS.textMuted}
+                  keyboardType="number-pad" maxLength={5} selectionColor={COLORS.primary} />
+                {!!cardErrs.exp && <Text style={styles.inputErrText}>{cardErrs.exp}</Text>}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>CVV</Text>
+                <TextInput style={[styles.modalInput, cardErrs.cvv && styles.inputErr]} value={cardCvv}
+                  onChangeText={t => { const v = t.replace(/\D/g, '').slice(0, 4); setCardCvv(v); setCardErr('cvv', valCvv(v)); }}
+                  placeholder="123" placeholderTextColor={COLORS.textMuted}
+                  keyboardType="number-pad" maxLength={4} selectionColor={COLORS.primary} />
+                {!!cardErrs.cvv && <Text style={styles.inputErrText}>{cardErrs.cvv}</Text>}
+              </View>
+            </View>
+
+            <Text style={styles.fieldLabel}>Nombre del titular</Text>
+            <TextInput style={[styles.modalInput, cardErrs.titular && styles.inputErr]} value={cardTitular}
+              onChangeText={t => { const v = t.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, ''); setCardTitular(v); setCardErr('titular', valTitular(v)); }}
+              placeholder="Como aparece en la tarjeta" placeholderTextColor={COLORS.textMuted}
+              autoCapitalize="words" selectionColor={COLORS.primary} />
+            {!!cardErrs.titular && <Text style={styles.inputErrText}>{cardErrs.titular}</Text>}
+
+            <View style={styles.payNote}>
+              <Ionicons name="lock-closed" size={12} color={COLORS.textMuted} />
+              <Text style={styles.payNoteText}>Pago simulado. No se realiza ningún cargo real.</Text>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowCardModal(false)} disabled={cardSaving}>
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <JellyButton style={[styles.modalSave, cardSaving && { opacity: 0.6 }]} contentStyle={{ paddingVertical: 0 }} onPress={cardSaving ? undefined : handleGuardarTarjeta}>
+                {cardSaving ? <ActivityIndicator color={COLORS.textPrimary} /> : <Text style={styles.modalSaveText}>Guardar tarjeta</Text>}
+              </JellyButton>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL: Detalle del plan ── */}
+      <Modal visible={showPlanDetail} transparent animationType="fade" onRequestClose={() => setShowPlanDetail(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {(() => {
+              const planKey = (perfil?.plan ?? 'gratuito') as 'gratuito' | 'mensual' | 'premium';
+              const info = PLAN_DISPLAY[planKey];
+              return (
+                <>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={styles.modalTitle}>Plan {info.nombre}</Text>
+                    <TouchableOpacity onPress={() => setShowPlanDetail(false)} hitSlop={8}>
+                      <Ionicons name="close" size={22} color={COLORS.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.modalDesc, { marginBottom: 6 }]}>{info.precio}</Text>
+                  {info.beneficios.map(b => (
+                    <View key={b} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 }}>
+                      <Ionicons name="checkmark-circle" size={16} color={colors.primaryLight} />
+                      <Text style={styles.modalDesc}>{b}</Text>
+                    </View>
+                  ))}
+                  <JellyButton style={[styles.modalSave, { marginTop: 14 }]} contentStyle={{ paddingVertical: 0 }} onPress={() => setShowPlanDetail(false)}>
+                    <Text style={styles.modalSaveText}>Entendido</Text>
+                  </JellyButton>
+                </>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Onboarding (guía por globos) ── */}
+      <OnboardingBubble
+        visible={tour.visible}
+        titulo={TOUR_PASOS[seccion].titulo}
+        texto={TOUR_PASOS[seccion].texto}
+        paso={tour.paso}
+        total={tour.total}
+        esUltimo={tour.esUltimo}
+        onContinuar={tour.marcar}
+        onSaltar={tour.saltar}
+      />
+
+      {/* ── MODAL: Confirmar cierre de sesión (Liquid Glass) ── */}
+      <Modal transparent visible={logoutModalVisible} animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#1a162b', borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
+            <Text style={{ fontSize: 18, color: '#fff', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>Cerrar Sesión</Text>
+            <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: 24 }}>¿Estás seguro de que deseas salir de tu cuenta?</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }} onPress={() => setLogoutModalVisible(false)}>
+                <Text style={{ color: '#fff', fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: '#ef4444', alignItems: 'center' }} onPress={confirmarCierreSesion}>
+                <Text style={{ color: '#fff', fontWeight: '600' }}>Salir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL DINÁMICO DE ESTADO DE GUARDADO */}
+      <Modal transparent visible={estadoGuardado !== 'idle'} animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)', shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 15 }}>
+
+            {/* ESTADO: CARGANDO */}
+            {estadoGuardado === 'loading' && (
+              <>
+                <ActivityIndicator size="large" color="#8b5cf6" style={{ transform: [{ scale: 1.5 }], marginBottom: 24 }} />
+                <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 8 }}>Procesando Vacante...</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.6)', fontFamily: FONTS.interRegular, textAlign: 'center' }}>Registrando ubicación y datos en la base de datos.</Text>
+              </>
+            )}
+
+            {/* ESTADO: ÉXITO */}
+            {estadoGuardado === 'success' && (
+              <>
+                <Ionicons name="checkmark-circle" size={80} color="#10b981" style={{ marginBottom: 16 }} />
+                <Text style={{ color: '#fff', fontSize: 20, fontFamily: FONTS.soraBold, marginBottom: 8 }}>¡Vacante Publicada!</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.interRegular, textAlign: 'center', marginBottom: 24 }}>La oferta ya está disponible para todos los estudiantes de la red.</Text>
+                <TouchableOpacity
+                  style={{ backgroundColor: '#8b5cf6', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
+                  onPress={finalizarGuardadoExitoso}
+                >
+                  <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 16 }}>Aceptar y Cerrar</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* ESTADO: ERROR */}
+            {estadoGuardado === 'error' && (
+              <>
+                <Ionicons name="close-circle" size={80} color="#ef4444" style={{ marginBottom: 16 }} />
+                <Text style={{ color: '#fff', fontSize: 20, fontFamily: FONTS.soraBold, marginBottom: 8 }}>Error al Guardar</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.interRegular, textAlign: 'center', marginBottom: 24 }}>{mensajeErrorGuardado}</Text>
+                <TouchableOpacity
+                  style={{ backgroundColor: 'rgba(239,68,68,0.15)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
+                  onPress={() => setEstadoGuardado('idle')}
+                >
+                  <Text style={{ color: '#ef4444', fontFamily: FONTS.interSemiBold, fontSize: 16 }}>Revisar Formulario</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 1: SELECCIÓN DE PLAN (Mejorar) ── */}
+      <Modal visible={showPlanUpgradeModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.sheetCard, { padding: 24, flex: 0.9 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+              <TouchableOpacity onPress={() => setShowPlanUpgradeModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
+              </TouchableOpacity>
+              <Text style={[styles.modalTitle, { marginLeft: 16, marginBottom: 0 }]}>Planes y Facturación</Text>
+            </View>
+
+            <TouchableOpacity style={s.changeTarjetaBtn} onPress={() => { setShowPlanUpgradeModal(false); abrirCardModal(); }}>
+              <Text style={[s.changeTarjetaText, { textAlign: 'center', fontSize: 13, paddingVertical: 4 }]}>Ver credenciales de pago</Text>
+            </TouchableOpacity>
+
+            <Text style={[styles.fieldLabel, { marginTop: 20, marginBottom: 10 }]}>Elige un nuevo plan</Text>
+
+            {/* Selector de período Mensual / Anual */}
+            <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
+              <TouchableOpacity
+                style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: periodoPlanes === 'mensual' ? '#8b5cf6' : 'transparent' }}
+                onPress={() => setPeriodoPlanes('mensual')}
+              >
+                <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 14 }}>Mensual</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: periodoPlanes === 'anual' ? '#8b5cf6' : 'transparent' }}
+                onPress={() => setPeriodoPlanes('anual')}
+              >
+                <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 14 }}>Anual</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
+              {obtenerPlanesVisibles().map((p) => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[{ padding: 18, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.15)', marginBottom: 12 }, perfil?.plan === p.id && { borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.05)' }]}
+                  onPress={() => {
+                    if (perfil?.plan === p.id) return;
+                    setPlanToUpgrade(p.id as any);
+                    setShowConfirmUpgradeModal(true);
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontFamily: FONTS.soraBold, fontSize: 16, color: '#fff' }}>{p.nombre}</Text>
+                    <Text style={{ fontFamily: FONTS.soraBold, fontSize: 16, color: '#a78bfa' }}>{p.precio}</Text>
+                  </View>
+                  <View style={{ marginTop: 10, gap: 5 }}>
+                    {p.beneficios.map((ben, i) => (
+                      <Text key={i} style={{ color: 'rgba(255,255,255,0.6)', fontFamily: FONTS.interRegular, fontSize: 13 }}>• {ben}</Text>
+                    ))}
+                  </View>
+                  {perfil?.plan === p.id && (
+                    <Text style={{ color: '#10b981', fontFamily: FONTS.interSemiBold, fontSize: 12, marginTop: 8 }}>Tu plan actual</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 2: CONFIRMAR COMPRA ── */}
+      <Modal visible={showConfirmUpgradeModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
+            {upgradeProcessing ? (
+              <>
+                <ActivityIndicator size="large" color="#8b5cf6" style={{ transform: [{ scale: 1.5 }], marginBottom: 24 }} />
+                <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 8 }}>Procesando pago...</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>Por favor espera, no cierres esta ventana.</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="cart-outline" size={60} color={COLORS.primaryLight} style={{ marginBottom: 16 }} />
+                <Text style={{ color: '#fff', fontSize: 20, fontFamily: FONTS.soraBold, marginBottom: 8, textAlign: 'center' }}>Confirmar Mejora</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: 24, fontFamily: FONTS.interRegular }}>
+                  {(() => {
+                    const planInfo = obtenerPlanesVisibles().find(x => x.id === planToUpgrade);
+                    return `¿Seguro que deseas actualizar al ${planInfo?.nombre}? Se cobrará ${planInfo?.precio} a tu método de pago.`;
+                  })()}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
+                  <TouchableOpacity style={{ flex: 1, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }} onPress={() => setShowConfirmUpgradeModal(false)}>
+                    <Text style={{ fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.textMuted }}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={{ flex: 1, height: 44, borderRadius: 12, backgroundColor: COLORS.primaryDark, alignItems: 'center', justifyContent: 'center' }} onPress={confirmarMejoraPlan}>
+                    <Text style={{ fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary }}>Pagar</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 3: COMPRA EXITOSA ── */}
+      <Modal visible={showUpgradeSuccessModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)' }}>
+            <Ionicons name="checkmark-circle" size={80} color="#10b981" style={{ marginBottom: 16 }} />
+            <Text style={{ color: '#fff', fontSize: 20, fontFamily: FONTS.soraBold, marginBottom: 8, textAlign: 'center' }}>¡Pago Realizado!</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'center', fontFamily: FONTS.interRegular }}>Suscripción procesada correctamente.</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 4: BIENVENIDA NUEVO PLAN ── */}
+      <Modal visible={showWelcomePlanModal} transparent animationType="slide">
+        <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.9)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 360, alignItems: 'center', borderWidth: 1, borderColor: COLORS.gold + '55' }}>
+            <Ionicons name="star" size={60} color={COLORS.gold || '#eab308'} style={{ marginBottom: 16 }} />
+            <Text style={{ color: '#fff', fontSize: 22, fontFamily: FONTS.soraBold, marginBottom: 8, textAlign: 'center' }}>
+              ¡Felicidades!
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.8)', textAlign: 'center', marginBottom: 20, fontFamily: FONTS.interRegular, fontSize: 15 }}>
+              Ahora tienes acceso a las ventajas del <Text style={{ color: COLORS.gold || '#eab308', fontFamily: FONTS.interSemiBold }}>{PLAN_DISPLAY[newPlanInfo as keyof typeof PLAN_DISPLAY]?.nombre}</Text>.
+            </Text>
+
+            <View style={{ width: '100%', backgroundColor: 'rgba(0,0,0,0.3)', padding: 16, borderRadius: 12, marginBottom: 24, gap: 8 }}>
+              {PLAN_DISPLAY[newPlanInfo as keyof typeof PLAN_DISPLAY]?.beneficios.map((ben, i) => (
+                <Text key={i} style={{ color: COLORS.textPrimary, fontFamily: FONTS.interRegular, fontSize: 14 }}>✅ {ben}</Text>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={{ backgroundColor: COLORS.gold || '#eab308', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
+              onPress={() => setShowWelcomePlanModal(false)}
+            >
+              <Text style={{ color: '#000', fontFamily: FONTS.interSemiBold, fontSize: 16 }}>Comenzar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL: VISTA DETALLADA DEL CANDIDATO (Reclutar) ── */}
+      <Modal visible={!!candidatoSeleccionado && !showRechazoModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.sheetCard, { padding: 0, overflow: 'hidden' }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* INFO VACANTE */}
+              <View style={{ padding: 20, backgroundColor: 'rgba(139,92,246,0.1)' }}>
+                <Text style={{ color: '#8b5cf6', fontFamily: 'Sora-Bold', fontSize: 14, marginBottom: 5 }}>POSTULACIÓN A:</Text>
+                <Text style={{ color: '#fff', fontFamily: 'Sora-Bold', fontSize: 18 }}>{candidatoSeleccionado?.vacante_titulo || candidatoSeleccionado?.titulo_vacante || 'Vacante'}</Text>
+              </View>
+
+              {/* INFO ESTUDIANTE */}
+              <View style={{ padding: 20, gap: 12 }}>
+                <Text style={{ color: '#fff', fontSize: 20, fontFamily: 'Sora-Bold' }}>{candidatoSeleccionado?.estudiante_nombre}</Text>
+                <Text style={{ color: '#a78bfa', fontSize: 14 }}>{candidatoSeleccionado?.estudiante_carrera}</Text>
+
+                <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 10, gap: 8 }}>
+                  <Text style={{ color: '#fff' }}>📧 {candidatoSeleccionado?.estudiante_email || 'No visible'}</Text>
+                  <Text style={{ color: '#fff' }}>📱 {candidatoSeleccionado?.estudiante_telefono || 'No visible'}</Text>
+                  <Text style={{ color: '#fff' }}>🔗 {candidatoSeleccionado?.estudiante_linkedin || 'Sin redes'}</Text>
+                  <Text style={{ color: '#10b981', marginTop: 5 }}>⏳ Horas Sociales: {candidatoSeleccionado?.estado_horas || 'En proceso'}</Text>
+                </View>
+
+                {/* ESTRELLAS (CALIFICACIÓN) */}
+                <View style={{ alignItems: 'center', marginVertical: 10 }}>
+                  <Text style={{ color: '#fff', marginBottom: 5, fontFamily: 'Inter-SemiBold' }}>Calificar a este candidato:</Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <TouchableOpacity key={star} onPress={() => handleCalificarEstudiante(star)}>
+                        <Ionicons name={star <= ratingEstudiante ? 'star' : 'star-outline'} size={32} color="#eab308" />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                <TouchableOpacity style={{ backgroundColor: '#4f46e5', padding: 12, borderRadius: 10, alignItems: 'center' }} onPress={() => descargarCV(candidatoSeleccionado?.cv_url)}>
+                  <Text style={{ color: '#fff', fontFamily: 'Inter-SemiBold' }}>📄 Descargar CV (PDF)</Text>
+                </TouchableOpacity>
+
+                {/* CHATEAR CON EL CANDIDATO (chat directo empresa↔estudiante) */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: 8,
+                    backgroundColor: candidatoSeleccionado?.estudiante_id ? '#8b5cf6' : 'rgba(139,92,246,0.3)',
+                    padding: 14,
+                    borderRadius: 12,
+                  }}
+                  disabled={!candidatoSeleccionado?.estudiante_id}
+                  onPress={handleChatearCandidato}
+                >
+                  <Ionicons name="chatbubble-outline" size={18} color="#fff" />
+                  <Text style={{ color: '#fff', fontFamily: 'Inter-SemiBold' }}>Chatear con Candidato</Text>
+                </TouchableOpacity>
+
+                {/* BOTONES DE ACCIÓN */}
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 15 }}>
+                  <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(239,68,68,0.2)', padding: 12, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#ef4444' }} onPress={() => setShowRechazoModal(true)}>
+                    <Text style={{ color: '#ef4444', fontFamily: 'Inter-SemiBold' }}>Rechazar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={{ flex: 1, backgroundColor: '#10b981', padding: 12, borderRadius: 10, alignItems: 'center' }} onPress={handleMandarEntrevista}>
+                    <Text style={{ color: '#fff', fontFamily: 'Inter-SemiBold' }}>Mandar a Entrevista</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={{ marginTop: 10, padding: 10, alignItems: 'center' }} onPress={() => setCandidatoSeleccionado(null)}>
+                  <Text style={{ color: 'rgba(255,255,255,0.6)' }}>Cerrar</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── SUB-MODAL: MOTIVO DE RECHAZO ── */}
+      <Modal visible={showRechazoModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#1a162b', padding: 24, borderRadius: 16 }}>
+            <Text style={{ color: '#fff', fontSize: 18, fontFamily: 'Sora-Bold', marginBottom: 10 }}>Motivo del rechazo</Text>
+            <TextInput
+              style={{ backgroundColor: 'rgba(255,255,255,0.05)', color: '#fff', padding: 12, borderRadius: 10, minHeight: 80, textAlignVertical: 'top', marginBottom: 15 }}
+              placeholderTextColor="rgba(255,255,255,0.4)"
+              placeholder="Explica brevemente por qué no fue seleccionado..."
+              multiline
+              value={motivoRechazo}
+              onChangeText={setMotivoRechazo}
+            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity style={{ flex: 1, padding: 12, alignItems: 'center' }} onPress={() => setShowRechazoModal(false)}>
+                <Text style={{ color: 'gray' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, backgroundColor: '#ef4444', padding: 12, borderRadius: 10, alignItems: 'center' }} onPress={handleRechazarCandidato}>
+                <Text style={{ color: '#fff', fontFamily: 'Inter-SemiBold' }}>Confirmar Rechazo</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+    </LiquidBackground>
+  );
+}
+
+// ─────────────────────────────────────────────
+// SECCIÓN: INICIO
+// ─────────────────────────────────────────────
+function SeccionInicio({ metricas, apps, perfil, empresaId }: {
+  metricas: any; apps: Aplicacion[]; perfil: PerfilEmpresa | null; empresaId: string;
+}) {
+  const { s } = useThemedStyles();
+  const recientes = [...apps].sort((a, b) => {
+    const ta = a.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
+    const tb = b.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
+    return tb - ta;
+  }).slice(0, 5);
+
+  return (
+    <ScrollView contentContainerStyle={s.scroll}>
+      {/* ── Estadísticas de la Red Gradly ── */}
+      <RedGradlyBanner />
+
+      {/* Banner */}
+      <GlassCard style={{ marginBottom: 16 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', padding: 20 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.bannerTitle}>Panel de control</Text>
+          <Text style={s.bannerSub}>Gestiona tu empresa desde aquí</Text>
+        </View>
+        <View style={[s.planBadge, perfil?.premium && { borderColor: COLORS.gold + '44', backgroundColor: COLORS.gold + '11' }]}>
+          <Text style={[s.planText, perfil?.premium && { color: COLORS.gold }]}>
+            {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
+          </Text>
+        </View>
+      </GlassCard>
+
+      {/* Métricas */}
+      <View style={s.metricasGrid}>
+        <MetricCard icon="briefcase-outline" label="Vacantes activas" value={metricas.vacantesActivas} color={COLORS.primaryLight} />
+        <MetricCard icon="person-add-outline" label="Pendientes"  value={metricas.pendientes}  color={COLORS.warning} />
+        <MetricCard icon="people-outline"     label="Pasantes activos" value={metricas.activos} color={COLORS.success} />
+        <MetricCard icon="time-outline"       label="Horas validadas"  value={metricas.horasValidadas} color={COLORS.accent} />
+      </View>
+
+      {/* ── Matchmaking: solicitudes entrantes de universidades ── */}
+      <View style={{ marginTop: 8, marginBottom: 16 }}>
+        <SolicitudesEmpresa empresaId={empresaId} limiteAlianzas={perfil?.limiteAlianzas ?? 1} />
+      </View>
+
+      {/* Actividad reciente */}
+      <Text style={s.sectionTitle}>Actividad reciente</Text>
+      {recientes.length === 0
+        ? <Text style={s.emptyText}>Sin actividad reciente.</Text>
+        : recientes.map(a => (
+            <View key={a.id} style={s.actividadRow}>
+              <View style={s.actividadDot} />
+              <Text style={s.actividadText} numberOfLines={1}>
+                {a.estudiante_nombre} — {a.estado.replace('_', ' ')}
+              </Text>
+            </View>
+          ))
+      }
+    </ScrollView>
+  );
+}
+
+function MetricCard({ icon, label, value, color }: any) {
+  const { s } = useThemedStyles();
+  return (
+    <GlassCard style={{ flex: 1, minWidth: 120 }} contentStyle={{ padding: 14, gap: 4 }}>
+      <Ionicons name={icon} size={24} color={color} />
+      <Text style={[s.metricValue, { color }]}>{value}</Text>
+      <Text style={s.metricLabel}>{label}</Text>
+    </GlassCard>
+  );
+}
+
+// ─────────────────────────────────────────────
+// SECCIÓN: VACANTES
+// ─────────────────────────────────────────────
+function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, puedeCrear, limiteVacantes, vacantesRestantes, plan, onMejorarPlan }: {
+  vacantes: Vacante[]; onNueva: () => void; onToggle: (v: Vacante) => void;
+  onVerDetalles: (v: Vacante) => void;
+  puedeCrear: boolean; limiteVacantes: number; vacantesRestantes: number;
+  plan?: 'gratuito' | 'mensual' | 'premium';
+  onMejorarPlan: () => void;
+}) {
+  const { s } = useThemedStyles();
+  const ilimitado = limiteVacantes >= 9999;
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={s.vacantesHeader}>
+        <JellyButton
+          style={[s.nuevaBtn, !puedeCrear && { opacity: 0.45 }]}
+          contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 0, paddingHorizontal: 18 }}
+          onPress={puedeCrear ? onNueva : undefined}
+        >
+          <Ionicons name={puedeCrear ? 'add-circle-outline' : 'lock-closed-outline'} size={18} color={COLORS.textPrimary} />
+          <Text style={s.nuevaBtnText}>Publicar nueva pasantía</Text>
+        </JellyButton>
+      </View>
+
+      {/* Cupo del plan */}
+      <View style={s.cupoRow}>
+        <Ionicons name={puedeCrear ? 'information-circle-outline' : 'alert-circle-outline'} size={14} color={puedeCrear ? COLORS.textMuted : COLORS.warning} />
+        {puedeCrear || ilimitado ? (
+           <Text style={s.cupoText}>
+             {ilimitado ? 'Plan Premium · vacantes ilimitadas' : `Te quedan ${vacantesRestantes} de ${limiteVacantes} vacantes activas en tu plan`}
+           </Text>
+        ) : (
+           <TouchableOpacity onPress={onMejorarPlan} activeOpacity={0.7} style={{ flex: 1 }}>
+             <Text style={[s.cupoText, { color: COLORS.warning, textDecorationLine: 'underline' }]}>
+               Límite alcanzado ({limiteVacantes} activas). Pausa una o mejora tu plan.
+             </Text>
+           </TouchableOpacity>
+        )}
+      </View>
+      <FlatList
+        data={vacantes}
+        keyExtractor={item => item.id}
+        contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
+        renderItem={({ item }) => (
+          <GlassCard style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
+            <TouchableOpacity style={{ flex: 1 }} onPress={() => onVerDetalles(item)} activeOpacity={0.7}>
+              <Text style={s.vacanteTitle} numberOfLines={1}>{item.titulo}</Text>
+              <Text style={s.vacanteMeta}>{item.area} · {item.modalidad} · {item.aplicantes_count ?? 0} aplicantes</Text>
+            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <TouchableOpacity
+                style={[s.toggleBtn, item.activa ? s.toggleBtnOn : s.toggleBtnOff]}
+                onPress={() => onToggle(item)}
+              >
+                <Text style={{ fontSize: 11, fontFamily: FONTS.interSemiBold, color: item.activa ? COLORS.success : COLORS.textMuted }}>
+                  {item.activa ? 'Activa' : 'Inactiva'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </GlassCard>
+        )}
+        ListEmptyComponent={<Text style={s.emptyText}>Sin vacantes publicadas.</Text>}
+      />
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────
+// SECCIÓN: KANBAN
+// ─────────────────────────────────────────────
+function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; onMover: (a: Aplicacion, s: string) => void; onSeleccionar: (a: Aplicacion) => void }) {
+  const { s } = useThemedStyles();
+  // ORDEN: secuencia real de estados en Firestore (se conserva para mover ←/→)
+  const ORDEN = ['pendiente', 'en_revision', 'entrevista', 'contratado'];
+
+  // Pestaña activa. OJO: los ids coinciden con los valores guardados en la BD
+  // ('en_revision' lleva guion bajo) para no romper los filtros.
+  const [estadoTab, setEstadoTab] = useState<'pendiente' | 'en_revision' | 'entrevista' | 'contratado'>('pendiente');
+
+  // Pestañas reutilizando las etiquetas/orden de KANBAN_COLS.
+  const TABS = KANBAN_COLS.map(col => ({ id: col.key, label: col.label, color: col.color }));
+
+  // Lista filtrada al estado activo y posición en la secuencia.
+  const filtered = apps.filter(a => a.estado === estadoTab);
+  const idx = ORDEN.indexOf(estadoTab);
+
+  // Mensaje amable de lista vacía por pestaña.
+  const VACIO: Record<string, string> = {
+    pendiente:   'No hay postulantes pendientes por revisar.',
+    en_revision: 'No hay postulantes en revisión.',
+    entrevista:  'No hay postulantes en entrevista.',
+    contratado:  'Aún no has contratado a ningún postulante.',
+  };
+
+  return (
+    <View style={{ flex: 1, padding: 16, paddingBottom: 110 }}>
+      {/* ── Barra de pestañas horizontales ── */}
+      <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(139,92,246,0.15)', gap: 4 }}>
+        {TABS.map(tab => {
+          const count = apps.filter(a => a.estado === tab.id).length;
+          const isActive = estadoTab === tab.id;
           return (
             <TouchableOpacity
-              key={item.key}
-              style={st.navItem}
-              onPress={() => setTab(item.key)}
-              activeOpacity={0.7}
+              key={tab.id}
+              style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: isActive ? COLORS.primary : 'transparent' }}
+              onPress={() => setEstadoTab(tab.id as any)}
             >
-              <Ionicons
-                name={item.icon as any}
-                size={22}
-                color={active ? C.purple : C.muted}
-              />
-              <Text
-                style={{
-                  fontSize: 10,
-                  marginTop: 3,
-                  color: active ? C.purple : C.muted,
-                  fontWeight: active ? "700" : "400",
-                }}
-              >
-                {item.label}
+              <Text style={{ color: isActive ? '#fff' : COLORS.textMuted, fontFamily: FONTS.interSemiBold, fontSize: 12, textAlign: 'center' }}>
+                {tab.label}{count > 0 ? ` (${count})` : ''}
               </Text>
             </TouchableOpacity>
           );
         })}
       </View>
 
-      {/* ── Modal Crear Vacante ── */}
-      <Modal
-        visible={showVacanteModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowVacanteModal(false)}
-      >
-        <View style={st.modalOverlay}>
-          <View style={[st.modalSheet, { backgroundColor: C.surface, borderTopColor: C.border }]}>
-            <View style={[st.modalHeader, { borderBottomColor: C.border }]}>
-              <Text style={[st.modalTitle, { color: C.text }]}>
-                Nueva vacante — Paso {vacanteStep} de 3
-              </Text>
-              <TouchableOpacity onPress={() => setShowVacanteModal(false)}>
-                <Ionicons name="close" size={22} color={C.muted} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ padding: 16 }}>
-              {vacanteStep === 1 && (
-                <View>
-                  <Text style={[st.inputLabel, { color: C.muted }]}>Título del puesto *</Text>
-                  <TextInput value={formTitulo} onChangeText={setFormTitulo} style={[st.input, { color: C.text, backgroundColor: C.card, borderColor: C.border }]} placeholder="Ej: Desarrollador Frontend React" placeholderTextColor={C.muted} />
-
-                  <Text style={[st.inputLabel, { color: C.muted }]}>Área profesional *</Text>
-                  <TextInput value={formArea} onChangeText={setFormArea} style={[st.input, { color: C.text, backgroundColor: C.card, borderColor: C.border }]} placeholder="Ej: Tecnología / Ingeniería" placeholderTextColor={C.muted} />
-
-                  <Text style={[st.inputLabel, { color: C.muted }]}>Descripción *</Text>
-                  <TextInput value={formDesc} onChangeText={setFormDesc} style={[st.input, { height: 90, color: C.text, backgroundColor: C.card, borderColor: C.border }]} multiline placeholder="Responsabilidades y requisitos..." placeholderTextColor={C.muted} />
-                </View>
-              )}
-
-              {vacanteStep === 2 && (
-                <View>
-                  <Text style={[st.inputLabel, { color: C.muted }]}>Modalidad</Text>
-                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
-                    {["presencial", "remoto", "hibrido"].map((m) => (
-                      <TouchableOpacity
-                        key={m}
-                        style={[st.chip, { borderColor: C.purpleBorder, backgroundColor: formModalidad === m ? C.purple : C.card }]}
-                        onPress={() => setFormModalidad(m)}
-                      >
-                        <Text style={{ color: formModalidad === m ? "#fff" : C.muted, fontSize: 12 }}>
-                          {m.toUpperCase()}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  <Text style={[st.inputLabel, { color: C.muted }]}>Tipo de contrato</Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                    {["tiempo_completo", "medio_tiempo", "pasantia", "freelance"].map((t) => (
-                      <TouchableOpacity
-                        key={t}
-                        style={[st.chip, { borderColor: C.purpleBorder, backgroundColor: formTipo === t ? C.purple : C.card }]}
-                        onPress={() => setFormTipo(t)}
-                      >
-                        <Text style={{ color: formTipo === t ? "#fff" : C.muted, fontSize: 12 }}>
-                          {t.replace("_", " ").toUpperCase()}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              {vacanteStep === 3 && (
-                <View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                    <Text style={[st.inputLabel, { color: C.muted }]}>Mostrar salario</Text>
-                    <Switch
-                      value={formMostrarSal}
-                      onValueChange={setFormMostrarSal}
-                      trackColor={{ false: C.card, true: C.purple }}
-                    />
-                  </View>
-                  <Text style={[st.inputLabel, { color: C.muted }]}>Salario mínimo (USD, opcional)</Text>
-                  <TextInput value={formSalMin} onChangeText={(t) => setFormSalMin(t.replace(/[^0-9.]/g, ""))} keyboardType="numeric" style={[st.input, { color: C.text, backgroundColor: C.card, borderColor: C.border }]} placeholder="Ej: 400" placeholderTextColor={C.muted} />
-                  <Text style={[st.inputLabel, { color: C.muted }]}>Salario máximo (USD, opcional)</Text>
-                  <TextInput value={formSalMax} onChangeText={(t) => setFormSalMax(t.replace(/[^0-9.]/g, ""))} keyboardType="numeric" style={[st.input, { color: C.text, backgroundColor: C.card, borderColor: C.border }]} placeholder="Ej: 800" placeholderTextColor={C.muted} />
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[st.inputLabel, { color: C.muted }]}>Aplica horas sociales</Text>
-                      <Text style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>Permitir estudiantes cumplir horas en este puesto</Text>
-                    </View>
-                    <Switch value={formAplicaHoras} onValueChange={setFormAplicaHoras} trackColor={{ false: C.card, true: C.purple }} />
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-
-            <View style={[st.modalFooter, { borderTopColor: C.border, backgroundColor: C.card }]}>
-              {vacanteStep > 1 ? (
-                <TouchableOpacity style={[st.btnSec, { borderColor: C.border }]} onPress={() => setVacanteStep((p) => (p - 1) as any)}>
-                  <Text style={[{ color: C.text, fontWeight: "600", fontSize: 14 }]}>← Atrás</Text>
-                </TouchableOpacity>
-              ) : <View />}
-
-              {vacanteStep < 3 ? (
-                <TouchableOpacity style={[st.btnPri, { backgroundColor: C.purple }]} onPress={() => setVacanteStep((p) => (p + 1) as any)}>
-                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}>Siguiente →</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[st.btnPri, { backgroundColor: savingVacante ? C.muted : C.green }]}
-                  onPress={guardarVacante}
-                  disabled={savingVacante}
-                >
-                  {savingVacante ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}>Publicar vacante</Text>
+      {/* ── Contenedor unificado con la lista del estado activo ── */}
+      <GlassCard style={{ flex: 1 }} contentStyle={{ flex: 1, padding: 12 }}>
+        {filtered.length === 0 ? (
+          <Text style={s.kanbanEmpty}>{VACIO[estadoTab]}</Text>
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={item => item.id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 8 }}
+            renderItem={({ item: app }) => (
+              <TouchableOpacity style={s.kanbanCard} activeOpacity={0.85} onPress={() => onSeleccionar(app)}>
+                <Text style={s.kanbanNombre} numberOfLines={1}>{app.estudiante_nombre}</Text>
+                <Text style={s.kanbanMeta}>{app.titulo_vacante ?? 'Vacante'}</Text>
+                <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+                  {idx > 0 && (
+                    <JellyButton
+                      style={s.kanbanMoveBtn}
+                      contentStyle={{ paddingHorizontal: 10, paddingVertical: 5 }}
+                      onPress={() => onMover(app, ORDEN[idx - 1])}
+                    >
+                      <Ionicons name="chevron-back" size={14} color={COLORS.textMuted} />
+                    </JellyButton>
                   )}
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Modal Detalle Vacante ── */}
-      <Modal
-        visible={showVacanteDetail && !!selectedVacante}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowVacanteDetail(false)}
-      >
-        <View style={st.modalOverlay}>
-          <View style={[st.modalSheet, { backgroundColor: C.surface, borderTopColor: C.border }]}>
-            <View style={[st.modalHeader, { borderBottomColor: C.border }]}>
-              <Text style={[st.modalTitle, { color: C.text }]} numberOfLines={1}>
-                {selectedVacante?.titulo}
-              </Text>
-              <TouchableOpacity onPress={() => setShowVacanteDetail(false)}>
-                <Ionicons name="close" size={22} color={C.muted} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={{ padding: 16 }}>
-              <Text style={[{ color: C.muted, fontSize: 12, marginBottom: 8 }]}>
-                {selectedVacante?.area} · {selectedVacante?.modalidad?.toUpperCase()} · {selectedVacante?.tipo?.replace("_", " ").toUpperCase()}
-              </Text>
-              {selectedVacante?.mostrar_salario && selectedVacante.salario_min && (
-                <Text style={[{ color: C.green, fontWeight: "700", marginBottom: 12 }]}>
-                  ${selectedVacante.salario_min} – ${selectedVacante.salario_max} USD/mes
-                </Text>
-              )}
-              <Text style={[{ color: C.text, fontSize: 14, lineHeight: 20 }]}>
-                {selectedVacante?.descripcion}
-              </Text>
-            </ScrollView>
-            {selectedVacante?.estado === "activa" && (
-              <View style={{ padding: 16 }}>
-                <TouchableOpacity
-                  style={[st.btnPri, { backgroundColor: C.red }]}
-                  onPress={() => { setShowVacanteDetail(false); cerrarVacante(selectedVacante.id); }}
-                >
-                  <Text style={{ color: "#fff", fontWeight: "700" }}>Cerrar vacante</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Modal Evaluación ── */}
-      <Modal
-        visible={showEvalModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowEvalModal(false)}
-      >
-        <View style={st.modalOverlay}>
-          <View style={[st.modalSheet, { backgroundColor: C.surface, borderTopColor: C.border }]}>
-            <View style={[st.modalHeader, { borderBottomColor: C.border }]}>
-              <Text style={[st.modalTitle, { color: C.text }]}>Evaluar grupo</Text>
-              <TouchableOpacity onPress={() => setShowEvalModal(false)}>
-                <Ionicons name="close" size={22} color={C.muted} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={{ padding: 16 }}>
-              {[
-                { label: "Puntualidad", val: evalPuntualidad, set: setEvalPuntualidad },
-                { label: "Disciplina", val: evalDisciplina, set: setEvalDisciplina },
-                { label: "Responsabilidad", val: evalResponsabilidad, set: setEvalResponsabilidad },
-                { label: "Respeto", val: evalRespeto, set: setEvalRespeto },
-                { label: "Desempeño", val: evalDesempeno, set: setEvalDesempeno },
-              ].map((cr) => (
-                <View key={cr.label} style={{ marginBottom: 16 }}>
-                  <Text style={[{ color: C.text, fontWeight: "600", marginBottom: 6 }]}>{cr.label}</Text>
-                  <Stars val={cr.val} set={cr.set} />
+                  {idx < ORDEN.length - 1 && (
+                    <JellyButton
+                      style={[s.kanbanMoveBtn, { backgroundColor: COLORS.primary12 }]}
+                      contentStyle={{ paddingHorizontal: 10, paddingVertical: 5 }}
+                      onPress={() => onMover(app, ORDEN[idx + 1])}
+                    >
+                      <Text style={{ fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight }}>
+                        Avanzar →
+                      </Text>
+                    </JellyButton>
+                  )}
                 </View>
-              ))}
-              <Text style={[{ color: C.muted, fontSize: 13, marginBottom: 6 }]}>Comentario (opcional)</Text>
-              <TextInput
-                value={evalComentario}
-                onChangeText={setEvalComentario}
-                style={[st.input, { height: 80, color: C.text, backgroundColor: C.card, borderColor: C.border }]}
-                multiline
-                placeholder="Observaciones generales..."
-                placeholderTextColor={C.muted}
-              />
-            </ScrollView>
-            <View style={{ padding: 16 }}>
-              <TouchableOpacity
-                style={[st.btnPri, { backgroundColor: savingEval ? C.muted : C.purple }]}
-                onPress={guardarEvaluacion}
-                disabled={savingEval}
-              >
-                {savingEval ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={{ color: "#fff", fontWeight: "700" }}>Guardar evaluación</Text>
-                )}
               </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── UpgradePlanModal ── */}
-      <UpgradePlanModal
-        visible={showUpgradePlan}
-        onClose={() => setShowUpgradePlan(false)}
-        currentPlan={planActual}
-        limitReached={planLimite}
-        theme={isDark ? "dark" : "light"}
-      />
-
-      {/* ── CambiarPasswordModal ── */}
-      <CambiarPasswordModal
-        visible={showCambiarPass}
-        onClose={() => setShowCambiarPass(false)}
-        theme={isDark ? "dark" : "light"}
-      />
-
-      {/* ── AgendarEntrevistaModal ── */}
-      {selectedCand && (
-        <AgendarEntrevistaModal
-          visible={showAgendarModal}
-          onClose={() => { setShowAgendarModal(false); setSelectedCand(null); }}
-          aplicacionId={selectedCand.id}
-          solicitanteId={selectedCand.solicitante_id}
-          empresaId={userId ?? ""}
-          vacanteId={selectedCand.vacante_id}
-          vacanteNombre={selectedCand.vacantes?.titulo}
-          solicitanteNombre={selectedCand._solicitante?.nombre}
-          theme={isDark ? "dark" : "light"}
-          onSuccess={() => {
-            setAplicaciones((p) =>
-              p.map((a) => a.id === selectedCand.id ? { ...a, estado: "entrevista" } : a)
-            );
-            toast("Entrevista agendada.", "ok");
-          }}
-        />
-      )}
-
-      {/* ── RechazarModal ── */}
-      {selectedCand && (
-        <RechazarModal
-          visible={showRechazarModal}
-          onClose={() => { setShowRechazarModal(false); setSelectedCand(null); }}
-          aplicacionId={selectedCand.id}
-          solicitanteId={selectedCand.solicitante_id}
-          vacanteNombre={selectedCand.vacantes?.titulo}
-          solicitanteNombre={selectedCand._solicitante?.nombre}
-          theme={isDark ? "dark" : "light"}
-          onSuccess={() => {
-            setAplicaciones((p) =>
-              p.map((a) => a.id === selectedCand.id ? { ...a, estado: "rechazada" } : a)
-            );
-            toast("Candidato rechazado.", "info");
-          }}
-        />
-      )}
-
-      {/* ── PropuestaCondicionesModal ── */}
-      {selectedSolicitud && (
-        <PropuestaCondicionesModal
-          visible={showPropuestaModal}
-          onClose={() => { setShowPropuestaModal(false); setSelectedSolicitud(null); }}
-          solicitudId={selectedSolicitud.id}
-          empresaId={userId ?? ""}
-          universidadId={selectedSolicitud.universidad_id ?? ""}
-          grupoNombre={selectedSolicitud.grupos?.nombre_grupo}
-          horasRequeridas={selectedSolicitud.grupos?.horas_requeridas}
-          theme={isDark ? "dark" : "light"}
-          onSuccess={() => {
-            setSolicitudes((p) =>
-              p.map((s) => s.id === selectedSolicitud.id ? { ...s, estado: "en_revision" } : s)
-            );
-            toast("Propuesta enviada a la universidad.", "ok");
-          }}
-        />
-      )}
-
-      {/* ── Modal Acerca de ── */}
-      <Modal visible={showAcercaModal} transparent animationType="fade" onRequestClose={() => setShowAcercaModal(false)}>
-        <View style={st.modalOverlay}>
-          <View style={[st.modalSheet, { backgroundColor: C.surface, borderTopColor: C.border, borderRadius: 16, maxHeight: "70%" }]}>
-            <View style={[st.modalHeader, { borderBottomColor: C.border }]}>
-              <Text style={[st.modalTitle, { color: C.text }]}>Acerca de Gradly</Text>
-              <TouchableOpacity onPress={() => setShowAcercaModal(false)}>
-                <Ionicons name="close" size={22} color={C.muted} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={{ padding: 20 }}>
-              <Text style={{ color: C.purple, fontSize: 28, fontWeight: "900", marginBottom: 4 }}>Gradly</Text>
-              <Text style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>Versión 1.0.0</Text>
-              <Text style={{ color: C.text, fontSize: 14, lineHeight: 22, marginBottom: 12 }}>
-                Gradly es una plataforma que conecta empresas con jóvenes talentos y estudiantes de El Salvador, facilitando la gestión de vacantes y horas sociales.
-              </Text>
-              <Text style={{ color: C.text, fontSize: 14, lineHeight: 22, marginBottom: 12 }}>
-                Nuestra misión es reducir la brecha entre el mundo académico y el laboral, brindando oportunidades reales a la nueva generación de profesionales.
-              </Text>
-              <Text style={{ color: C.muted, fontSize: 12 }}>© 2025 Gradly. Todos los derechos reservados.</Text>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Modal Ayuda ── */}
-      <Modal visible={showAyudaModal} transparent animationType="fade" onRequestClose={() => setShowAyudaModal(false)}>
-        <View style={st.modalOverlay}>
-          <View style={[st.modalSheet, { backgroundColor: C.surface, borderTopColor: C.border, borderRadius: 16 }]}>
-            <View style={[st.modalHeader, { borderBottomColor: C.border }]}>
-              <Text style={[st.modalTitle, { color: C.text }]}>Ayuda y soporte</Text>
-              <TouchableOpacity onPress={() => setShowAyudaModal(false)}>
-                <Ionicons name="close" size={22} color={C.muted} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={{ padding: 20 }}>
-              <Text style={{ color: C.text, fontSize: 14, marginBottom: 16, lineHeight: 20 }}>
-                ¿Tienes alguna duda o problema? Escríbenos y te responderemos a la brevedad.
-              </Text>
-              <TextInput
-                style={[st.input, { color: C.text, backgroundColor: C.card, borderColor: C.border, height: 100, textAlignVertical: "top" }]}
-                multiline
-                placeholder="Describe tu consulta o problema..."
-                placeholderTextColor={C.muted}
-                value={ayudaMsg}
-                onChangeText={setAyudaMsg}
-              />
-              <TouchableOpacity
-                style={[st.createBtn, { backgroundColor: sendingAyuda ? C.muted : C.purple, marginTop: 12 }]}
-                disabled={sendingAyuda}
-                onPress={async () => {
-                  if (!ayudaMsg.trim()) { toast("Escribe tu mensaje antes de enviar.", "err"); return; }
-                  setSendingAyuda(true);
-                  try {
-                    await supabase.from("mensajes_ayuda").insert({
-                      user_id: userId,
-                      rol: "empresa",
-                      mensaje: ayudaMsg.trim(),
-                    });
-                    setAyudaMsg("");
-                    setShowAyudaModal(false);
-                    toast("Mensaje enviado. Te contactaremos pronto.", "ok");
-                  } catch {
-                    toast("No se pudo enviar el mensaje.", "err");
-                  } finally {
-                    setSendingAyuda(false);
-                  }
-                }}
-              >
-                {sendingAyuda ? <ActivityIndicator color="#fff" size="small" /> : (
-                  <>
-                    <Ionicons name="send-outline" size={16} color="#fff" />
-                    <Text style={st.createBtnText}>Enviar mensaje</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Toasts ── */}
-      <View style={st.toastContainer} pointerEvents="none">
-        {toasts.map((t) => (
-          <View
-            key={t.id}
-            style={[
-              st.toast,
-              {
-                backgroundColor:
-                  t.type === "ok"
-                    ? C.greenBg
-                    : t.type === "err"
-                    ? C.redBg
-                    : C.purpleDim,
-                borderColor:
-                  t.type === "ok"
-                    ? C.greenBorder
-                    : t.type === "err"
-                    ? C.red
-                    : C.purpleBorder,
-              },
-            ]}
-          >
-            <Ionicons
-              name={
-                t.type === "ok"
-                  ? "checkmark-circle-outline"
-                  : t.type === "err"
-                  ? "alert-circle-outline"
-                  : "information-circle-outline"
-              }
-              size={16}
-              color={
-                t.type === "ok" ? C.green : t.type === "err" ? C.red : C.purple
-              }
-            />
-            <Text
-              style={{
-                color: t.type === "ok" ? C.green : t.type === "err" ? C.red : C.purple,
-                fontSize: 13,
-                flex: 1,
-              }}
-            >
-              {t.msg}
-            </Text>
-          </View>
-        ))}
-      </View>
-    </SafeAreaView>
+            )}
+          />
+        )}
+      </GlassCard>
+    </View>
   );
 }
 
-// ── Estilos ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// SECCIÓN: PASANTÍAS ACTIVAS
+// ─────────────────────────────────────────────
+function SeccionActivas({ apps, onFirmar }: {
+  apps: Aplicacion[]; onFirmar: (a: Aplicacion) => void;
+}) {
+  const { s } = useThemedStyles();
+  const activos    = apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado');
+  const pendFirma  = apps.filter(a => a.estado === 'finalizado');
 
-const st = StyleSheet.create({
-  root: { flex: 1 },
-  scroll: { padding: 16, paddingBottom: 32 },
+  return (
+    <FlatList
+      data={activos}
+      keyExtractor={item => item.id}
+      contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
+      renderItem={({ item }) => {
+        const necesitaFirma = item.estado === 'finalizado';
+        return (
+          <GlassCard style={[{ marginBottom: 8 }, necesitaFirma && s.activaCardPendiente]} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.activaNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
+              <Text style={s.activaMeta}>Horas: {item.horas_completadas ?? 0}</Text>
+              <Text style={s.activaMeta}>Pago: {item.pago_confirmado ? '✓ Pagado' : '⏳ Pendiente'}</Text>
+            </View>
+            {necesitaFirma && (
+              <JellyButton style={s.firmarBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 }} onPress={() => onFirmar(item)}>
+                <Ionicons name="pencil-outline" size={14} color={COLORS.textPrimary} />
+                <Text style={s.firmarText}>Firmar constancia</Text>
+              </JellyButton>
+            )}
+          </GlassCard>
+        );
+      }}
+      ListEmptyComponent={<Text style={s.emptyText}>Sin pasantes activos.</Text>}
+    />
+  );
+}
 
-  // Banner empresa
-  empresaBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 16,
-  },
-  logoWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    position: "relative",
-  },
-  logoImg: { width: "100%", height: "100%" },
-  editBadge: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  empresaNombre: { fontSize: 16, fontWeight: "700" },
-  empresaSector: { fontSize: 12, marginTop: 2 },
+// ─────────────────────────────────────────────
+// SECCIÓN: PAGOS
+// ─────────────────────────────────────────────
+function SeccionPagos({ apps, perfil, onPagar, onCardChange }: {
+  apps: Aplicacion[]; perfil: PerfilEmpresa | null;
+  onPagar: (a: Aplicacion) => void; onCardChange: () => void;
+}) {
+  const { s } = useThemedStyles();
+  const pendientes  = apps.filter(a => a.estado === 'finalizado' && !a.pago_confirmado);
+  const completados = apps.filter(a => a.pago_confirmado);
 
-  // Labels de sección
-  sectionLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 0.8, marginBottom: 10, marginTop: 6 },
+  return (
+    <ScrollView contentContainerStyle={s.scroll}>
+      {/* Tarjeta visual */}
+      <GlassCard contentStyle={{ padding: 20, gap: 12 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={s.bankBrand}>GRADLY PAY — EMPRESA</Text>
+          <Ionicons name="card" size={22} color={COLORS.primaryLight} />
+        </View>
+        <Text style={s.bankNumber}>•••• •••• •••• {perfil?.tarjeta_numero ?? '????'}</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={s.bankAlias}>{perfil?.tarjeta_alias ?? 'Sin tarjeta'}</Text>
+          <TouchableOpacity onPress={onCardChange} style={s.changeTarjetaBtn}>
+            <Text style={s.changeTarjetaText}>Cambiar</Text>
+          </TouchableOpacity>
+        </View>
+      </GlassCard>
 
-  // Métricas
-  metricsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 16,
-  },
-  metCard: {
-    width: "47%",
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "center",
-    gap: 4,
-  },
-  metVal: { fontSize: 26, fontWeight: "800" },
-  metLabel: { fontSize: 11, textAlign: "center" },
+      {/* Pagos pendientes */}
+      <Text style={s.sectionTitle}>Pagos pendientes ({pendientes.length})</Text>
+      {pendientes.map(a => (
+        <GlassCard key={a.id} style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.pagoNombre}>{a.estudiante_nombre}</Text>
+            <Text style={s.pagoMeta}>Pasantía finalizada</Text>
+          </View>
+          <JellyButton style={s.pagarBtn} contentStyle={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={() => onPagar(a)}>
+            <Text style={s.pagarText}>Pagar ahora</Text>
+          </JellyButton>
+        </GlassCard>
+      ))}
+      {pendientes.length === 0 && <Text style={s.emptyText}>Sin pagos pendientes.</Text>}
 
-  // Quick actions
-  quickActions: { flexDirection: "row", gap: 10, marginBottom: 16 },
-  qaBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  qaBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+      {/* Historial */}
+      <Text style={s.sectionTitle}>Historial de pagos</Text>
+      {completados.map(a => (
+        <View key={a.id} style={s.historialRow}>
+          <Ionicons name="checkmark-circle" size={18} color={COLORS.success} />
+          <Text style={[s.pagoNombre, { flex: 1 }]} numberOfLines={1}>{a.estudiante_nombre}</Text>
+          <Text style={s.pagoMeta}>Pagado</Text>
+        </View>
+      ))}
+      {completados.length === 0 && <Text style={s.emptyText}>Sin historial.</Text>}
+    </ScrollView>
+  );
+}
 
-  // Vacantes
-  vacanteRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  vacanteCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 10,
-  },
-  vacanteTitle: { fontSize: 14, fontWeight: "700" },
-  vacanteSub: { fontSize: 12, marginTop: 2 },
-  estadoBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
+// ─────────────────────────────────────────────
+// HELPERS UI
+// ─────────────────────────────────────────────
+function FieldInput({ label, value, onChange, placeholder, multiline, keyboardType, error, valid, infoText, maxLength }: {
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; multiline?: boolean; keyboardType?: any;
+  /** Mensaje de error: si existe, borde rojo + texto rojo debajo. */
+  error?: string;
+  /** Si true (y sin error), borde verde. */
+  valid?: boolean;
+  /** Texto informativo permanente (verde) debajo del campo. */
+  infoText?: string;
+  maxLength?: number;
+}) {
+  const { styles, colors } = useThemedStyles();
+  // Prioridad de color de borde: rojo (error) > verde (válido) > borde por defecto.
+  const borderColor = error ? '#EF4444' : (valid ? '#22C55E' : colors.border);
+  return (
+    <>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={[styles.modalInput, { borderColor }, multiline && { height: 80, textAlignVertical: 'top' }]}
+        value={value} onChangeText={onChange} placeholder={placeholder}
+        placeholderTextColor={colors.textMuted} multiline={multiline}
+        keyboardType={keyboardType ?? 'default'} selectionColor={colors.primary}
+        maxLength={maxLength}
+      />
+      {!!error && <Text style={styles.fieldError}>{error}</Text>}
+      {!!infoText && <Text style={styles.fieldInfo}>{infoText}</Text>}
+    </>
+  );
+}
 
-  // Empty state
-  emptyCard: {
-    padding: 32,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 16,
-  },
-  emptyText: { fontSize: 13, textAlign: "center" },
+function PickerRow({ label, options, selected, onSelect, error }: {
+  label: string; options: string[]; selected: string; onSelect: (v: string) => void;
+  error?: string;
+}) {
+  const { styles } = useThemedStyles();
+  return (
+    <>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 6, marginBottom: 10 }}>
+        {options.map(opt => (
+          <TouchableOpacity
+            key={opt}
+            style={[styles.pickerChip, selected === opt && styles.pickerChipActive]}
+            onPress={() => onSelect(opt)}
+          >
+            <Text style={[styles.pickerText, selected === opt && styles.pickerTextActive]}>{opt}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      {!!error && <Text style={styles.fieldError}>{error}</Text>}
+    </>
+  );
+}
 
-  // Crear btn
-  createBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 16,
+// ─────────────────────────────────────────────
+// ESTILOS
+// ─────────────────────────────────────────────
+const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: COLORS.backgroundDark },
+  headerAvatar: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: COLORS.primary12,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
-  createBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-
-  // Candidatos
-  kanbanTab: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1.5,
-  },
-  candCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 10,
-  },
-  candAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  candActionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-
-  // Horas sociales
-  solicitudCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 10,
-  },
-  smallBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    alignItems: "center",
+  headerBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.white4, marginLeft: 8,
   },
 
-  // Perfil
-  perfilHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 20,
+  // Sidebar
+  sidebar: {
+    width: 240, backgroundColor: COLORS.backgroundCard,
+    borderRightWidth: 1, borderRightColor: COLORS.border,
+    paddingTop: Platform.OS === 'ios' ? 52 : 32,
   },
-  editToggleBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
+  sidebarOverlay: {
+    position: 'absolute', top: 0, left: 0, bottom: 0, zIndex: 100,
+    ...shadow({ color: '#000', x: 4, y: 0, blur: 12, opacity: 0.5, elevation: 0 }),
   },
-  viewField: {
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    marginBottom: 2,
+  sidebarHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingBottom: 20, marginBottom: 8,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  accountRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 10,
+  sidebarAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.primary12,
+    alignItems: 'center', justifyContent: 'center',
   },
+  sidebarEmpresa: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  sidebarPlan: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10, marginHorizontal: 8,
+  },
+  menuItemActive: { backgroundColor: COLORS.primary },
+  menuLabel: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
+  menuLabelActive: { color: COLORS.textPrimary },
+  logoutItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 16, borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+  logoutLabel: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.error },
 
-  // Inputs
-  inputLabel: { fontSize: 12, marginBottom: 5, fontWeight: "500" },
-  input: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 11,
-    fontSize: 14,
-    marginBottom: 4,
+  // Main
+  main: { flex: 1 },
+  mainHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 56 : 40,
+    paddingLeft: 20, paddingRight: 150, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.backgroundCard,
   },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
+  mainTitle: { fontSize: 20, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  mainGreeting: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+
+  // Mi Perfil (cuenta)
+  perfilCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 16, padding: 16, marginTop: 6,
+    borderWidth: 1, borderColor: COLORS.border,
   },
+  perfilNombre: { fontSize: 16, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  perfilMeta: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 2 },
+  logoEditBadge: {
+    position: 'absolute', bottom: -2, right: -2,
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: COLORS.backgroundCard,
+  },
+  logoEditText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, marginTop: 4 },
+
+  // ── Plan actual (Mi Perfil) ──
+  planBox: {
+    borderRadius: 16, padding: 16, overflow: 'hidden',
+    borderWidth: 1, borderColor: COLORS.primary35,
+    backgroundColor: 'rgba(139,92,246,0.08)', gap: 8,
+  },
+  planBoxHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  planBoxLabel: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, letterSpacing: 0.5, textTransform: 'uppercase' },
+  planBoxVerif: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(34,197,94,0.12)', borderRadius: 12,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  planBoxVerifText: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.success },
+  planBoxName: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  planBoxStats: { flexDirection: 'row', gap: 12, marginTop: 4 },
+  planBoxStat: {
+    flex: 1, alignItems: 'center', paddingVertical: 8,
+    backgroundColor: COLORS.backgroundSurface, borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  planBoxStatNum: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  planBoxStatLbl: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  planBoxBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    marginTop: 4, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: COLORS.primary12, borderWidth: 1, borderColor: COLORS.primary35,
+  },
+  planBoxBtnText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+
+  // ── Método de pago (Mi Perfil) ──
+  payCard: {
+    borderRadius: 16, padding: 16, gap: 6,
+    backgroundColor: COLORS.backgroundSurface,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  payCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  payCardTitle: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  payCardNumber: { fontSize: 17, fontFamily: FONTS.soraBold, color: COLORS.textPrimary, letterSpacing: 2 },
+  payCardEmpty: { fontSize: 14, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  payCardAlias: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  payCardBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: 6, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: COLORS.primary12, borderWidth: 1, borderColor: COLORS.primary35,
+  },
+  payCardBtnText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+  payNote: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  payNoteText: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+
+  // ── Errores de inputs (tarjeta) ──
+  inputErr: { borderColor: COLORS.error },
+  inputErrText: { fontSize: 11, fontFamily: FONTS.interMedium, color: COLORS.error, marginTop: 4 },
+
+  perfilFooter: {
+    marginTop: 14, paddingTop: 14, gap: 8,
+    borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+  footerBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    height: 46, paddingHorizontal: 14, borderRadius: 12,
+    backgroundColor: COLORS.white4, borderWidth: 1, borderColor: COLORS.border,
+  },
+  footerBtnText: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
+  logoutFooterBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    height: 46, paddingHorizontal: 14, borderRadius: 12,
+    backgroundColor: 'rgba(239,68,68,0.10)',
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
+  },
+  logoutFooterText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.error },
 
   // Modales
   modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center', padding: 20,
   },
-  modalSheet: {
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderTopWidth: 1,
-    maxHeight: "90%",
+  sheetCard: {
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 20, padding: 20,
+    borderWidth: 1, borderColor: COLORS.border,
+    maxHeight: '90%',
   },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
+  modalCard: {
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 20, padding: 24,
+    borderWidth: 1, borderColor: COLORS.border, gap: 12,
   },
-  modalTitle: { fontSize: 16, fontWeight: "700", flex: 1, marginRight: 10 },
-  modalFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    padding: 16,
-    borderTopWidth: 1,
+  modalTitle: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  modalDesc: {
+    fontSize: 13, fontFamily: FONTS.interRegular,
+    color: COLORS.textMuted, lineHeight: 20,
   },
-  btnPri: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
+  fieldLabel: {
+    fontSize: 11, fontFamily: FONTS.interMedium,
+    color: COLORS.primaryLight, marginBottom: 5, marginTop: 8, letterSpacing: 0.3,
   },
-  btnSec: {
-    paddingVertical: 13,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: "center",
+  modalInput: {
+    backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
+    height: 46, paddingHorizontal: 14,
+    fontSize: 14, fontFamily: FONTS.interRegular, color: COLORS.textPrimary,
+    marginBottom: 6,
   },
+  fieldError: {
+    fontSize: 11, fontFamily: FONTS.interMedium,
+    color: '#EF4444', marginBottom: 6, marginTop: -2,
+  },
+  fieldInfo: {
+    fontSize: 11, fontFamily: FONTS.interRegular,
+    color: '#22C55E', marginBottom: 6, marginTop: -2,
+  },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  modalCancel: {
+    flex: 1, height: 44, borderRadius: 12,
+    backgroundColor: COLORS.white4, borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalCancelText: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
+  modalSave: {
+    flex: 1, height: 44, borderRadius: 12,
+    backgroundColor: COLORS.primaryDark, alignItems: 'center', justifyContent: 'center',
+  },
+  modalSaveText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
 
-  // Bottom nav
-  bottomNav: {
-    flexDirection: "row",
-    borderTopWidth: 1,
-    paddingBottom: 8,
+  // Picker inline
+  pickerChip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+    backgroundColor: COLORS.backgroundSurface,
+    borderWidth: 1, borderColor: COLORS.border,
   },
-  navItem: {
-    flex: 1,
-    alignItems: "center",
-    paddingTop: 10,
-  },
+  pickerChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  pickerText: { fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
+  pickerTextActive: { color: COLORS.textPrimary },
+});
 
-  // Toasts
-  toastContainer: {
-    position: "absolute",
-    bottom: 80,
-    left: 16,
-    right: 16,
-    gap: 8,
+// Estilos de secciones (s)
+const makeS = (COLORS: GradlyColors) => StyleSheet.create({
+  scroll: { padding: 16, paddingBottom: 110 },
+
+  // Inicio
+  banner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 16, padding: 20, marginBottom: 16,
+    borderWidth: 1, borderColor: COLORS.border,
   },
-  toast: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    padding: 12,
-    borderRadius: 10,
+  bannerTitle: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  bannerSub: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 4 },
+  planBadge: {
+    backgroundColor: COLORS.primary12, borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 5,
+    borderWidth: 1, borderColor: COLORS.primary35,
+  },
+  planText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+  metricasGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16,
+  },
+  metricCard: {
+    flex: 1, minWidth: 120,
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 14, padding: 14, gap: 4,
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'flex-start',
+  },
+  metricValue: { fontSize: 28, fontFamily: FONTS.rajdhaniBold },
+  metricLabel: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  sectionTitle: {
+    fontSize: 15, fontFamily: FONTS.soraSemiBold,
+    color: COLORS.textPrimary, marginBottom: 10, marginTop: 4,
+  },
+  actividadRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  actividadDot: {
+    width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primary,
+  },
+  actividadText: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, flex: 1 },
+  emptyText: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, textAlign: 'center', padding: 24 },
+
+  // Vacantes
+  vacantesHeader: { padding: 16 },
+  nuevaBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.primaryDark,
+    borderRadius: 14, height: 48, paddingHorizontal: 18,
+    ...shadow({ color: COLORS.btnShadow, y: 4, blur: 12, opacity: 1, elevation: 6 }),
+  },
+  nuevaBtnText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  cupoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingBottom: 8 },
+  cupoText: { flex: 1, fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  vacanteRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,  
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: COLORS.border, marginBottom: 8,
+  },
+  vacanteTitle: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  vacanteMeta: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  toggleBtn: {
+    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10,
     borderWidth: 1,
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
+  },
+  toggleBtnOn: { borderColor: COLORS.success + '44', backgroundColor: COLORS.success + '11' },
+  toggleBtnOff: { borderColor: COLORS.border, backgroundColor: COLORS.white4 },
+
+  // Kanban
+  kanbanCol: {
+    width: 200, backgroundColor: COLORS.backgroundCard,
+    borderRadius: 14, padding: 12,
+    borderWidth: 1, borderColor: COLORS.border,
+    maxHeight: 600,
+  },
+  kanbanColTitle: { fontSize: 13, fontFamily: FONTS.interSemiBold, marginBottom: 10 },
+  kanbanCard: {
+    backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: COLORS.border, marginBottom: 8,
+  },
+  kanbanNombre: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  kanbanMeta: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  kanbanMoveBtn: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+    backgroundColor: COLORS.backgroundCard,
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center',
+  },
+  kanbanEmpty: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, textAlign: 'center', padding: 16 },
+
+  // Activas
+  activaCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 12, padding: 16,
+    borderWidth: 1, borderColor: COLORS.border, marginBottom: 8,
+  },
+  activaCardPendiente: { borderColor: COLORS.warning + '44' },
+  activaNombre: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  activaMeta: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  firmarBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: COLORS.primaryDark,
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+  },
+  firmarText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+
+  // Pagos
+  bankCard: {
+    backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 16, padding: 20, gap: 12,
+    borderWidth: 1, borderColor: COLORS.primary35,
+    marginBottom: 16,
+  },
+  bankBrand: { fontSize: 10, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, letterSpacing: 2 },
+  bankNumber: { fontSize: 22, fontFamily: FONTS.rajdhaniBold, color: COLORS.textPrimary, letterSpacing: 4 },
+  bankAlias: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  changeTarjetaBtn: {
+    backgroundColor: COLORS.primary12, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  changeTarjetaText: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+  pagoRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: COLORS.warning + '33', marginBottom: 8,
+  },
+  pagoNombre: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  pagoMeta: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  pagarBtn: {
+    backgroundColor: COLORS.primaryDark,
+    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8,
+  },
+  pagarText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  historialRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
 });

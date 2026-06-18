@@ -1,172 +1,221 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useMemo,
-  useRef,
   useState,
   type FC,
   type ReactNode,
-} from "react";
-import translateWithMyMemory from "../services/translationService";
+} from 'react';
 
-export type SupportedLanguage = "es" | "en" | "pt" | "zh";
+// ═══════════════════════════════════════════
+// CADENAS DE TEXTO — español como idioma principal
+// ═══════════════════════════════════════════
+const ES = {
+  // ── Comunes
+  common: {
+    aceptar: 'Aceptar',
+    cancelar: 'Cancelar',
+    guardar: 'Guardar',
+    eliminar: 'Eliminar',
+    editar: 'Editar',
+    cerrar: 'Cerrar',
+    volver: '← Volver',
+    cargando: 'Cargando...',
+    error: 'Error',
+    exito: 'Éxito',
+    sinConexion: 'Sin conexión. Verifica tu internet.',
+    campoRequerido: 'Este campo es obligatorio.',
+    correoInvalido: 'Ingresa un correo electrónico válido.',
+    contrasenaCorta: 'La contraseña debe tener al menos 8 caracteres.',
+    contrasenaNoCoincide: 'Las contraseñas no coinciden.',
+    intentaMasTarde: 'Demasiados intentos. Intenta más tarde.',
+    ver: 'Ver',
+    aplicar: 'Aplicar',
+    confirmar: 'Confirmar',
+  },
 
-export const SUPPORTED_LANGUAGES: SupportedLanguage[] = [
-  "es",
-  "en",
-  "pt",
-  "zh",
-];
+  // ── Autenticación
+  auth: {
+    bienvenido: 'Bienvenido de nuevo',
+    ingresaTusDatos: 'Ingresa tus datos para continuar',
+    correo: 'Correo electrónico',
+    contrasena: 'Contraseña',
+    mostrarContrasena: 'Mostrar contraseña',
+    ocultarContrasena: 'Ocultar contraseña',
+    iniciarSesion: 'Iniciar Sesión',
+    olvidasteContrasena: '¿Olvidaste tu contraseña?',
+    sinCuenta: '¿No tienes cuenta?',
+    registrateAqui: 'Regístrate aquí',
+    credencialesInvalidas: 'Correo o contraseña incorrectos.',
+    usuarioNoEncontrado: 'No existe una cuenta con ese correo.',
+    errorLogin: 'Error al iniciar sesión.',
 
+    // Recuperación
+    recuperarAcceso: 'Recuperar acceso',
+    descripcionMagicLink:
+      'Te enviaremos un enlace mágico a tu correo para que puedas ingresar sin contraseña.',
+    enviarEnlaceMagico: 'Enviar enlace mágico',
+    enlaceEnviado: 'Enlace enviado',
+    enlaceEnviadoDesc:
+      'Revisa tu correo y haz clic en el enlace para ingresar.',
+    errorEnvioEnlace: 'No se pudo enviar el enlace.',
+    confirmaCorreo: 'Confirma tu correo',
+    confirmaCorreoDesc:
+      'Ingresa el correo con el que solicitaste el enlace mágico.',
+
+    // Registro
+    crearCuenta: 'Crear cuenta',
+    tipoCuenta: 'Tipo de cuenta',
+    empresa: 'Empresa',
+    universidad: 'Universidad',
+    nombreEmpresa: 'Nombre de empresa',
+    nit: 'NIT',
+    industria: 'Industria',
+    nombreUniversidad: 'Nombre de universidad',
+    dominioCorreo: 'Dominio de correo (ej. @uca.edu.sv)',
+    nombreContacto: 'Nombre del contacto',
+    confirmarContrasena: 'Confirmar contraseña',
+    registrarme: 'Registrarme',
+    yaTengosCuenta: '¿Ya tienes cuenta?',
+    iniciarSesionAqui: 'Inicia sesión aquí',
+    cuentaCreadaExito: 'Cuenta creada exitosamente.',
+    errorRegistro: 'No se pudo crear la cuenta.',
+  },
+
+  // ── Tabs / Navegación
+  tabs: {
+    vacantes: 'Vacantes',
+    progreso: 'Progreso',
+    academia: 'Academia',
+    perfil: 'Perfil',
+    inicio: 'Inicio',
+  },
+
+  // ── Vacantes
+  vacantes: {
+    titulo: 'Vacantes disponibles',
+    sinVacantes: 'No hay vacantes disponibles en este momento.',
+    buscar: 'Buscar vacantes...',
+    filtrar: 'Filtrar',
+    modalidad: 'Modalidad',
+    presencial: 'Presencial',
+    remoto: 'Remoto',
+    hibrido: 'Híbrido',
+    tipo: 'Tipo',
+    pasantia: 'Pasantía',
+    proyecto: 'Proyecto',
+    tiempoParcial: 'Tiempo parcial',
+    horasRequeridas: 'Horas requeridas',
+    horasSemanales: 'Horas semanales',
+    aplicar: 'Aplicar ahora',
+    fechaLimite: 'Fecha límite',
+    publicado: 'Publicado',
+    aplicantes: 'aplicantes',
+    contratados: 'contratados',
+  },
+
+  // ── Progreso (termómetro de horas)
+  progreso: {
+    titulo: 'Mi progreso',
+    horasAprobadas: 'Horas aprobadas',
+    horasEnProceso: 'En proceso',
+    horasRestantes: 'Restantes',
+    horasObjetivo: 'Objetivo',
+    metaAlcanzada: '¡Meta alcanzada!',
+    porcentajeCompletado: 'completado',
+    misPasantias: 'Mis pasantías',
+    sinPasantias: 'Aún no tienes pasantías registradas.',
+  },
+
+  // ── Academia (cursos / recursos)
+  academia: {
+    titulo: 'Academia Gradly',
+    subtitulo: 'Prepárate para tu pasantía',
+    cursosSugeridos: 'Cursos sugeridos para ti',
+    proximamente: 'Próximamente',
+    sinCursos: 'No hay cursos disponibles aún.',
+  },
+
+  // ── Perfil
+  perfil: {
+    titulo: 'Mi perfil',
+    editarPerfil: 'Editar perfil',
+    subirCV: 'Subir CV',
+    cambiarFoto: 'Cambiar foto',
+    cerrarSesion: 'Cerrar sesión',
+    confirmaCierreSesion: '¿Seguro que quieres cerrar sesión?',
+    datos: 'Mis datos',
+    habilidades: 'Habilidades',
+    calificacion: 'Calificación',
+    linkedin: 'LinkedIn',
+    portfolio: 'Portfolio',
+  },
+
+  // ── Dashboards
+  dashboards: {
+    adminTitulo: 'Panel de Administración',
+    empresaTitulo: 'Panel de Empresa',
+    universidadTitulo: 'Panel de Universidad',
+    bienvenida: (nombre: string) => `Bienvenido, ${nombre}`,
+  },
+
+  // ── Errores de Firebase
+  firebase: {
+    wrongPassword:     'Correo o contraseña incorrectos.',
+    userNotFound:      'No existe una cuenta con ese correo.',
+    tooManyRequests:   'Demasiados intentos. Intenta más tarde.',
+    networkError:      'Sin conexión. Verifica tu internet.',
+    emailAlreadyInUse: 'Ese correo ya está registrado.',
+    weakPassword:      'La contraseña es demasiado débil.',
+    invalidEmail:      'El correo no tiene un formato válido.',
+    unknownError:      'Ocurrió un error inesperado.',
+  },
+} as const;
+
+export type Strings = typeof ES;
+
+// ═══════════════════════════════════════════
+// CONTEXT
+// ═══════════════════════════════════════════
 interface TranslationContextValue {
-  language: SupportedLanguage;
-  changeLanguage: (lang: SupportedLanguage) => void;
-  /**
-   * Traduce una cadena a `language` (idioma actual del contexto).
-   * - Usa caché en memoria para evitar llamadas repetidas a MyMemory
-   * - Deduplica llamadas concurrentes (in-flight)
-   */
+  t: Strings;
+  language: 'es';
+  // Legado — devuelve el texto tal cual (la app es español fijo)
   translateText: (text: string) => Promise<string>;
-  /**
-   * Alias por compatibilidad con código existente.
-   * @deprecated usa `translateText`
-   */
   getTranslation: (text: string) => Promise<string>;
 }
 
 const TranslationContext = createContext<TranslationContextValue>({
-  language: "es",
-  changeLanguage: () => {},
-  translateText: async (t: string) => t,
-  getTranslation: async (t: string) => t,
+  t: ES,
+  language: 'es',
+  translateText: async (text) => text,
+  getTranslation: async (text) => text,
 });
 
-function makeCacheKey(lang: SupportedLanguage, text: string) {
-  return `${lang}::${text}`;
-}
-
-export const TranslationProvider: FC<{ children: ReactNode }> = ({
-  children,
-}) => {
-  const [language, setLanguage] = useState<SupportedLanguage>("es");
-
-  // Caché en memoria: key = `${lang}::${text}` -> translated
-  const cacheRef = useRef<Map<string, string>>(new Map());
-  // Evita saturar por duplicados concurrentes: misma llave -> misma Promise
-  const inflightRef = useRef<Map<string, Promise<string>>>(new Map());
-
-  // Rate-limit súper simple (evita saturar MyMemory en listas grandes):
-  // - limita concurrencia
-  // - espera un pequeño delay entre requests
-  const queueRef = useRef<
-    {
-      run: () => Promise<string>;
-      resolve: (v: string) => void;
-      reject: (e: unknown) => void;
-    }[]
-  >([]);
-  const runningRef = useRef(0);
-  const lastRequestAtRef = useRef(0);
-  const MAX_CONCURRENCY = 2;
-  const MIN_DELAY_MS = 140;
-
-  const changeLanguage = useCallback((lang: SupportedLanguage) => {
-    setLanguage(lang);
-  }, []);
-
-  const scheduleTranslation = useCallback(async (fn: () => Promise<string>) => {
-    return await new Promise<string>((resolve, reject) => {
-      queueRef.current.push({ run: fn, resolve, reject });
-
-      const pump = async (): Promise<void> => {
-        if (runningRef.current >= MAX_CONCURRENCY) return;
-        const next = queueRef.current.shift();
-        if (!next) return;
-
-        runningRef.current += 1;
-        try {
-          const now = Date.now();
-          const delta = now - lastRequestAtRef.current;
-          if (delta < MIN_DELAY_MS) {
-            await new Promise((r) => setTimeout(r, MIN_DELAY_MS - delta));
-          }
-          lastRequestAtRef.current = Date.now();
-
-          const result = await next.run();
-          next.resolve(result);
-        } catch (e) {
-          next.reject(e);
-        } finally {
-          runningRef.current -= 1;
-          // seguir procesando en cadena
-          void pump();
-        }
-      };
-
-      void pump();
-    });
-  }, []);
-
-  const translateTextAsync = useCallback(
-    async (text: string) => {
-      const raw = String(text ?? "");
-      if (!raw) return "";
-      // Español es nuestro source; no traducimos para evitar requests inútiles
-      if (language === "es") return raw;
-
-      const key = makeCacheKey(language, raw);
-
-      // 1) Caché
-      if (cacheRef.current.has(key)) {
-        // `get` puede devolver string vacío; por eso usamos `has`.
-        return cacheRef.current.get(key) ?? raw;
-      }
-
-      // 2) In-flight dedupe
-      const inflight = inflightRef.current.get(key);
-      if (inflight) return await inflight;
-
-      // 3) Programar request (rate limit + concurrencia)
-      const promise = scheduleTranslation(async () => {
-        const translated = await translateWithMyMemory(raw, language);
-        return typeof translated === "string" && translated.trim()
-          ? translated
-          : raw;
-      })
-        .then((translated) => {
-          cacheRef.current.set(key, translated);
-          return translated;
-        })
-        .catch((err) => {
-          // Importante: NO guardamos errores en caché.
-          console.warn("translateTextAsync error", err);
-          return raw;
-        })
-        .finally(() => {
-          inflightRef.current.delete(key);
-        });
-
-      inflightRef.current.set(key, promise);
-      return await promise;
-    },
-    [language, scheduleTranslation],
-  );
+export const TranslationProvider: FC<{ children: ReactNode }> = ({ children }) => {
+  const [language] = useState<'es'>('es');
 
   const value = useMemo<TranslationContextValue>(
     () => ({
+      t: ES,
       language,
-      changeLanguage,
-      translateText: translateTextAsync,
-      getTranslation: translateTextAsync,
+      translateText: async (text: string) => text,
+      getTranslation: async (text: string) => text,
     }),
-    [language, changeLanguage, translateTextAsync],
+    [language],
   );
 
   return (
-    <TranslationContext.Provider value={value}>{children}</TranslationContext.Provider>
+    <TranslationContext.Provider value={value}>
+      {children}
+    </TranslationContext.Provider>
   );
 };
 
+/** Hook principal — accede a las cadenas con t.modulo.clave */
+export const useTranslation = () => useContext(TranslationContext);
+
+/** Alias de compatibilidad con código anterior */
 export const useTranslationContext = () => useContext(TranslationContext);
+
 export default TranslationContext;

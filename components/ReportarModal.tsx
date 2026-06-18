@@ -11,7 +11,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../lib/supabase";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db } from "../src/config/firebaseConfig";
 
 const RAZONES = [
   "Información falsa o engañosa",
@@ -101,14 +102,16 @@ export default function ReportarModal({
     }
     setLoading(true);
     try {
-      const { error } = await supabase.from("reportes").insert({
-        reportante_id: reportanteId,
+      await addDoc(collection(db, "reportes"), {
+        reportador_id: reportanteId,
         reportado_id: reportadoId,
-        reportado_rol: reportadoRol,
-        razon,
-        detalle: detalle.trim() || null,
+        tipo: reportadoRol,
+        motivo: razon,
+        descripcion: detalle.trim() || "",
+        estado: "abierto",
+        fecha: serverTimestamp(),
+        resolucion: "",
       });
-      if (error) throw error;
       Alert.alert("Reporte enviado", "Gracias por ayudarnos a mantener la comunidad segura.");
       handleClose();
     } catch (err: any) {

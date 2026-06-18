@@ -10,7 +10,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../lib/supabase";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../src/config/firebaseConfig";
+import CertificadoGradly from "../src/components/CertificadoGradly";
+import RangoCard from "../src/components/RangoCard";
+import SelloEmpresa from "../src/components/SelloEmpresa";
+import { calcularRango } from "../src/services/feedbackService";
 import ReportarModal from "./ReportarModal";
 
 export type PerfilRol = "empresa" | "talento" | "alumno" | "universidad";
@@ -58,11 +63,12 @@ const LIGHT = {
   red: "#dc2626",
 };
 
-const TABLE_MAP: Record<PerfilRol, string> = {
-  empresa: "empresas",
-  talento: "talentos",
-  alumno: "alumnos",
-  universidad: "universidades",
+// Colecciones de perfil en Firestore por rol.
+const COLLECTION_MAP: Record<PerfilRol, string> = {
+  empresa: "perfiles_empresas",
+  talento: "perfiles_estudiantes",
+  alumno: "perfiles_estudiantes",
+  universidad: "perfiles_universidades",
 };
 
 const ROL_LABEL: Record<PerfilRol, string> = {
@@ -94,13 +100,8 @@ export default function PerfilPublicoModal({
     setLoading(true);
     setPerfil(null);
     try {
-      const tabla = TABLE_MAP[rol];
-      const { data } = await supabase
-        .from(tabla)
-        .select("*")
-        .eq("id", userId)
-        .maybeSingle();
-      setPerfil(data);
+      const snap = await getDoc(doc(db, COLLECTION_MAP[rol], userId));
+      setPerfil(snap.exists() ? (snap.data() as Record<string, any>) : null);
     } finally {
       setLoading(false);
     }
@@ -116,7 +117,8 @@ export default function PerfilPublicoModal({
     );
   };
 
-  const getFoto = () => perfil?.foto_perfil ?? perfil?.foto_logo ?? perfil?.logo_url ?? null;
+  const getFoto = () =>
+    perfil?.foto_perfil ?? perfil?.foto_url ?? perfil?.foto_logo ?? perfil?.logo_url ?? null;
 
   const getSubtitulo = () => {
     if (!perfil) return "";
@@ -177,9 +179,14 @@ export default function PerfilPublicoModal({
                     )}
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.nombre, { color: C.text }]}>
-                      {getNombre() || "Sin nombre"}
-                    </Text>
+                    <View style={styles.nombreRow}>
+                      <Text style={[styles.nombre, { color: C.text }]}>
+                        {getNombre() || "Sin nombre"}
+                      </Text>
+                      {rol === "empresa" && perfil.verificado && (
+                        <Ionicons name="checkmark-circle" size={18} color={C.purple} />
+                      )}
+                    </View>
                     <View style={[styles.rolBadge, { backgroundColor: C.purpleDim, borderColor: C.border }]}>
                       <Text style={{ color: C.purple, fontSize: 11, fontWeight: "600" }}>
                         {ROL_LABEL[rol]}
@@ -192,6 +199,33 @@ export default function PerfilPublicoModal({
                     ) : null}
                   </View>
                 </View>
+
+                {/* Estudiante: certificación digital · Empresa: rango + sello */}
+                {rol === "empresa" ? (
+                  <View style={{ marginBottom: 12, gap: 10 }}>
+                    <SelloEmpresa
+                      tier={calcularRango(Number(perfil.puntos_experiencia ?? 0), "empresa").tier}
+                      size="md"
+                    />
+                    <RangoCard
+                      xp={Number(perfil.puntos_experiencia ?? 0)}
+                      calificacion={Number(perfil.calificacion_promedio ?? 0)}
+                      pasantias={Number(perfil.pasantias_completadas ?? 0)}
+                      rol="empresa"
+                      theme={theme}
+                    />
+                  </View>
+                ) : rol === "talento" || rol === "alumno" ? (
+                  <View style={{ marginBottom: 12 }}>
+                    <CertificadoGradly
+                      xp={Number(perfil.puntos_experiencia ?? 0)}
+                      calificacion={Number(perfil.calificacion_promedio ?? 0)}
+                      pasantias={Number(perfil.pasantias_completadas ?? 0)}
+                      nombre={getNombre()}
+                      theme={theme}
+                    />
+                  </View>
+                ) : null}
 
                 {/* Descripción */}
                 {perfil.descripcion ? (
@@ -310,7 +344,8 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   avatarImg: { width: "100%", height: "100%" },
-  nombre: { fontSize: 17, fontWeight: "700", marginBottom: 4 },
+  nombreRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
+  nombre: { fontSize: 17, fontWeight: "700" },
   rolBadge: {
     alignSelf: "flex-start",
     paddingHorizontal: 8,

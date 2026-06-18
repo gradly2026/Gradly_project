@@ -1,0 +1,174 @@
+﻿Archivo revisado
+
+- Archivo: app/dashboard-empresa.tsx
+- Modal: se llama internamente Nueva Vacante, pero en UI aparece como “Nueva pasantía”.
+- El botón que abre el modal se activa desde SeccionVacantes mediante onNueva={() => setShowNuevaVacante(true)}.
+
+Importaciones relevantes para el modal y Google Maps
+
+Importaciones clave usadas en el modal / creación de vacantes:
+
+- useState, useEffect, useMemo de React
+- Alert, TextInput, Modal, ScrollView, TouchableOpacity, View, ActivityIndicator, Dimensions, Platform, StyleSheet de react-native
+- addDoc, collection, doc, getDocs, onSnapshot, query, serverTimestamp, updateDoc, where de firebase/firestore
+- signOut de firebase/auth
+- getDownloadURL, ref, uploadBytes de firebase/storage
+- Location de expo-location
+- ImagePicker de expo-image-picker
+- MapViewer de ../src/components/MapViewer
+- LiquidBackground, GlassCard, JellyButton de UI
+- useAuthGuard, useAuth, useTheme, COLORS, FONTS y otros utilitarios
+
+Funciones asociadas al modal “Crear Vacante”
+
+Principal
+- handlePublicarVacante
+  - Valida límite de vacantes según plan
+  - Requiere nvTitulo, nvArea, nvModalidad, nvTipo
+  - Si nvModalidad es Presencial o Híbrido, exige markerPos
+  - Construye payloadVacante
+  - Inserta documento nuevo en Firestore con addDoc(collection(db, 'vacantes'), payloadVacante)
+  - Limpia formulario y cierra modal
+
+Gestión de ubicación / Google Maps
+- extraerCoordenadas(texto)
+  - Extrae latitud/longitud de un enlace o texto
+  - Soporta:
+    - @lat,lng
+    - ?q=lat,lng
+    - ll=/center=/query=
+    - !3dlat!4dlng
+    - solo lat, lng
+- geocodificar(lat, lng)
+  - Web: usa https://maps.googleapis.com/maps/api/geocode/json
+  - Móvil: usa Location.reverseGeocodeAsync
+  - Devuelve objeto con direccion, municipio, departamento, paisNombre, paisCodigo
+- aplicarCoordenadas(latitude, longitude)
+  - Actualiza markerPos
+  - Reenfoca mapRegion
+  - Llama a geocodificar
+  - Verifica que la ubicación sea de El Salvador
+  - Si no es El Salvador, elimina el pin y muestra alerta
+  - Guarda ubicacionDetalle
+- capturarUbicacion()
+  - Pide permiso de ubicación
+  - Obtiene posición actual usando Location.getCurrentPositionAsync
+  - Llama aplicarCoordenadas(...)
+- marcarDesdeMapa(coord)
+  - Se usa cuando el usuario toca el mapa
+  - Llama aplicarCoordenadas(coord.latitude, coord.longitude)
+- handleLinkChange(texto)
+  - Guarda valor en googleLink
+  - Si puede extraer coordenadas automáticamente, llama aplicarCoordenadas
+- marcarDesdeEnlace()
+  - Intenta extraer coordenadas de googleLink
+  - Si no las extrae, hace fetch(enlace) para intentar expandir la URL corta y vuelve a extraer
+  - Si no encuentra coordenadas, avisa con alerta
+  - Si encuentra, llama aplicarCoordenadas
+
+Datos que sube a la base de datos desde el modal
+
+La función handlePublicarVacante escribe un nuevo documento en la colección vacantes con estos campos:
+
+- empresa_id
+- nombre_empresa
+- logo_empresa_url (siempre vacío en este payload: '')
+- titulo
+- descripcion
+- modalidad
+- tipo
+- area
+- horas_requeridas
+- horas_semanales
+- skills_requeridas
+- fecha_publicacion (serverTimestamp)
+- fecha_creacion (serverTimestamp)
+- fecha_limite
+- activa (true)
+- aplicantes_count (0)
+- contratados_count (0)
+- ubicacion_coords (objeto con latitude/longitude o null)
+- ubicacion_texto:
+  - direccion
+  - municipio
+  - departamento
+  - pais
+
+También limpia y resetea:
+- nvTitulo, nvArea, nvModalidad, nvTipo
+- nvDesc, nvHoras, nvHorasSem, nvSkills, nvFechaLim
+- markerPos, googleLink, ubicacionDetalle
+
+Cómo funciona Google Maps dentro de la plataforma
+
+1) Modo de mapa
+- El componente MapViewer usa react-native-maps con provider={PROVIDER_GOOGLE}
+- El mapa es interactivo: al tocarlo llama onMapPress, que a su vez invoca marcarDesdeMapa
+- El pin se muestra con <Marker coordinate={markerPos} />
+
+2) Ubicación actual del dispositivo
+- capturarUbicacion pide permiso de ubicación
+- Obtiene coordenadas GPS y las aplica al mapa
+- Luego se hace reverse geocoding para mostrar dirección y localidad
+
+3) Enlace de Google Maps
+- El usuario puede pegar un enlace en googleLink
+- handleLinkChange intenta extraer coordenadas inmediatamente
+- Si no, con el botón Buscar marcarDesdeEnlace hace:
+  - parse directo del texto
+  - si no hay coords, fetch(enlace) para conseguir la URL final y parsearla
+- Se soportan muchos formatos de URL de Google Maps
+
+4) Reverse geocoding
+- En web:
+  - Llama a la API de Google Maps Geocoding con la clave GOOGLE_MAPS_API_KEY
+- En móvil:
+  - Usa Location.reverseGeocodeAsync
+- Después valida que el país sea El Salvador y guarda datos de dirección
+
+Irregularidades y observaciones
+
+Sí, hay algunas cosas que no cuadran / deben revisarse
+
+1. GOOGLE_MAPS_API_KEY está expuesto directamente en el código:
+   - const GOOGLE_MAPS_API_KEY = 'AIzaSyCrsDxPdnVe_Xv9JrHs8j-gFqKugiEc6mc'
+   - Esto es un riesgo: se filtra a cliente web y puede usarse sin control.
+   - Mejor moverlo a servidor / variables de entorno, no a código fuente público.
+
+2. El modal define logo_empresa_url: '' siempre vacío.
+   - Si se quiere enviar el logo real de la empresa a la vacante, ese campo no se está completando.
+
+3. fecha_limite no tiene validación real de formato:
+   - Se guarda tal cual viene en nvFechaLim o null.
+   - Si el usuario escribe algo no válido, Firestore guarda el string.
+
+4. nvHoras y nvHorasSem solo se parsean con parseInt(...) || valorPorDefecto.
+   - Si el usuario ingresa abc, se convierte en el valor por defecto sin alerta.
+   - No hay validación de valores negativos ni de rango razonable.
+
+5. marcarDesdeEnlace puede fallar si el enlace de Google Maps no devuelve una URL final válida o si fetch está bloqueado por CORS en web.
+   - El código asume que resp.url contendrá la URL expandida.
+
+6. geocodificar rechaza si el lugar no es El Salvador, pero en el caso de geocoding fallido sigue guardando el pin con coordenadas numéricas y país El Salvador por defecto.
+   - Esto puede causar datos ambiguos si el reverse geocode no devuelve información real.
+
+Positivo
+- El flujo de publicar vacante es claro y el payload se sanitiza eliminando campos undefined.
+- La lógica obliga a establecer ubicación solo para Presencial y Híbrido, lo cual es correcto.
+- El mapa interactivo tiene tres vías de entrada: GPS actual, clic en mapa, y enlace de Google Maps.
+
+Resumen corto
+- El modal de “Crear Vacante” usa estas funciones principales:
+  - handlePublicarVacante
+  - capturarUbicacion
+  - marcarDesdeMapa
+  - handleLinkChange
+  - marcarDesdeEnlace
+  - extraerCoordenadas
+  - geocodificar
+  - aplicarCoordenadas
+- Sí sube datos a Firestore vía addDoc(collection(db, 'vacantes'), payloadVacante)
+- El valor GOOGLE_MAPS_API_KEY está en código y eso es la irregularidad más importante
+- También hay validaciones de fecha/horas débiles y logo_empresa_url se deja vacío
+
+Si quieres, puedo hacer un segundo pase y darte solo el diagrama de flujo del proceso de publicación de vacante paso a paso.

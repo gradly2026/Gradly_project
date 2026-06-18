@@ -1,7 +1,26 @@
 import * as ImagePicker from "expo-image-picker";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { Alert } from "react-native";
-import { supabase } from "../lib/supabase";
+import { db, storage } from "../src/config/firebaseConfig";
 
+type PerfilTable = "talentos" | "empresas" | "universidades" | "alumnos";
+
+// Mapea los nombres heredados de tabla a las colecciones Firestore.
+const COLLECTION_MAP: Record<PerfilTable, string> = {
+  talentos: "perfiles_estudiantes",
+  alumnos: "perfiles_estudiantes",
+  empresas: "perfiles_empresas",
+  universidades: "perfiles_universidades",
+};
+
+/**
+ * Selecciona una imagen de la galería y la sube a Firebase Storage.
+ * `bucket` y `destinationPath` se combinan en la ruta: `${bucket}/${destinationPath}`.
+ * Devuelve la URL de descarga (o el path si se prefiere algo privado).
+ *
+ * Fix Expo: se convierte la URI local (file://) a Blob con fetch antes de subir.
+ */
 export async function pickAndUploadImage(
   bucket: string,
   destinationPath: string,
@@ -23,9 +42,7 @@ export async function pickAndUploadImage(
       quality: 0.85,
     });
 
-    if (result.canceled) {
-      return null;
-    }
+    if (result.canceled) return null;
 
     const uri = result.assets[0].uri;
     const response = await fetch(uri);
@@ -34,31 +51,10 @@ export async function pickAndUploadImage(
     }
 
     const blob = await response.blob();
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(destinationPath, blob, { upsert: true });
+    const storageRef = ref(storage, `${bucket}/${destinationPath}`);
+    await uploadBytes(storageRef, blob);
 
-    if (error) {
-      throw error;
-    }
-
-    if (bucket === "public-media") {
-      const { data } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(destinationPath);
-
-      if (!data?.publicUrl) {
-        throw new Error("No se pudo obtener la URL pública.");
-      }
-
-      return data.publicUrl;
-    }
-
-    if (bucket === "private-docs") {
-      return destinationPath;
-    }
-
-    return destinationPath;
+    return getDownloadURL(storageRef);
   } catch (error: any) {
     Alert.alert(
       "Error subiendo imagen",
@@ -71,20 +67,13 @@ export async function pickAndUploadImage(
 
 export async function getProfilePhotoUrl(
   userId: string,
-  table: "talentos" | "empresas" | "universidades" | "alumnos",
+  table: PerfilTable,
 ): Promise<string | null> {
   try {
-    const { data, error } = await supabase
-      .from(table)
-      .select("foto_perfil")
-      .eq("id", userId)
-      .single();
-
-    if (error || !data) {
-      return null;
-    }
-
-    return data.foto_perfil ?? null;
+    const snap = await getDoc(doc(db, COLLECTION_MAP[table], userId));
+    if (!snap.exists()) return null;
+    const data: any = snap.data();
+    return data.foto_url ?? data.logo_url ?? data.foto_perfil ?? null;
   } catch (error) {
     console.error("getProfilePhotoUrl error", error);
     return null;
@@ -93,23 +82,16 @@ export async function getProfilePhotoUrl(
 
 export async function updateProfilePhoto(
   userId: string,
-  table: "talentos" | "empresas" | "universidades" | "alumnos",
+  table: PerfilTable,
   photoUrl: string,
 ): Promise<boolean> {
   try {
-    const { error } = await supabase
-      .from(table)
-      .update({ foto_perfil: photoUrl })
-      .eq("id", userId);
-
-    if (error) {
-      console.error("updateProfilePhoto error", error);
-      return false;
-    }
-
+    await updateDoc(doc(db, COLLECTION_MAP[table], userId), {
+      foto_url: photoUrl,
+    });
     return true;
   } catch (error) {
-    console.error("updateProfilePhoto unexpected error", error);
+    console.error("updateProfilePhoto error", error);
     return false;
   }
 }
@@ -120,19 +102,7 @@ export async function updateUserProfile(
   fields: Record<string, any>,
 ): Promise<boolean> {
   try {
-    const { error } = await supabase
-      .from(table)
-      .update(fields)
-      .eq("id", userId);
-    if (error) {
-      console.error("updateUserProfile error", error);
-      Alert.alert(
-        "Error actualizando perfil",
-        error.message || "No se pudo actualizar el perfil.",
-      );
-      return false;
-    }
-
+    await updateDoc(doc(db, COLLECTION_MAP[table], userId), fields);
     return true;
   } catch (error: any) {
     console.error("updateUserProfile unexpected error", error);

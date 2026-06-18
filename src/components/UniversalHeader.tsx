@@ -17,7 +17,16 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../../lib/supabase";
+import {
+  collection,
+  doc,
+  limit,
+  onSnapshot,
+  query,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+import { db } from "../config/firebaseConfig";
 import handleLogout from "../services/authService";
 import { useThemeContext } from "../context/ThemeContext";
 import { useTranslationContext } from "../context/TranslationContext";
@@ -86,7 +95,7 @@ export default function UniversalHeader({
 }: UniversalHeaderProps) {
   const router = useRouter();
   const { isDark, toggleTheme } = useThemeContext();
-  const { language, changeLanguage } = useTranslationContext();
+  const { language } = useTranslationContext();
 
   const C = isDark ? dark : light;
 
@@ -101,70 +110,63 @@ export default function UniversalHeader({
   useEffect(() => {
     if (!userId) return;
 
-    const fetchNotifs = async () => {
-      const { data } = await supabase
-        .from("notificaciones")
-        .select("id, titulo, mensaje, leida, created_at, tipo")
-        .eq("usuario_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(40);
+    // Realtime con onSnapshot. Sin orderBy para evitar requerir un índice
+    // compuesto; ordenamos por fecha en el cliente.
+    const q = query(
+      collection(db, "notificaciones"),
+      where("usuario_id", "==", userId),
+      limit(60),
+    );
 
-      if (data) {
-        setNotifs(data as Notif[]);
-        setUnread(data.filter((n) => !n.leida).length);
-      }
-    };
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list: Notif[] = snap.docs.map((d) => {
+          const data: any = d.data();
+          const created = data.fecha?.toDate?.() ?? null;
+          return {
+            id: d.id,
+            titulo: data.titulo ?? "",
+            mensaje: data.mensaje ?? "",
+            leida: !!data.leida,
+            tipo: data.tipo,
+            created_at: created ? created.toISOString() : new Date(0).toISOString(),
+          };
+        });
+        list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+        setNotifs(list.slice(0, 40));
+        setUnread(list.filter((n) => !n.leida).length);
+      },
+      (err) => console.error("[UniversalHeader] notif error", err),
+    );
 
-    fetchNotifs();
-
-    const channel = supabase
-      .channel(`univ-header-notif-${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notificaciones",
-          filter: `usuario_id=eq.${userId}`,
-        },
-        (payload) => {
-          setNotifs((prev) => [payload.new as Notif, ...prev]);
-          setUnread((prev) => prev + 1);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsub();
   }, [userId]);
 
   const markAllRead = async () => {
     if (!userId) return;
-    await supabase
-      .from("notificaciones")
-      .update({ leida: true })
-      .eq("usuario_id", userId)
-      .eq("leida", false);
+    const pendientes = notifs.filter((n) => !n.leida);
+    await Promise.all(
+      pendientes.map((n) =>
+        updateDoc(doc(db, "notificaciones", n.id), { leida: true }),
+      ),
+    );
     setNotifs((prev) => prev.map((n) => ({ ...n, leida: true })));
     setUnread(0);
   };
 
   const markOneRead = async (id: string) => {
-    await supabase
-      .from("notificaciones")
-      .update({ leida: true })
-      .eq("id", id);
+    await updateDoc(doc(db, "notificaciones", id), { leida: true });
     setNotifs((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, leida: true } : n))
+      prev.map((n) => (n.id === id ? { ...n, leida: true } : n)),
     );
     setUnread((prev) => Math.max(0, prev - 1));
   };
 
   // ── Idioma ─────────────────────────────────────────────────────────────────
 
+  // App en español fijo: el menú de idioma solo se cierra (no-op de cambio).
   const handleLangToggle = () => {
-    changeLanguage(language === "es" ? "en" : "es");
     setLangMenuOpen(false);
   };
 

@@ -10,12 +10,12 @@ import { useTranslationContext } from "../src/context/TranslationContext";
  * t              → (text: string) => Promise<string>  (traducción asíncrona)
  */
 export function useAppLanguage() {
-  const { language, changeLanguage, translateText, getTranslation } =
-    useTranslationContext();
+  const { language, translateText, getTranslation } = useTranslationContext();
 
-  const toggleLanguage = () => {
-    changeLanguage(language === "es" ? "en" : "es");
-  };
+  // La app es español fijo. Mantenemos estas funciones como no-op para
+  // conservar la API de los componentes que aún las invocan.
+  const changeLanguage = (_lang?: string) => {};
+  const toggleLanguage = () => {};
 
   return {
     language,

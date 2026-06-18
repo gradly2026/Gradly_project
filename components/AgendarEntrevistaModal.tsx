@@ -11,7 +11,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../lib/supabase";
+import {
+  addDoc,
+  collection,
+  doc,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+import { db } from "../src/config/firebaseConfig";
 
 interface Props {
   visible: boolean;
@@ -93,28 +100,28 @@ export default function AgendarEntrevistaModal({
     }
     setLoading(true);
     try {
-      // Update application status
-      await supabase
-        .from("aplicaciones")
-        .update({ estado: "entrevista" })
-        .eq("id", aplicacionId);
+      // Actualizar estado de la aplicación
+      await updateDoc(doc(db, "aplicaciones", aplicacionId), {
+        estado: "entrevista",
+      });
 
-      // Insert interview record
-      await supabase.from("entrevistas").insert({
+      // Registrar la entrevista
+      await addDoc(collection(db, "entrevistas"), {
         aplicacion_id: aplicacionId,
         empresa_id: empresaId,
         solicitante_id: solicitanteId,
-        vacante_id: vacanteId ?? null,
+        vacante_id: vacanteId ?? "",
         fecha,
         hora,
         modalidad,
-        lugar: lugar.trim() || null,
-        notas: notas.trim() || null,
+        lugar: lugar.trim() || "",
+        notas: notas.trim() || "",
         estado: "programada",
+        fecha_creacion: serverTimestamp(),
       });
 
-      // Notify the candidate
-      await supabase.from("notificaciones").insert({
+      // Notificar al candidato
+      await addDoc(collection(db, "notificaciones"), {
         usuario_id: solicitanteId,
         tipo: "entrevista",
         titulo: "Entrevista programada",
@@ -122,6 +129,7 @@ export default function AgendarEntrevistaModal({
           ? `Tienes una entrevista para "${vacanteNombre}" el ${fecha} a las ${hora}.`
           : `Tienes una entrevista programada para el ${fecha} a las ${hora}.`,
         leida: false,
+        fecha: serverTimestamp(),
       });
 
       Alert.alert("Entrevista agendada", `Entrevista programada para el ${fecha} a las ${hora}.`);

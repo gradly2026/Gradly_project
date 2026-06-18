@@ -25,13 +25,12 @@ interface AppHeaderProps {
 
 export default function AppHeader({ hideLogo = false, style }: AppHeaderProps) {
   const { isDark, toggleTheme } = useThemeContext();
-  const { language, changeLanguage } = useTranslationContext();
+  const { language } = useTranslationContext();
 
   const C = isDark ? dark : light;
 
-  const handleLangToggle = () => {
-    changeLanguage(language === "es" ? "en" : "es");
-  };
+  // App en español fijo: el botón de idioma queda como no-op por ahora.
+  const handleLangToggle = () => {};
 
   return (
     <View style={[styles.bar, { backgroundColor: C.bg, borderBottomColor: C.border }, style]}>

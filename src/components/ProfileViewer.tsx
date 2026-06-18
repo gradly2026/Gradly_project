@@ -10,7 +10,8 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { supabase } from "../../lib/supabase";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "../config/firebaseConfig";
 
 type UserType = "talento" | "empresa" | "universidad";
 
@@ -38,6 +39,7 @@ type NormalizedProfile = {
   fotoPerfilUri?: string;
   fotoLogoUri?: string;
   fotoBannerUri?: string;
+  verificado?: boolean;
 };
 
 const C = {
@@ -52,10 +54,10 @@ const C = {
   gray: "rgba(255,255,255,0.18)",
 };
 
-function getTableName(userType: UserType) {
-  if (userType === "talento") return "talentos";
-  if (userType === "empresa") return "empresas";
-  return "universidades";
+function getCollectionName(userType: UserType) {
+  if (userType === "talento") return "perfiles_estudiantes";
+  if (userType === "empresa") return "perfiles_empresas";
+  return "perfiles_universidades";
 }
 
 function normalizeProfile(userType: UserType, rawProfile: Record<string, any>) {
@@ -88,6 +90,7 @@ function normalizeProfile(userType: UserType, rawProfile: Record<string, any>) {
       ...common,
       industria: rawProfile.industria,
       descripcion: rawProfile.descripcion,
+      verificado: rawProfile.verificado ?? false,
       email: rawProfile.email_corporativo ?? rawProfile.email,
       fotoLogoUri:
         rawProfile.fotoLogoUri ?? rawProfile.foto_logo ?? rawProfile.logo_url,
@@ -156,90 +159,58 @@ export default function ProfileViewer({
 
   useEffect(() => {
     let mounted = true;
-    const table = getTableName(userType);
+    const col = getCollectionName(userType);
+    const effectiveUserId = userId?.trim();
 
-    const fetchProfile = async (effectiveUserId: string) => {
-      const { data, error: queryError } = await supabase
-        .from(table)
-        .select("*")
-        .eq("id", effectiveUserId)
-        .single();
-
+    const applyData = (data: Record<string, any> | null) => {
       if (!mounted) return;
-
-      if (queryError || !data) {
-        const fallback = FALLBACK_PROFILES[userType]?.[effectiveUserId];
+      if (!data) {
+        const fallback = FALLBACK_PROFILES[userType]?.[effectiveUserId ?? ""];
         if (fallback) {
           setProfile(fallback);
           setError(null);
-          return;
+        } else {
+          setError("No se pudo cargar el perfil. Verifica el ID y los permisos.");
         }
-        setError(
-          queryError?.message ||
-            "No se pudo cargar el perfil. Verifica permisos (RLS/auth.uid()) y el ID.",
-        );
         return;
       }
-
       setProfile(normalizeProfile(userType, data));
+      setError(null);
     };
 
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      setProfile(null);
+    if (!effectiveUserId) {
+      setLoading(false);
+      setError("No se proporcionó un ID de usuario.");
+      return;
+    }
 
-      try {
-        // La persistencia y los permisos de lectura usualmente dependen de RLS (auth.uid()).
-        // Aun así, desde UI podemos usar el userId recibido para la consulta.
-        const effectiveUserId = userId?.trim();
+    setLoading(true);
+    setError(null);
+    setProfile(null);
 
-        if (!effectiveUserId) {
-          setError("No se proporcionó un ID de usuario.");
-          return;
-        }
-
-        await fetchProfile(effectiveUserId);
-      } catch (err: any) {
-        const fallback = FALLBACK_PROFILES[userType]?.[userId ?? ""];
+    // Lectura en tiempo real con onSnapshot (equivalente Firebase al realtime).
+    const unsub = onSnapshot(
+      doc(db, col, effectiveUserId),
+      (snap) => {
+        applyData(snap.exists() ? (snap.data() as Record<string, any>) : null);
+        if (mounted) setLoading(false);
+      },
+      (err) => {
+        if (!mounted) return;
+        const fallback = FALLBACK_PROFILES[userType]?.[effectiveUserId];
         if (fallback) {
           setProfile(fallback);
           setError(null);
         } else {
           setError(err?.message || "No se pudo cargar el perfil.");
         }
-      } finally {
         setLoading(false);
-      }
-    };
-
-    // Cargar inicialmente
-    load();
-
-    // Realtime: escuchar cambios del registro (lectura “en tiempo real”)
-    const channel = supabase
-      .channel(`profileviewer:${table}:${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table,
-          filter: `id=eq.${userId}`,
-        },
-        async () => {
-          try {
-            await fetchProfile(userId);
-          } catch (e) {
-            console.error("[ProfileViewer] realtime fetch error", e);
-          }
-        },
-      )
-      .subscribe();
+      },
+    );
 
     return () => {
       mounted = false;
-      supabase.removeChannel(channel);
+      unsub();
     };
   }, [userId, userType]);
 
@@ -323,7 +294,12 @@ export default function ProfileViewer({
           </View>
         </View>
         <View style={styles.orgBody}>
-          <Text style={styles.profileName}>{profile?.nombre}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.profileName}>{profile?.nombre}</Text>
+            {profile?.verificado ? (
+              <Ionicons name="checkmark-circle" size={20} color={C.accent} />
+            ) : null}
+          </View>
           {profile?.industria || profile?.descripcion ? (
             <Text style={styles.profileMeta}>
               {profile.industria || profile.descripcion}
@@ -486,6 +462,12 @@ const styles = StyleSheet.create({
     paddingTop: 44,
     paddingHorizontal: 16,
     paddingBottom: 24,
+  },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
   },
   profileName: {
     color: C.text,

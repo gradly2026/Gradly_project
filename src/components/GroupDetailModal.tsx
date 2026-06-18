@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
+    Alert,
     Modal,
     SafeAreaView,
     ScrollView,
@@ -10,6 +11,8 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { auth } from "../config/firebaseConfig";
+import OfrecerEmpresaModal from "./OfrecerEmpresaModal";
 
 export interface GroupStudent {
   id: string;
@@ -52,6 +55,8 @@ interface Props {
   visible: boolean;
   mode: "view" | "edit";
   group: GrupoData | null;
+  /** Universidad dueña del grupo. Si no llega, se usa el usuario autenticado. */
+  universidadId?: string;
   onClose: () => void;
   onSave?: (updatedGroup: GrupoData) => void;
   saving?: boolean;
@@ -73,11 +78,15 @@ export default function GroupDetailModal({
   visible,
   mode,
   group,
+  universidadId,
   onClose,
   onSave,
   saving,
 }: Props) {
   const [draft, setDraft] = useState<GrupoData | null>(null);
+  const [showOfrecer, setShowOfrecer] = useState(false);
+
+  const ofertaUniversidadId = universidadId ?? auth.currentUser?.uid ?? "";
 
   useEffect(() => {
     if (group) {
@@ -103,6 +112,16 @@ export default function GroupDetailModal({
     if (draft && onSave) {
       onSave(draft);
     }
+  };
+
+  const handleOfertaCreada = (empresaNombre: string) => {
+    setShowOfrecer(false);
+    // Feedback de éxito sin sacar al usuario de su dashboard.
+    Alert.alert(
+      "Solicitud enviada",
+      `Tu grupo se ofreció a ${empresaNombre}. La empresa recibirá la solicitud en estado pendiente.`,
+    );
+    onClose();
   };
 
   return (
@@ -288,6 +307,17 @@ export default function GroupDetailModal({
             ))}
           </View>
 
+          {mode === "view" ? (
+            <TouchableOpacity
+              style={styles.btnOffer}
+              onPress={() => setShowOfrecer(true)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="briefcase-outline" size={18} color="#fff" />
+              <Text style={styles.btnOfferText}>Ofrecer a Empresa</Text>
+            </TouchableOpacity>
+          ) : null}
+
           <View style={styles.buttonRow}>
             <TouchableOpacity
               style={[styles.btnOutline, { flex: 1 }]}
@@ -312,6 +342,14 @@ export default function GroupDetailModal({
             ) : null}
           </View>
         </ScrollView>
+
+        <OfrecerEmpresaModal
+          visible={showOfrecer}
+          group={draft}
+          universidadId={ofertaUniversidadId}
+          onClose={() => setShowOfrecer(false)}
+          onSuccess={handleOfertaCreada}
+        />
       </SafeAreaView>
     </Modal>
   );
@@ -418,6 +456,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
+  },
+  btnOffer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: C.accent,
+    borderRadius: 16,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  btnOfferText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
   },
   buttonRow: {
     flexDirection: "row",

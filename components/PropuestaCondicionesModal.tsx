@@ -11,7 +11,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../lib/supabase";
+import {
+  addDoc,
+  collection,
+  doc,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+import { db } from "../src/config/firebaseConfig";
 
 interface Props {
   visible: boolean;
@@ -95,20 +102,18 @@ export default function PropuestaCondicionesModal({
     }
     setLoading(true);
     try {
-      await supabase
-        .from("solicitudes_horas")
-        .update({
-          estado: "en_revision",
-          horas_ofrecidas: parseInt(horasOfrecidas),
-          fecha_inicio: fechaInicio,
-          fecha_fin: fechaFin,
-          horario: horario.trim() || null,
-          condiciones: condiciones.trim() || null,
-        })
-        .eq("id", solicitudId);
+      await updateDoc(doc(db, "solicitudes_horas", solicitudId), {
+        estado: "en_revision",
+        horas_ofrecidas: parseInt(horasOfrecidas, 10),
+        fecha_inicio: fechaInicio,
+        fecha_fin: fechaFin,
+        horario: horario.trim() || "",
+        condiciones: condiciones.trim() || "",
+        empresa_id: empresaId,
+      });
 
-      // Notify university
-      await supabase.from("notificaciones").insert({
+      // Notificar a la universidad
+      await addDoc(collection(db, "notificaciones"), {
         usuario_id: universidadId,
         tipo: "horas_sociales",
         titulo: "Propuesta de condiciones recibida",
@@ -116,6 +121,7 @@ export default function PropuestaCondicionesModal({
           ? `La empresa ha enviado una propuesta de condiciones para el grupo "${grupoNombre}". Revisa los detalles en Horas Sociales.`
           : "La empresa ha enviado una propuesta de condiciones. Revisa los detalles en Horas Sociales.",
         leida: false,
+        fecha: serverTimestamp(),
       });
 
       onSuccess?.();

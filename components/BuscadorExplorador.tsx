@@ -9,7 +9,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../lib/supabase";
+import { collection, getDocs, limit, query as fsQuery } from "firebase/firestore";
+import { db } from "../src/config/firebaseConfig";
 import PerfilPublicoModal, { PerfilRol } from "./PerfilPublicoModal";
 
 type TabKey = "empresas" | "talentos" | "alumnos";
@@ -63,11 +64,19 @@ const TAB_ROL: Record<TabKey, PerfilRol> = {
   alumnos: "alumno",
 };
 
+// Colecciones Firestore por pestaña.
+const TAB_COLLECTION: Record<TabKey, string> = {
+  empresas: "perfiles_empresas",
+  talentos: "perfiles_estudiantes",
+  alumnos: "perfiles_estudiantes",
+};
+
 type ResultItem = {
   id: string;
   nombre: string;
   subtitulo: string;
   foto: string | null;
+  verificado?: boolean;
 };
 
 export default function BuscadorExplorador({
@@ -95,24 +104,34 @@ export default function BuscadorExplorador({
   const loadTab = useCallback(async (tab: TabKey, q: string) => {
     setLoading(true);
     try {
-      let qb = supabase.from(tab).select("id, nombre, foto_perfil, foto_logo, logo_url, industria, sector, headline, area, carrera, semestre, ciudad, departamento, nombre_completo");
-      if (q.trim()) {
-        const field = tab === "alumnos" ? "nombre_completo" : "nombre";
-        qb = qb.ilike(field, `%${q.trim()}%`);
-      }
-      const { data } = await qb.order("created_at", { ascending: false }).limit(20);
-      if (!data) { setResults([]); return; }
+      // Firestore no soporta búsqueda por subcadena (ilike); traemos un lote
+      // y filtramos por nombre en el cliente.
+      const snap = await getDocs(
+        fsQuery(collection(db, TAB_COLLECTION[tab]), limit(50)),
+      );
+      const term = q.trim().toLowerCase();
 
-      const mapped: ResultItem[] = data.map((r: any) => {
-        const nombre = r.nombre_completo ?? r.nombre ?? "";
-        const foto = r.foto_perfil ?? r.foto_logo ?? r.logo_url ?? null;
-        let subtitulo = "";
-        if (tab === "empresas") subtitulo = r.industria ?? r.sector ?? "";
-        else if (tab === "talentos") subtitulo = r.headline ?? r.area ?? "";
-        else if (tab === "alumnos") subtitulo = r.carrera ?? "";
-        if (r.ciudad) subtitulo = subtitulo ? `${subtitulo} · ${r.ciudad}` : r.ciudad;
-        return { id: r.id, nombre, subtitulo, foto };
-      });
+      const mapped: ResultItem[] = snap.docs
+        .map((d) => {
+          const r: any = { id: d.id, ...d.data() };
+          const nombre =
+            r.nombre_completo ??
+            r.nombre ??
+            r.nombre_empresa ??
+            r.nombre_universidad ??
+            "";
+          const foto =
+            r.foto_perfil ?? r.foto_url ?? r.foto_logo ?? r.logo_url ?? null;
+          let subtitulo = "";
+          if (tab === "empresas") subtitulo = r.industria ?? r.sector ?? "";
+          else if (tab === "talentos") subtitulo = r.headline ?? r.area ?? r.carrera ?? "";
+          else if (tab === "alumnos") subtitulo = r.carrera ?? "";
+          if (r.ciudad) subtitulo = subtitulo ? `${subtitulo} · ${r.ciudad}` : r.ciudad;
+          return { id: r.id, nombre, subtitulo, foto, verificado: tab === "empresas" ? (r.verificado ?? false) : false } as ResultItem;
+        })
+        .filter((item) => !term || item.nombre.toLowerCase().includes(term))
+        .slice(0, 20);
+
       setResults(mapped);
     } finally {
       setLoading(false);
@@ -205,9 +224,14 @@ export default function BuscadorExplorador({
               )}
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: C.text, fontWeight: "600", fontSize: 13 }} numberOfLines={1}>
-                {item.nombre || "—"}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Text style={{ color: C.text, fontWeight: "600", fontSize: 13 }} numberOfLines={1}>
+                  {item.nombre || "—"}
+                </Text>
+                {item.verificado ? (
+                  <Ionicons name="checkmark-circle" size={14} color={C.purple} />
+                ) : null}
+              </View>
               {item.subtitulo ? (
                 <Text style={{ color: C.muted, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
                   {item.subtitulo}

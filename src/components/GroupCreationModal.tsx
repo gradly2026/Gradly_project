@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Modal,
@@ -10,12 +10,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../../lib/supabase";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../config/firebaseConfig";
 import {
   createGrupoWithStudents,
   type GrupoEstudiante,
   type GrupoStudentCreationResult,
 } from "../../services/authService";
+import { crearChatGrupoOficial } from "../services/chatService";
 import { type GrupoData } from "./GroupDetailModal";
 
 const C = {
@@ -29,6 +31,201 @@ const C = {
   green: "rgba(52,211,153,1)",
   red: "rgba(239,68,68,1)",
 };
+
+// ── Utilidades de fecha ──────────────────────────────────────────────
+const DIAS_SEMANA = ["D", "L", "M", "M", "J", "V", "S"];
+const MESES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+
+/** Devuelve la fecha sin componente horario (00:00:00 local). */
+const startOfDay = (d: Date) =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
+const formatFecha = (d: Date | null) =>
+  d
+    ? d.toLocaleDateString("es-ES", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : "";
+
+/** ISO corto (YYYY-MM-DD) para persistir en Firestore. */
+const toISODate = (d: Date) => {
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+};
+
+interface CalendarModalProps {
+  visible: boolean;
+  value: Date | null;
+  minimumDate: Date;
+  maximumDate: Date;
+  title: string;
+  onSelect: (date: Date) => void;
+  onClose: () => void;
+}
+
+/**
+ * Calendario propio (sin dependencias nativas) que respeta minimumDate /
+ * maximumDate. Se construye con la misma paleta `C` y patrón de Modal anidado
+ * que ya usa el selector de carrera.
+ */
+function CalendarModal({
+  visible,
+  value,
+  minimumDate,
+  maximumDate,
+  title,
+  onSelect,
+  onClose,
+}: CalendarModalProps) {
+  const initialMonth = value ?? minimumDate;
+  const [viewYear, setViewYear] = useState(initialMonth.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initialMonth.getMonth());
+
+  useEffect(() => {
+    if (visible) {
+      const base = value ?? minimumDate;
+      setViewYear(base.getFullYear());
+      setViewMonth(base.getMonth());
+    }
+  }, [visible]);
+
+  const minDay = startOfDay(minimumDate);
+  const maxDay = startOfDay(maximumDate);
+
+  const firstWeekday = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++)
+    cells.push(new Date(viewYear, viewMonth, d));
+
+  const monthStart = startOfDay(new Date(viewYear, viewMonth, 1));
+  const canGoPrev = monthStart > startOfDay(new Date(minDay.getFullYear(), minDay.getMonth(), 1));
+  const canGoNext = monthStart < startOfDay(new Date(maxDay.getFullYear(), maxDay.getMonth(), 1));
+
+  const goPrev = () => {
+    if (!canGoPrev) return;
+    if (viewMonth === 0) {
+      setViewMonth(11);
+      setViewYear((y) => y - 1);
+    } else setViewMonth((m) => m - 1);
+  };
+  const goNext = () => {
+    if (!canGoNext) return;
+    if (viewMonth === 11) {
+      setViewMonth(0);
+      setViewYear((y) => y + 1);
+    } else setViewMonth((m) => m + 1);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity
+        style={styles.calendarBackdrop}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <TouchableOpacity
+          style={styles.calendarContainer}
+          activeOpacity={1}
+          onPress={() => {}}
+        >
+          <View style={styles.headerRow}>
+            <Text style={styles.title}>{title}</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={22} color={C.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.calendarNav}>
+            <TouchableOpacity
+              onPress={goPrev}
+              disabled={!canGoPrev}
+              style={{ opacity: canGoPrev ? 1 : 0.3, padding: 6 }}
+            >
+              <Ionicons name="chevron-back" size={22} color={C.text} />
+            </TouchableOpacity>
+            <Text style={styles.calendarMonthLabel}>
+              {MESES[viewMonth]} {viewYear}
+            </Text>
+            <TouchableOpacity
+              onPress={goNext}
+              disabled={!canGoNext}
+              style={{ opacity: canGoNext ? 1 : 0.3, padding: 6 }}
+            >
+              <Ionicons name="chevron-forward" size={22} color={C.text} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.calendarWeekRow}>
+            {DIAS_SEMANA.map((d, i) => (
+              <Text key={i} style={styles.calendarWeekday}>
+                {d}
+              </Text>
+            ))}
+          </View>
+
+          <View style={styles.calendarGrid}>
+            {cells.map((cell, idx) => {
+              if (!cell) return <View key={idx} style={styles.calendarCell} />;
+              const day = startOfDay(cell);
+              const disabled = day < minDay || day > maxDay;
+              const selected = value ? sameDay(day, value) : false;
+              return (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.calendarCell}
+                  disabled={disabled}
+                  activeOpacity={0.7}
+                  onPress={() => onSelect(day)}
+                >
+                  <View
+                    style={[
+                      styles.calendarDay,
+                      selected && styles.calendarDaySelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.calendarDayText,
+                        disabled && styles.calendarDayTextDisabled,
+                        selected && styles.calendarDayTextSelected,
+                      ]}
+                    >
+                      {cell.getDate()}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
 
 interface Props {
   visible: boolean;
@@ -146,6 +343,11 @@ export default function GroupCreationModal({
   const [grupoCarrera, setGrupoCarrera] = useState("");
   const [grupoNombre, setGrupoNombre] = useState("");
   const [grupoTotalHoras, setGrupoTotalHoras] = useState("");
+  const [fechaInicio, setFechaInicio] = useState<Date | null>(null);
+  const [fechaFin, setFechaFin] = useState<Date | null>(null);
+  const [datePickerTarget, setDatePickerTarget] = useState<
+    "inicio" | "fin" | null
+  >(null);
   const [estudiantes, setEstudiantes] = useState<GrupoEstudiante[]>([
     { ...EMPTY_ESTUDIANTE },
   ]);
@@ -159,6 +361,14 @@ export default function GroupCreationModal({
   const [isLoadingCarreras, setIsLoadingCarreras] = useState(false);
   const [carreraPickerOpen, setCarreraPickerOpen] = useState(false);
 
+  // Límites del calendario: desde hoy hasta exactamente 2 años en el futuro.
+  const today = useMemo(() => startOfDay(new Date()), []);
+  const maxDate = useMemo(() => {
+    const d = new Date(today);
+    d.setFullYear(d.getFullYear() + 2);
+    return d;
+  }, [today]);
+
   useEffect(() => {
     if (!visible) {
       resetForm();
@@ -171,35 +381,35 @@ export default function GroupCreationModal({
 
   const loadCarreras = async () => {
     setIsLoadingCarreras(true);
-    const { data, error } = await supabase
-      .from("universidades")
-      .select("carreras")
-      .eq("id", universidadId)
-      .single();
-    setIsLoadingCarreras(false);
+    try {
+      const snap = await getDoc(doc(db, "perfiles_universidades", universidadId));
+      const data = snap.exists() ? (snap.data() as any) : null;
 
-    if (error || !data) {
+      // El registro de universidad persiste la oferta en `carreras_ofertadas`
+      // (array de nombres). Mantenemos `carreras` como fallback por compatibilidad.
+      const carrerasRaw = data?.carreras_ofertadas ?? data?.carreras;
+      const carrerasData = Array.isArray(carrerasRaw)
+        ? carrerasRaw
+        : typeof carrerasRaw === "string"
+          ? [carrerasRaw]
+          : [];
+
+      const normalizedCarreras = carrerasData
+        .map((item: any) => {
+          if (!item) return "";
+          if (typeof item === "string") return item;
+          if (typeof item === "object") return String(item.nombre ?? "");
+          return String(item);
+        })
+        .filter(Boolean);
+
+      setCarreras(normalizedCarreras);
+    } catch (error) {
       console.error("Error cargando carreras:", error);
       setCarreras([]);
-      return;
+    } finally {
+      setIsLoadingCarreras(false);
     }
-
-    const carrerasData = Array.isArray(data.carreras)
-      ? data.carreras
-      : typeof data.carreras === "string"
-        ? [data.carreras]
-        : [];
-
-    const normalizedCarreras = carrerasData
-      .map((item) => {
-        if (!item) return "";
-        if (typeof item === "string") return item;
-        if (typeof item === "object") return String((item as any).nombre ?? "");
-        return String(item);
-      })
-      .filter(Boolean);
-
-    setCarreras(normalizedCarreras);
   };
 
   const resetForm = () => {
@@ -207,6 +417,9 @@ export default function GroupCreationModal({
     setGrupoCarrera("");
     setGrupoNombre("");
     setGrupoTotalHoras("");
+    setFechaInicio(null);
+    setFechaFin(null);
+    setDatePickerTarget(null);
     setEstudiantes([{ ...EMPTY_ESTUDIANTE }]);
     setSaving(false);
     setCreatedGroup(null);
@@ -259,6 +472,21 @@ export default function GroupCreationModal({
     setCarreraPickerOpen(false);
   };
 
+  const handleSelectFecha = (date: Date) => {
+    if (datePickerTarget === "inicio") {
+      setFechaInicio(date);
+      clearError("fechaInicio");
+      // Si la fecha de fin quedó antes de la nueva fecha de inicio, la limpiamos.
+      if (fechaFin && fechaFin < date) {
+        setFechaFin(null);
+      }
+    } else if (datePickerTarget === "fin") {
+      setFechaFin(date);
+      clearError("fechaFin");
+    }
+    setDatePickerTarget(null);
+  };
+
   const validateStep1 = () => {
     const next: Record<string, string> = {};
     if (!grupoCarrera.trim()) {
@@ -268,6 +496,14 @@ export default function GroupCreationModal({
     if (!vNombre.isValid) next.grupoNombre = vNombre.error || "Inválido";
     const vHoras = validators.horasTotal(grupoTotalHoras);
     if (!vHoras.isValid) next.grupoTotalHoras = vHoras.error || "Inválido";
+    if (!fechaInicio) {
+      next.fechaInicio = "Debes elegir la fecha de inicio";
+    }
+    if (!fechaFin) {
+      next.fechaFin = "Debes elegir la fecha de fin";
+    } else if (fechaInicio && fechaFin < fechaInicio) {
+      next.fechaFin = "La fecha de fin no puede ser anterior al inicio";
+    }
     setErrors((prev) => ({ ...prev, ...next }));
     return Object.keys(next).length === 0;
   };
@@ -317,6 +553,8 @@ export default function GroupCreationModal({
         carrera: grupoCarrera,
         nombre: grupoNombre,
         totalHoras: Number(grupoTotalHoras),
+        fechaInicio: fechaInicio ? toISODate(fechaInicio) : null,
+        fechaFin: fechaFin ? toISODate(fechaFin) : null,
         estudiantes,
         postulacion: null,
       });
@@ -328,8 +566,8 @@ export default function GroupCreationModal({
         name: grupoNombre,
         carrera: grupoCarrera,
         dateCreated: new Date().toLocaleDateString("es-ES"),
-        inicio: "",
-        fin: "",
+        inicio: formatFecha(fechaInicio),
+        fin: formatFecha(fechaFin),
         count: estudiantes.length,
         status: "Activo",
         badgeType: "active",
@@ -346,6 +584,18 @@ export default function GroupCreationModal({
       setCreatedGroup(newGroup);
       onCreated(newGroup);
       setStep(4);
+
+      // Crea el chat grupal oficial (universidad = admin). No es bloqueante:
+      // si falla, el grupo ya quedó creado y puede reintentarse desde la lista.
+      try {
+        await crearChatGrupoOficial({
+          universidadId,
+          grupoId: response.groupId,
+          grupoNombre: grupoNombre,
+        });
+      } catch (chatError) {
+        console.warn("No se pudo crear el chat del grupo:", chatError);
+      }
 
       const failed = response.results.filter((item) => !item.success);
       if (failed.length > 0) {
@@ -548,6 +798,91 @@ export default function GroupCreationModal({
                     <Text style={styles.outlineButtonText}>+10</Text>
                   </TouchableOpacity>
                 </View>
+
+                <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
+                  Duración de la pasantía *
+                </Text>
+                <View style={[styles.rowTwo, { marginTop: 10 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Fecha de inicio *</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.input,
+                        {
+                          borderColor: errors.fechaInicio
+                            ? C.red
+                            : fechaInicio
+                              ? C.green
+                              : C.border,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        },
+                      ]}
+                      onPress={() => setDatePickerTarget("inicio")}
+                      activeOpacity={0.85}
+                    >
+                      <Text
+                        style={{
+                          color: fechaInicio ? C.text : C.textMuted,
+                          flex: 1,
+                        }}
+                      >
+                        {fechaInicio ? formatFecha(fechaInicio) : "dd/mm/aaaa"}
+                      </Text>
+                      <Ionicons
+                        name="calendar-outline"
+                        size={18}
+                        color={C.textMuted}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Fecha de fin *</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.input,
+                        {
+                          borderColor: errors.fechaFin
+                            ? C.red
+                            : fechaFin
+                              ? C.green
+                              : C.border,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        },
+                      ]}
+                      onPress={() => setDatePickerTarget("fin")}
+                      activeOpacity={0.85}
+                    >
+                      <Text
+                        style={{
+                          color: fechaFin ? C.text : C.textMuted,
+                          flex: 1,
+                        }}
+                      >
+                        {fechaFin ? formatFecha(fechaFin) : "dd/mm/aaaa"}
+                      </Text>
+                      <Ionicons
+                        name="calendar-outline"
+                        size={18}
+                        color={C.textMuted}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                {errors.fechaInicio ? (
+                  <Text style={{ color: C.red, fontSize: 12, marginTop: 6 }}>
+                    {errors.fechaInicio}
+                  </Text>
+                ) : null}
+                {errors.fechaFin ? (
+                  <Text style={{ color: C.red, fontSize: 12, marginTop: 6 }}>
+                    {errors.fechaFin}
+                  </Text>
+                ) : null}
+
                 <TouchableOpacity
                   style={styles.primaryButton}
                   onPress={() => {
@@ -758,6 +1093,22 @@ export default function GroupCreationModal({
           </ScrollView>
         </View>
       </View>
+
+      <CalendarModal
+        visible={datePickerTarget !== null}
+        value={datePickerTarget === "inicio" ? fechaInicio : fechaFin}
+        minimumDate={
+          datePickerTarget === "fin" && fechaInicio ? fechaInicio : today
+        }
+        maximumDate={maxDate}
+        title={
+          datePickerTarget === "inicio"
+            ? "Fecha de inicio"
+            : "Fecha de fin"
+        }
+        onSelect={handleSelectFecha}
+        onClose={() => setDatePickerTarget(null)}
+      />
     </Modal>
   );
 }
@@ -899,5 +1250,75 @@ const styles = StyleSheet.create({
     color: C.textMuted,
     fontSize: 13,
     marginBottom: 10,
+  },
+  calendarBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(7,5,15,0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  calendarContainer: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: C.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 20,
+  },
+  calendarNav: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  calendarMonthLabel: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  calendarWeekRow: {
+    flexDirection: "row",
+    marginBottom: 6,
+  },
+  calendarWeekday: {
+    flex: 1,
+    textAlign: "center",
+    color: C.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  calendarGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  calendarCell: {
+    width: `${100 / 7}%`,
+    aspectRatio: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calendarDay: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calendarDaySelected: {
+    backgroundColor: C.accent,
+  },
+  calendarDayText: {
+    color: C.text,
+    fontSize: 13,
+  },
+  calendarDayTextDisabled: {
+    color: C.textMuted,
+    opacity: 0.4,
+  },
+  calendarDayTextSelected: {
+    color: "#fff",
+    fontWeight: "700",
   },
 });
