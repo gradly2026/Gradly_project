@@ -1,4 +1,5 @@
 import {
+  addDoc,
   collection,
   doc,
   getDoc,
@@ -11,9 +12,34 @@ import {
   setDoc,
   updateDoc,
   where,
+  type DocumentReference,
   type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "../config/firebaseConfig";
+
+/**
+ * True si el chat ya existe. CRÍTICO: tolera el `permission-denied` que
+ * Firestore lanza al hacer `getDoc()` de un documento INEXISTENTE cuyas reglas
+ * referencian `resource.data.users` (resource es null → la regla de lectura
+ * falla). Sin esto, crear la PRIMERA conversación con alguien fallaba siempre.
+ */
+async function chatYaExiste(ref: DocumentReference): Promise<boolean> {
+  try {
+    return (await getDoc(ref)).exists();
+  } catch {
+    return false;
+  }
+}
+
+/** Hash determinístico (djb2) de un conjunto de uids → id estable de grupo. */
+function hashIds(ids: string[]): string {
+  const base = [...ids].sort().join("_");
+  let h = 5381;
+  for (let i = 0; i < base.length; i++) {
+    h = ((h << 5) + h + base.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(36);
+}
 
 /** Tipo de sala: 1:1 universidad↔empresa o grupo oficial administrado. */
 export type ChatType = "direct" | "group";
@@ -40,6 +66,12 @@ export interface ChatListItem {
   /** Estudiante del chat directo empresa↔estudiante (recontratación). */
   estudianteId: string;
   estudianteNombre: string;
+  /**
+   * Info denormalizada de los participantes para los chats directos GENÉRICOS
+   * (cualquier usuario ↔ cualquier usuario, creados desde el buscador). Permite
+   * que el inbox y `chatTitle` resuelvan el nombre del otro sin lecturas extra.
+   */
+  participantsInfo?: Record<string, { nombre: string; rol: string }>;
 }
 
 /**
@@ -49,6 +81,11 @@ export interface ChatListItem {
  */
 export function chatTitle(chat: ChatListItem, uid?: string): string {
   if (chat.type === "group") return chat.name || chat.grupoNombre || "Grupo";
+  // Directo GENÉRICO (buscador): el otro participante según `participantsInfo`.
+  if (chat.participantsInfo && uid) {
+    const otroUid = Object.keys(chat.participantsInfo).find((u) => u !== uid);
+    if (otroUid) return chat.participantsInfo[otroUid]?.nombre || "Usuario";
+  }
   // Directo empresa↔estudiante (recontratación): cada uno ve al otro.
   if (chat.estudianteId) {
     if (uid && uid === chat.empresaId) return chat.estudianteNombre || "Estudiante";
@@ -86,7 +123,13 @@ export async function crearChatGrupoOficial(params: {
       where("grupo_id", "==", grupoId),
     ),
   );
-  const estudiantes = estSnap.docs.map((d) => d.id);
+  // Estudiantes con su nombre (para `participantsInfo` → panel de integrantes).
+  const estudiantesData = estSnap.docs.map((d) => ({
+    id: d.id,
+    nombre: String((d.data() as any)?.nombre_completo ?? "Estudiante"),
+    foto: (d.data() as any)?.foto_url ?? null,
+  }));
+  const estudiantes = estudiantesData.map((e) => e.id);
 
   // Nombre de la universidad (denormalizado) si no se pasó.
   let universidadNombre = params.universidadNombre;
@@ -98,10 +141,22 @@ export async function crearChatGrupoOficial(params: {
       (uniSnap.data() as any)?.nombre_universidad ?? "Universidad";
   }
 
+  // Info denormalizada de participantes (nombre + foto) para el panel del grupo,
+  // sin que cada cliente tenga que leer `usuarios/{uid}` (que las reglas niegan).
+  const participantsInfo: Record<
+    string,
+    { nombre: string; rol: string; foto?: string | null }
+  > = {
+    [universidadId]: { nombre: universidadNombre ?? "Universidad", rol: "universidad" },
+  };
+  estudiantesData.forEach((e) => {
+    participantsInfo[e.id] = { nombre: e.nombre, rol: "estudiante", foto: e.foto };
+  });
+
   const chatId = `grupo_${grupoId}`;
   const users = Array.from(new Set([universidadId, ...estudiantes]));
   const chatRef = doc(db, "chats", chatId);
-  const existente = await getDoc(chatRef);
+  const yaExiste = await chatYaExiste(chatRef);
 
   // Campos refrescables en cada recreación (membresía y nombre).
   const base: Record<string, unknown> = {
@@ -110,6 +165,7 @@ export async function crearChatGrupoOficial(params: {
     admins: [universidadId],
     users,
     estudiantes,
+    participantsInfo,
     universidadId,
     universidadNombre,
     grupoId,
@@ -118,7 +174,7 @@ export async function crearChatGrupoOficial(params: {
     updatedAt: serverTimestamp(),
   };
 
-  if (!existente.exists()) {
+  if (!yaExiste) {
     // Primera creación: inicializa ajustes y metadatos del inbox.
     base.settings = { adminsOnly: false };
     base.lastMessage = "";
@@ -165,7 +221,7 @@ export async function abrirChatDirectoEmpresaEstudiante(params: {
 
   const chatId = `direct_${empresaId}_${estudianteId}`;
   const chatRef = doc(db, "chats", chatId);
-  const existente = await getDoc(chatRef);
+  const yaExiste = await chatYaExiste(chatRef);
 
   const base: Record<string, unknown> = {
     type: "direct",
@@ -179,7 +235,7 @@ export async function abrirChatDirectoEmpresaEstudiante(params: {
     updatedAt: serverTimestamp(),
   };
 
-  if (!existente.exists()) {
+  if (!yaExiste) {
     base.lastMessage = "";
     base.lastSenderId = "";
     base.unread = {};
@@ -201,6 +257,101 @@ export async function abrirChatDirectoRecontratacion(params: {
   estudianteNombre: string;
 }): Promise<string> {
   return abrirChatDirectoEmpresaEstudiante({ ...params, contexto: "recontratacion" });
+}
+
+/**
+ * Crea o reutiliza un chat directo GENÉRICO entre dos usuarios cualesquiera
+ * (cualquier rol ↔ cualquier rol), iniciado desde el buscador.
+ *
+ * - ID determinístico `dm_{a}_{b}` con los uids ORDENADOS, de modo que da igual
+ *   quién inicie la conversación: siempre es la misma sala (nunca se duplica).
+ * - `users: [a, b]` → satisface las reglas de Firestore (el creador está dentro)
+ *   y hace que el chat aparezca en el inbox de AMBOS.
+ * - `participantsInfo` denormaliza nombre+rol de cada uno para que el inbox y
+ *   `chatTitle` muestren el nombre correcto sin lecturas adicionales.
+ *
+ * Devuelve el id del chat (listo para abrir en ChatThread / master-detail).
+ */
+export async function abrirChatDirectoUsuarios(params: {
+  yo: { uid: string; nombre: string; rol: string };
+  otro: { uid: string; nombre: string; rol: string };
+}): Promise<string> {
+  const { yo, otro } = params;
+  const [a, b] = [yo.uid, otro.uid].sort();
+  const chatId = `dm_${a}_${b}`;
+  const chatRef = doc(db, "chats", chatId);
+  const yaExiste = await chatYaExiste(chatRef);
+
+  const participantsInfo: Record<string, { nombre: string; rol: string }> = {
+    [yo.uid]: { nombre: yo.nombre, rol: yo.rol },
+    [otro.uid]: { nombre: otro.nombre, rol: otro.rol },
+  };
+
+  const base: Record<string, unknown> = {
+    type: "direct",
+    contexto: "general",
+    users: [a, b],
+    participantsInfo,
+    archivado: false,
+    updatedAt: serverTimestamp(),
+  };
+
+  if (!yaExiste) {
+    base.lastMessage = "";
+    base.lastSenderId = "";
+    base.unread = {};
+    base.createdAt = serverTimestamp();
+  }
+
+  await setDoc(chatRef, base, { merge: true });
+  return chatId;
+}
+
+/**
+ * Crea un chat de GRUPO ad-hoc (no atado a un grupo académico): la universidad
+ * arma una sala con los estudiantes que elija desde el buscador. `admins` = la
+ * universidad (puede renombrar/moderar). ID aleatorio (addDoc) porque no hay un
+ * grupoId determinístico detrás.
+ */
+export async function crearChatGrupoAdHoc(params: {
+  adminUid: string;
+  adminNombre: string;
+  nombre: string;
+  miembros: { uid: string; nombre: string }[];
+}): Promise<string> {
+  const { adminUid, adminNombre, nombre, miembros } = params;
+  const users = Array.from(new Set([adminUid, ...miembros.map((m) => m.uid)]));
+
+  const participantsInfo: Record<string, { nombre: string; rol: string }> = {
+    [adminUid]: { nombre: adminNombre, rol: "universidad" },
+  };
+  miembros.forEach((m) => {
+    participantsInfo[m.uid] = { nombre: m.nombre, rol: "estudiante" };
+  });
+
+  // ID determinístico por conjunto de miembros → el MISMO grupo de estudiantes
+  // reutiliza la MISMA sala (ya no se crea un grupo nuevo en cada pulsación).
+  const chatId = `gest_${hashIds(users)}`;
+  const chatRef = doc(db, "chats", chatId);
+  const yaExiste = await chatYaExiste(chatRef);
+
+  const base: Record<string, unknown> = {
+    type: "group",
+    name: nombre,
+    admins: [adminUid],
+    users,
+    participantsInfo,
+    settings: { adminsOnly: false },
+    updatedAt: serverTimestamp(),
+  };
+  if (!yaExiste) {
+    base.lastMessage = "";
+    base.lastSenderId = "";
+    base.unread = {};
+    base.createdAt = serverTimestamp();
+  }
+  await setDoc(chatRef, base, { merge: true });
+  return chatId;
 }
 
 /**
@@ -241,6 +392,7 @@ export function subscribeUserChats(
           name: data.name ?? "",
           estudianteId: data.estudianteId ?? "",
           estudianteNombre: data.estudianteNombre ?? "",
+          participantsInfo: data.participantsInfo ?? undefined,
         };
       });
       onData(items);
@@ -280,10 +432,18 @@ export async function touchChatOnMessage(
   }
 }
 
-/** Marca como leídos los mensajes del chat para el usuario actual. */
+/**
+ * Marca como leídos los mensajes del chat para el usuario actual y registra la
+ * hora exacta en que ENTRÓ al chat (`lastRead.{uid}`). Esa marca alimenta el
+ * recibo "Visto [hora]" que ve el OTRO participante en sus propios mensajes.
+ * No requiere cambios de reglas: el update lo hace un participante del chat.
+ */
 export async function markChatRead(chatId: string, uid: string): Promise<void> {
   try {
-    await updateDoc(doc(db, "chats", chatId), { [`unread.${uid}`]: 0 });
+    await updateDoc(doc(db, "chats", chatId), {
+      [`unread.${uid}`]: 0,
+      [`lastRead.${uid}`]: serverTimestamp(),
+    });
   } catch {
     // El doc puede no existir aún; se ignora silenciosamente.
   }

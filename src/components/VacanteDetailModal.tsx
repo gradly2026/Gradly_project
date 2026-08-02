@@ -9,12 +9,15 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
-  Text,
+
   TouchableOpacity,
   View,
 } from "react-native";
 import { db } from "../config/firebaseConfig";
+import { AutoText, AutoText as Text } from "./AutoText";
 import MapViewer from "./MapViewer";
+import { hayCupos, textoCupos } from "../utils/cupos";
+import { textoHorario, type HorarioPasantia } from "../data/disponibilidad";
 
 // Forma flexible de vacante para reutilizar el modal en varios dashboards.
 export interface VacanteDetalle {
@@ -28,6 +31,14 @@ export interface VacanteDetalle {
   tipo?: string;
   area?: string;
   horas_requeridas?: number;
+  /** Ausente = vacante legada, sin límite de cupos declarado. */
+  /** Roles concretos dentro del área. */
+  tags?: string[] | null;
+  cupos?: number | null;
+  cupos_reclamados?: number | null;
+  contratados_count?: number | null;
+  /** Horario declarado al publicar. Ausente = vacante legada. */
+  horario?: HorarioPasantia | null;
   fecha_publicacion?: any;
   activa?: boolean;
   ubicacion_coords?: { latitude: number; longitude: number } | null;
@@ -154,14 +165,20 @@ export default function VacanteDetailModal({ visible, vacante, onClose, onContac
             </View>
 
             {/* Título */}
-            <Text style={styles.titulo}>{vacante.titulo ?? "Vacante"}</Text>
+            <AutoText style={styles.titulo}>{vacante.titulo ?? "Vacante"}</AutoText>
             <Text style={styles.fecha}>{fechaLegible(vacante.fecha_publicacion)}</Text>
 
             {/* Chips */}
             <View style={styles.chipsRow}>
               {[vacante.tipo, vacante.modalidad, vacante.area].filter(Boolean).map((c, i) => (
                 <View key={i} style={styles.chip}>
-                  <Text style={styles.chipText}>{c}</Text>
+                  <AutoText style={styles.chipText}>{String(c)}</AutoText>
+                </View>
+              ))}
+              {/* Roles concretos dentro del área (p. ej. "Desarrollo web"). */}
+              {(vacante.tags ?? []).map((t, i) => (
+                <View key={`tag-${i}`} style={[styles.chip, styles.chipTag]}>
+                  <AutoText style={styles.chipText}>{t}</AutoText>
                 </View>
               ))}
               {!!vacante.horas_requeridas && (
@@ -169,7 +186,23 @@ export default function VacanteDetailModal({ visible, vacante, onClose, onContac
                   <Text style={styles.chipText}>{vacante.horas_requeridas}h</Text>
                 </View>
               )}
+              {/* Cupos: ausente en vacantes legadas; sin cupos se resalta en rojo. */}
+              {textoCupos(vacante) && (
+                <View style={[styles.chip, !hayCupos(vacante) && styles.chipAgotado]}>
+                  <Text style={[styles.chipText, !hayCupos(vacante) && styles.chipTextAgotado]}>
+                    {textoCupos(vacante)}
+                  </Text>
+                </View>
+              )}
             </View>
+
+            {/* Horario declarado por la empresa (ausente en vacantes legadas) */}
+            {textoHorario(vacante.horario) && (
+              <View style={styles.horarioBox}>
+                <Text style={styles.horarioLabel}>Horario</Text>
+                <Text style={styles.horarioValor}>{textoHorario(vacante.horario)}</Text>
+              </View>
+            )}
 
             {/* Ubicación de la plaza (solo lectura) */}
             {vacante.ubicacion_coords && vacante.ubicacion_texto && (
@@ -192,8 +225,8 @@ export default function VacanteDetailModal({ visible, vacante, onClose, onContac
             {/* Descripción */}
             {!!vacante.descripcion && (
               <View style={styles.section}>
-                <Text style={styles.sectionLabel}>Descripción</Text>
-                <Text style={styles.bodyText}>{vacante.descripcion}</Text>
+                <AutoText style={styles.sectionLabel}>Descripción</AutoText>
+                <AutoText style={styles.bodyText}>{vacante.descripcion}</AutoText>
               </View>
             )}
 
@@ -299,6 +332,20 @@ const styles = StyleSheet.create({
   estadoText: { fontSize: 12, fontWeight: "700" },
   titulo: { fontSize: 22, fontWeight: "800", color: C.text, lineHeight: 28 },
   fecha: { fontSize: 13, color: C.muted, marginTop: 6 },
+  horarioBox: {
+    marginTop: 16,
+    backgroundColor: C.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  horarioLabel: { fontSize: 11.5, color: C.muted, marginBottom: 3 },
+  horarioValor: { fontSize: 14, color: C.text, fontWeight: "700" },
+  chipTag: { backgroundColor: C.surface },
+  chipAgotado: { backgroundColor: C.redBg, borderColor: C.red },
+  chipTextAgotado: { color: C.red },
   chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
   chip: {
     backgroundColor: C.purpleDim,

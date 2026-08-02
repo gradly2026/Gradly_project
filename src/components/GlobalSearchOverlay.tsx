@@ -18,15 +18,17 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
+import { useIniciarChat } from '../hooks/useIniciarChat';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { calcularRango, type RangoTier } from '../services/feedbackService';
 import ProfileViewerModal, { type ProfileTipo } from './ProfileViewerModal';
@@ -72,6 +74,7 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { user, rol } = useAuth();
+  const iniciarChat = useIniciarChat();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [texto, setTexto] = useState('');
@@ -151,6 +154,13 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
       // Vacantes / grupos: por ahora solo cierran el buscador
       onClose();
     }
+  };
+
+  // Inicia (o reutiliza) el chat directo con el perfil seleccionado. El doc id
+  // de los perfiles coincide con el uid de Auth, por lo que sirve como `uid`.
+  const handleChat = (item: SearchItem) => {
+    onClose();
+    void iniciarChat({ uid: item.id, nombre: item.titulo, rol: item.tipo });
   };
 
   return (
@@ -238,7 +248,16 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
                           </View>
                         )}
                       </View>
-                      {esPerfil && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
+                      {esPerfil && (
+                        <TouchableOpacity
+                          style={styles.chatBtn}
+                          onPress={() => handleChat(item)}
+                          hitSlop={8}
+                          accessibilityLabel={`Chatear con ${item.titulo}`}
+                        >
+                          <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
+                        </TouchableOpacity>
+                      )}
                     </TouchableOpacity>
                   );
                 }}
@@ -291,4 +310,10 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   },
   resultTitle: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
   resultSub: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 2 },
+
+  chatBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });

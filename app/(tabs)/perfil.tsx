@@ -17,19 +17,29 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
 import { useAuth } from '../../src/context/AuthContext';
 import { auth, db, storage } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
+import { useTranslation } from '../../src/context/TranslationContext';
 import { shadow } from '../../src/utils/shadow';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import CertificadoGradly from '../../src/components/CertificadoGradly';
+import PerfilMasterDetail from '../../src/components/PerfilMasterDetail';
+import DisponibilidadSelector from '../../src/components/DisponibilidadSelector';
+import {
+  contarBloques,
+  normalizarDisponibilidad,
+  resumenDisponibilidad,
+  type DisponibilidadHoraria,
+} from '../../src/data/disponibilidad';
 
 // Hook que recrea los estilos según el tema activo (claro/oscuro)
 function useThemedStyles() {
@@ -49,7 +59,10 @@ interface EstudiantePerfil {
   horas_aprobadas:    number;
   horas_en_proceso:   number;
   skills:             string[];
+  /** Texto libre heredado ("Tiempo completo"). Se conserva; el dato que el
+   *  sistema compara contra horarios es `disponibilidad_horaria`. */
   disponibilidad:     string;
+  disponibilidad_horaria?: DisponibilidadHoraria;
   cv_url:             string;
   foto_url:           string;
   linkedin:           string;
@@ -59,12 +72,13 @@ interface EstudiantePerfil {
   tarjeta_alias:      string;
 }
 
+// Devuelve la CLAVE de traducción del nivel; se traduce con t(nivel) al render.
 function getLevel(pct: number) {
-  if (pct >= 100) return 'Graduado ';
-  if (pct >= 76)  return 'Experto ⭐';
-  if (pct >= 51)  return 'Profesional';
-  if (pct >= 26)  return 'Practicante';
-  return 'Explorador';
+  if (pct >= 100) return 'nivel_graduado';
+  if (pct >= 76)  return 'nivel_experto';
+  if (pct >= 51)  return 'nivel_profesional';
+  if (pct >= 26)  return 'nivel_practicante';
+  return 'nivel_explorador';
 }
 
 function formatCardNumber(raw: string) {
@@ -79,6 +93,7 @@ export default function PerfilTab() {
   const { user } = useAuth();
   const { styles, colors } = useThemedStyles();
   const { isDark } = useTheme();
+  const { t } = useTranslation();
 
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [perfil,        setPerfil]        = useState<EstudiantePerfil | null>(null);
@@ -103,14 +118,42 @@ export default function PerfilTab() {
   const [editLinkedin,  setEditLinkedin]  = useState('');
   const [editPortfolio, setEditPortfolio] = useState('');
 
+  // ── Disponibilidad horaria (borrador local + guardado explícito) ──
+  // Se edita en local para no escribir en Firestore en cada casilla tocada.
+  const [dispDraft, setDispDraft] = useState<DisponibilidadHoraria>({});
+  const [dispDirty, setDispDirty] = useState(false);
+  const [dispSaving, setDispSaving] = useState(false);
+
   // ── Firestore: perfil ────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     const unsub = onSnapshot(doc(db, 'perfiles_estudiantes', user.uid), snap => {
-      if (snap.exists()) setPerfil(snap.data() as EstudiantePerfil);
+      if (!snap.exists()) return;
+      const data = snap.data() as EstudiantePerfil;
+      setPerfil(data);
+      // No pisar lo que el usuario está editando ahora mismo.
+      setDispDirty(dirty => {
+        if (!dirty) setDispDraft(normalizarDisponibilidad(data.disponibilidad_horaria));
+        return dirty;
+      });
     });
     return unsub;
   }, [user]);
+
+  const guardarDisponibilidad = async () => {
+    if (!user) return;
+    setDispSaving(true);
+    try {
+      await updateDoc(doc(db, 'perfiles_estudiantes', user.uid), {
+        disponibilidad_horaria: dispDraft,
+      });
+      setDispDirty(false);
+    } catch {
+      Alert.alert(t('error_generico'), t('err_guardar'));
+    } finally {
+      setDispSaving(false);
+    }
+  };
 
   // ── Estadísticas ─────────────────────────────────────────────────
   const horasAprobadas = perfil?.horas_aprobadas ?? 0;
@@ -123,7 +166,7 @@ export default function PerfilTab() {
     // a. Permisos de galería
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permiso necesario', 'Necesitamos acceso a tu galería para cambiar la foto.');
+      Alert.alert(t('perfil_permiso_titulo'), t('perfil_permiso_msg'));
       return;
     }
 
@@ -165,7 +208,7 @@ export default function PerfilTab() {
     } catch (e) {
       // h. Manejo de errores
       console.warn('Error al subir la foto de perfil:', e);
-      Alert.alert('Error', 'No se pudo subir la foto. Intenta de nuevo.');
+      Alert.alert(t('error_generico'), t('err_subir_foto'));
     } finally {
       setUploadingFoto(false);
     }
@@ -185,9 +228,9 @@ export default function PerfilTab() {
       await uploadBytes(storageRef, blob);
       const url = await getDownloadURL(storageRef);
       await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), { cv_url: url });
-      Alert.alert('CV subido', 'Tu CV se actualizó correctamente.');
+      Alert.alert(t('perfil_cv_subido'), t('perfil_cv_subido_msg'));
     } catch {
-      Alert.alert('Error', 'No se pudo subir el CV.');
+      Alert.alert(t('error_generico'), t('err_subir_cv'));
     } finally {
       setUploadingCV(false);
     }
@@ -203,7 +246,7 @@ export default function PerfilTab() {
       await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), {
         skills: [...current, sk],
       });
-    } catch { Alert.alert('Error', 'No se pudo agregar la skill.'); }
+    } catch { Alert.alert(t('error_generico'), t('err_agregar_skill')); }
     setSkillInput('');
     setShowAddSkill(false);
   };
@@ -213,25 +256,25 @@ export default function PerfilTab() {
     const current = (perfil?.skills ?? []).filter(s => s !== sk);
     try {
       await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), { skills: current });
-    } catch { Alert.alert('Error', 'No se pudo eliminar la skill.'); }
+    } catch { Alert.alert(t('error_generico'), t('err_eliminar_skill')); }
     setDeletingSkill(null);
   };
 
   // ── Guardar tarjeta ───────────────────────────────────────────────
   const handleGuardarTarjeta = async () => {
     const digits = cardNumero.replace(/\s/g, '');
-    if (digits.length !== 16) { Alert.alert('Número inválido', 'Ingresa los 16 dígitos.'); return; }
-    if (!cardAlias.trim()) { Alert.alert('Alias requerido', 'Ingresa un alias para la tarjeta.'); return; }
+    if (digits.length !== 16) { Alert.alert(t('perfil_num_invalido'), t('perfil_num_invalido_msg')); return; }
+    if (!cardAlias.trim()) { Alert.alert(t('perfil_alias_req'), t('perfil_alias_req_msg')); return; }
     try {
       // SOLO guardamos los últimos 4 dígitos. NUNCA el número completo.
       await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), {
         tarjeta_numero: digits.slice(-4),
         tarjeta_alias:  cardAlias.trim(),
       });
-      Alert.alert('Tarjeta guardada', 'Tus datos se guardaron de forma segura.');
+      Alert.alert(t('perfil_tarjeta_guardada'), t('perfil_tarjeta_guardada_msg'));
       setShowCardModal(false);
       setCardNumero(''); setCardNombre(''); setCardVence(''); setCardAlias('');
-    } catch { Alert.alert('Error', 'No se pudo guardar la tarjeta.'); }
+    } catch { Alert.alert(t('error_generico'), t('err_guardar_tarjeta')); }
   };
 
   // ── Guardar perfil ────────────────────────────────────────────────
@@ -243,14 +286,14 @@ export default function PerfilTab() {
         portfolio:      editPortfolio,
       });
       setShowEditModal(false);
-    } catch { Alert.alert('Error', 'No se pudo guardar.'); }
+    } catch { Alert.alert(t('error_generico'), t('err_guardar')); }
   };
 
   const handleAyuda = () => {
-    Alert.alert('Ayuda', 'Escríbenos a soporte@gradly.app y te ayudaremos con cualquier duda.');
+    router.push('/help-gradly' as any);
   };
   const handleAcerca = () => {
-    Alert.alert('Acerca de Gradly', 'Gradly conecta estudiantes, universidades y empresas para gestionar pasantías y horas sociales.\n\nVersión 1.0.0');
+    router.push('/about-gradly' as any);
   };
 
   const confirmarCierreSesion = async () => {
@@ -274,204 +317,213 @@ export default function PerfilTab() {
     <View style={[styles.root, { backgroundColor: 'transparent' }]}>
       <StatusBar style="light" />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-
-        {/* ── HERO CARD ── */}
-        <View style={styles.heroCard}>
-          {/* Foto (clickeable para subir/cambiar) */}
-          <View style={styles.fotoWrap}>
-            <TouchableOpacity activeOpacity={0.85} onPress={handleUploadFoto} disabled={uploadingFoto}>
-              {perfil?.foto_url ? (
-                <Image source={{ uri: perfil.foto_url }} style={styles.foto} />
-              ) : (
-                <View style={[styles.foto, styles.fotoFallback]}>
-                  <Ionicons name="person" size={52} color={COLORS.primaryLight} />
-                </View>
-              )}
-              {uploadingFoto && (
-                <View style={styles.fotoOverlay}>
-                  <ActivityIndicator size="large" color={COLORS.textPrimary} />
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.camaraBtn} onPress={handleUploadFoto} disabled={uploadingFoto}>
-              {uploadingFoto
-                ? <ActivityIndicator size="small" color={COLORS.textPrimary} />
-                : <Ionicons name="camera" size={16} color={COLORS.textPrimary} />
-              }
-            </TouchableOpacity>
-          </View>
-
-          {/* Nombre + info */}
-          <Text style={styles.nombre}>{perfil?.nombre_completo ?? user?.email}</Text>
-          <Text style={styles.universidad}>
-            {perfil?.carrera ?? 'Sin carrera'} {perfil?.universidad_id ? '· Sem. ' + perfil.semestre : ''}
-          </Text>
-          <View style={styles.nivelBadge}>
-            <Text style={styles.nivelText}>{nivel}</Text>
-          </View>
-
-          {/* Stats */}
-          <View style={styles.statsRow}>
-            <StatHero label="Horas" value={horasAprobadas} />
-            <View style={styles.statSep} />
-            <StatHero label="Nivel" value={`${Math.min(pct, 100)}%`} />
-            <View style={styles.statSep} />
-            <StatHero label="Skills" value={skills.length} />
-          </View>
-        </View>
-
-        {/* ── CERTIFICACIÓN DIGITAL GRADLY (rango) ── */}
-        <View style={styles.section}>
-          <CertificadoGradly
-            xp={Number((perfil as any)?.puntos_experiencia ?? 0)}
-            calificacion={Number(perfil?.calificacion_promedio ?? 0)}
-            pasantias={Number((perfil as any)?.pasantias_completadas ?? 0)}
-            nombre={perfil?.nombre_completo}
-            theme={isDark ? 'dark' : 'light'}
-          />
-        </View>
-
-        {/* ── ACCIONES ── */}
-        <View style={styles.section}>
-          <JellyButton
-            style={[styles.actionBtn, tieneCV && styles.actionBtnSecondary]}
-            contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 0, paddingHorizontal: 18 }}
-            onPress={handleUploadCV}
-            disabled={uploadingCV}
-          >
-            {uploadingCV
-              ? <ActivityIndicator size="small" color={COLORS.textPrimary} />
-              : <Ionicons name="document-outline" size={18} color={tieneCV ? COLORS.success : COLORS.textPrimary} />
-            }
-            <Text style={[styles.actionBtnText, tieneCV && { color: COLORS.success }]}>
-              {tieneCV ? 'CV subido — Reemplazar' : 'Subir CV (PDF)'}
-            </Text>
-            {tieneCV && <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />}
-          </JellyButton>
-
-          <TouchableOpacity
-            style={styles.actionBtnOutline}
-            onPress={() => {
-              setEditDisp(perfil?.disponibilidad ?? '');
-              setEditLinkedin(perfil?.linkedin ?? '');
-              setEditPortfolio(perfil?.portfolio ?? '');
-              setShowEditModal(true);
-            }}
-          >
-            <Ionicons name="create-outline" size={18} color={COLORS.primaryLight} />
-            <Text style={styles.actionBtnOutlineText}>Editar perfil</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── SKILLS ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Habilidades</Text>
-          <View style={styles.skillsWrap}>
-            {skills.slice(0, 8).map(sk => (
-              <TouchableOpacity
-                key={sk}
-                style={styles.skillChip}
-                onLongPress={() => setDeletingSkill(sk)}
-                onPress={() => setDeletingSkill(sk)}
-              >
-                <Text style={styles.skillText}>{sk}</Text>
-              </TouchableOpacity>
-            ))}
-            {!showAddSkill ? (
-              <TouchableOpacity style={styles.addSkillBtn} onPress={() => setShowAddSkill(true)}>
-                <Ionicons name="add" size={16} color={COLORS.primaryLight} />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.skillInputWrap}>
-                <TextInput
-                  style={styles.skillInput}
-                  value={skillInput}
-                  onChangeText={setSkillInput}
-                  placeholder="Nueva skill"
-                  placeholderTextColor={COLORS.textMuted}
-                  autoFocus
-                  returnKeyType="done"
-                  onSubmitEditing={handleAddSkill}
-                  selectionColor={COLORS.primary}
+      <PerfilMasterDetail
+        name={perfil?.nombre_completo ?? user?.email ?? 'Estudiante'}
+        subtitle={`${perfil?.carrera ?? t('perfil_sin_carrera')} · ${t(nivel)}`}
+        avatarUrl={perfil?.foto_url}
+        avatarStoragePath={user ? `fotos_estudiantes/${user.uid}/perfil.jpg` : null}
+        fallbackIcon="person"
+        onEditPhoto={handleUploadFoto}
+        uploadingPhoto={uploadingFoto}
+        onAyuda={handleAyuda}
+        onAcerca={handleAcerca}
+        onLogout={() => setLogoutModalVisible(true)}
+        labels={{
+          editar: t('perfil_editar'),
+          guardar: t('accion_guardar'),
+          cancelar: t('accion_cancelar'),
+          preferencias: t('perfil_preferencias'),
+          preferenciasSub: t('perfil_preferencias_sub'),
+          tema: t('perfil_tema'),
+          temaClaro: t('perfil_tema_claro'),
+          temaOscuro: t('perfil_tema_oscuro'),
+          idioma: t('perfil_idioma'),
+          ayuda: t('perfil_ayuda'),
+          acerca: t('acerca_titulo'),
+          cerrarSesion: t('cerrar_sesion'),
+          cuenta: t('perfil_cuenta'),
+        }}
+        sections={[
+          {
+            id: 'cert',
+            title: t('perfil_stat_nivel'),
+            subtitle: `${horasAprobadas}h · ${Math.min(pct, 100)}%`,
+            icon: 'ribbon-outline',
+            tone: 'orange',
+            render: () => (
+              <CertificadoGradly
+                xp={Number((perfil as any)?.puntos_experiencia ?? 0)}
+                calificacion={Number(perfil?.calificacion_promedio ?? 0)}
+                pasantias={Number((perfil as any)?.pasantias_completadas ?? 0)}
+                nombre={perfil?.nombre_completo}
+                theme={isDark ? 'dark' : 'light'}
+              />
+            ),
+          },
+          {
+            id: 'disponibilidad',
+            title: t('disp_titulo'),
+            subtitle: resumenDisponibilidad(dispDraft) ?? t('disp_sin_definir'),
+            icon: 'time-outline',
+            tone: contarBloques(dispDraft) > 0 ? 'green' : 'orange',
+            render: () => (
+              <View style={{ gap: 12 }}>
+                <DisponibilidadSelector
+                  value={dispDraft}
+                  onChange={next => { setDispDraft(next); setDispDirty(true); }}
                 />
-                <TouchableOpacity onPress={handleAddSkill} style={{ padding: 4 }}>
-                  <Ionicons name="checkmark" size={18} color={COLORS.success} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => { setShowAddSkill(false); setSkillInput(''); }} style={{ padding: 4 }}>
-                  <Ionicons name="close" size={18} color={COLORS.textMuted} />
-                </TouchableOpacity>
+                {dispDirty && (
+                  <TouchableOpacity
+                    style={styles.dispSaveBtn}
+                    onPress={guardarDisponibilidad}
+                    disabled={dispSaving}
+                  >
+                    {dispSaving
+                      ? <ActivityIndicator size="small" color="#FFF" />
+                      : <Ionicons name="checkmark" size={16} color="#FFF" />}
+                    <Text style={styles.dispSaveTxt}>{t('disp_guardar')}</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-            )}
-          </View>
-        </View>
-
-        {/* ── INFO PERSONAL ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Información personal</Text>
-          <GlassCard contentStyle={{ padding: 0 }}>
-            <InfoRow icon="time-outline" label="Disponibilidad" value={perfil?.disponibilidad || 'No especificada'} />
-            <InfoRow icon="logo-linkedin" label="LinkedIn" value={perfil?.linkedin || 'No especificado'} />
-            <InfoRow icon="globe-outline" label="Portfolio" value={perfil?.portfolio || 'No especificado'} last />
-          </GlassCard>
-        </View>
-
-        {/* ── TARJETA BANCARIA ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Tarjeta de cobro simulada</Text>
-          <GlassCard style={{ borderColor: COLORS.primary35 }} contentStyle={{ padding: 20, gap: 12 }}>
-            <View style={styles.bankCardTop}>
-              <Text style={styles.bankCardBrand}>GRADLY PAY</Text>
-              <Ionicons name="card-outline" size={24} color={COLORS.primaryLight} />
-            </View>
-            <Text style={styles.bankCardNumber}>
-              •••• •••• •••• {perfil?.tarjeta_numero || '????'}
-            </Text>
-            <Text style={styles.bankCardAlias}>{perfil?.tarjeta_alias || 'Sin tarjeta registrada'}</Text>
-          </GlassCard>
-          <TouchableOpacity style={styles.actionBtnOutline} onPress={() => setShowCardModal(true)}>
-            <Ionicons name="add-circle-outline" size={18} color={COLORS.primaryLight} />
-            <Text style={styles.actionBtnOutlineText}>
-              {perfil?.tarjeta_numero ? 'Cambiar tarjeta' : 'Agregar tarjeta'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── CUENTA: AYUDA · ACERCA DE · CERRAR SESIÓN (al final absoluto) ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Cuenta</Text>
-          <TouchableOpacity style={styles.actionBtnOutline} onPress={handleAyuda}>
-            <Ionicons name="help-circle-outline" size={18} color={colors.primaryLight} />
-            <Text style={styles.actionBtnOutlineText}>Ayuda</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtnOutline} onPress={handleAcerca}>
-            <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} />
-            <Text style={styles.actionBtnOutlineText}>Acerca de Gradly</Text>
-          </TouchableOpacity>
-          <JellyButton style={styles.logoutBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 0, paddingHorizontal: 18 }} onPress={() => setLogoutModalVisible(true)}>
-            <Ionicons name="log-out-outline" size={18} color={colors.error} />
-            <Text style={styles.logoutText}>Cerrar sesión</Text>
-          </JellyButton>
-        </View>
-
-      </ScrollView>
+            ),
+          },
+          {
+            id: 'info',
+            title: t('perfil_info_personal'),
+            subtitle: perfil?.disponibilidad || t('perfil_no_especificado'),
+            icon: 'person-outline',
+            tone: 'blue',
+            fields: [
+              { key: 'disp', label: t('campo_disponibilidad'), value: perfil?.disponibilidad ?? '', placeholder: t('perfil_disp_placeholder') },
+              { key: 'linkedin', label: t('campo_linkedin'), value: perfil?.linkedin ?? '', placeholder: 'https://linkedin.com/in/tu-perfil', autoCapitalize: 'none', keyboardType: 'url' },
+              { key: 'portfolio', label: t('perfil_portfolio'), value: perfil?.portfolio ?? '', placeholder: 'https://tu-portfolio.com', autoCapitalize: 'none', keyboardType: 'url' },
+            ],
+            onSave: async (v) => {
+              try {
+                await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), {
+                  disponibilidad: v.disp,
+                  linkedin: v.linkedin,
+                  portfolio: v.portfolio,
+                });
+              } catch { Alert.alert(t('error_generico'), t('err_guardar')); }
+            },
+          },
+          {
+            id: 'skills',
+            title: t('campo_habilidades'),
+            subtitle: `${skills.length}`,
+            icon: 'sparkles-outline',
+            tone: 'purple',
+            render: () => (
+              <View style={styles.skillsWrap}>
+                {skills.map(sk => (
+                  <TouchableOpacity
+                    key={sk}
+                    style={styles.skillChip}
+                    onLongPress={() => setDeletingSkill(sk)}
+                    onPress={() => setDeletingSkill(sk)}
+                  >
+                    <Text style={styles.skillText}>{sk}</Text>
+                  </TouchableOpacity>
+                ))}
+                {!showAddSkill ? (
+                  <TouchableOpacity style={styles.addSkillBtn} onPress={() => setShowAddSkill(true)}>
+                    <Ionicons name="add" size={16} color={COLORS.primaryLight} />
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.skillInputWrap}>
+                    <TextInput
+                      style={styles.skillInput}
+                      value={skillInput}
+                      onChangeText={setSkillInput}
+                      placeholder={t('perfil_nueva_skill')}
+                      placeholderTextColor={COLORS.textMuted}
+                      autoFocus
+                      returnKeyType="done"
+                      onSubmitEditing={handleAddSkill}
+                      selectionColor={COLORS.primary}
+                    />
+                    <TouchableOpacity onPress={handleAddSkill} style={{ padding: 4 }}>
+                      <Ionicons name="checkmark" size={18} color={COLORS.success} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { setShowAddSkill(false); setSkillInput(''); }} style={{ padding: 4 }}>
+                      <Ionicons name="close" size={18} color={COLORS.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ),
+          },
+          {
+            id: 'cv',
+            title: 'CV',
+            subtitle: tieneCV ? 'PDF subido' : t('perfil_no_especificado'),
+            icon: 'document-text-outline',
+            tone: 'green',
+            render: () => (
+              <JellyButton
+                style={[styles.actionBtn, tieneCV && styles.actionBtnSecondary]}
+                contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 0, paddingHorizontal: 18 }}
+                onPress={handleUploadCV}
+                disabled={uploadingCV}
+              >
+                {uploadingCV
+                  ? <ActivityIndicator size="small" color={COLORS.textPrimary} />
+                  : <Ionicons name="document-outline" size={18} color={tieneCV ? COLORS.success : COLORS.textPrimary} />
+                }
+                <Text style={[styles.actionBtnText, tieneCV && { color: COLORS.success }]}>
+                  {tieneCV ? 'CV subido — Reemplazar' : 'Subir CV (PDF)'}
+                </Text>
+                {tieneCV && <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />}
+              </JellyButton>
+            ),
+          },
+          {
+            id: 'tarjeta',
+            title: t('perfil_tarjeta_titulo'),
+            subtitle: perfil?.tarjeta_numero ? `•••• ${perfil.tarjeta_numero}` : t('perfil_sin_tarjeta'),
+            icon: 'card-outline',
+            tone: 'blue',
+            render: () => (
+              <>
+                <GlassCard style={{ borderColor: COLORS.primary35 }} contentStyle={{ padding: 20, gap: 12 }}>
+                  <View style={styles.bankCardTop}>
+                    <Text style={styles.bankCardBrand}>GRADLY PAY</Text>
+                    <Ionicons name="card-outline" size={24} color={COLORS.primaryLight} />
+                  </View>
+                  <Text style={styles.bankCardNumber}>
+                    •••• •••• •••• {perfil?.tarjeta_numero || '????'}
+                  </Text>
+                  <Text style={styles.bankCardAlias}>{perfil?.tarjeta_alias || t('perfil_sin_tarjeta')}</Text>
+                </GlassCard>
+                <TouchableOpacity style={[styles.actionBtnOutline, { marginTop: 12 }]} onPress={() => setShowCardModal(true)}>
+                  <Ionicons name="add-circle-outline" size={18} color={COLORS.primaryLight} />
+                  <Text style={styles.actionBtnOutlineText}>
+                    {perfil?.tarjeta_numero ? t('perfil_cambiar_tarjeta') : t('perfil_agregar_tarjeta')}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ),
+          },
+        ]}
+      />
 
       {/* ── MODAL: Confirmar eliminar skill ── */}
       <Modal visible={!!deletingSkill} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Eliminar skill</Text>
-            <Text style={styles.modalDesc}>¿Quitar "{deletingSkill}" de tus habilidades?</Text>
+            <Text style={styles.modalTitle}>{t('perfil_eliminar_skill')}</Text>
+            <Text style={styles.modalDesc}>{t('perfil_quitar_skill', { skill: deletingSkill ?? '' })}</Text>
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalCancel} onPress={() => setDeletingSkill(null)}>
-                <Text style={styles.modalCancelText}>Cancelar</Text>
+                <Text style={styles.modalCancelText}>{t('accion_cancelar')}</Text>
               </TouchableOpacity>
               <JellyButton
                 style={styles.modalDelete}
                 contentStyle={{ paddingVertical: 0 }}
                 onPress={() => deletingSkill && handleDeleteSkill(deletingSkill)}
               >
-                <Text style={styles.modalDeleteText}>Eliminar</Text>
+                <Text style={styles.modalDeleteText}>{t('accion_eliminar')}</Text>
               </JellyButton>
             </View>
           </View>
@@ -482,12 +534,10 @@ export default function PerfilTab() {
       <Modal visible={showCardModal} transparent animationType="slide">
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.sheetCard}>
-            <Text style={styles.modalTitle}>Datos de la tarjeta</Text>
-            <Text style={styles.modalDesc}>
-              Solo guardamos los últimos 4 dígitos. Tus datos nunca se almacenan completos.
-            </Text>
+            <Text style={styles.modalTitle}>{t('perfil_datos_tarjeta')}</Text>
+            <Text style={styles.modalDesc}>{t('perfil_tarjeta_desc')}</Text>
 
-            <Text style={styles.fieldLabel}>Número de tarjeta (16 dígitos)</Text>
+            <Text style={styles.fieldLabel}>{t('perfil_num_tarjeta')}</Text>
             <TextInput
               style={styles.modalInput}
               value={cardNumero}
@@ -499,7 +549,7 @@ export default function PerfilTab() {
               selectionColor={COLORS.primary}
             />
 
-            <Text style={styles.fieldLabel}>Nombre del titular</Text>
+            <Text style={styles.fieldLabel}>{t('perfil_titular')}</Text>
             <TextInput
               style={styles.modalInput}
               value={cardNombre}
@@ -512,7 +562,7 @@ export default function PerfilTab() {
 
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Vencimiento</Text>
+                <Text style={styles.fieldLabel}>{t('perfil_vencimiento')}</Text>
                 <TextInput
                   style={styles.modalInput}
                   value={cardVence}
@@ -525,12 +575,12 @@ export default function PerfilTab() {
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Alias</Text>
+                <Text style={styles.fieldLabel}>{t('perfil_alias')}</Text>
                 <TextInput
                   style={styles.modalInput}
                   value={cardAlias}
                   onChangeText={setCardAlias}
-                  placeholder="Mi tarjeta"
+                  placeholder={t('perfil_mi_tarjeta')}
                   placeholderTextColor={COLORS.textMuted}
                   selectionColor={COLORS.primary}
                 />
@@ -539,42 +589,10 @@ export default function PerfilTab() {
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalCancel} onPress={() => setShowCardModal(false)}>
-                <Text style={styles.modalCancelText}>Cancelar</Text>
+                <Text style={styles.modalCancelText}>{t('accion_cancelar')}</Text>
               </TouchableOpacity>
               <JellyButton style={styles.modalSave} contentStyle={{ paddingVertical: 0 }} onPress={handleGuardarTarjeta}>
-                <Text style={styles.modalSaveText}>Guardar</Text>
-              </JellyButton>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ── MODAL: Editar perfil ── */}
-      <Modal visible={showEditModal} transparent animationType="slide">
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <View style={styles.sheetCard}>
-            <Text style={styles.modalTitle}>Editar perfil</Text>
-
-            <Text style={styles.fieldLabel}>Disponibilidad</Text>
-            <TextInput style={styles.modalInput} value={editDisp} onChangeText={setEditDisp}
-              placeholder="Tiempo completo / Parcial" placeholderTextColor={COLORS.textMuted} selectionColor={COLORS.primary} />
-
-            <Text style={styles.fieldLabel}>LinkedIn URL</Text>
-            <TextInput style={styles.modalInput} value={editLinkedin} onChangeText={setEditLinkedin}
-              placeholder="https://linkedin.com/in/tu-perfil" placeholderTextColor={COLORS.textMuted}
-              autoCapitalize="none" keyboardType="url" selectionColor={COLORS.primary} />
-
-            <Text style={styles.fieldLabel}>Portfolio URL</Text>
-            <TextInput style={styles.modalInput} value={editPortfolio} onChangeText={setEditPortfolio}
-              placeholder="https://tu-portfolio.com" placeholderTextColor={COLORS.textMuted}
-              autoCapitalize="none" keyboardType="url" selectionColor={COLORS.primary} />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowEditModal(false)}>
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <JellyButton style={styles.modalSave} contentStyle={{ paddingVertical: 0 }} onPress={handleSaveEdit}>
-                <Text style={styles.modalSaveText}>Guardar</Text>
+                <Text style={styles.modalSaveText}>{t('accion_guardar')}</Text>
               </JellyButton>
             </View>
           </View>
@@ -585,14 +603,14 @@ export default function PerfilTab() {
       <Modal transparent visible={logoutModalVisible} animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: '#1a162b', borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
-            <Text style={{ fontSize: 18, color: '#fff', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>Cerrar Sesión</Text>
-            <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: 24 }}>¿Estás seguro de que deseas salir de tu cuenta?</Text>
+            <Text style={{ fontSize: 18, color: '#fff', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>{t('cerrar_sesion')}</Text>
+            <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: 24 }}>{t('cerrar_sesion_confirmar')}</Text>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }} onPress={() => setLogoutModalVisible(false)}>
-                <Text style={{ color: '#fff', fontWeight: '600' }}>Cancelar</Text>
+                <Text style={{ color: '#fff', fontWeight: '600' }}>{t('accion_cancelar')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: '#ef4444', alignItems: 'center' }} onPress={confirmarCierreSesion}>
-                <Text style={{ color: '#fff', fontWeight: '600' }}>Salir</Text>
+                <Text style={{ color: '#fff', fontWeight: '600' }}>{t('perfil_salir')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -713,6 +731,12 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.primary35,
   },
   skillText: { fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.primaryLight },
+  dispSaveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12, paddingVertical: 11, paddingHorizontal: 16,
+  },
+  dispSaveTxt: { color: '#FFF', fontSize: 13.5, fontFamily: FONTS.interSemiBold },
   addSkillBtn: {
     width: 34, height: 34, borderRadius: 17,
     backgroundColor: COLORS.backgroundSurface,

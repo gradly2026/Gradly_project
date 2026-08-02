@@ -14,10 +14,11 @@ import {
   FlatList,
   Image,
   StyleSheet,
-  Text,
+
   TouchableOpacity,
   View,
 } from "react-native";
+import { AutoText as Text } from "./AutoText";
 import PerfilPublicoModal from "../../components/PerfilPublicoModal";
 import { db } from "../config/firebaseConfig";
 import { abrirChatDirectoRecontratacion } from "../services/chatService";

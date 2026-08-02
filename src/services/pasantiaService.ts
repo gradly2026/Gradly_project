@@ -12,8 +12,11 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../config/firebaseConfig';
+import type { AcuerdoData } from '../types/chat';
 import { crearNotificacionInApp, NOTIF } from './notificacionService';
 import { enviarNotificacion } from './notificationService';
+import { alumnosRealesDeGrupo, buildChatId } from './solicitudPracticaService';
+import { cuposDisponibles } from '../utils/cupos';
 
 // ─────────────────────────────────────────────
 // NIVEL GAMIFICADO
@@ -39,6 +42,23 @@ export function calcularNivelEstudiante(
 }
 
 // ─────────────────────────────────────────────
+// ELEGIBILIDAD PARA VACANTES
+// Solo estudiantes que ya culminaron su práctica/pasantía (100% de horas,
+// nivel "graduado") o que la universidad ya declaró `graduado` pueden ver
+// y aplicar a vacantes individuales. Se usa tanto en la UI (feed) como aquí,
+// al aplicar.
+// ─────────────────────────────────────────────
+export function estudianteHabilitadoParaVacantes(perfil: {
+  graduado?: boolean;
+  horas_aprobadas?: number;
+  horas_objetivo?: number;
+} | null | undefined): boolean {
+  if (!perfil) return false;
+  if (perfil.graduado === true) return true;
+  return calcularNivelEstudiante(perfil.horas_aprobadas ?? 0, perfil.horas_objetivo ?? 0).nivel === 'graduado';
+}
+
+// ─────────────────────────────────────────────
 // 1. ESTUDIANTE APLICA A VACANTE
 // ─────────────────────────────────────────────
 export async function aplicarAVacante(
@@ -47,6 +67,13 @@ export async function aplicarAVacante(
   empresaId: string,
   estudiantePerfil: { nombre_completo: string; foto_url?: string; universidad_id?: string },
 ): Promise<string> {
+  // Solo estudiantes que ya culminaron su práctica/pasantía o están
+  // graduados pueden aplicar (ver `estudianteHabilitadoParaVacantes`).
+  const perfilSnap = await getDoc(doc(db, 'perfiles_estudiantes', estudianteId));
+  if (!estudianteHabilitadoParaVacantes(perfilSnap.exists() ? (perfilSnap.data() as any) : null)) {
+    throw new Error('Las vacantes están disponibles solo para estudiantes que ya culminaron su práctica o pasantía, o que ya están graduados.');
+  }
+
   // Verificar aplicación previa
   const existing = await getDocs(
     query(
@@ -108,11 +135,20 @@ export async function cambiarEstadoAplicacion(
   vacanteId?: string,
   estudianteId?: string,
   vacanteNombre?: string,
+  /** Horario acordado al contratar (ver ProponerHorarioModal, sin sección de pago). */
+  acuerdo?: AcuerdoData,
 ): Promise<void> {
   const updates: Record<string, any> = { estado: nuevoEstado };
 
   if (nuevoEstado === 'contratado') {
     updates.fecha_inicio = serverTimestamp();
+    if (acuerdo) {
+      updates.acuerdo = acuerdo;
+      updates.horarioPropuesto = `${acuerdo.horaInicio} - ${acuerdo.horaFin}`;
+      updates.diasTrabajo = acuerdo.dias;
+      updates.fechaInicioPasantia = acuerdo.fechaInicio;
+      updates.fechaFinPasantia = acuerdo.fechaFin;
+    }
   }
 
   await updateDoc(doc(db, 'aplicaciones', aplicacionId), updates);
@@ -206,26 +242,6 @@ export async function empresaFirmaConstancia(
 // ─────────────────────────────────────────────
 // 5. UNIVERSIDAD APRUEBA HORAS
 // ─────────────────────────────────────────────
-export async function universidadApruebaHoras(
-  aplicacionId: string,
-  estudianteId: string,
-  horasAprobar: number,
-  horasObjetivo: number,
-): Promise<NivelEstudiante> {
-  await updateDoc(doc(db, 'aplicaciones', aplicacionId), { estado: 'aprobado' });
-
-  await updateDoc(doc(db, 'perfiles_estudiantes', estudianteId), {
-    horas_aprobadas:  increment(horasAprobar),
-    horas_en_proceso: increment(-Math.abs(horasAprobar)),
-  });
-
-  // Notificar al estudiante sobre sus horas aprobadas
-  const n = NOTIF.horasAprobadas(horasAprobar);
-  await crearNotificacionInApp(estudianteId, n.tipo, n.titulo, n.mensaje, '/(tabs)/progreso');
-
-  // Retornamos el nuevo nivel para mostrarlo en la UI
-  return calcularNivelEstudiante(horasAprobar, horasObjetivo);
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // MOTOR RELACIONAL DE PASANTÍAS (MATCHMAKING UNIVERSIDAD ↔ EMPRESA)
@@ -254,12 +270,19 @@ export type EstadoAplicacionGrupo = 'pendiente' | 'revisando' | 'aprobada' | 're
 export type DecisionEmpresa = 'aceptar' | 'rechazar';
 export type DecisionUniversidad = 'aceptar' | 'rechazar';
 
-/** Detalles que la empresa envía al aceptar un grupo */
+/**
+ * Detalles que la empresa envía al aceptar un grupo. El horario/fechas/pago
+ * viajan como un `AcuerdoData` estructurado (el mismo formato que usa el
+ * handshake del chat vía `ProponerHorarioModal`) — así `calcularHorasAcuerdo`
+ * puede calcular horas/progreso para pasantías confirmadas por Matchmaking
+ * igual que para las confirmadas por chat. Antes este campo era texto libre
+ * ("7:00 a 17:00"), imposible de calcular de forma confiable.
+ */
 export interface OfertaEmpresa {
-  horarioPropuesto: string;   // ej. "7:00 a 17:00"
-  diasTrabajo: string[];      // ej. ["Lunes", "Martes", "Miércoles"]
-  pagoTotal?: number;         // opcional
-  justificacionRechazo?: string; // requerido solo si la empresa rechaza
+  /** Requerido si `decision === 'aceptar'`. */
+  acuerdo?: AcuerdoData;
+  /** Requerido si `decision === 'rechazar'`. */
+  justificacionRechazo?: string;
 }
 
 export interface AplicacionGrupo {
@@ -280,9 +303,15 @@ export interface AplicacionGrupo {
 
   // Flujo relacional
   estado: EstadoAplicacionGrupo;
+  /** Acuerdo estructurado (horario + fechas + pago) — fuente de verdad para el cálculo de horas. */
+  acuerdo?: AcuerdoData;
+  // Campos de solo-lectura DERIVADOS de `acuerdo` (se siguen escribiendo para
+  // no romper las tarjetas existentes que ya los muestran como texto).
   horarioPropuesto?: string;
   diasTrabajo?: string[];
   pagoTotal?: number | null;
+  fechaInicio?: string;
+  fechaFin?: string;
   justificacionRechazo?: string;
 
   // Marcas de tiempo
@@ -330,6 +359,25 @@ export async function postularGrupoAVacante(
     throw new Error('Este grupo ya fue postulado a esta vacante.');
   }
 
+  // 1.5) Un grupo con una pasantía ya aprobada (activa, sin finalizar) no
+  // puede postularse a otra vacante en paralelo. Repite en el servidor la
+  // validación de la UI (Matchmaking.tsx) para que no se pueda saltar por una
+  // condición de carrera o llamando este servicio directamente.
+  // ⚠️ El filtro por `universidadId` es obligatorio: sin él, las reglas de
+  // Firestore no pueden garantizar en tiempo de consulta que el resultado le
+  // pertenece al llamante y rechazan la query con permission-denied.
+  const enCurso = await getDocs(
+    query(
+      collection(db, 'solicitudes_practicas'),
+      where('universidadId', '==', universidadId),
+      where('grupoId', '==', grupoId),
+      where('estado', '==', 'aprobado'),
+    ),
+  );
+  if (!enCurso.empty) {
+    throw new Error('Este grupo ya tiene una pasantía activa y no puede postularse a otra vacante.');
+  }
+
   // 2) Leer el grupo y la vacante para desnormalizar datos en la postulación
   const [grupoSnap, vacanteSnap] = await Promise.all([
     getDoc(doc(db, 'grupos', grupoId)),
@@ -343,6 +391,23 @@ export async function postularGrupoAVacante(
 
   if (grupo.universidad_id && grupo.universidad_id !== universidadId) {
     throw new Error('Ese grupo no pertenece a tu universidad.');
+  }
+
+  // 2.5) Cupos: la vacante debe poder recibir al grupo completo. Las vacantes
+  // legadas (sin el campo `cupos`) devuelven `null` en `cuposDisponibles` y NO
+  // se bloquean — mantienen el comportamiento previo. Se valida aquí y no solo
+  // en la UI para que no se pueda saltar por condición de carrera.
+  const libres = cuposDisponibles(vacante);
+  if (libres !== null) {
+    const necesarios = Number(grupo.estudiantes_count ?? 0);
+    if (libres === 0) {
+      throw new Error('Esta vacante ya no tiene cupos disponibles.');
+    }
+    if (necesarios > 0 && libres < necesarios) {
+      throw new Error(
+        `Esta vacante tiene ${libres} cupo(s) disponible(s) y tu grupo es de ${necesarios} estudiantes.`,
+      );
+    }
   }
 
   const empresaId = vacante.empresa_id as string;
@@ -399,11 +464,8 @@ export async function evaluarGrupoPorEmpresa(
 
   // Validación de entrada antes de la transacción
   if (decision === 'aceptar') {
-    if (!detalles?.horarioPropuesto?.trim()) {
-      throw new Error('Debes indicar el horario propuesto (ej. 7:00 a 17:00).');
-    }
-    if (!detalles?.diasTrabajo?.length) {
-      throw new Error('Debes seleccionar al menos un día de trabajo.');
+    if (!detalles?.acuerdo) {
+      throw new Error('Debes definir el horario, fechas y pago acordado.');
     }
   } else if (!detalles?.justificacionRechazo?.trim()) {
     throw new Error('Debes escribir una justificación para rechazar el grupo.');
@@ -421,11 +483,18 @@ export async function evaluarGrupoPorEmpresa(
     }
 
     if (decision === 'aceptar') {
+      const acuerdo = detalles.acuerdo!;
+      // Campos de texto derivados del acuerdo estructurado — solo para que
+      // las tarjetas existentes (que aún leen estos campos) sigan mostrando
+      // algo legible sin cambios.
       tx.update(ref, {
         estado: 'revisando' as EstadoAplicacionGrupo,
-        horarioPropuesto: detalles.horarioPropuesto.trim(),
-        diasTrabajo:      detalles.diasTrabajo,
-        pagoTotal:        typeof detalles.pagoTotal === 'number' ? detalles.pagoTotal : null,
+        acuerdo,
+        horarioPropuesto: `${acuerdo.horaInicio} - ${acuerdo.horaFin}`,
+        diasTrabajo: acuerdo.dias,
+        pagoTotal: acuerdo.pago.tipo === 'con_pago' ? Number(acuerdo.pago.monto ?? 0) : null,
+        fechaInicio: acuerdo.fechaInicio,
+        fechaFin: acuerdo.fechaFin,
         justificacionRechazo: '',
         fechaRespuestaEmpresa: serverTimestamp(),
       });
@@ -487,9 +556,101 @@ export async function respuestaFinalUniversidad(
     }
 
     if (decision === 'aceptar') {
+      if (!data.acuerdo) {
+        throw new Error('Falta el horario acordado de esta oferta.');
+      }
+      const acuerdo = data.acuerdo;
+
       tx.update(ref, {
         estado: 'aprobada' as EstadoAplicacionGrupo,
         fechaRespuestaUniversidad: serverTimestamp(),
+      });
+
+      // ── Puente Matchmaking → solicitudes_practicas ──────────────────────
+      // Sin esto, una pasantía confirmada por este flujo queda invisible para
+      // el resto del sistema (horas de "Mis Estudiantes", tarjetas de Home,
+      // certificación, feedback), que solo lee `solicitudes_practicas`. Nace
+      // directamente en `aprobado`: el horario ya se acordó aquí mismo, sin
+      // pasar por el handshake de chat.
+      const alumnos = await alumnosRealesDeGrupo(data.grupoId);
+      const solRef = doc(collection(db, 'solicitudes_practicas'));
+      tx.set(solRef, {
+        universidadId: data.universidadId,
+        empresaId: data.empresaId,
+        grupoId: data.grupoId,
+        grupoNombre: data.grupoNombre ?? '',
+        alumnos,
+        estudianteIds: alumnos.map(a => a.id),
+        carrera: data.carrera ?? '',
+        fechaInicio: acuerdo.fechaInicio,
+        fechaFin: acuerdo.fechaFin,
+        acuerdo,
+        pago: acuerdo.pago,
+        estado: 'aprobado',
+        origen: 'matchmaking',
+        aplicacionGrupoId: aplicacionId,
+        createdAt: serverTimestamp(),
+        aprobadoAt: serverTimestamp(),
+      });
+
+      // Sala de chat dedicada (mismo esquema determinístico que los otros
+      // flujos) para que uni/empresa sigan coordinando sobre esta pasantía.
+      const chatId = buildChatId(data.universidadId, data.empresaId, data.grupoId);
+      tx.set(
+        doc(db, 'chats', chatId),
+        {
+          users: [data.universidadId, data.empresaId],
+          universidadId: data.universidadId,
+          empresaId: data.empresaId,
+          grupoId: data.grupoId,
+          solicitudId: solRef.id,
+          empresaNombre: data.empresaNombre ?? 'Empresa',
+          grupoNombre: data.grupoNombre ?? '',
+          lastMessage: '',
+          lastSenderId: '',
+          unread: { [data.universidadId]: 0, [data.empresaId]: 0 },
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      // Notifica a cada estudiante real del grupo (mismo patrón que firmarAcuerdo).
+      const conPago = acuerdo.pago.tipo === 'con_pago';
+      const monto = conPago ? Number(acuerdo.pago.monto ?? 0) : 0;
+      const horarioTexto = `${acuerdo.dias.join(', ')} · ${acuerdo.horaInicio} - ${acuerdo.horaFin}`;
+      alumnos.forEach(al => {
+        const notiRef = doc(collection(db, 'notificaciones_estudiantes'));
+        tx.set(notiRef, {
+          estudianteId: al.id,
+          estudianteNombre: al.nombre,
+          empresaId: data.empresaId,
+          empresaNombre: data.empresaNombre ?? 'la empresa',
+          grupoId: data.grupoId,
+          solicitudId: solRef.id,
+          carrera: data.carrera ?? '',
+          fechaInicio: acuerdo.fechaInicio,
+          fechaFin: acuerdo.fechaFin,
+          horario: { dias: acuerdo.dias, horaInicio: acuerdo.horaInicio, horaFin: acuerdo.horaFin },
+          pago: acuerdo.pago,
+          tipo: 'acuerdo_aprobado',
+          leida: false,
+          mensaje: `Tu pasantía en ${data.empresaNombre ?? 'la empresa'} fue aprobada. Del ${acuerdo.fechaInicio} al ${acuerdo.fechaFin}. Horario: ${horarioTexto}.${conPago ? ` Pago: $${monto.toFixed(2)}.` : ''}`,
+          createdAt: serverTimestamp(),
+        });
+        if (conPago && monto > 0) {
+          const txRef = doc(collection(db, 'transacciones'));
+          tx.set(txRef, {
+            estudiante_id: al.id,
+            empresa_id: data.empresaId,
+            solicitud_id: solRef.id,
+            concepto: `Pasantía en ${data.empresaNombre ?? 'la empresa'}`,
+            monto,
+            estado: 'pendiente',
+            creado_por: data.universidadId,
+            fecha: serverTimestamp(),
+          });
+        }
       });
     } else {
       tx.update(ref, {

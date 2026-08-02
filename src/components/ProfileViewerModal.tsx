@@ -28,16 +28,20 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { shadow } from '../utils/shadow';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { useIniciarChat } from '../hooks/useIniciarChat';
+import { subscribeUserChats, type ChatListItem } from '../services/chatService';
 import StorageAvatar from './StorageAvatar';
 
 export type ProfileTipo = 'estudiante' | 'empresa' | 'universidad';
@@ -72,6 +76,12 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
   const { colors } = useTheme();
   const { user, rol } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const router = useRouter();
+  const iniciarChat = useIniciarChat();
+
+  // Grupos de chat que comparto con este perfil (aparecen como "en común").
+  const [gruposComun, setGruposComun] = useState<ChatListItem[]>([]);
+  const esMiPerfil = !!user?.uid && user.uid === profileId;
 
   const [data, setData] = useState<any>(null);
   const [correo, setCorreo] = useState<string>('');
@@ -146,6 +156,23 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     );
     return unsub;
   }, [visible, tipo, profileId]);
+
+  // ── Grupos en común con este perfil ──────────────────────────────
+  useEffect(() => {
+    if (!visible || !user?.uid || !profileId || esMiPerfil) {
+      setGruposComun([]);
+      return;
+    }
+    const unsub = subscribeUserChats(
+      user.uid,
+      (items) =>
+        setGruposComun(
+          items.filter((c) => c.type === 'group' && c.users.includes(profileId)),
+        ),
+      () => {},
+    );
+    return unsub;
+  }, [visible, user?.uid, profileId, esMiPerfil]);
 
   const promedioGlobal = useMemo(() => {
     if (califs.length === 0) return 0;
@@ -254,7 +281,50 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                   {esGraduado && <GlowBadge icon="trophy" label="Graduado" color={colors.success} styles={styles} />}
                 </View>
               )}
+
+              {/* Chatear directamente con este usuario (carga el historial si ya existe). */}
+              {!esMiPerfil && (
+                <TouchableOpacity
+                  style={styles.chatBtn}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    onClose();
+                    void iniciarChat({ uid: profileId, nombre, rol: tipo });
+                  }}
+                >
+                  <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
+                  <Text style={styles.chatBtnText}>Chatear</Text>
+                </TouchableOpacity>
+              )}
             </View>
+
+            {/* Grupos de chat en común con este perfil */}
+            {gruposComun.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Grupos en común ({gruposComun.length})</Text>
+                {gruposComun.map((g) => (
+                  <TouchableOpacity
+                    key={g.id}
+                    style={styles.infoRow}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      const peerName = g.name || g.grupoNombre || 'Grupo';
+                      onClose();
+                      router.push({
+                        pathname: '/mensajes',
+                        params: { chat: g.id, peerName },
+                      } as any);
+                    }}
+                  >
+                    <Ionicons name="people" size={18} color={colors.primaryLight} style={{ width: 26 }} />
+                    <Text style={[styles.infoValue, { flex: 1 }]} numberOfLines={1}>
+                      {g.name || g.grupoNombre || 'Grupo'}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
             {tipo === 'estudiante' && (
               <>
@@ -460,6 +530,13 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1,
   },
   glowBadgeText: { fontSize: 12, fontFamily: FONTS.interSemiBold },
+
+  chatBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 22, paddingVertical: 11, borderRadius: 24, marginTop: 14,
+  },
+  chatBtnText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: '#fff' },
 
   section: { marginHorizontal: 16, marginTop: 18, gap: 8 },
   sectionTitle: {

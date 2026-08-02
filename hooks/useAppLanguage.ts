@@ -1,27 +1,26 @@
 import { useTranslationContext } from "../src/context/TranslationContext";
 
 /**
- * Hook de acceso al idioma de la app.
- * Wrapper del TranslationContext — úsalo en cualquier componente.
+ * Hook de acceso al idioma de la app. Wrapper del TranslationContext.
  *
- * language       → 'es' | 'en' | 'pt' | 'zh'
- * toggleLanguage → alterna entre 'es' y 'en'
- * changeLanguage → (lang) => void  (control completo)
- * t              → (text: string) => Promise<string>  (traducción asíncrona)
+ * language       → 'es' | 'en'
+ * t(key, params) → string  (traducción del diccionario, síncrona)
+ * setLanguage    → (lang) => void
+ * toggleLanguage → alterna 'es' ⇄ 'en'
+ * changeLanguage → alias de setLanguage
+ * locale         → 'es-SV' | 'en-US'  (para formatear fechas/números)
  */
 export function useAppLanguage() {
-  const { language, translateText, getTranslation } = useTranslationContext();
-
-  // La app es español fijo. Mantenemos estas funciones como no-op para
-  // conservar la API de los componentes que aún las invocan.
-  const changeLanguage = (_lang?: string) => {};
-  const toggleLanguage = () => {};
+  const { language, locale, t, setLanguage, toggleLanguage, getTranslation } =
+    useTranslationContext();
 
   return {
     language,
+    locale,
+    t,
+    setLanguage,
+    changeLanguage: setLanguage,
     toggleLanguage,
-    changeLanguage,
-    t: translateText,
     getTranslation,
   };
 }

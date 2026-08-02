@@ -5,18 +5,23 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
-  Text,
+
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AutoText as Text } from "../../src/components/AutoText";
 import { useAuth } from '../../src/context/AuthContext';
 import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
 import { generarReciboTexto } from '../../src/services/pagoService';
 import { estudianteFinalizaProyecto } from '../../src/services/pasantiaService';
+import { progresoPorFechas } from '../../src/utils/progresoPasantia';
+import CalendarioEventos from '../../src/components/CalendarioEventos';
+import TableroCupos from '../../src/components/TableroCupos';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
@@ -34,6 +39,9 @@ interface EstudiantePerfil {
   horas_objetivo:  number;
   horas_aprobadas: number;
   horas_en_proceso:number;
+  /** Para el tablero de cupos reservados por su universidad. */
+  universidad_id?: string;
+  grupo_id?:       string;
 }
 
 interface Aplicacion {
@@ -48,6 +56,23 @@ interface Aplicacion {
   // desnormalizados
   nombre_empresa?: string;
   titulo_vacante?: string;
+}
+
+/**
+ * Notificación de acuerdo aprobado que recibe el estudiante cuando su grupo
+ * cierra trato con una empresa (la escribe `firmarAcuerdo`). Es la fuente que
+ * alimenta la tarjeta "Mi pasantía" — el estudiante puede leerla por regla
+ * (`estudianteId == uid`) sin necesidad de acceso a `solicitudes_practicas`.
+ */
+interface AcuerdoEstudiante {
+  id: string;
+  empresaNombre?: string;
+  fechaInicio?: string;
+  fechaFin?: string;
+  carrera?: string;
+  horario?: { dias: string[]; horaInicio: string; horaFin: string };
+  pago?: { tipo: 'con_pago' | 'sin_pago'; monto?: number };
+  createdAt?: any;
 }
 
 // ─────────────────────────────────────────────
@@ -194,15 +219,113 @@ function PasantiaActivaCard({ app, onFinalizar }: { app: Aplicacion; onFinalizar
 }
 
 // ─────────────────────────────────────────────
+// TARJETA "MI PASANTÍA" (acuerdo de grupo aprobado)
+// Línea de tiempo porcentual basada en el periodo acordado.
+// ─────────────────────────────────────────────
+function MiPasantiaCard({ acuerdo, estadoServidor }: { acuerdo: AcuerdoEstudiante; estadoServidor?: string | null }) {
+  const { styles } = useThemedStyles();
+  const prog = progresoPorFechas(acuerdo.fechaInicio, acuerdo.fechaFin);
+  const conPago = acuerdo.pago?.tipo === 'con_pago';
+
+  // El estado del ciclo de vida (finalizado/certificada) manda sobre la línea de
+  // tiempo por fechas: así el estudiante ve el cierre real de la pasantía, no solo
+  // el avance del calendario. Si la solicitud sigue "aprobado", usamos las fechas.
+  const estadoOverride: { label: string; color: string } | null =
+    estadoServidor === 'certificada'
+      ? { label: 'Certificada', color: COLORS.gold }
+      : estadoServidor === 'pendiente_certificacion'
+        ? { label: 'Pendiente de certificar', color: COLORS.warning }
+        : estadoServidor === 'finalizado' || estadoServidor === 'finalizada'
+          ? { label: 'Finalizada', color: COLORS.success }
+          : null;
+
+  const estadoLabel =
+    estadoOverride?.label ??
+    (prog.estado === 'por_iniciar'
+      ? 'Por iniciar'
+      : prog.estado === 'completado'
+        ? 'Completada'
+        : 'En curso');
+  const estadoColor =
+    estadoOverride?.color ??
+    (prog.estado === 'completado'
+      ? COLORS.gold
+      : prog.estado === 'en_curso'
+        ? COLORS.success
+        : COLORS.primaryLight);
+  const horarioTexto = acuerdo.horario
+    ? `${acuerdo.horario.dias.join(', ')} · ${acuerdo.horario.horaInicio} - ${acuerdo.horario.horaFin}`
+    : '—';
+
+  return (
+    <GlassCard style={{ marginBottom: 16 }} contentStyle={{ padding: 16, gap: 12 }}>
+      <View style={styles.activaHeader}>
+        <Ionicons name="ribbon-outline" size={22} color={COLORS.primaryLight} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.activaEmpresa} numberOfLines={1}>
+            {acuerdo.empresaNombre ?? 'Empresa'}
+          </Text>
+          <Text style={styles.activaVacante} numberOfLines={1}>
+            {acuerdo.carrera ?? 'Pasantía'}
+          </Text>
+        </View>
+        <View style={[styles.estadoBadge, { borderColor: estadoColor + '40', backgroundColor: estadoColor + '20' }]}>
+          <Text style={[styles.estadoText, { color: estadoColor }]}>{estadoLabel}</Text>
+        </View>
+      </View>
+
+      {/* Línea de tiempo porcentual */}
+      <View style={styles.diasRow}>
+        <Text style={styles.diasLabel}>
+          {prog.estado === 'por_iniciar'
+            ? `Inicia ${acuerdo.fechaInicio}`
+            : `Día ${prog.diasTranscurridos} de ${prog.diasTotales}`}
+        </Text>
+        <Text style={[styles.diasPct, { color: estadoColor }]}>{prog.pct}%</Text>
+      </View>
+      <View style={styles.barTrack}>
+        <View style={[styles.barFill, { width: `${prog.pct}%` as any, backgroundColor: estadoColor }]} />
+      </View>
+
+      <View style={styles.miPasanRow}>
+        <Ionicons name="calendar-outline" size={15} color={COLORS.textMuted} />
+        <Text style={styles.miPasanText}>{acuerdo.fechaInicio} → {acuerdo.fechaFin}</Text>
+      </View>
+      <View style={styles.miPasanRow}>
+        <Ionicons name="time-outline" size={15} color={COLORS.textMuted} />
+        <Text style={styles.miPasanText} numberOfLines={2}>{horarioTexto}</Text>
+      </View>
+      <View style={styles.miPasanRow}>
+        <Ionicons name="wallet-outline" size={15} color={conPago ? COLORS.success : COLORS.textMuted} />
+        <Text style={[styles.miPasanText, conPago && { color: COLORS.success }]}>
+          {conPago ? `Pago: $${Number(acuerdo.pago?.monto ?? 0).toFixed(2)}` : 'Sin pago'}
+        </Text>
+      </View>
+
+      {prog.estado === 'en_curso' && (
+        <Text style={styles.miPasanRestante}>
+          {prog.diasRestantes} día(s) restante(s)
+        </Text>
+      )}
+    </GlassCard>
+  );
+}
+
+// ─────────────────────────────────────────────
 // PANTALLA
 // ─────────────────────────────────────────────
 export default function ProgresoTab() {
   const { user, userProfile } = useAuth();
-  const { styles } = useThemedStyles();
+  const { styles, colors } = useThemedStyles();
+  const webScrollStyle = Platform.OS === 'web'
+    ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
+    : undefined;
 
   const [perfil,        setPerfil]        = useState<EstudiantePerfil | null>(null);
   const [apps,          setApps]          = useState<Aplicacion[]>([]);
   const [transacciones, setTransacciones] = useState<any[]>([]);
+  const [acuerdo,       setAcuerdo]       = useState<AcuerdoEstudiante | null>(null);
+  const [pasantiaEstado, setPasantiaEstado] = useState<string | null>(null);
   const [cargando,      setCargando]      = useState(true);
 
   const horasObjetivo   = perfil?.horas_objetivo   ?? 500;
@@ -240,6 +363,62 @@ export default function ProgresoTab() {
     const unsub = onSnapshot(q, snap => {
       setTransacciones(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
+    return unsub;
+  }, [user]);
+
+  // ── Firestore: acuerdo de pasantía del grupo (notificaciones del estudiante)
+  // Toma el acuerdo aprobado más reciente para mostrar "Mi pasantía".
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'notificaciones_estudiantes'),
+      where('estudianteId', '==', user.uid),
+    );
+    const unsub = onSnapshot(
+      q,
+      snap => {
+        const acuerdos = snap.docs
+          .map(d => ({ id: d.id, ...(d.data() as any) }))
+          .filter(a => a.tipo === 'acuerdo_aprobado' && a.fechaInicio)
+          .sort(
+            (a, b) =>
+              (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0),
+          );
+        setAcuerdo(acuerdos[0] ?? null);
+      },
+      () => setAcuerdo(null),
+    );
+    return unsub;
+  }, [user]);
+
+  // ── Firestore: estado EN VIVO de la pasantía (solicitudes_practicas) ──
+  // El estudiante ahora puede leer su propia solicitud vía `estudianteIds`
+  // (denormalizado en el servicio). Esto refleja el ciclo de vida real
+  // (aprobado → finalizado → certificada) que la notificación puntual no capta.
+  // Sin orderBy para no exigir índice compuesto; se ordena en cliente.
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'solicitudes_practicas'),
+      where('estudianteIds', 'array-contains', user.uid),
+    );
+    const unsub = onSnapshot(
+      q,
+      snap => {
+        const sols = snap.docs
+          .map(d => ({ id: d.id, ...(d.data() as any) }))
+          .sort(
+            (a, b) =>
+              (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0),
+          );
+        // 'certificada' se modela con el campo `certificacion`; el resto usa `estado`.
+        const top = sols[0];
+        setPasantiaEstado(
+          top ? (top.certificacion === 'certificada' ? 'certificada' : top.estado ?? null) : null,
+        );
+      },
+      () => setPasantiaEstado(null),
+    );
     return unsub;
   }, [user]);
 
@@ -307,11 +486,17 @@ export default function ProgresoTab() {
         <Text style={styles.headerTitle}>Mi progreso</Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        style={webScrollStyle}
+        showsVerticalScrollIndicator
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.scroll, { flexGrow: 1 }]}
+      >
 
         {/* ── Termómetro ── */}
         <GlassCard style={{ marginBottom: 20 }} contentStyle={{ padding: 20 }}>
-          <Text style={styles.sectionLabel}>Horas sociales</Text>
+          <Text style={styles.sectionLabel}>Horas de práctica</Text>
 
           <View style={styles.circleRow}>
             <CircleProgress pct={pct} aprobadas={horasAprobadas} objetivo={horasObjetivo} />
@@ -331,6 +516,34 @@ export default function ProgresoTab() {
             </View>
           )}
         </GlassCard>
+
+        {/* ── Cupos que su universidad le aseguró (tablero de selección) ──
+            Va aquí y NO en el feed de vacantes: ese feed solo lo ven quienes
+            YA culminaron su práctica, justo el público contrario a este. */}
+        {user?.uid && (
+          <TableroCupos
+            estudianteId={user.uid}
+            universidadId={perfil?.universidad_id ?? (userProfile as any)?.universidad_id}
+            grupoId={perfil?.grupo_id}
+            estudianteNombre={(userProfile as any)?.nombre_completo ?? ''}
+          />
+        )}
+
+        {/* ── Mi pasantía (acuerdo de grupo aprobado) ── */}
+        {acuerdo && (
+          <>
+            <Text style={styles.sectionTitle}>Mi pasantía</Text>
+            <MiPasantiaCard acuerdo={acuerdo} estadoServidor={pasantiaEstado} />
+          </>
+        )}
+
+        {/* ── Calendario: días acordados de asistencia a la práctica ── */}
+        {user?.uid && (
+          <>
+            <Text style={styles.sectionTitle}>Mi calendario</Text>
+            <CalendarioEventos uid={user.uid} rol="estudiante" />
+          </>
+        )}
 
         {/* ── Pasantía activa ── */}
         <Text style={styles.sectionTitle}>Pasantía activa</Text>
@@ -532,6 +745,11 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.warning + '30',
   },
   finalizarText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.warning },
+
+  // Mi pasantía (acuerdo de grupo)
+  miPasanRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  miPasanText: { flex: 1, fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  miPasanRestante: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
 
   // Historial
   historialCard: {

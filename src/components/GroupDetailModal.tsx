@@ -6,11 +6,12 @@ import {
     SafeAreaView,
     ScrollView,
     StyleSheet,
-    Text,
-    TextInput,
+
+
     TouchableOpacity,
     View,
 } from "react-native";
+import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import { auth } from "../config/firebaseConfig";
 import OfrecerEmpresaModal from "./OfrecerEmpresaModal";
 

@@ -287,9 +287,11 @@ export interface EnviarFeedbackParams {
   evaluadorRol: EntidadRol;
   evaluadoId: string;
   evaluadoRol: EntidadRol;
-  /** Mapa criterio → estrellas (1–5). */
+  /** Mapa criterio → estrellas (1..escalaMax). */
   criterios: Record<string, number>;
   comentario: string;
+  /** Máximo de la escala de estrellas usada por la UI (por defecto 5). */
+  escalaMax?: number;
 }
 
 export interface EnviarFeedbackResult {
@@ -317,12 +319,16 @@ export async function enviarFeedback(
     evaluadoRol,
     criterios,
     comentario,
+    escalaMax = 5,
   } = params;
 
   const valores = Object.values(criterios).filter((n) => n > 0);
   if (valores.length === 0) throw new Error("Debes calificar todos los criterios.");
-  const promedioFeedback =
-    valores.reduce((a, b) => a + b, 0) / valores.length;
+  // Promedio bruto en la escala de la UI (p. ej. 1–10), normalizado a /5 para
+  // conservar el XP y la `calificacion_promedio` en la misma escala histórica.
+  const factor = 5 / (escalaMax || 5);
+  const promedioBruto = valores.reduce((a, b) => a + b, 0) / valores.length;
+  const promedioFeedback = promedioBruto * factor;
   const xp = calcularXP(promedioFeedback);
   const evaluadoCol =
     evaluadoRol === "empresa" ? "perfiles_empresas" : "perfiles_estudiantes";
@@ -359,8 +365,10 @@ export async function enviarFeedback(
       evaluadoId,
       evaluadoRol,
       criterios,
+      escala: escalaMax,
       comentario: comentario.trim(),
       promedio: parseFloat(promedioFeedback.toFixed(2)),
+      promedioBruto: parseFloat(promedioBruto.toFixed(2)),
       xpOtorgada: xp,
       createdAt: serverTimestamp(),
     });

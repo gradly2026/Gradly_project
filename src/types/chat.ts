@@ -23,6 +23,41 @@ export interface ScheduleData {
   horaFin: string; // p.ej. "12:00 PM"
 }
 
+/** Condición de pago de la pasantía dentro de un acuerdo. */
+export interface PagoAcuerdo {
+  /** `con_pago` lleva `monto` por estudiante; `sin_pago` es ad honorem. */
+  tipo: "con_pago" | "sin_pago";
+  /** Monto por estudiante (sólo si `tipo === 'con_pago'`). */
+  monto?: number;
+  /** Moneda del monto (sólo USD por ahora). */
+  moneda?: "USD";
+}
+
+/**
+ * Propuesta/acuerdo completo que viaja en un mensaje `type: 'proposal'`.
+ * Engloba el horario (días + horas), el rango de fechas de la pasantía y la
+ * condición de pago. Lo puede enviar la Universidad o la Empresa; la contraparte
+ * lo acepta y se "firma".
+ */
+export interface AcuerdoData {
+  dias: DiaLaboral[];
+  horaInicio: string; // p.ej. "08:00 AM"
+  horaFin: string; // p.ej. "12:00 PM"
+  /** Fecha de inicio de la pasantía (ISO `yyyy-mm-dd`). */
+  fechaInicio: string;
+  /** Fecha de fin de la pasantía (ISO `yyyy-mm-dd`). */
+  fechaFin: string;
+  /** Condición de pago acordada. */
+  pago: PagoAcuerdo;
+}
+
+/** Sub-horario `ScheduleData` derivado de un `AcuerdoData`. */
+export const acuerdoToSchedule = (a: AcuerdoData): ScheduleData => ({
+  dias: a.dias,
+  horaInicio: a.horaInicio,
+  horaFin: a.horaFin,
+});
+
 /** Tipos de mensaje que viajan por el chat. */
 export type ChatMessageType = "text" | "proposal" | "system" | "group_offer";
 
@@ -50,6 +85,11 @@ export interface GroupOfferData {
 export interface ChatMessage extends IMessage {
   type?: ChatMessageType;
   scheduleData?: ScheduleData;
+  /**
+   * Acuerdo completo (horario + fechas + pago) de una propuesta nueva.
+   * Los mensajes antiguos sólo tienen `scheduleData`; el render hace fallback.
+   */
+  acuerdo?: AcuerdoData;
   /** Payload de la tarjeta de grupo compartido (`type: 'group_offer'`). */
   groupOffer?: GroupOfferData;
   approved?: boolean;
@@ -57,4 +97,12 @@ export interface ChatMessage extends IMessage {
   isDeleted?: boolean;
   /** Marca de edición (muestra "Editado" bajo la burbuja). */
   isEdited?: boolean;
+  /** Mensaje reenviado desde otro chat (muestra la etiqueta "Reenviado"). */
+  forwarded?: boolean;
+  /** Cita del mensaje al que se responde (se dibuja dentro de la burbuja). */
+  replyMessage?: {
+    _id: string | number;
+    text: string;
+    user?: { _id?: string | number; name?: string; avatar?: string };
+  };
 }

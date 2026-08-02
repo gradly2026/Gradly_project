@@ -50,34 +50,6 @@ const resetPasswordSettings: ActionCodeSettings = {
   handleCodeInApp: true,
 };
 
-/**
- * Envía un enlace mágico de acceso sin contraseña. Guarda el correo ANTES de
- * enviar (obligatorio para completar el login al volver). Si el envío falla,
- * limpia el correo guardado para no dejar estado huérfano.
- */
-export async function enviarMagicLink(email: string): Promise<void> {
-  const correo = email.trim().toLowerCase();
-  await AsyncStorage.setItem(CORREO_TEMPORAL_KEY, correo);
-  try {
-    await sendSignInLinkToEmail(auth, correo, magicLinkSettings);
-  } catch (err) {
-    await AsyncStorage.removeItem(CORREO_TEMPORAL_KEY);
-    throw err;
-  }
-}
-
-/**
- * Envía el correo de recuperación de contraseña con el override de
- * ActionCodeSettings (no requiere configurar la consola).
- */
-export async function enviarResetPassword(email: string): Promise<void> {
-  await sendPasswordResetEmail(
-    auth,
-    email.trim().toLowerCase(),
-    resetPasswordSettings,
-  );
-}
-
 export async function uploadPhoto(uid: string, localUri: string): Promise<string> {
   const response = await fetch(localUri);
   const blob = await response.blob();

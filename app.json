@@ -10,11 +10,13 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.gradly.app",
       "config": {
         "googleMapsApiKey": "AIzaSyCrsDxPdnVe_Xv9JrHs8j-gFqKugiEc6mc"
       }
     },
     "android": {
+      "package": "com.gradly.app",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCrsDxPdnVe_Xv9JrHs8j-gFqKugiEc6mc"
@@ -44,6 +46,9 @@
             "DEFAULT"
           ]
         }
+      ],
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -76,6 +81,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3428312c-a058-4097-af44-ec5f7d7f2395"
+      }
+    },
+    "owner": "djlo365s-team"
   }
 }

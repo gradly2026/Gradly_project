@@ -1,13 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import * as Clipboard from "expo-clipboard";
+import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
 import * as ScreenCapture from "expo-screen-capture";
 import {
   arrayRemove,
+  arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
-  increment,
   onSnapshot,
   orderBy,
   query,
@@ -15,9 +19,8 @@ import {
   setDoc,
   updateDoc,
   where,
-  writeBatch,
 } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -26,22 +29,31 @@ import {
   Platform,
   StyleSheet,
   Switch,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from "react-native";
+import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import {
+  Bubble,
+  Composer,
   GiftedChat,
+  InputToolbar,
   MessageText,
+  Send,
   type BubbleProps,
   type IMessage,
   type MessageTextProps,
-  type ReplyMessage,
 } from "react-native-gifted-chat";
+
+// gifted-chat v2 no exporta `ReplyMessage` (era de v3). Tipo local mínimo con la
+// forma que construimos al responder (ver startReply).
+type ReplyMessage = { _id: string | number; text: string; user: IMessage["user"] };
 import { SafeAreaView } from "react-native-safe-area-context";
 import { db } from "../config/firebaseConfig";
 import { useAuth } from "../context/AuthContext";
+import { useTheme, type GradlyColors } from "../context/ThemeContext";
 import {
   chatTitle,
   markChatRead,
@@ -52,20 +64,53 @@ import {
 import {
   aceptarGrupoCompartido,
   finalizarPasantia,
+  firmarAcuerdo,
+  subirConstanciaPdf,
+  type FirmarAcuerdoResult,
 } from "../services/solicitudPracticaService";
-import { type ChatMessage, type GroupOfferData, type ScheduleData } from "../types/chat";
+import { useAutoText } from "./AutoText";
+import {
+  acuerdoToSchedule,
+  type AcuerdoData,
+  type ChatMessage,
+  type GroupOfferData,
+} from "../types/chat";
 import ProponerHorarioModal from "./ProponerHorarioModal";
+import ProfileViewerModal, { type ProfileTipo } from "./ProfileViewerModal";
+import ReportarUsuarioModal from "./ReportarUsuarioModal";
+import StorageAvatar from "./StorageAvatar";
+import { useIniciarChat } from "../hooks/useIniciarChat";
 
-const C = {
-  bg: "#07050f",
-  surface: "#0d0b1e",
-  text: "#ffffff",
-  textMuted: "rgba(255,255,255,0.38)",
-  muted: "rgba(255,255,255,0.6)",
-  accent: "#8b5cf6",
-  border: "rgba(139,92,246,0.22)",
-  green: "#34d399",
-};
+/**
+ * Paleta del chat: se deriva de la paleta oficial del tema activo
+ * (`ThemeContext` — la misma que usa el resto de la app), en vez de una
+ * paleta fija en claro. Así, si la app está en modo oscuro, el chat también
+ * se ve oscuro con los mismos colores del tema original (y viceversa).
+ */
+type ChatColors = ReturnType<typeof buildChatColors>;
+function buildChatColors(theme: GradlyColors) {
+  return {
+    bg: theme.backgroundDark,
+    surface: theme.backgroundCard,
+    text: theme.textPrimary,
+    textMuted: theme.textMuted,
+    muted: theme.textSecondary,
+    accent: theme.primary,
+    border: theme.border,
+    green: theme.success,
+    // Relleno sutil para inputs/items sobre una tarjeta (antes fijo en negro
+    // translúcido, invisible sobre fondos oscuros); `white4` ya está pensado
+    // para verse bien en ambos temas.
+    subtleFill: theme.white4,
+    // Burbujas: la mía usa el color primario de marca (texto blanco fijo, ya
+    // que el primario es igual de oscuro/saturado en ambos temas); la de la
+    // contraparte usa la superficie de tarjeta del tema con su texto normal.
+    bubbleMine: theme.primary,
+    bubbleMineText: "#FFFFFF",
+    bubbleOther: theme.backgroundSurface,
+    bubbleOtherText: theme.textPrimary,
+  };
+}
 
 /** Alumno referenciado en la solicitud. */
 interface AlumnoRef {
@@ -88,8 +133,25 @@ interface ChatContext {
   estado: string;
 }
 
-const horarioToText = (s: ScheduleData) =>
-  `${s.dias.join(", ")} · ${s.horaInicio} - ${s.horaFin}`;
+/** Hora exacta HH:mm (es-ES). */
+const formatHoraExacta = (d: Date) =>
+  d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+
+/**
+ * Texto del recibo bajo un mensaje propio:
+ *  - "Visto HH:mm" si el otro participante entró al chat después de enviarse.
+ *  - "Enviado HH:mm" en caso contrario (hora exacta de registro del mensaje).
+ */
+function reciboTexto(msg: ChatMessage, peerLeido: Date | null): string {
+  const created =
+    msg.createdAt instanceof Date
+      ? msg.createdAt
+      : new Date(Number(msg.createdAt) || Date.now());
+  if (peerLeido && peerLeido.getTime() >= created.getTime()) {
+    return `Visto ${formatHoraExacta(peerLeido)}`;
+  }
+  return `Enviado ${formatHoraExacta(created)}`;
+}
 
 /** Texto de presencia legible a partir del estado del peer. */
 function presenciaTexto(online: boolean, lastSeen: Date | null): string {
@@ -121,6 +183,17 @@ export interface ChatThreadProps {
 }
 
 /**
+ * Renderiza el texto de un mensaje traducido al vuelo (según el idioma activo),
+ * pasándolo a `MessageText` de GiftedChat para conservar su formato/linkify.
+ */
+function TranslatedMessageText(props: MessageTextProps<ChatMessage>) {
+  const msg = props.currentMessage;
+  const translated = useAutoText(typeof msg?.text === "string" ? msg.text : "");
+  const patched = msg ? ({ ...msg, text: translated } as ChatMessage) : msg;
+  return <MessageText {...props} currentMessage={patched} />;
+}
+
+/**
  * Hilo de conversación reutilizable. Concentra toda la lógica de chat (antes en
  * `app/ChatScreen.tsx`) para poder montarse como pantalla del stack/tab o
  * embebido en el panel derecho del master-detail.
@@ -131,15 +204,72 @@ export default function ChatThread({
   onBack,
   embedded = false,
 }: ChatThreadProps) {
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, rol } = useAuth();
   const router = useRouter();
+  const iniciarChat = useIniciarChat();
+
+  // Paleta y estilos del chat: siguen el tema activo (claro/oscuro) de la app.
+  const { colors: themeColors, isDark } = useTheme();
+  const C = useMemo(() => buildChatColors(themeColors), [themeColors]);
+  const styles = useMemo(() => makeStyles(C), [C]);
+
+  /** Fila del menú contextual long-press. Anidado para heredar `C`/`styles`
+   * del tema activo por closure (antes vivía a nivel de módulo, atado a la
+   * paleta fija). */
+  const MenuOption = ({
+    icon,
+    label,
+    onPress,
+    danger,
+  }: {
+    icon: keyof typeof Ionicons.glyphMap;
+    label: string;
+    onPress: () => void;
+    danger?: boolean;
+  }) => (
+    <TouchableOpacity
+      style={styles.menuOption}
+      activeOpacity={0.7}
+      onPress={onPress}
+    >
+      <Ionicons name={icon} size={20} color={danger ? "#f87171" : C.text} />
+      <Text style={[styles.menuOptionText, danger && { color: "#f87171" }]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  // Foto/logo del otro participante (chat 1:1) para la cabecera.
+  const [peerFoto, setPeerFoto] = useState<string | null>(null);
+  // "Vaciar chat" por usuario: oculta los mensajes anteriores a esta marca SOLO
+  // para mí (no borra nada para los demás).
+  const [clearedAtMe, setClearedAtMe] = useState<Date | null>(null);
+  // Acción al tocar un integrante del grupo (ver perfil / chatear).
+  const [accionMiembro, setAccionMiembro] = useState<{
+    uid: string;
+    nombre: string;
+    rol: string;
+    foto?: string | null;
+  } | null>(null);
+  // Perfil a mostrar (modal) tras elegir "Ver perfil".
+  const [verPerfil, setVerPerfil] = useState<{ tipo: ProfileTipo; id: string } | null>(null);
+  // Añadir integrantes (solo admin universidad).
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [candidatos, setCandidatos] = useState<{ uid: string; nombre: string; foto?: string | null }[]>([]);
+  const [loadingCand, setLoadingCand] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [ctx, setCtx] = useState<ChatContext | null>(null);
   const [showPropuesta, setShowPropuesta] = useState(false);
   const [aprobando, setAprobando] = useState(false);
+  // Resultado de la firma → alimenta el modal "Inicio de la pasantía".
+  const [acuerdoFirmado, setAcuerdoFirmado] = useState<FirmarAcuerdoResult | null>(
+    null,
+  );
   const [peerStatus, setPeerStatus] = useState<string | null>(null);
   const [peerLastSeen, setPeerLastSeen] = useState<Date | null>(null);
+  // Hora en que cada participante entró al chat por última vez (para "Visto").
+  const [lastReadMap, setLastReadMap] = useState<Record<string, Date>>({});
   // Tick para reevaluar la frescura del heartbeat aunque no llegue snapshot.
   const [nowTick, setNowTick] = useState(() => Date.now());
 
@@ -153,6 +283,8 @@ export default function ChatThread({
   const [actionMsg, setActionMsg] = useState<ChatMessage | null>(null);
   // Mensaje a reenviar (abre el modal con la lista de chats).
   const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
+  // Usuario a reportar (abre el modal de reporte).
+  const [reportTarget, setReportTarget] = useState<{ id: string; nombre: string } | null>(null);
   // Chats activos del usuario (para el modal de reenvío).
   const [misChats, setMisChats] = useState<ChatListItem[]>([]);
 
@@ -164,12 +296,13 @@ export default function ChatThread({
     users: string[];
     adminsOnly: boolean;
     contexto: string;
+    participantsInfo: Record<string, { nombre: string; rol: string; foto?: string | null }>;
   } | null>(null);
   // Panel de administración del grupo.
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [nombreEdit, setNombreEdit] = useState("");
   const [participantes, setParticipantes] = useState<
-    { uid: string; nombre: string }[]
+    { uid: string; nombre: string; rol: string; foto?: string | null }[]
   >([]);
 
   // Compartir grupo de estudiantes (acción rápida de la Universidad).
@@ -223,11 +356,30 @@ export default function ChatThread({
     if (chatId && user?.uid) void markChatRead(chatId, user.uid);
   }, [chatId, user?.uid]);
 
-  // ── Presencia del peer: status / lastSeen en usuarios/{peerUid} ──
+  // Presencia "viendo este chat": permite que el backend NO notifique/pushee
+  // mensajes de un chat que el usuario tiene abierto. Se limpia al salir.
+  // Vive en `presencia/{uid}` (junto con status/lastSeen), no en `usuarios`,
+  // para consolidar toda la presencia en una sola colección de lectura pública.
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!chatId || !uid) return;
+    const ref = doc(db, "presencia", uid);
+    // setDoc+merge: tolera que el doc de presencia aún no exista.
+    void setDoc(ref, { activeChatId: chatId }, { merge: true }).catch(() => {});
+    // Borra la notificación de campanita de este chat al abrirlo (si existe).
+    void deleteDoc(doc(db, "notificaciones_app", `chat_${chatId}_${uid}`)).catch(() => {});
+    return () => {
+      void setDoc(ref, { activeChatId: null }, { merge: true }).catch(() => {});
+    };
+  }, [chatId, user?.uid]);
+
+  // ── Presencia del peer: status / lastSeen en presencia/{peerUid} ──
+  // Colección aparte (lectura pública para autenticados) para no exponer el
+  // correo/perfil del otro usuario solo por ver su punto verde.
   useEffect(() => {
     if (!peerUid) return;
     const unsub = onSnapshot(
-      doc(db, "usuarios", peerUid),
+      doc(db, "presencia", peerUid),
       (snap) => {
         const data = (snap.data() ?? {}) as any;
         setPeerStatus(data.status ?? null);
@@ -251,6 +403,50 @@ export default function ChatThread({
     peerStatus === "online" &&
     (!peerLastSeen || nowTick - peerLastSeen.getTime() < 120000);
 
+  // ── Foto/logo del peer (chat 1:1) para la cabecera ──
+  // empresa/universidad: logos públicos. estudiante: foto solo si el lector tiene
+  // permiso (empresa/universidad/él mismo); si no, cae al ícono/inicial.
+  useEffect(() => {
+    if (isGroup || !peerUid) {
+      setPeerFoto(null);
+      return;
+    }
+    let cancel = false;
+    const rolPeer = group?.participantsInfo?.[peerUid]?.rol;
+    const intentos: [string, string][] =
+      rolPeer === "empresa"
+        ? [["perfiles_empresas", "logo_url"]]
+        : rolPeer === "universidad"
+          ? [["perfiles_universidades", "logo_url"]]
+          : rolPeer === "estudiante"
+            ? [["perfiles_estudiantes", "foto_url"]]
+            : [
+                ["perfiles_empresas", "logo_url"],
+                ["perfiles_universidades", "logo_url"],
+                ["perfiles_estudiantes", "foto_url"],
+              ];
+    (async () => {
+      for (const [col, field] of intentos) {
+        try {
+          const s = await getDoc(doc(db, col, peerUid));
+          if (!cancel && s.exists()) {
+            const url = (s.data() as any)?.[field];
+            if (url) {
+              setPeerFoto(url);
+              return;
+            }
+          }
+        } catch {
+          /* sin permiso → probamos la siguiente colección */
+        }
+      }
+      if (!cancel) setPeerFoto(null);
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [isGroup, peerUid, group?.participantsInfo]);
+
   // ── Inyecta un mensaje de sistema en la subcolección messages ──
   const inyectarMensajeSistema = useCallback(
     (texto: string) => {
@@ -270,39 +466,63 @@ export default function ChatThread({
 
   // ── Marcar la pasantía como finalizada (universidad o empresa) ──
   const [finalizando, setFinalizando] = useState(false);
+
+  // Finaliza la pasantía; `constanciaUrl` opcional (PDF escaneado subido).
+  const doFinalizar = useCallback(
+    async (constanciaUrl?: string) => {
+      if (!ctx?.solicitudId) return;
+      setFinalizando(true);
+      try {
+        await finalizarPasantia(ctx.solicitudId, user?.uid, constanciaUrl);
+        inyectarMensajeSistema(
+          "La pasantía fue marcada como finalizada. Se emitió la constancia y la universidad podrá certificarla. Por favor completen su evaluación de experiencia.",
+        );
+        setCtx((p) => (p ? { ...p, estado: "finalizado" } : p));
+      } catch (error) {
+        console.warn("Error finalizando pasantía:", error);
+        Alert.alert("Error", "No se pudo finalizar la pasantía. Intenta de nuevo.");
+      } finally {
+        setFinalizando(false);
+      }
+    },
+    [ctx?.solicitudId, inyectarMensajeSistema, user?.uid],
+  );
+
+  // Elige un PDF, lo sube a Storage y finaliza con esa constancia.
+  const subirConstanciaYFinalizar = useCallback(async () => {
+    if (!ctx?.solicitudId) return;
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "application/pdf",
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.[0]?.uri) return;
+      setFinalizando(true);
+      const url = await subirConstanciaPdf(ctx.solicitudId, res.assets[0].uri);
+      await doFinalizar(url);
+    } catch (error) {
+      console.warn("Error subiendo constancia:", error);
+      Alert.alert("Error", "No se pudo subir la constancia. Intenta de nuevo.");
+      setFinalizando(false);
+    }
+  }, [ctx?.solicitudId, doFinalizar]);
+
   const onFinalizarPasantia = useCallback(() => {
     if (!ctx?.solicitudId) return;
+    // La subida de PDF solo la puede hacer la empresa (regla de Storage).
+    const opciones: any[] = [
+      { text: "Constancia automática", onPress: () => doFinalizar() },
+    ];
+    if (isEmpresa) {
+      opciones.push({ text: "Subir PDF escaneado", onPress: subirConstanciaYFinalizar });
+    }
+    opciones.push({ text: "Cancelar", style: "cancel" });
     Alert.alert(
       "Finalizar pasantía",
-      "¿Marcar esta pasantía como finalizada? Se habilitará el formulario de evaluación para ambas partes.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Finalizar",
-          style: "destructive",
-          onPress: async () => {
-            setFinalizando(true);
-            try {
-              await finalizarPasantia(ctx.solicitudId);
-              inyectarMensajeSistema(
-                "La pasantía fue marcada como finalizada. Por favor completen su evaluación de experiencia.",
-              );
-              setCtx((p) => (p ? { ...p, estado: "finalizado" } : p));
-            } catch (error) {
-              console.warn("Error finalizando pasantía:", error);
-              Alert.alert("Error", "No se pudo finalizar la pasantía. Intenta de nuevo.");
-            } finally {
-              setFinalizando(false);
-            }
-          },
-        },
-      ],
+      "Elige cómo emitir la constancia. Se habilitará la evaluación de experiencia para ambas partes.",
+      opciones,
     );
-  }, [ctx?.solicitudId, inyectarMensajeSistema]);
-
-  // ── Anti-captura de pantalla ──
-  // Bloquea capturas mientras el chat está montado (no soportado en Web).
-  ScreenCapture.usePreventScreenCapture();
+  }, [ctx?.solicitudId, isEmpresa, doFinalizar, subirConstanciaYFinalizar]);
 
   // Si el usuario captura, registra un aviso de sistema en el propio chat.
   useEffect(() => {
@@ -348,7 +568,23 @@ export default function ChatThread({
           users: Array.isArray(d.users) ? d.users : [],
           adminsOnly: !!d.settings?.adminsOnly,
           contexto: d.contexto ?? "",
+          participantsInfo: (d.participantsInfo ?? {}) as Record<
+            string,
+            { nombre: string; rol: string; foto?: string | null }
+          >,
         });
+        // Mapa de "última lectura" por usuario → alimenta el recibo "Visto".
+        const lr = (d.lastRead ?? {}) as Record<string, any>;
+        const parsed: Record<string, Date> = {};
+        Object.keys(lr).forEach((u) => {
+          const fecha = lr[u]?.toDate?.();
+          if (fecha) parsed[u] = fecha;
+        });
+        setLastReadMap(parsed);
+        // Marca de "vaciado" propia (oculta mensajes anteriores solo para mí).
+        const mi = user?.uid;
+        const ca = mi ? (d.clearedAt ?? {})[mi]?.toDate?.() ?? null : null;
+        setClearedAtMe(ca);
       },
       (error) => console.warn("Error en listener (chat doc):", error),
     );
@@ -448,10 +684,12 @@ export default function ChatThread({
             system: data.system ?? false,
             type: data.type ?? "text",
             scheduleData: data.scheduleData,
+            acuerdo: data.acuerdo,
             groupOffer: data.groupOffer,
             approved: data.approved ?? false,
             isDeleted: data.isDeleted ?? false,
             isEdited: data.isEdited ?? false,
+            forwarded: data.forwarded ?? false,
             replyMessage: data.replyMessage ?? undefined,
           };
         });
@@ -493,8 +731,21 @@ export default function ChatThread({
           createdAt: serverTimestamp(),
           user: { _id: giftedUser._id, name: giftedUser.name },
         };
-        // Adjunta la cita del mensaje original al responder.
-        if (replyTo) payload.replyMessage = replyTo;
+        // Adjunta la cita del mensaje original al responder. Firestore NO
+        // acepta `undefined` (p. ej. user.avatar), así que limpiamos el objeto.
+        if (replyTo) {
+          const u = (replyTo as any).user ?? {};
+          const cleanUser: Record<string, unknown> = {
+            _id: u._id ?? "",
+            name: u.name ?? "",
+          };
+          if (u.avatar) cleanUser.avatar = u.avatar;
+          payload.replyMessage = {
+            _id: String((replyTo as any)._id ?? ""),
+            text: (replyTo as any).text ?? "",
+            user: cleanUser,
+          };
+        }
         void setDoc(ref, payload);
         void touchChatOnMessage(chatId, m.text, giftedUser._id, chatUsers);
       });
@@ -552,6 +803,7 @@ export default function ChatThread({
         _id: ref.id,
         text: msg.text,
         type: "text",
+        forwarded: true, // → muestra la etiqueta "Reenviado" en el destino.
         createdAt: serverTimestamp(),
         user: { _id: giftedUser._id, name: giftedUser.name },
       });
@@ -561,30 +813,85 @@ export default function ChatThread({
   );
 
   // ── Panel de administración del grupo ──
-  const abrirGroupInfo = useCallback(async () => {
+  const abrirGroupInfo = useCallback(() => {
     if (!isGroup) return;
     setNombreEdit(group?.name ?? "");
+    // Arranca sin overlays abiertos (evita reaperturas fantasma).
+    setShowAddMember(false);
+    setAccionMiembro(null);
     setShowGroupInfo(true);
 
-    // Carga los nombres de los participantes desde `usuarios`.
+    // Nombres + foto desde `participantsInfo` del propio chat (NO desde
+    // `usuarios/{uid}`, cuya lectura niegan las reglas para la universidad).
     const uids = group?.users ?? [];
+    const info = group?.participantsInfo ?? {};
+    setParticipantes(
+      uids.map((u) => ({
+        uid: u,
+        nombre:
+          info[u]?.nombre ?? (u === user?.uid ? "Tú" : "Participante"),
+        rol: info[u]?.rol ?? "",
+        foto: info[u]?.foto ?? null,
+      })),
+    );
+  }, [isGroup, group?.name, group?.users, group?.participantsInfo, user?.uid]);
+
+  // ── Añadir integrantes (solo admin universidad): carga sus estudiantes ──
+  const abrirAddMember = useCallback(async () => {
+    if (!user?.uid) return;
+    setShowAddMember(true);
+    setLoadingCand(true);
     try {
-      const docs = await Promise.all(
-        uids.map((u) => getDoc(doc(db, "usuarios", u))),
+      const snap = await getDocs(
+        query(
+          collection(db, "perfiles_estudiantes"),
+          where("universidad_id", "==", user.uid),
+        ),
       );
-      setParticipantes(
-        docs.map((snap, i) => ({
-          uid: uids[i],
-          nombre:
-            (snap.data() as any)?.nombre_completo ??
-            (uids[i] === user?.uid ? "Tú" : "Participante"),
-        })),
-      );
+      const yaEstan = new Set(group?.users ?? []);
+      const items = snap.docs
+        .filter((d) => !yaEstan.has(d.id))
+        .map((d) => ({
+          uid: d.id,
+          nombre: String((d.data() as any)?.nombre_completo ?? "Estudiante"),
+          foto: (d.data() as any)?.foto_url ?? null,
+        }));
+      setCandidatos(items);
     } catch (error) {
-      console.warn("Error cargando participantes:", error);
-      setParticipantes(uids.map((u) => ({ uid: u, nombre: "Participante" })));
+      console.warn("Error cargando candidatos:", error);
+      setCandidatos([]);
+    } finally {
+      setLoadingCand(false);
     }
-  }, [isGroup, group?.name, group?.users, user?.uid]);
+  }, [user?.uid, group?.users]);
+
+  // Añade un usuario al grupo (arrayUnion users + participantsInfo). El admin
+  // puede actualizar el chat según las reglas de Firestore.
+  const agregarMiembro = useCallback(
+    async (cand: { uid: string; nombre: string; foto?: string | null }) => {
+      if (!chatId || !isAdmin) return;
+      try {
+        await updateDoc(doc(db, "chats", chatId), {
+          users: arrayUnion(cand.uid),
+          [`participantsInfo.${cand.uid}`]: {
+            nombre: cand.nombre,
+            rol: "estudiante",
+            foto: cand.foto ?? null,
+          },
+        });
+        setCandidatos((prev) => prev.filter((c) => c.uid !== cand.uid));
+        setParticipantes((prev) =>
+          prev.some((p) => p.uid === cand.uid)
+            ? prev
+            : [...prev, { uid: cand.uid, nombre: cand.nombre, rol: "estudiante", foto: cand.foto ?? null }],
+        );
+      } catch (error) {
+        console.warn("Error agregando miembro:", error);
+        Alert.alert("Error", "No se pudo agregar al integrante.");
+      }
+    },
+    [chatId, isAdmin],
+  );
 
   const renombrarGrupo = useCallback(() => {
     const nombre = nombreEdit.trim();
@@ -636,19 +943,168 @@ export default function ChatThread({
       if (msg?.isEdited) {
         return (
           <View>
-            <MessageText {...props} />
+            <TranslatedMessageText {...props} />
             <Text style={styles.editedLabel}>Editado</Text>
           </View>
         );
       }
-      return <MessageText {...props} />;
+      return <TranslatedMessageText {...props} />;
     },
-    [],
+    [C, styles],
   );
 
-  // ── Envío de una propuesta de horario estructurada ──
+  // ── Burbujas: salientes en acento, entrantes en morado oscuro suave ──
+  // `maxWidth` en % fuerza el ajuste de línea (wrap) de los mensajes largos,
+  // que antes en web podían no dividirse en párrafo.
+  const renderBubble = useCallback(
+    (props: BubbleProps<ChatMessage>) => {
+      const esMio = props.position === "right";
+      const msg = props.currentMessage;
+      const esSistema = !!msg?.system || msg?.type === "system";
+      // "Visto" solo aplica a chats 1:1 (en grupos hay múltiples lectores).
+      const peerLeido = !isGroup && peerUid ? lastReadMap[peerUid] ?? null : null;
+      // Nombre del remitente sobre las burbujas entrantes de un grupo.
+      const sid = msg?.user?._id ? String(msg.user._id) : "";
+      const nombreRemitente =
+        group?.participantsInfo?.[sid]?.nombre ?? msg?.user?.name ?? "";
+      const mostrarNombre = !esMio && isGroup && !!msg && !esSistema && !!nombreRemitente;
+      return (
+        // El contenedor lleva el maxWidth (no la burbuja interna): así el ancho
+        // se resuelve contra la fila del mensaje y NO se desborda en móvil-web.
+        <View
+          style={{
+            maxWidth: "82%",
+            alignItems: esMio ? "flex-end" : "flex-start",
+          }}
+        >
+          {mostrarNombre ? (
+            <Text style={styles.senderName} numberOfLines={1}>
+              {nombreRemitente}
+            </Text>
+          ) : null}
+          {msg?.forwarded && !esSistema ? (
+            <View
+              style={[
+                styles.reenviadoLabel,
+                { alignSelf: esMio ? "flex-end" : "flex-start" },
+              ]}
+            >
+              <Ionicons name="arrow-redo-outline" size={11} color={C.textMuted} />
+              <Text style={styles.reenviadoText}>Reenviado</Text>
+            </View>
+          ) : null}
+          {msg?.replyMessage && !esSistema ? (
+            <View
+              style={[
+                styles.replyQuote,
+                { alignSelf: esMio ? "flex-end" : "flex-start" },
+              ]}
+            >
+              <View style={styles.replyQuoteBar} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.replyQuoteName} numberOfLines={1}>
+                  {msg.replyMessage.user?.name || "Mensaje"}
+                </Text>
+                <Text style={styles.replyQuoteText} numberOfLines={1}>
+                  {msg.replyMessage.text}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+          <Bubble
+            {...props}
+            wrapperStyle={{
+              right: {
+                backgroundColor: C.bubbleMine,
+                borderRadius: 18,
+                marginVertical: 2,
+                paddingHorizontal: 2,
+                paddingVertical: 1,
+              },
+              left: {
+                backgroundColor: C.bubbleOther,
+                borderRadius: 18,
+                marginVertical: 2,
+                borderWidth: 1,
+                borderColor: C.border,
+                paddingHorizontal: 2,
+                paddingVertical: 1,
+              },
+            }}
+            textStyle={{
+              // Burbuja propia en el color primario (saturado en ambos temas)
+              // → texto blanco; la de la contraparte usa el texto normal del
+              // tema sobre su superficie de tarjeta.
+              right: { color: C.bubbleMineText, fontSize: 15, lineHeight: 21 },
+              left: { color: C.bubbleOtherText, fontSize: 15, lineHeight: 21 },
+            }}
+          />
+          {/* Recibo "Enviado / Visto" bajo cada mensaje propio (no de sistema). */}
+          {esMio && msg && !esSistema ? (
+            <Text style={styles.recibo}>{reciboTexto(msg, peerLeido)}</Text>
+          ) : null}
+        </View>
+      );
+    },
+    [isGroup, peerUid, lastReadMap, group?.participantsInfo, C, styles],
+  );
+
+  // ── Barra de entrada con aspecto flotante (neumórfico sutil) ──
+  const renderInputToolbarStyled = useCallback(
+    (props: ComponentProps<typeof InputToolbar>) => (
+      <InputToolbar
+        {...props}
+        containerStyle={[
+          styles.inputToolbar,
+          { backgroundColor: C.surface, borderTopColor: C.border },
+        ]}
+        primaryStyle={{ alignItems: "center" }}
+      />
+    ),
+    [C, styles],
+  );
+
+  // ── Composer (campo de texto) ──
+  // Dos correcciones críticas sobre el Composer por defecto de gifted-chat:
+  //  1) BLOQUEO DE ESCRITURA: gifted-chat inyecta `maxLength: isTypingDisabled
+  //     ? 0 : ...` en el TextInput. En dispositivos reales (iOS/Android) la
+  //     animación del teclado puede dejar `isTypingDisabled` pegado en `true`,
+  //     lo que fija `maxLength:0` y deshabilita por completo la escritura.
+  //     Forzamos `maxLength: undefined` (sin límite) para que nunca se bloquee.
+  //  2) COLOR DEL TEXTO: sin `textInputStyle` el campo usa el negro por defecto
+  //     del sistema (ilegible en modo oscuro). Fijamos `C.text` (el color de
+  //     texto del tema activo) explícitamente.
+  const renderComposerStyled = useCallback(
+    (props: ComponentProps<typeof Composer>) => (
+      <Composer
+        {...props}
+        textInputStyle={[props.textInputStyle as any, { color: C.text }]}
+        textInputProps={{
+          ...props.textInputProps,
+          maxLength: undefined,
+        }}
+      />
+    ),
+    [C],
+  );
+
+  // ── Botón de enviar redondo con el ícono de acento ──
+  const renderSend = useCallback(
+    (props: ComponentProps<typeof Send>) => (
+      <Send {...props} containerStyle={styles.sendContainer}>
+        <View style={styles.sendBtn}>
+          <Ionicons name="send" size={18} color="#fff" />
+        </View>
+      </Send>
+    ),
+    [styles],
+  );
+
+  // ── Envío de una propuesta de acuerdo estructurada ──
+  // Guarda el acuerdo completo (horario + fechas + pago) y, por compatibilidad
+  // con render/recibos antiguos, también el sub-horario `scheduleData`.
   const enviarPropuesta = useCallback(
-    (scheduleData: ScheduleData) => {
+    (acuerdo: AcuerdoData) => {
       setShowPropuesta(false);
       if (!chatId) return;
       const ref = doc(collection(db, "chats", chatId, "messages"));
@@ -656,14 +1112,15 @@ export default function ChatThread({
         _id: ref.id,
         text: "", // El contenido se renderiza como tarjeta (renderCustomView).
         type: "proposal",
-        scheduleData,
+        acuerdo,
+        scheduleData: acuerdoToSchedule(acuerdo),
         approved: false,
         createdAt: serverTimestamp(),
         user: { _id: giftedUser._id, name: giftedUser.name },
       });
       void touchChatOnMessage(
         chatId,
-        "📅 Propuesta de horario",
+        "📅 Propuesta de acuerdo",
         giftedUser._id,
         chatUsers,
       );
@@ -797,84 +1254,56 @@ export default function ChatThread({
     [chatId, ctx, isEmpresa, aceptandoGrupo, router],
   );
 
-  // ── Aprobación del acuerdo (solo Empresa) en operación batch atómica ──
+  // ── Firma del acuerdo: la acepta la CONTRAPARTE (la que no la envió) ──
+  // Tanto la Universidad como la Empresa pueden firmar. La lógica atómica vive
+  // en `firmarAcuerdo` (solicitud→aprobado, notificaciones, transacciones).
   const aprobarAcuerdo = useCallback(
     async (message: ChatMessage) => {
-      if (!chatId || !ctx || !message.scheduleData) return;
-      if (user?.uid !== ctx.empresaId) return; // Doble validación de rol.
+      if (!chatId || !ctx) return;
+      // Solo participantes del handshake (uni o empresa), nunca el emisor.
+      if (!isUni && !isEmpresa) return;
+      if (String(message.user?._id) === String(user?.uid)) return;
       if (aprobando || message.approved) return;
+
+      // Acuerdo completo del mensaje; fallback para propuestas antiguas que solo
+      // traían `scheduleData` (sin fechas ni pago).
+      const acuerdo: AcuerdoData =
+        message.acuerdo ??
+        (message.scheduleData
+          ? {
+              ...message.scheduleData,
+              fechaInicio: ctx.fechaInicio || new Date().toISOString().slice(0, 10),
+              fechaFin: ctx.fechaFin || "",
+              pago: { tipo: "sin_pago" },
+            }
+          : (null as any));
+      if (!acuerdo) return;
 
       setAprobando(true);
       try {
-        const horario = message.scheduleData;
-        const horarioTexto = horarioToText(horario);
-        const batch = writeBatch(db);
-
-        // 1) Solicitud principal → aprobado.
-        batch.update(doc(db, "solicitudes_practicas", ctx.solicitudId), {
-          estado: "aprobado",
-          horarioAcordado: horario,
-          aprobadoAt: serverTimestamp(),
+        const res = await firmarAcuerdo({
+          solicitudId: ctx.solicitudId,
+          chatId,
+          messageId: String(message._id),
+          universidadId: ctx.universidadId,
+          empresaId: ctx.empresaId,
+          empresaNombre: ctx.empresaNombre,
+          grupoId: ctx.grupoId,
+          carrera: ctx.carrera,
+          firmadoPor: user?.uid ?? "",
+          acuerdo,
         });
-
-        // 2) Notificación por cada estudiante involucrado.
-        ctx.alumnos.forEach((al) => {
-          const notiRef = doc(collection(db, "notificaciones_estudiantes"));
-          batch.set(notiRef, {
-            estudianteId: al.id,
-            estudianteNombre: al.nombre,
-            empresaId: ctx.empresaId,
-            empresaNombre: ctx.empresaNombre,
-            grupoId: ctx.grupoId,
-            carrera: ctx.carrera,
-            fechaInicio: ctx.fechaInicio,
-            fechaFin: ctx.fechaFin,
-            horario,
-            tipo: "acuerdo_aprobado",
-            leida: false,
-            mensaje: `Tu pasantía en ${ctx.empresaNombre} fue aprobada. Del ${ctx.fechaInicio} al ${ctx.fechaFin}. Horario: ${horarioTexto}.`,
-            createdAt: serverTimestamp(),
-          });
-        });
-
-        // 3) Marca la propuesta como aprobada.
-        batch.update(
-          doc(db, "chats", chatId, "messages", String(message._id)),
-          { approved: true },
-        );
-
-        // 4) Mensaje automático de sistema en el chat.
-        const sysRef = doc(collection(db, "chats", chatId, "messages"));
-        batch.set(sysRef, {
-          _id: sysRef.id,
-          text: "El acuerdo ha sido firmado y los estudiantes han sido notificados.",
-          type: "system",
-          system: true,
-          createdAt: serverTimestamp(),
-          user: { _id: "system", name: "Sistema" },
-        });
-
-        // 5) Metadatos del chat para la bandeja de entrada.
-        batch.update(doc(db, "chats", chatId), {
-          lastMessage: "✅ Acuerdo firmado",
-          lastSenderId: user?.uid ?? "",
-          updatedAt: serverTimestamp(),
-          [`unread.${ctx.universidadId}`]: increment(1),
-        });
-
-        await batch.commit();
-        Alert.alert(
-          "Acuerdo firmado",
-          `Se notificó a ${ctx.alumnos.length} estudiante(s).`,
-        );
+        // Refleja el nuevo estado localmente (habilita "finalizar pasantía").
+        setCtx((p) => (p ? { ...p, estado: "aprobado" } : p));
+        setAcuerdoFirmado(res); // Abre el modal "Inicio de la pasantía".
       } catch (error) {
-        console.warn("Error aprobando el acuerdo:", error);
-        Alert.alert("Error", "No se pudo aprobar el acuerdo. Intenta de nuevo.");
+        console.warn("Error firmando el acuerdo:", error);
+        Alert.alert("Error", "No se pudo firmar el acuerdo. Intenta de nuevo.");
       } finally {
         setAprobando(false);
       }
     },
-    [chatId, ctx, user?.uid, aprobando],
+    [chatId, ctx, user?.uid, isUni, isEmpresa, aprobando],
   );
 
   // ── Tarjeta visual para los mensajes type: 'proposal' ──
@@ -955,15 +1384,22 @@ export default function ChatThread({
         );
       }
 
-      if (!msg || msg.type !== "proposal" || !msg.scheduleData) return null;
-      const s = msg.scheduleData;
+      if (!msg || msg.type !== "proposal") return null;
+      // Acuerdo del mensaje (nuevo) o derivado del sub-horario (antiguo).
+      const ac = msg.acuerdo;
+      const s = ac ?? msg.scheduleData;
+      if (!s) return null;
       const aprobado = !!msg.approved;
+      const conPago = ac?.pago?.tipo === "con_pago";
+      // La firma la hace la contraparte: cualquier participante que NO la envió.
+      const esEmisor = String(msg.user?._id) === String(user?.uid);
+      const puedeFirmar = (isUni || isEmpresa) && !esEmisor;
 
       return (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="calendar" size={16} color={C.accent} />
-            <Text style={styles.cardTitle}>Propuesta de horario</Text>
+            <Ionicons name="document-text" size={16} color={C.accent} />
+            <Text style={styles.cardTitle}>Propuesta de acuerdo</Text>
           </View>
 
           <View style={styles.cardRow}>
@@ -976,6 +1412,29 @@ export default function ChatThread({
               {s.horaInicio} - {s.horaFin}
             </Text>
           </View>
+          {ac?.fechaInicio ? (
+            <View style={styles.cardRow}>
+              <Text style={styles.cardLabel}>Periodo</Text>
+              <Text style={styles.cardValue}>
+                {ac.fechaInicio} → {ac.fechaFin}
+              </Text>
+            </View>
+          ) : null}
+          {ac?.pago ? (
+            <View style={styles.cardRow}>
+              <Text style={styles.cardLabel}>Pago</Text>
+              <Text
+                style={[
+                  styles.cardValue,
+                  conPago && { color: C.green },
+                ]}
+              >
+                {conPago
+                  ? `$${Number(ac.pago.monto ?? 0).toFixed(2)} / estudiante`
+                  : "Sin pago"}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.cardDivider} />
 
@@ -986,7 +1445,7 @@ export default function ChatThread({
                 Acuerdo aprobado
               </Text>
             </View>
-          ) : isEmpresa ? (
+          ) : puedeFirmar ? (
             <TouchableOpacity
               style={[styles.approveBtn, aprobando && { opacity: 0.6 }]}
               onPress={() => aprobarAcuerdo(msg)}
@@ -998,7 +1457,7 @@ export default function ChatThread({
               ) : (
                 <>
                   <Ionicons name="ribbon-outline" size={16} color="#fff" />
-                  <Text style={styles.approveBtnText}>Aprobar Acuerdo</Text>
+                  <Text style={styles.approveBtnText}>Aceptar acuerdo</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -1006,15 +1465,66 @@ export default function ChatThread({
             <View style={[styles.statusPill, styles.statusWaiting]}>
               <Ionicons name="time-outline" size={16} color={C.muted} />
               <Text style={[styles.statusText, { color: C.muted }]}>
-                Esperando aprobación...
+                Esperando que la contraparte acepte...
               </Text>
             </View>
           )}
         </View>
       );
     },
-    [isEmpresa, aprobando, aprobarAcuerdo, aceptandoGrupo, onAceptarGrupo],
+    [isEmpresa, isUni, user?.uid, aprobando, aprobarAcuerdo, aceptandoGrupo, onAceptarGrupo, C, styles],
   );
+
+  // ── Avatar (foto/logo) a la izquierda de cada burbuja entrante ──
+  const renderAvatar = useCallback(
+    (props: { currentMessage?: ChatMessage }) => {
+      const uid = props.currentMessage?.user?._id;
+      const foto = uid ? group?.participantsInfo?.[String(uid)]?.foto : null;
+      return <StorageAvatar url={foto ?? null} size={30} fallbackIcon="person" />;
+    },
+    [group?.participantsInfo],
+  );
+
+  // ── Copiar el contenido de un mensaje al portapapeles ──
+  const copiarMensaje = useCallback((msg: ChatMessage) => {
+    setActionMsg(null);
+    const texto = msg?.text ?? "";
+    if (!texto) return;
+    void Clipboard.setStringAsync(texto).catch(() => {});
+  }, []);
+
+  // ── Vaciar el chat SOLO para mí (no borra para los demás) ──
+  const vaciarChatParaMi = useCallback(() => {
+    if (!chatId || !user?.uid) return;
+    Alert.alert(
+      "Vaciar chat",
+      "Se ocultarán todos los mensajes solo en tu vista. Los demás participantes seguirán viéndolos.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Vaciar",
+          style: "destructive",
+          onPress: () => {
+            void updateDoc(doc(db, "chats", chatId), {
+              [`clearedAt.${user.uid}`]: serverTimestamp(),
+            }).catch(() => {});
+            setClearedAtMe(new Date());
+            setShowGroupInfo(false);
+          },
+        },
+      ],
+    );
+  }, [chatId, user?.uid]);
+
+  // Mensajes visibles tras aplicar el "vaciado" propio.
+  const mensajesVisibles = useMemo(() => {
+    if (!clearedAtMe) return messages;
+    const corte = clearedAtMe.getTime();
+    return messages.filter((m) => {
+      const t = m.createdAt instanceof Date ? m.createdAt.getTime() : Number(m.createdAt);
+      return t > corte;
+    });
+  }, [messages, clearedAtMe]);
 
   const tituloHeader = isGroup ? group?.name || "Grupo" : peerName || "Chat de pasantía";
   const inicial = tituloHeader?.trim()?.[0]?.toUpperCase() ?? "?";
@@ -1030,21 +1540,21 @@ export default function ChatThread({
         </TouchableOpacity>
       ) : null}
 
-      <View style={styles.headerAvatar}>
-        {isGroup ? (
-          <Ionicons name="people" size={20} color="#c4b5fd" />
-        ) : (
-          <Text style={styles.headerAvatarText}>{inicial}</Text>
-        )}
-        {isGroup ? null : (
+      {isGroup ? (
+        <View style={styles.headerAvatar}>
+          <Ionicons name="people" size={20} color={C.accent} />
+        </View>
+      ) : (
+        <View>
+          <StorageAvatar url={peerFoto} size={42} fallbackIcon="person" />
           <View
             style={[
               styles.presenceDot,
               { backgroundColor: peerOnline ? C.green : C.textMuted },
             ]}
           />
-        )}
-      </View>
+        </View>
+      )}
 
       {/* En grupos, pulsar el nombre abre el panel de administración. */}
       <TouchableOpacity
@@ -1059,6 +1569,15 @@ export default function ChatThread({
         <Text style={styles.headerSub} numberOfLines={1}>
           {estadoTexto}
         </Text>
+      </TouchableOpacity>
+
+      {/* Vaciar chat (solo para mi vista). */}
+      <TouchableOpacity
+        onPress={vaciarChatParaMi}
+        style={styles.iconBtn}
+        accessibilityLabel="Vaciar chat"
+      >
+        <Ionicons name="trash-outline" size={20} color={C.textMuted} />
       </TouchableOpacity>
 
       {/* El handshake de horario solo aplica al flujo de pasantía uni↔empresa,
@@ -1111,22 +1630,42 @@ export default function ChatThread({
 
   // Banner de edición sobre el input (la cita de reply la dibuja GiftedChat).
   const renderChatFooter = useCallback(() => {
-    if (!editing) return null;
-    return (
-      <View style={styles.editBanner}>
-        <Ionicons name="pencil" size={15} color={C.accent} />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.editBannerTitle}>Editando mensaje</Text>
-          <Text style={styles.editBannerText} numberOfLines={1}>
-            {editing.text}
-          </Text>
+    if (editing) {
+      return (
+        <View style={styles.editBanner}>
+          <Ionicons name="pencil" size={15} color={C.accent} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.editBannerTitle}>Editando mensaje</Text>
+            <Text style={styles.editBannerText} numberOfLines={1}>
+              {editing.text}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={cancelarComposer}>
+            <Ionicons name="close" size={18} color={C.textMuted} />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={cancelarComposer}>
-          <Ionicons name="close" size={18} color={C.textMuted} />
-        </TouchableOpacity>
-      </View>
-    );
-  }, [editing, cancelarComposer]);
+      );
+    }
+    if (replyTo) {
+      return (
+        <View style={styles.editBanner}>
+          <Ionicons name="arrow-undo" size={15} color={C.accent} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.editBannerTitle}>
+              Respondiendo a {replyTo.user?.name ?? "mensaje"}
+            </Text>
+            <Text style={styles.editBannerText} numberOfLines={1}>
+              {replyTo.text}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => setReplyTo(null)}>
+            <Ionicons name="close" size={18} color={C.textMuted} />
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return null;
+  }, [editing, replyTo, cancelarComposer, C, styles]);
 
   const esPropio = actionMsg?.user?._id === giftedUser._id;
   // El admin del grupo puede borrar mensajes ajenos (moderación en vivo).
@@ -1143,26 +1682,31 @@ export default function ChatThread({
         </Text>
       </View>
     ),
-    [],
+    [C, styles],
   );
 
   const body = (
     <>
       {header}
       <GiftedChat<ChatMessage>
-        messages={messages}
+        messages={mensajesVisibles}
         onSend={(msgs) => onSend(msgs)}
         user={giftedUser}
         text={inputText}
-        onLongPressMessage={onLongPressMessage}
+        onLongPress={onLongPressMessage}
+        renderBubble={renderBubble}
+        renderSend={renderSend}
+        renderAvatar={renderAvatar}
         renderCustomView={renderCustomView}
         renderMessageText={renderMessageText}
         renderChatFooter={renderChatFooter}
-        renderInputToolbar={inputBloqueado ? renderInputBloqueado : undefined}
-        reply={{ message: replyTo, onClear: () => setReplyTo(null) }}
+        renderInputToolbar={inputBloqueado ? renderInputBloqueado : renderInputToolbarStyled}
+        renderComposer={renderComposerStyled}
         textInputProps={{
           placeholder: editing ? "Edita tu mensaje..." : "Escribe un mensaje...",
           onChangeText: setInputText,
+          placeholderTextColor: C.textMuted,
+          keyboardAppearance: isDark ? "dark" : "light",
         }}
       />
 
@@ -1171,6 +1715,67 @@ export default function ChatThread({
         onClose={() => setShowPropuesta(false)}
         onSubmit={enviarPropuesta}
       />
+
+      {/* ── Modal de confirmación: inicio de la pasantía (tras firmar) ── */}
+      <Modal
+        visible={!!acuerdoFirmado}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAcuerdoFirmado(null)}
+      >
+        <View style={styles.successBackdrop}>
+          <View style={styles.successCard}>
+            <View style={styles.successIcon}>
+              <Ionicons name="rocket" size={34} color={C.green} />
+            </View>
+            <Text style={styles.successTitle}>¡Acuerdo firmado!</Text>
+            <Text style={styles.successSubtitle}>
+              La pasantía está confirmada y los estudiantes ya fueron
+              notificados.
+            </Text>
+
+            {acuerdoFirmado ? (
+              <View style={styles.successBox}>
+                <View style={styles.successRow}>
+                  <Ionicons name="calendar-outline" size={16} color={C.accent} />
+                  <Text style={styles.successRowText}>
+                    Inicio: {acuerdoFirmado.fechaInicio}
+                  </Text>
+                </View>
+                <View style={styles.successRow}>
+                  <Ionicons name="flag-outline" size={16} color={C.accent} />
+                  <Text style={styles.successRowText}>
+                    Fin: {acuerdoFirmado.fechaFin}
+                  </Text>
+                </View>
+                <View style={styles.successRow}>
+                  <Ionicons name="people-outline" size={16} color={C.accent} />
+                  <Text style={styles.successRowText}>
+                    {acuerdoFirmado.totalEstudiantes} estudiante(s) notificados
+                  </Text>
+                </View>
+                {acuerdoFirmado.totalConPago > 0 ? (
+                  <View style={styles.successRow}>
+                    <Ionicons name="wallet-outline" size={16} color={C.green} />
+                    <Text style={[styles.successRowText, { color: C.green }]}>
+                      Pago registrado para {acuerdoFirmado.totalConPago}{" "}
+                      estudiante(s)
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={styles.successBtn}
+              onPress={() => setAcuerdoFirmado(null)}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.successBtnText}>Entendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Selector: compartir grupo de estudiantes (Universidad) ── */}
       <Modal
@@ -1244,8 +1849,15 @@ export default function ChatThread({
           activeOpacity={1}
           onPress={() => setActionMsg(null)}
         >
+          {/* Fondo borroso alrededor del mensaje seleccionado. */}
+          <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
           <View style={styles.menuSheet}>
             <View style={styles.menuHandle} />
+            <MenuOption
+              icon="copy-outline"
+              label="Copiar"
+              onPress={() => actionMsg && copiarMensaje(actionMsg)}
+            />
             <MenuOption
               icon="arrow-undo-outline"
               label="Responder"
@@ -1259,6 +1871,20 @@ export default function ChatThread({
                 setActionMsg(null);
               }}
             />
+            {!esPropio && actionMsg?.user?._id ? (
+              <MenuOption
+                icon="flag-outline"
+                label="Reportar usuario"
+                danger
+                onPress={() => {
+                  setReportTarget({
+                    id: String(actionMsg.user._id),
+                    nombre: String(actionMsg.user?.name ?? ""),
+                  });
+                  setActionMsg(null);
+                }}
+              />
+            ) : null}
             {esPropio && !actionMsg?.isDeleted ? (
               <MenuOption
                 icon="create-outline"
@@ -1329,13 +1955,25 @@ export default function ChatThread({
         visible={showGroupInfo}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowGroupInfo(false)}
+        onRequestClose={() => {
+          // Cierra primero el overlay superior (evita saltarse un nivel al
+          // pulsar "atrás" en Android).
+          if (showAddMember) setShowAddMember(false);
+          else if (accionMiembro) setAccionMiembro(null);
+          else setShowGroupInfo(false);
+        }}
       >
         <View style={styles.fwdBackdrop}>
           <View style={[styles.fwdSheet, { maxHeight: "85%" }]}>
             <View style={styles.fwdHeader}>
               <Text style={styles.fwdTitle}>Detalles del grupo</Text>
-              <TouchableOpacity onPress={() => setShowGroupInfo(false)}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAddMember(false);
+                  setAccionMiembro(null);
+                  setShowGroupInfo(false);
+                }}
+              >
                 <Ionicons name="close" size={22} color={C.textMuted} />
               </TouchableOpacity>
             </View>
@@ -1385,25 +2023,48 @@ export default function ChatThread({
             ) : null}
 
             {/* Participantes */}
-            <Text style={[styles.groupLabel, { marginTop: 16 }]}>
-              Participantes ({participantes.length})
-            </Text>
+            <View style={styles.partHeaderRow}>
+              <Text style={styles.groupLabel}>
+                Participantes ({participantes.length})
+              </Text>
+              {isAdmin && rol === "universidad" ? (
+                <TouchableOpacity
+                  style={styles.addMemberBtn}
+                  onPress={abrirAddMember}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="person-add" size={15} color={C.accent} />
+                  <Text style={styles.addMemberText}>Añadir</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
             <FlatList
               data={participantes}
               keyExtractor={(item) => item.uid}
               contentContainerStyle={{ paddingVertical: 8, gap: 6 }}
               renderItem={({ item }) => {
                 const esAdminP = (group?.admins ?? []).includes(item.uid);
+                const esYo = item.uid === user?.uid;
                 return (
                   <View style={styles.partItem}>
-                    <View style={styles.partAvatar}>
-                      <Text style={styles.headerAvatarText}>
-                        {item.nombre?.[0]?.toUpperCase() ?? "?"}
+                    <TouchableOpacity
+                      style={styles.partTapZone}
+                      activeOpacity={esYo ? 1 : 0.7}
+                      disabled={esYo}
+                      onPress={() =>
+                        setAccionMiembro({
+                          uid: item.uid,
+                          nombre: item.nombre,
+                          rol: item.rol,
+                          foto: item.foto,
+                        })
+                      }
+                    >
+                      <StorageAvatar url={item.foto} size={38} fallbackIcon="person" />
+                      <Text style={styles.partName} numberOfLines={1}>
+                        {item.nombre}
                       </Text>
-                    </View>
-                    <Text style={styles.partName} numberOfLines={1}>
-                      {item.nombre}
-                    </Text>
+                    </TouchableOpacity>
                     {esAdminP ? (
                       <View style={styles.adminBadge}>
                         <Text style={styles.adminBadgeText}>Admin</Text>
@@ -1425,7 +2086,123 @@ export default function ChatThread({
             />
           </View>
         </View>
+
+        {/* ── Acción al tocar un integrante: ver perfil o chatear ──
+            Se renderiza DENTRO del modal de detalles para no apilar modales
+            nativos (apilarlos deja un overlay fantasma que bloquea los toques). */}
+        {accionMiembro ? (
+          <TouchableOpacity
+            style={[StyleSheet.absoluteFill, styles.menuBackdrop]}
+            activeOpacity={1}
+            onPress={() => setAccionMiembro(null)}
+          >
+            <View style={styles.menuSheet}>
+              <View style={styles.menuHandle} />
+              <Text style={[styles.fwdTitle, { marginBottom: 6, paddingHorizontal: 12 }]}>
+                {accionMiembro?.nombre}
+              </Text>
+              <MenuOption
+                icon="person-circle-outline"
+                label="Ver perfil"
+                onPress={() => {
+                  if (!accionMiembro) return;
+                  const tipo = (["estudiante", "empresa", "universidad"].includes(
+                    accionMiembro.rol,
+                  )
+                    ? accionMiembro.rol
+                    : "estudiante") as ProfileTipo;
+                  const id = accionMiembro.uid;
+                  setAccionMiembro(null);
+                  // Cierra el panel de grupo ANTES de abrir el modal de perfil.
+                  // En iOS presentar un Modal mientras otro se está cerrando
+                  // falla silenciosamente (el perfil no aparece / "da error"),
+                  // así que esperamos a que termine la animación de cierre
+                  // (~300 ms) antes de abrir el visor de perfil.
+                  setShowGroupInfo(false);
+                  setTimeout(
+                    () => setVerPerfil({ tipo, id }),
+                    Platform.OS === "ios" ? 350 : 0,
+                  );
+                }}
+              />
+              <MenuOption
+                icon="chatbubble-ellipses-outline"
+                label="Chatear"
+                onPress={() => {
+                  const m = accionMiembro;
+                  setAccionMiembro(null);
+                  setShowGroupInfo(false);
+                  if (m) void iniciarChat({ uid: m.uid, nombre: m.nombre, rol: m.rol });
+                }}
+              />
+            </View>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* ── Picker: añadir integrantes (admin universidad) ──
+            Overlay interno (no un Modal aparte) para evitar el apilamiento. */}
+        {showAddMember ? (
+          <View style={[StyleSheet.absoluteFill, styles.fwdBackdrop]}>
+            <View style={[styles.fwdSheet, { maxHeight: "75%" }]}>
+              <View style={styles.fwdHeader}>
+                <Text style={styles.fwdTitle}>Añadir integrantes</Text>
+                <TouchableOpacity onPress={() => setShowAddMember(false)}>
+                  <Ionicons name="close" size={22} color={C.textMuted} />
+                </TouchableOpacity>
+              </View>
+              {loadingCand ? (
+                <ActivityIndicator color={C.accent} style={{ marginVertical: 28 }} />
+              ) : (
+                <FlatList
+                  data={candidatos}
+                  keyExtractor={(item) => item.uid}
+                  contentContainerStyle={{ paddingVertical: 8, gap: 8 }}
+                  renderItem={({ item }) => (
+                    <View style={styles.partItem}>
+                      <StorageAvatar url={item.foto} size={38} fallbackIcon="person" />
+                      <Text style={[styles.partName, { flex: 1 }]} numberOfLines={1}>
+                        {item.nombre}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.addMemberBtn}
+                        onPress={() => agregarMiembro(item)}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="add" size={16} color={C.accent} />
+                        <Text style={styles.addMemberText}>Agregar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  ListEmptyComponent={
+                    <Text style={styles.fwdEmpty}>
+                      No hay más estudiantes para agregar.
+                    </Text>
+                  }
+                />
+              )}
+            </View>
+          </View>
+        ) : null}
       </Modal>
+
+      {/* ── Perfil del integrante (Ver perfil) ── */}
+      {verPerfil ? (
+        <ProfileViewerModal
+          visible={!!verPerfil}
+          tipo={verPerfil.tipo}
+          profileId={verPerfil.id}
+          onClose={() => setVerPerfil(null)}
+        />
+      ) : null}
+
+      {reportTarget ? (
+        <ReportarUsuarioModal
+          visible={!!reportTarget}
+          reportadoId={reportTarget.id}
+          reportadoNombre={reportTarget.nombre}
+          onClose={() => setReportTarget(null)}
+        />
+      ) : null}
     </>
   );
 
@@ -1441,34 +2218,88 @@ export default function ChatThread({
   );
 }
 
-/** Fila del menú contextual long-press. */
-function MenuOption({
-  icon,
-  label,
-  onPress,
-  danger,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-  danger?: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      style={styles.menuOption}
-      activeOpacity={0.7}
-      onPress={onPress}
-    >
-      <Ionicons name={icon} size={20} color={danger ? "#f87171" : C.text} />
-      <Text style={[styles.menuOptionText, danger && { color: "#f87171" }]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-const styles = StyleSheet.create({
+const makeStyles = (C: ChatColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
+  // ── Barra de entrada (aspecto flotante) ──
+  inputToolbar: {
+    backgroundColor: C.surface,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  sendContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+    marginBottom: 4,
+  },
+  sendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // Recibo "Enviado / Visto" bajo cada mensaje propio.
+  recibo: {
+    fontSize: 10,
+    color: C.textMuted,
+    marginTop: 1,
+    marginHorizontal: 8,
+    marginBottom: 3,
+  },
+  // Nombre del remitente sobre las burbujas entrantes de un grupo.
+  senderName: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.accent,
+    marginLeft: 12,
+    marginBottom: 2,
+  },
+  // Etiqueta "Reenviado" sobre la burbuja.
+  reenviadoLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginHorizontal: 10,
+    marginBottom: 2,
+  },
+  reenviadoText: {
+    fontSize: 10,
+    fontStyle: "italic",
+    color: C.textMuted,
+  },
+  // ── Cita del mensaje respondido, dentro de la burbuja ──
+  replyQuote: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 6,
+    maxWidth: "82%",
+    marginHorizontal: 10,
+    marginBottom: 3,
+    paddingVertical: 5,
+    paddingRight: 8,
+    paddingLeft: 6,
+    borderRadius: 10,
+    backgroundColor: "rgba(139,92,246,0.12)",
+  },
+  replyQuoteBar: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: C.accent,
+  },
+  replyQuoteName: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.accent,
+  },
+  replyQuoteText: {
+    fontSize: 11,
+    color: C.textMuted,
+    marginTop: 1,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -1497,7 +2328,7 @@ const styles = StyleSheet.create({
     borderColor: C.border,
   },
   headerAvatarText: {
-    color: "#c4b5fd",
+    color: C.accent,
     fontSize: 17,
     fontWeight: "800",
   },
@@ -1592,10 +2423,86 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(52,211,153,0.12)",
   },
   statusWaiting: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: C.subtleFill,
   },
   statusText: {
     fontSize: 13,
+    fontWeight: "700",
+  },
+  // ── Modal de inicio de pasantía (tras firmar el acuerdo) ──
+  successBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(7,5,15,0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 28,
+  },
+  successCard: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: C.surface,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 24,
+    alignItems: "center",
+  },
+  successIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(52,211,153,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(52,211,153,0.35)",
+    marginBottom: 14,
+  },
+  successTitle: {
+    color: C.text,
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  successSubtitle: {
+    color: C.muted,
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 6,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  successBox: {
+    alignSelf: "stretch",
+    backgroundColor: C.subtleFill,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 14,
+    gap: 10,
+  },
+  successRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  successRowText: {
+    color: C.text,
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
+  },
+  successBtn: {
+    alignSelf: "stretch",
+    backgroundColor: C.accent,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 18,
+  },
+  successBtnText: {
+    color: "#fff",
+    fontSize: 15,
     fontWeight: "700",
   },
   // ── Texto borrado / etiqueta editado ──
@@ -1687,7 +2594,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: C.subtleFill,
     marginBottom: 10,
   },
   compartirItemIcon: {
@@ -1755,7 +2662,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: C.subtleFill,
   },
   fwdItemText: {
     flex: 1,
@@ -1808,7 +2715,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: C.subtleFill,
   },
   groupSaveBtn: {
     width: 42,
@@ -1827,7 +2734,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: C.subtleFill,
   },
   groupToggleText: {
     flex: 1,
@@ -1843,7 +2750,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: C.subtleFill,
   },
   partAvatar: {
     width: 38,
@@ -1852,6 +2759,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(139,92,246,0.18)",
+  },
+  partTapZone: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  partHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+  },
+  addMemberBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: "rgba(139,92,246,0.12)",
+  },
+  addMemberText: {
+    color: C.accent,
+    fontSize: 12,
+    fontWeight: "700",
   },
   partName: {
     flex: 1,
@@ -1866,7 +2801,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(139,92,246,0.18)",
   },
   adminBadgeText: {
-    color: "#c4b5fd",
+    color: C.accent,
     fontSize: 11,
     fontWeight: "700",
   },

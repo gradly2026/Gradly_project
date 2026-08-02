@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import {
   collection,
   getDocs,
@@ -13,13 +14,24 @@ import {
   FlatList,
   Modal,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from "react-native";
+import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import { db } from "../config/firebaseConfig";
-import { type UserRole } from "../context/AuthContext";
+import { useAuth, type UserRole } from "../context/AuthContext";
+import { useIniciarChat } from "../hooks/useIniciarChat";
+import { crearChatGrupoAdHoc } from "../services/chatService";
+import StorageAvatar from "./StorageAvatar";
+
+/** Estudiante de la universidad (para el modo "Chatea con tus estudiantes"). */
+interface EstudianteItem {
+  id: string;
+  nombre: string;
+  carrera: string;
+}
 
 const C = {
   surface: "#0d0b1e",
@@ -37,6 +49,7 @@ interface UserResult {
   id: string;
   nombre: string;
   detalle: string;
+  foto?: string | null;
 }
 
 interface Props {
@@ -63,6 +76,17 @@ export default function SearchUsersModal({
   const [base, setBase] = useState<UserResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasGrupos, setHasGrupos] = useState(false);
+  const iniciarChat = useIniciarChat();
+  const router = useRouter();
+  const { user, userProfile } = useAuth();
+
+  // ── Modo "Chatea con tus estudiantes" (solo universidad) ──
+  const [modoEstudiantes, setModoEstudiantes] = useState(false);
+  const [estudiantes, setEstudiantes] = useState<EstudianteItem[]>([]);
+  const [loadingEst, setLoadingEst] = useState(false);
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+  const [nombreGrupo, setNombreGrupo] = useState("");
+  const [creandoGrupo, setCreandoGrupo] = useState(false);
 
   const esEmpresa = rol === "empresa";
   const esUniversidad = rol === "universidad";
@@ -71,6 +95,9 @@ export default function SearchUsersModal({
   useEffect(() => {
     if (!visible) {
       setTermino("");
+      setModoEstudiantes(false);
+      setSeleccion(new Set());
+      setNombreGrupo("");
       return;
     }
 
@@ -91,12 +118,14 @@ export default function SearchUsersModal({
               id: d.id,
               nombre: String(data.nombre_completo ?? "Estudiante"),
               detalle: String(data.carrera ?? "Sin carrera"),
+              foto: data.foto_url ?? null,
             };
           }
           return {
             id: d.id,
             nombre: String(data.nombre_empresa ?? "Empresa"),
             detalle: String(data.industria ?? "Sin rubro"),
+            foto: data.logo_url ?? null,
           };
         });
 
@@ -147,21 +176,86 @@ export default function SearchUsersModal({
     return [...lista].sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [base, termino]);
 
-  const onPressResultado = () => {
-    // El esquema de chat directo aún no existe (decisión: "Solo UI por ahora").
-    Alert.alert(
-      "Próximamente",
-      "La mensajería directa con este usuario estará disponible pronto.",
-    );
+  const onPressResultado = (item: UserResult) => {
+    // Crea/abre el chat directo con el usuario seleccionado y cierra el modal.
+    // El rol del otro se infiere de la colección consultada según el rol actual.
+    const otroRol: UserRole = esEmpresa ? "estudiante" : "empresa";
+    onClose();
+    void iniciarChat({ uid: item.id, nombre: item.nombre, rol: otroRol });
   };
 
-  const onBulkLoad = () => {
-    if (!hasGrupos) return;
+  // ── "Chatea con tus estudiantes": carga los estudiantes de la universidad ──
+  const onBulkLoad = async () => {
+    if (!universidadId) return;
+    setModoEstudiantes(true);
+    setLoadingEst(true);
+    try {
+      const snap = await getDocs(
+        query(
+          collection(db, "perfiles_estudiantes"),
+          where("universidad_id", "==", universidadId),
+        ),
+      );
+      const items: EstudianteItem[] = snap.docs.map((d) => {
+        const data = d.data() as any;
+        return {
+          id: d.id,
+          nombre: String(data.nombre_completo ?? "Estudiante"),
+          carrera: String(data.carrera ?? ""),
+        };
+      });
+      items.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      setEstudiantes(items);
+    } catch (error) {
+      console.warn("Error cargando estudiantes:", error);
+      setEstudiantes([]);
+    } finally {
+      setLoadingEst(false);
+    }
+  };
+
+  // Chat 1:1 con un estudiante.
+  const chatearConEstudiante = (est: EstudianteItem) => {
     onClose();
-    Alert.alert(
-      "Chatea con tus estudiantes",
-      "El chat con los alumnos de tu primer grupo estará disponible próximamente.",
-    );
+    void iniciarChat({ uid: est.id, nombre: est.nombre, rol: "estudiante" });
+  };
+
+  // Alterna la selección de un estudiante para el grupo.
+  const toggleSeleccion = (id: string) => {
+    setSeleccion((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Crea un grupo con los estudiantes seleccionados (≥ 2) y lo abre.
+  const crearGrupo = async () => {
+    if (!user?.uid || seleccion.size < 2 || creandoGrupo) return;
+    const miembros = estudiantes
+      .filter((e) => seleccion.has(e.id))
+      .map((e) => ({ uid: e.id, nombre: e.nombre }));
+    const nombre = nombreGrupo.trim() || `Grupo · ${miembros.length} estudiantes`;
+    setCreandoGrupo(true);
+    try {
+      const chatId = await crearChatGrupoAdHoc({
+        adminUid: user.uid,
+        adminNombre: userProfile?.nombre_completo ?? "Universidad",
+        nombre,
+        miembros,
+      });
+      onClose();
+      router.push({
+        pathname: "/mensajes",
+        params: { chat: chatId, peerName: nombre },
+      } as any);
+    } catch (error) {
+      console.warn("Error creando grupo:", error);
+      Alert.alert("Error", "No se pudo crear el grupo. Intenta de nuevo.");
+    } finally {
+      setCreandoGrupo(false);
+    }
   };
 
   const placeholder = esEmpresa
@@ -179,94 +273,177 @@ export default function SearchUsersModal({
         <View style={styles.container}>
           <View style={styles.handle} />
 
-          <View style={styles.searchRow}>
-            <Ionicons name="search" size={18} color={C.textMuted} />
-            <TextInput
-              style={styles.input}
-              value={termino}
-              onChangeText={setTermino}
-              placeholder={placeholder}
-              placeholderTextColor={C.textMuted}
-              autoFocus
-            />
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={22} color={C.textMuted} />
-            </TouchableOpacity>
-          </View>
-
-          {esUniversidad ? (
-            <TouchableOpacity
-              style={[styles.bulkBtn, !hasGrupos && styles.bulkBtnDisabled]}
-              onPress={onBulkLoad}
-              disabled={!hasGrupos}
-              activeOpacity={0.85}
-            >
-              <Ionicons
-                name="people"
-                size={18}
-                color={hasGrupos ? "#fff" : C.textMuted}
-              />
-              <Text
-                style={[
-                  styles.bulkBtnText,
-                  !hasGrupos && { color: C.textMuted },
-                ]}
-              >
-                Chatea con tus estudiantes
+          {modoEstudiantes ? (
+            // ════════ MODO: Chatea con tus estudiantes ════════
+            <>
+              <View style={styles.estHeader}>
+                <TouchableOpacity onPress={() => setModoEstudiantes(false)} hitSlop={8}>
+                  <Ionicons name="chevron-back" size={22} color={C.text} />
+                </TouchableOpacity>
+                <Text style={styles.estTitle}>Tus estudiantes</Text>
+                <TouchableOpacity onPress={onClose} hitSlop={8}>
+                  <Ionicons name="close" size={22} color={C.textMuted} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.estHint}>
+                Toca un estudiante para chatear, o marca varios para crear un grupo.
               </Text>
-            </TouchableOpacity>
-          ) : null}
-          {esUniversidad && !hasGrupos ? (
-            <Text style={styles.bulkHint}>
-              Crea un grupo de estudiantes para habilitar esta opción.
-            </Text>
-          ) : null}
 
-          {loading ? (
-            <View style={styles.center}>
-              <ActivityIndicator color={C.accent} />
-            </View>
-          ) : (
-            <FlatList
-              data={resultados}
-              keyExtractor={(item) => item.id}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingVertical: 8, gap: 8 }}
-              renderItem={({ item }) => {
-                const inicial = item.nombre?.[0]?.toUpperCase() ?? "?";
-                return (
-                  <TouchableOpacity
-                    style={styles.resultItem}
-                    activeOpacity={0.8}
-                    onPress={onPressResultado}
-                  >
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>{inicial}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.resultName} numberOfLines={1}>
-                        {item.nombre}
-                      </Text>
-                      <Text style={styles.resultDetail} numberOfLines={1}>
-                        {item.detalle}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name="chatbubble-outline"
-                      size={18}
-                      color={C.accent70}
-                    />
-                  </TouchableOpacity>
-                );
-              }}
-              ListEmptyComponent={
+              {loadingEst ? (
                 <View style={styles.center}>
-                  <Text style={styles.emptyText}>
-                    No se encontraron usuarios.
-                  </Text>
+                  <ActivityIndicator color={C.accent} />
                 </View>
-              }
-            />
+              ) : (
+                <FlatList
+                  data={estudiantes}
+                  keyExtractor={(it) => it.id}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={{
+                    paddingVertical: 8,
+                    gap: 8,
+                    paddingBottom: seleccion.size >= 1 ? 160 : 8,
+                  }}
+                  renderItem={({ item }) => {
+                    const inicial = item.nombre?.[0]?.toUpperCase() ?? "?";
+                    const sel = seleccion.has(item.id);
+                    return (
+                      <View style={styles.resultItem}>
+                        <TouchableOpacity
+                          style={styles.estTapZone}
+                          activeOpacity={0.8}
+                          onPress={() => chatearConEstudiante(item)}
+                        >
+                          <View style={styles.avatar}>
+                            <Text style={styles.avatarText}>{inicial}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.resultName} numberOfLines={1}>
+                              {item.nombre}
+                            </Text>
+                            <Text style={styles.resultDetail} numberOfLines={1}>
+                              {item.carrera || "Estudiante"}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => toggleSeleccion(item.id)}
+                          hitSlop={8}
+                          style={styles.checkbox}
+                        >
+                          <Ionicons
+                            name={sel ? "checkbox" : "square-outline"}
+                            size={24}
+                            color={sel ? C.accent70 : C.textMuted}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }}
+                  ListEmptyComponent={
+                    <View style={styles.center}>
+                      <Text style={styles.emptyText}>
+                        No tienes estudiantes registrados todavía.
+                      </Text>
+                    </View>
+                  }
+                />
+              )}
+
+              {/* Barra flotante para crear grupo con los seleccionados */}
+              {seleccion.size >= 1 ? (
+                <View style={styles.grupoBar}>
+                  <TextInput
+                    style={styles.grupoInput}
+                    value={nombreGrupo}
+                    onChangeText={setNombreGrupo}
+                    placeholder={`Nombre del grupo (${seleccion.size} sel.)`}
+                    placeholderTextColor={C.textMuted}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.grupoBtn,
+                      (seleccion.size < 2 || creandoGrupo) && styles.grupoBtnDisabled,
+                    ]}
+                    onPress={crearGrupo}
+                    disabled={seleccion.size < 2 || creandoGrupo}
+                    activeOpacity={0.85}
+                  >
+                    {creandoGrupo ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="people" size={18} color="#fff" />
+                        <Text style={styles.grupoBtnText}>
+                          Crear grupo ({seleccion.size})
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+            </>
+          ) : (
+            // ════════ MODO: Buscar usuarios ════════
+            <>
+              <View style={styles.searchRow}>
+                <Ionicons name="search" size={18} color={C.textMuted} />
+                <TextInput
+                  style={styles.input}
+                  value={termino}
+                  onChangeText={setTermino}
+                  placeholder={placeholder}
+                  placeholderTextColor={C.textMuted}
+                  autoFocus
+                />
+                <TouchableOpacity onPress={onClose}>
+                  <Ionicons name="close" size={22} color={C.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              {loading ? (
+                <View style={styles.center}>
+                  <ActivityIndicator color={C.accent} />
+                </View>
+              ) : (
+                <FlatList
+                  data={resultados}
+                  keyExtractor={(item) => item.id}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={{ paddingVertical: 8, gap: 8 }}
+                  renderItem={({ item }) => {
+                    return (
+                      <TouchableOpacity
+                        style={styles.resultItem}
+                        activeOpacity={0.8}
+                        onPress={() => onPressResultado(item)}
+                      >
+                        <StorageAvatar url={item.foto} size={42} fallbackIcon="person" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.resultName} numberOfLines={1}>
+                            {item.nombre}
+                          </Text>
+                          <Text style={styles.resultDetail} numberOfLines={1}>
+                            {item.detalle}
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name="chatbubble-outline"
+                          size={18}
+                          color={C.accent70}
+                        />
+                      </TouchableOpacity>
+                    );
+                  }}
+                  ListEmptyComponent={
+                    <View style={styles.center}>
+                      <Text style={styles.emptyText}>
+                        No se encontraron usuarios.
+                      </Text>
+                    </View>
+                  }
+                />
+              )}
+            </>
           )}
         </View>
       </View>
@@ -383,5 +560,69 @@ const styles = StyleSheet.create({
     color: C.textMuted,
     fontSize: 12,
     marginTop: 2,
+  },
+  // ── Modo estudiantes ──
+  estHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 6,
+  },
+  estTitle: {
+    flex: 1,
+    color: C.text,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  estHint: {
+    color: C.textMuted,
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  estTapZone: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  checkbox: {
+    paddingLeft: 8,
+  },
+  grupoBar: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    bottom: 20,
+    gap: 10,
+  },
+  grupoInput: {
+    backgroundColor: C.surface2,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: C.text,
+    fontSize: 14,
+  },
+  grupoBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: C.accent,
+  },
+  grupoBtnDisabled: {
+    backgroundColor: C.surface2,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  grupoBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
   },
 });

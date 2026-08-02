@@ -5,7 +5,7 @@ import type { UserRole } from '../context/AuthContext';
 
 // Ruta canónica para cada rol
 const ROLE_HOME: Record<UserRole, string> = {
-  admin:       '/dashboard-admin',
+  admin:       '/admin',
   universidad: '/dashboard-universidad',
   empresa:     '/dashboard-empresa',
   estudiante:  '/(tabs)',
@@ -35,9 +35,13 @@ export function useAuthGuard(requiredRole?: UserRole): void {
       return;
     }
 
-    if (requiredRole && rol !== requiredRole) {
-      const correctRoute = rol ? ROLE_HOME[rol] : '/auth/iniciosesion';
-      router.replace(correctRoute as any);
+    // Solo redirigimos ante una discrepancia CONFIRMADA de rol: `rol` debe
+    // ser un valor real y distinto del requerido. Si `rol` aún es null (la
+    // lectura de Firestore sigue en curso tras el login), NO redirigimos:
+    // esperamos a que AuthContext lo resuelva. Esto evita el rebote erróneo
+    // a /(tabs) o al login mientras el rol todavía no está disponible.
+    if (requiredRole && rol && rol !== requiredRole) {
+      router.replace(ROLE_HOME[rol] as any);
     }
   }, [user, rol, isLoading, requiredRole]);
 }

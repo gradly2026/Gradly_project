@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { AutoText as Text } from "./AutoText";
 import { db } from "../config/firebaseConfig";
 import { shadow } from "../utils/shadow";
 

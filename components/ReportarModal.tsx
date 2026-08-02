@@ -11,8 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { db } from "../src/config/firebaseConfig";
+import { crearReporte } from "../src/services/reporteService";
 
 const RAZONES = [
   "Información falsa o engañosa",
@@ -102,15 +101,11 @@ export default function ReportarModal({
     }
     setLoading(true);
     try {
-      await addDoc(collection(db, "reportes"), {
-        reportador_id: reportanteId,
-        reportado_id: reportadoId,
-        tipo: reportadoRol,
+      await crearReporte({
+        reportadoId,
         motivo: razon,
         descripcion: detalle.trim() || "",
-        estado: "abierto",
-        fecha: serverTimestamp(),
-        resolucion: "",
+        tipo: reportadoRol,
       });
       Alert.alert("Reporte enviado", "Gracias por ayudarnos a mantener la comunidad segura.");
       handleClose();

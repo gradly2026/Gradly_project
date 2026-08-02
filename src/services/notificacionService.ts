@@ -51,46 +51,6 @@ export async function crearNotificacionInApp(
 // ─────────────────────────────────────────────
 // HOOK: notificaciones del usuario actual
 // ─────────────────────────────────────────────
-export function useNotificaciones(uid: string | null) {
-  const [notificaciones, setNotificaciones] = useState<NotificacionApp[]>([]);
-  const [sinLeer,        setSinLeer]        = useState(0);
-
-  useEffect(() => {
-    if (!uid) return;
-
-    const q = query(
-      collection(db, 'notificaciones_app'),
-      where('destinatario_id', '==', uid),
-      orderBy('fecha', 'desc'),
-    );
-
-    const unsub = onSnapshot(q, snap => {
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as NotificacionApp));
-      setNotificaciones(all);
-      setSinLeer(all.filter(n => !n.leido).length);
-    });
-
-    return unsub;
-  }, [uid]);
-
-  const marcarLeida = async (notifId: string): Promise<void> => {
-    try {
-      await updateDoc(doc(db, 'notificaciones_app', notifId), { leido: true });
-    } catch { /* silent */ }
-  };
-
-  const marcarTodasLeidas = async (): Promise<void> => {
-    try {
-      await Promise.all(
-        notificaciones
-          .filter(n => !n.leido)
-          .map(n => updateDoc(doc(db, 'notificaciones_app', n.id), { leido: true })),
-      );
-    } catch { /* silent */ }
-  };
-
-  return { notificaciones, sinLeer, marcarLeida, marcarTodasLeidas };
-}
 
 // ─────────────────────────────────────────────
 // MENSAJES PREDEFINIDOS POR EVENTO

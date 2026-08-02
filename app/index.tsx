@@ -1,15 +1,62 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef } from 'react';
-import { Animated, Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Animated,
+  Image,
+  Platform,
+  StyleSheet,
+
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { AutoText as Text } from "../src/components/AutoText";
 import { useAuth } from '../src/context/AuthContext';
 import { FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
 import { rutaPorRol } from '../src/utils/roleRouting';
 
 export default function Index() {
   const router = useRouter();
-  const { user, rol, isLoading } = useAuth();
+  const { user, rol, isLoading, refreshProfile, logout } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  // Red de seguridad: si hay sesión pero el rol no se resuelve en unos segundos,
+  // dejamos de mostrar un logo infinito y ofrecemos reintentar o salir.
+  const [mostrarEscape, setMostrarEscape] = useState(false);
+  const [reintentando, setReintentando] = useState(false);
+
+  // Necesita escape si: (a) hay sesión pero el rol no resuelve, o (b) la carga
+  // se queda colgada demasiado tiempo. El caso "sin sesión" no lo necesita: el
+  // efecto de redirección de abajo ya manda al login.
+  const necesitaEscape = isLoading || (!!user && !rutaPorRol(rol));
+
+  useEffect(() => {
+    if (!necesitaEscape) {
+      setMostrarEscape(false);
+      return;
+    }
+    const t = setTimeout(() => setMostrarEscape(true), 7000);
+    return () => clearTimeout(t);
+  }, [necesitaEscape]);
+
+  const onReintentar = async () => {
+    setReintentando(true);
+    setMostrarEscape(false);
+    try {
+      await refreshProfile();
+    } finally {
+      setReintentando(false);
+    }
+  };
+
+  const onSalir = async () => {
+    try {
+      await logout();
+    } finally {
+      router.replace('/auth/iniciosesion' as any);
+    }
+  };
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.85)).current;
@@ -79,11 +126,35 @@ export default function Index() {
       </Animated.View>
 
       {/* Indicador sutil de carga */}
-      <Animated.View style={[styles.bottomDots, { opacity: fadeAnim }]}>
-        <View style={[styles.dot, styles.dotActive]} />
-        <View style={styles.dot} />
-        <View style={styles.dot} />
-      </Animated.View>
+      {!mostrarEscape ? (
+        <Animated.View style={[styles.bottomDots, { opacity: fadeAnim }]}>
+          <View style={[styles.dot, styles.dotActive]} />
+          <View style={styles.dot} />
+          <View style={styles.dot} />
+        </Animated.View>
+      ) : (
+        // Red de seguridad: el rol no se resolvió a tiempo (carrera de red).
+        <View style={styles.escapeBox}>
+          <Text style={styles.escapeText}>
+            Estamos tardando en cargar tu cuenta. Revisa tu conexión.
+          </Text>
+          <TouchableOpacity
+            style={styles.escapeBtn}
+            onPress={onReintentar}
+            disabled={reintentando}
+            activeOpacity={0.85}
+          >
+            {reintentando ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.escapeBtnText}>Reintentar</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.escapeLink} onPress={onSalir}>
+            <Text style={styles.escapeLinkText}>Volver a iniciar sesión</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -131,5 +202,41 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   },
   dotActive: {
     backgroundColor: COLORS.primary,
+  },
+  escapeBox: {
+    position: 'absolute',
+    bottom: 48,
+    left: 32,
+    right: 32,
+    alignItems: 'center',
+    gap: 14,
+  },
+  escapeText: {
+    fontSize: 14,
+    fontFamily: FONTS.interRegular,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  escapeBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderRadius: 12,
+    minWidth: 160,
+    alignItems: 'center',
+  },
+  escapeBtnText: {
+    fontSize: 15,
+    fontFamily: FONTS.interSemiBold,
+    color: '#ffffff',
+  },
+  escapeLink: {
+    paddingVertical: 4,
+  },
+  escapeLinkText: {
+    fontSize: 13,
+    fontFamily: FONTS.interRegular,
+    color: COLORS.primaryLight,
   },
 });

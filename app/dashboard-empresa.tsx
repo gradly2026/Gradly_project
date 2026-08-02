@@ -25,6 +25,7 @@ import { abrirChatDirectoEmpresaEstudiante } from '../src/services/chatService';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import FloatingTopBar from '../src/components/FloatingTopBar';
+import { AutoText, AutoText as Text, AutoTextInput as TextInput } from '../src/components/AutoText';
 import StorageAvatar from '../src/components/StorageAvatar';
 import {
   ActivityIndicator,
@@ -36,16 +37,21 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from 'react-native';
 import FeedbackGate from '../src/components/FeedbackGate';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
+import CalendarioEventos from '../src/components/CalendarioEventos';
+import EmpresaHomeCards from '../src/components/EmpresaHomeCards';
 import HistorialPasantes from '../src/components/HistorialPasantes';
+import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import RangoCard from '../src/components/RangoCard';
 import { SolicitudesEmpresa } from '../src/components/Matchmaking';
+import ProponerHorarioModal from '../src/components/ProponerHorarioModal';
+import type { AcuerdoData } from '../src/types/chat';
 import { PerfilStatsEmpresa, RedGradlyBanner } from '../src/components/NetworkStats';
 import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTour';
 import { useAuth } from '../src/context/AuthContext';
@@ -55,6 +61,11 @@ import { auth, db, storage } from '../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
 import { shadow } from '../src/utils/shadow';
+import { progresoPorFechas } from '../src/utils/progresoPasantia';
+import { cuposOcupados, cuposTotales, textoCupos, valCupos } from '../src/utils/cupos';
+import { AREAS as AREAS_CATALOGO, tagsDeArea } from '../src/data/areas';
+import { normalizarHorario, textoHorario, valHorario, type HorarioPasantia } from '../src/data/disponibilidad';
+import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import MapViewer from '../src/components/MapViewer';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
@@ -102,7 +113,7 @@ const IS_WIDE = SCREEN_W >= 768;
 // ─────────────────────────────────────────────
 // TIPOS
 // ─────────────────────────────────────────────
-type SeccionEmpresa = 'inicio' | 'vacantes' | 'kanban' | 'activas' | 'pagos' | 'historial';
+type SeccionEmpresa = 'inicio' | 'vacantes' | 'kanban' | 'activas' | 'pagos' | 'historial' | 'perfil';
 
 interface Vacante {
   id: string;
@@ -111,8 +122,21 @@ interface Vacante {
   modalidad: string;
   tipo: string;
   area: string;
-  horas_requeridas: number;
-  horas_semanales: number;
+  /** 'pasantia' (matchmaking universidad↔empresa) o 'vacante' (aplicación individual, graduados). Ausente = legado. */
+  categoria?: 'pasantia' | 'vacante';
+  /** Estudiantes que la empresa puede recibir. Ausente = vacante legada, sin límite. */
+  cupos?: number | null;
+  /** Cupos reservados por universidades que reclamaron por lote. */
+  cupos_reclamados?: number | null;
+  contratados_count?: number | null;
+  /** Horario declarado al publicar. Ausente = vacante legada (se negociaba por chat). */
+  horario?: HorarioPasantia | null;
+  /** true = las universidades reservan cupos sin esperar confirmación. */
+  reclamos_auto?: boolean;
+  /** Roles concretos dentro del área (afinan el match). */
+  tags?: string[];
+  horas_requeridas?: number;
+  horas_semanales?: number;
   skills_requeridas: string[];
   fecha_limite: any;
   activa: boolean;
@@ -135,6 +159,24 @@ interface Aplicacion {
   universidad_id?: string;
   fecha_inicio?: any;
   fecha_fin?: any;
+  /** Horario acordado al contratar (ver ProponerHorarioModal, sin sección de pago). */
+  acuerdo?: AcuerdoData;
+  horarioPropuesto?: string;
+  diasTrabajo?: string[];
+}
+
+/** Pasantía de grupo (flujo Universidad↔Empresa, colección solicitudes_practicas). */
+interface SolicitudGrupo {
+  id: string;
+  grupoId?: string;
+  grupoNombre?: string;
+  carrera?: string;
+  universidadId?: string;
+  estado?: string;
+  fechaInicio?: string;
+  fechaFin?: string;
+  alumnos?: { id: string; nombre: string }[];
+  pago?: { tipo: 'con_pago' | 'sin_pago'; monto?: number };
 }
 
 interface PerfilEmpresa {
@@ -194,6 +236,11 @@ const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
     texto:
       'Reencuentra a los estudiantes que finalizaron sus pasantías contigo y re-contáctalos para ofrecerles empleo.',
   },
+  perfil: {
+    titulo: 'Mi Perfil',
+    texto:
+      'Consulta tu rango, tu plan, tu método de pago y tus estadísticas, y ajusta tus preferencias.',
+  },
 };
 
 const MODALIDADES = ['Presencial', 'Remoto', 'Híbrido'];
@@ -239,7 +286,9 @@ const mapStyles = StyleSheet.create({
   detailLabel: { color: COLORS.primaryLight, fontFamily: FONTS.interSemiBold },
 });
 const TIPOS = ['Pasantía', 'Proyecto', 'Tiempo parcial'];
-const AREAS = ['Tecnología', 'Marketing', 'Diseño', 'Finanzas', 'Salud', 'Educación', 'Manufactura', 'Otra'];
+// El catálogo de áreas vive en src/data/areas.ts (compartido con el mapeo
+// carrera→área que usan el filtro del estudiante y las sugerencias).
+const AREAS = [...AREAS_CATALOGO];
 
 // ─────────────────────────────────────────────
 // VALIDADORES DE "NUEVA VACANTE" (puros: devuelven '' si es válido)
@@ -265,20 +314,6 @@ const valDesc = (v: string): string => {
   if (RE_DESC_PROHIB.test(v)) return 'No se permiten los caracteres: ? ! @ ç Ç \\ | *';
   return '';
 };
-const valHoras = (v: string): string => {
-  if (!v.trim()) return 'Campo obligatorio.';
-  if (!/^\d+$/.test(v)) return 'Solo números enteros.';
-  const n = Number(v);
-  if (n < 100 || n > 500) return 'Debe ser un valor entre 100 y 500.';
-  return '';
-};
-const valHorasSem = (v: string): string => {
-  if (!v.trim()) return 'Campo obligatorio.';
-  if (!/^\d+$/.test(v)) return 'Solo números enteros.';
-  const n = Number(v);
-  if (n < 1 || n > 30) return 'Debe ser un valor entre 1 y 30.';
-  return '';
-};
 const valSkills = (v: string): string => {
   if (!v.trim()) return 'Agrega al menos una skill.';
   if (!RE_SKILLS.test(v)) return 'Solo letras, espacios y comas (sin números ni símbolos).';
@@ -286,7 +321,13 @@ const valSkills = (v: string): string => {
 };
 // Fecha límite: hoy+5 días (mínimo) y hoy+5días+3meses (máximo). Date nativo local
 // (constructor por componentes => medianoche local, sin desfases de zona horaria).
-const valFecha = (v: string): string => {
+//
+// `original` es la fecha que YA tenía una vacante que se está editando: si el
+// usuario no la toca, se acepta aunque hoy caiga fuera de la ventana. Sin esta
+// excepción, editar cualquier vacante publicada hace más de unos días sería
+// imposible — el formulario quedaría inválido por un campo que no cambió.
+const valFecha = (v: string, original?: string): string => {
+  if (original && v.trim() && v.trim() === original.trim()) return '';
   if (!v.trim()) return 'La fecha límite es obligatoria.';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return 'Formato incompleto (YYYY-MM-DD).';
   const [y, m, d] = v.split('-').map(Number);
@@ -339,10 +380,10 @@ export default function DashboardEmpresa() {
   };
 
   const handleAyuda = () => {
-    Alert.alert('Ayuda', 'Escríbenos a soporte@gradly.app y te ayudaremos con cualquier duda.');
+    router.push('/help-gradly' as any);
   };
   const handleAcerca = () => {
-    Alert.alert('Acerca de Gradly', 'Gradly conecta estudiantes, universidades y empresas para gestionar pasantías y horas sociales.\n\nVersión 1.0.0');
+    router.push('/about-gradly' as any);
   };
 
   // ── Cambiar logo/foto de la empresa ────────────────────────────────
@@ -457,16 +498,25 @@ export default function DashboardEmpresa() {
   const [perfil,      setPerfil]      = useState<PerfilEmpresa | null>(null);
   const [vacantes,    setVacantes]    = useState<Vacante[]>([]);
   const [apps,        setApps]        = useState<Aplicacion[]>([]);
+  const [solicitudesGrupo, setSolicitudesGrupo] = useState<SolicitudGrupo[]>([]);
   const [vacanteSeleccionada, setVacanteSeleccionada] = useState<Vacante | null>(null);
 
   // Modales
   const [showNuevaVacante,  setShowNuevaVacante]  = useState(false);
+  /**
+   * Vacante en edición. El MISMO modal sirve para crear y editar: duplicar el
+   * formulario habría dejado dos definiciones de validación y payload que se
+   * desincronizan a la primera. `null` = modo creación.
+   */
+  const [vacanteEditando, setVacanteEditando] = useState<Vacante | null>(null);
   const [showCardModal,     setShowCardModal]      = useState(false);
   const [showFirmaModal,    setShowFirmaModal]     = useState<Aplicacion | null>(null);
   const [showPagoModal,     setPagoModal]          = useState<Aplicacion | null>(null);
   const [pagoProcesando,    setPagoProcesando]     = useState(false);
   const [pagoMonto,         setPagoMonto]          = useState('');
   const [firmaConfirmada,   setFirmaConfirmada]    = useState(false);
+  // Horario de contratación (individual): se pide antes de mover a 'contratado'.
+  const [horarioContratoApp, setHorarioContratoApp] = useState<Aplicacion | null>(null);
 
   // Formulario nueva vacante
   const [nvTitulo,   setNvTitulo]   = useState('');
@@ -474,10 +524,16 @@ export default function DashboardEmpresa() {
   const [nvModalidad,setNvModalidad]= useState('');
   const [nvTipo,     setNvTipo]     = useState('');
   const [nvDesc,     setNvDesc]     = useState('');
-  const [nvHoras,    setNvHoras]    = useState('');
-  const [nvHorasSem, setNvHorasSem] = useState('');
   const [nvSkills,   setNvSkills]   = useState('');
   const [nvFechaLim, setNvFechaLim] = useState('');
+  const [nvCupos,    setNvCupos]    = useState('');
+  // Horario declarado al publicar (ya no se negocia por chat en el caso normal).
+  const [nvHorario,  setNvHorario]  = useState<Partial<HorarioPasantia>>({});
+  // false = la empresa confirma cada reclamo de cupos (default: protege a la
+  // empresa). true = las universidades reservan al instante.
+  const [nvReclamosAuto, setNvReclamosAuto] = useState(false);
+  // Roles concretos dentro del área (afinan el match; opcionales).
+  const [nvTags, setNvTags] = useState<string[]>([]);
   // Campo dinámico cuando el área seleccionada es "Otra".
   const [nvAreaOtra, setNvAreaOtra] = useState('');
   // Errores de validación en tiempo real por campo ('' = válido).
@@ -555,13 +611,71 @@ export default function DashboardEmpresa() {
     return unsub;
   }, [user]);
 
+  // Pasantías de grupo (flujo Universidad↔Empresa) para la línea de tiempo.
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'solicitudes_practicas'), where('empresaId', '==', user.uid));
+    const unsub = onSnapshot(
+      q,
+      snap => setSolicitudesGrupo(snap.docs.map(d => ({ id: d.id, ...d.data() } as SolicitudGrupo))),
+      error => console.warn('Error en listener (solicitudes_practicas):', error),
+    );
+    return unsub;
+  }, [user]);
+
+  // Horas certificadas (`perfiles_estudiantes.horas_aprobadas`, el mismo campo
+  // que incrementa `certificarPasantia`) de los estudiantes de cada grupo con
+  // pasantía aprobada/finalizada con esta empresa. El perfil del estudiante NO
+  // referencia a la empresa directamente (solo a `grupo_id`), así que se abre
+  // UN listener por grupo relevante — se derivan como una clave estable
+  // (join de ids ordenados) para no destruir/recrear los listeners en cada
+  // cambio de campo ajeno de `solicitudesGrupo`.
+  const gruposConPasantiaKey = useMemo(() => {
+    const ids = Array.from(
+      new Set(
+        solicitudesGrupo
+          .filter(sg => (sg.estado === 'aprobado' || sg.estado === 'finalizado') && sg.grupoId)
+          .map(sg => sg.grupoId as string),
+      ),
+    );
+    return ids.sort().join(',');
+  }, [solicitudesGrupo]);
+
+  const [horasPorGrupo, setHorasPorGrupo] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const grupoIds = gruposConPasantiaKey ? gruposConPasantiaKey.split(',') : [];
+    const unsubs = grupoIds.map(grupoId =>
+      onSnapshot(
+        query(collection(db, 'perfiles_estudiantes'), where('grupo_id', '==', grupoId)),
+        snap => {
+          const total = snap.docs.reduce((acc, d) => acc + ((d.data() as any).horas_aprobadas ?? 0), 0);
+          setHorasPorGrupo(prev => ({ ...prev, [grupoId]: total }));
+        },
+        error => console.warn('Error en listener (horas de grupo):', error),
+      ),
+    );
+    return () => unsubs.forEach(u => u());
+  }, [gruposConPasantiaKey]);
+
   // ── Métricas ─────────────────────────────────────────────────────
   const metricas = useMemo(() => ({
     vacantesActivas: vacantes.filter(v => v.activa).length,
     pendientes:      apps.filter(a => a.estado === 'pendiente').length,
-    activos:         apps.filter(a => a.estado === 'contratado').length,
-    horasValidadas:  apps.reduce((acc, a) => acc + (a.horas_completadas ?? 0), 0),
-  }), [vacantes, apps]);
+    // "Pasantes activos": headcount actual, sumando el flujo individual legado
+    // (aplicaciones 'contratado') + estudiantes de grupos con pasantía
+    // aprobada (acuerdo firmado, aún sin finalizar) — mismo criterio de estado
+    // que usa la universidad para "En pasantía".
+    activos:
+      apps.filter(a => a.estado === 'contratado').length +
+      solicitudesGrupo
+        .filter(sg => sg.estado === 'aprobado')
+        .reduce((acc, sg) => acc + (sg.alumnos?.length ?? 0), 0),
+    // "Horas validadas": horas del flujo individual (`aplicaciones.horas_completadas`)
+    // + horas certificadas de los estudiantes de grupo (ver `horasPorGrupo` arriba).
+    horasValidadas:
+      apps.reduce((acc, a) => acc + (a.horas_completadas ?? 0), 0) +
+      Object.values(horasPorGrupo).reduce((acc, h) => acc + h, 0),
+  }), [vacantes, apps, solicitudesGrupo, horasPorGrupo]);
 
   // ── Límite de vacantes según el plan ─────────────────────────────
   const limiteVacantes   = perfil?.limiteVacantes ?? 2;
@@ -661,16 +775,29 @@ export default function DashboardEmpresa() {
   const onChangeSkills   = (v: string) => { setNvSkills(v);   setErr('skills', valSkills(v)); };
   const onChangeAreaOtra = (v: string) => { setNvAreaOtra(v); setErr('areaOtra', valAreaOtra(v)); };
 
-  // Horas: solo dígitos; máx 3 cifras (totales) y 2 cifras (semanales).
-  const onChangeHoras    = (v: string) => { const c = v.replace(/\D/g, '').slice(0, 3); setNvHoras(c);    setErr('horas', valHoras(c)); };
-  const onChangeHorasSem = (v: string) => { const c = v.replace(/\D/g, '').slice(0, 2); setNvHorasSem(c); setErr('horasSem', valHorasSem(c)); };
-
   // Fecha: auto-formato YYYY-MM-DD mientras escribe.
-  const onChangeFecha    = (raw: string) => { const f = formatFecha(raw); setNvFechaLim(f); setErr('fecha', valFecha(f)); };
+  const onChangeFecha    = (raw: string) => {
+    const f = formatFecha(raw);
+    setNvFechaLim(f);
+    const orig = vacanteEditando && typeof vacanteEditando.fecha_limite === 'string'
+      ? vacanteEditando.fecha_limite : undefined;
+    setErr('fecha', valFecha(f, orig));
+  };
+
+  // Cupos: solo dígitos (descarta cualquier otro carácter mientras escribe).
+  const onChangeCupos    = (raw: string) => {
+    const v = raw.replace(/\D/g, '').slice(0, 3);
+    setNvCupos(v);
+    // El mínimo cambia al editar: no se puede bajar de los cupos ya
+    // comprometidos. Se pasa aquí también para que el error salga al escribir,
+    // no solo al pulsar Guardar.
+    setErr('cupos', valCupos(v, vacanteEditando ? cuposOcupados(vacanteEditando) : 0));
+  };
 
   // Selecciones (chips): limpian su error; al cambiar de "Otra" se resetea el sub-campo.
   const onSelectArea = (v: string) => {
     setNvArea(v);
+    setNvTags([]); // los roles dependen del área: cambiar de área los invalida
     setNvErrors(prev => ({
       ...prev,
       area: v ? '' : 'Selecciona un área.',
@@ -680,6 +807,33 @@ export default function DashboardEmpresa() {
   };
   const onSelectModalidad = (v: string) => { setNvModalidad(v); setErr('modalidad', ''); };
   const onSelectTipo      = (v: string) => { setNvTipo(v);      setErr('tipo', ''); };
+
+  /**
+   * Cupos ya comprometidos de la vacante en edición (reservados por
+   * universidades + contratados). Es el piso al que puede bajar el total sin
+   * dejar reservas sin respaldo. 0 al crear.
+   */
+  const cuposComprometidos = vacanteEditando ? cuposOcupados(vacanteEditando) : 0;
+
+  /** Fecha límite que ya tenía la vacante en edición (se acepta sin cambios). */
+  const fechaLimiteOriginal =
+    vacanteEditando && typeof vacanteEditando.fecha_limite === 'string'
+      ? vacanteEditando.fecha_limite
+      : undefined;
+
+  /**
+   * Cambiar el Tipo entre "Pasantía" y el resto cambia la `categoria`, y con
+   * ella el carril: las de `pasantia` viven en el matchmaking universidad↔
+   * empresa y las de `vacante` en el feed individual. Si la publicación ya
+   * tiene cupos comprometidos, ese salto la sacaría de la vista donde las
+   * universidades siguen sus reservas — quedarían huérfanas. Se bloquea.
+   */
+  const categoriaActual = vacanteEditando
+    ? (vacanteEditando.categoria ?? (vacanteEditando.tipo === 'Pasantía' ? 'pasantia' : 'vacante'))
+    : null;
+  const categoriaNueva = nvTipo === 'Pasantía' ? 'pasantia' : 'vacante';
+  const cambioDeCarrilBloqueado =
+    !!vacanteEditando && cuposComprometidos > 0 && !!nvTipo && categoriaActual !== categoriaNueva;
 
   // Validez global del formulario (recalcula sobre los valores actuales, no sobre
   // nvErrors, para cubrir también los campos que el usuario aún no ha tocado).
@@ -691,18 +845,53 @@ export default function DashboardEmpresa() {
     if (!nvModalidad) return false;
     if (!nvTipo) return false;
     if (valDesc(nvDesc)) return false;
-    if (valHoras(nvHoras)) return false;
-    if (valHorasSem(nvHorasSem)) return false;
     if (valSkills(nvSkills)) return false;
-    if (valFecha(nvFechaLim)) return false;
+    if (valFecha(nvFechaLim, fechaLimiteOriginal)) return false;
+    if (valCupos(nvCupos, cuposComprometidos)) return false;
+    if (valHorario(nvHorario)) return false;
+    if (cambioDeCarrilBloqueado) return false;
     // Ubicación obligatoria para Presencial / Híbrido (mapa o GPS).
     if ((nvModalidad === 'Presencial' || nvModalidad === 'Híbrido') && !markerPos) return false;
     return true;
-  }, [nvTitulo, nvArea, nvAreaOtra, nvModalidad, nvTipo, nvDesc, nvHoras, nvHorasSem, nvSkills, nvFechaLim, markerPos]);
+  }, [nvTitulo, nvArea, nvAreaOtra, nvModalidad, nvTipo, nvDesc, nvSkills, nvFechaLim, nvCupos, nvHorario, markerPos, cuposComprometidos, fechaLimiteOriginal, cambioDeCarrilBloqueado]);
+
+  // ── Abrir el formulario en modo EDICIÓN (precarga desde la vacante) ──
+  const abrirEditarVacante = (v: Vacante) => {
+    setVacanteEditando(v);
+    setNvTitulo(v.titulo ?? '');
+    // Si el área guardada no está en el catálogo (vacante vieja o texto libre),
+    // se muestra como "Otra" + el valor original, para no perderlo al guardar.
+    const areaConocida = AREAS.includes(v.area as any);
+    setNvArea(areaConocida ? (v.area ?? '') : 'Otra');
+    setNvAreaOtra(areaConocida ? '' : (v.area ?? ''));
+    setNvModalidad(v.modalidad ?? '');
+    setNvTipo(v.tipo ?? '');
+    setNvDesc(v.descripcion ?? '');
+    setNvSkills((v.skills_requeridas ?? []).join(', '));
+    setNvFechaLim(typeof v.fecha_limite === 'string' ? v.fecha_limite : '');
+    setNvCupos(cuposTotales(v) != null ? String(cuposTotales(v)) : '');
+    setNvHorario(normalizarHorario(v.horario) ?? {});
+    setNvReclamosAuto(v.reclamos_auto === true);
+    setNvTags(v.tags ?? []);
+    setNvErrors({});
+    setMarkerPos(
+      v.ubicacion_coords
+        ? { latitude: v.ubicacion_coords.latitude, longitude: v.ubicacion_coords.longitude }
+        : null,
+    );
+    setUbicacionDetalle({
+      direccion:    v.ubicacion_texto?.direccion ?? '',
+      municipio:    v.ubicacion_texto?.municipio ?? '',
+      departamento: v.ubicacion_texto?.departamento ?? '',
+      pais:         v.ubicacion_texto?.pais ?? '',
+    });
+    setShowNuevaVacante(true);
+  };
 
   // ── Publicar vacante ─────────────────────────────────────────────
   const handlePublicarVacante = async () => {
-    if (!puedeCrearVacante) {
+    // El límite del plan solo aplica al CREAR: editar no consume cupo nuevo.
+    if (!vacanteEditando && !puedeCrearVacante) {
       Alert.alert(
         'Límite alcanzado',
         `Tu plan permite ${limiteVacantes} vacantes activas. Pausa una vacante o mejora tu plan para publicar más.`,
@@ -716,12 +905,22 @@ export default function DashboardEmpresa() {
       modalidad: nvModalidad ? '' : 'Selecciona una modalidad.',
       tipo:      nvTipo ? '' : 'Selecciona un tipo.',
       desc:      valDesc(nvDesc),
-      horas:     valHoras(nvHoras),
-      horasSem:  valHorasSem(nvHorasSem),
       skills:    valSkills(nvSkills),
-      fecha:     valFecha(nvFechaLim),
+      fecha:     valFecha(nvFechaLim, fechaLimiteOriginal),
+      cupos:     valCupos(nvCupos, cuposComprometidos),
+      horario:   valHorario(nvHorario),
     };
     if (nvArea === 'Otra') errs.areaOtra = valAreaOtra(nvAreaOtra);
+
+    if (cambioDeCarrilBloqueado) {
+      Alert.alert(
+        'No puedes cambiar el tipo',
+        `Esta publicación ya tiene ${cuposComprometidos} cupo(s) comprometido(s). ` +
+        'Cambiar entre "Pasantía" y otro tipo la movería de sección y dejaría esas ' +
+        'reservas sin seguimiento. Crea una publicación nueva si necesitas el otro tipo.',
+      );
+      return;
+    }
 
     setNvErrors(errs);
     if (Object.values(errs).some(Boolean)) {
@@ -735,9 +934,6 @@ export default function DashboardEmpresa() {
       Alert.alert('Ubicación requerida', 'Marca la ubicación de la plaza en el mapa o usa "Capturar mi Ubicación Actual".');
       return;
     }
-
-    const horasTotales = Number(nvHoras);
-    const horasSemana  = Number(nvHorasSem);
 
     // FIXED: activamos el modal dinámico PRIMERO (esto oculta el modal de vacante por el Fix 2),
     //        y solo después marcamos savingVac para el indicador del botón.
@@ -753,11 +949,13 @@ export default function DashboardEmpresa() {
         logo_empresa_url:   perfil?.logo_url || (user as any)?.photoURL || '',
         titulo:             nvTitulo.trim(),
         descripcion:        nvDesc.trim(),
+        // Categoría derivada del Tipo: 'Pasantía' enruta por matchmaking
+        // universidad↔empresa; el resto queda como vacante individual
+        // (graduados). Ver estudianteHabilitadoParaVacantes / VacantesDisponibles.
+        categoria:          nvTipo === 'Pasantía' ? 'pasantia' : 'vacante',
         modalidad:          nvModalidad,
         tipo:               nvTipo,
         area:               nvArea === 'Otra' ? nvAreaOtra.trim() : nvArea,
-        horas_requeridas:   horasTotales,
-        horas_semanales:    horasSemana,
         skills_requeridas:  nvSkills.split(',').map(s => s.trim()).filter(Boolean),
         fecha_publicacion:  serverTimestamp(),
         fecha_creacion:     serverTimestamp(),
@@ -765,6 +963,15 @@ export default function DashboardEmpresa() {
         activa:             true,
         aplicantes_count:   0,
         contratados_count:  0,
+        // Cupos que la empresa ofrece; `cupos_reclamados` lo moverán las
+        // universidades al reclamar por lote (ver src/utils/cupos.ts).
+        tags:               nvTags,
+        cupos:              Number(nvCupos.trim()),
+        cupos_reclamados:   0,
+        // Horario declarado: misma forma que el `AcuerdoData` del chat, para
+        // que ambos caminos sean intercambiables al calcular horas/compatibilidad.
+        horario:            normalizarHorario(nvHorario),
+        reclamos_auto:      nvReclamosAuto,
         ubicacion_coords:   markerPos ? { latitude: markerPos.latitude, longitude: markerPos.longitude } : null,
         ubicacion_texto:    markerPos ? {
           direccion:    ubicacionDetalle.direccion || '',
@@ -779,17 +986,44 @@ export default function DashboardEmpresa() {
         if (payloadVacante[key] === undefined) delete payloadVacante[key];
       });
 
-      const vacanteRef = await addDoc(collection(db, 'vacantes'), payloadVacante);
-      // Confirmación a la empresa (no bloquea el guardado de la vacante).
-      try {
-        await enviarNotificacion(
-          user?.uid ?? '',
-          'Vacante publicada',
-          `Tu vacante "${payloadVacante.titulo ?? ''}" se publicó correctamente y ya es visible para el talento.`,
-          'success',
-          vacanteRef.id,
-        );
-      } catch { /* la notificación no debe afectar el flujo principal */ }
+      if (vacanteEditando) {
+        // ── EDICIÓN ──────────────────────────────────────────────────
+        // Se descartan los campos que NO deben reescribirse al editar: los
+        // contadores viven su propia vida (las universidades mueven
+        // `cupos_reclamados`, contratar mueve `contratados_count`) y
+        // sobrescribirlos con 0 borraría reservas y contrataciones reales.
+        const NO_EDITABLES = [
+          'aplicantes_count', 'contratados_count', 'cupos_reclamados',
+          'fecha_publicacion', 'fecha_creacion', 'activa', 'empresa_id',
+        ];
+        const cambios: Record<string, any> = { ...payloadVacante };
+        NO_EDITABLES.forEach(k => delete cambios[k]);
+        cambios.fecha_modificacion = serverTimestamp();
+
+        await updateDoc(doc(db, 'vacantes', vacanteEditando.id), cambios);
+        try {
+          await enviarNotificacion(
+            user?.uid ?? '',
+            'Vacante actualizada',
+            `Los cambios en "${payloadVacante.titulo ?? ''}" se guardaron correctamente.`,
+            'success',
+            vacanteEditando.id,
+          );
+        } catch { /* la notificación no debe afectar el flujo principal */ }
+      } else {
+        // ── CREACIÓN ─────────────────────────────────────────────────
+        const vacanteRef = await addDoc(collection(db, 'vacantes'), payloadVacante);
+        // Confirmación a la empresa (no bloquea el guardado de la vacante).
+        try {
+          await enviarNotificacion(
+            user?.uid ?? '',
+            'Vacante publicada',
+            `Tu vacante "${payloadVacante.titulo ?? ''}" se publicó correctamente y ya es visible para el talento.`,
+            'success',
+            vacanteRef.id,
+          );
+        } catch { /* la notificación no debe afectar el flujo principal */ }
+      }
       // Éxito: mostramos el modal dinámico. El cierre/limpieza ocurre al aceptar
       // (botón "Aceptar y Cerrar") o por el auto-cierre programado.
       setEstadoGuardado('success');
@@ -806,7 +1040,8 @@ export default function DashboardEmpresa() {
     setEstadoGuardado('idle');
     setShowNuevaVacante(false);
     setNvTitulo(''); setNvArea(''); setNvModalidad(''); setNvTipo('');
-    setNvDesc(''); setNvHoras(''); setNvHorasSem(''); setNvSkills(''); setNvFechaLim('');
+    setNvDesc(''); setNvSkills(''); setNvFechaLim(''); setNvCupos(''); setNvHorario({});
+    setNvReclamosAuto(false); setNvTags([]); setVacanteEditando(null);
     setNvAreaOtra(''); setNvErrors({});
     setMarkerPos(null);
     setUbicacionDetalle({ direccion: '', municipio: '', departamento: '', pais: '' });
@@ -822,7 +1057,7 @@ export default function DashboardEmpresa() {
         setEstadoGuardado('idle');
         setShowNuevaVacante(false);
         setNvTitulo(''); setNvArea(''); setNvModalidad(''); setNvTipo('');
-        setNvDesc(''); setNvHoras(''); setNvHorasSem(''); setNvSkills(''); setNvFechaLim('');
+        setNvDesc(''); setNvSkills(''); setNvFechaLim('');
         setNvAreaOtra(''); setNvErrors({});
         setMarkerPos(null);
         setUbicacionDetalle({ direccion: '', municipio: '', departamento: '', pais: '' });
@@ -843,23 +1078,33 @@ export default function DashboardEmpresa() {
   };
 
   // ── Mover Kanban (usa cambiarEstadoAplicacion del servicio) ──────
+  // Contratar exige antes definir el horario (ver ProponerHorarioModal, sin
+  // sección de pago): el modal de horario hace de confirmación.
   const moverEstado = async (app: Aplicacion, nuevoEstado: string) => {
     if (nuevoEstado === 'contratado') {
-      Alert.alert('Confirmar contratación', `¿Contratar a ${app.estudiante_nombre}?`, [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Confirmar',
-          onPress: async () => {
-            try {
-              await cambiarEstadoAplicacion(app.id, nuevoEstado, app.vacante_id);
-            } catch { Alert.alert('Error', 'No se pudo actualizar.'); }
-          },
-        },
-      ]);
-    } else {
-      try {
-        await cambiarEstadoAplicacion(app.id, nuevoEstado);
-      } catch { Alert.alert('Error', 'No se pudo actualizar.'); }
+      setHorarioContratoApp(app);
+      return;
+    }
+    try {
+      await cambiarEstadoAplicacion(app.id, nuevoEstado);
+    } catch { Alert.alert('Error', 'No se pudo actualizar.'); }
+  };
+
+  // ── Confirmar contratación con el horario acordado ────────────────
+  const confirmarContratacion = async (acuerdo: AcuerdoData) => {
+    if (!horarioContratoApp) return;
+    try {
+      await cambiarEstadoAplicacion(
+        horarioContratoApp.id,
+        'contratado',
+        horarioContratoApp.vacante_id,
+        undefined,
+        undefined,
+        acuerdo,
+      );
+      setHorarioContratoApp(null);
+    } catch {
+      Alert.alert('Error', 'No se pudo confirmar la contratación.');
     }
   };
 
@@ -1021,7 +1266,7 @@ export default function DashboardEmpresa() {
   // ── Items del menú flotante (etiquetas cortas para la barra) ──────
   const NAV_LABELS: Record<SeccionEmpresa, string> = {
     inicio: 'Inicio', vacantes: 'Vacantes', kanban: 'Reclutar',
-    activas: 'Activas', historial: 'Historial', pagos: 'Pagos',
+    activas: 'Activas', historial: 'Historial', pagos: 'Pagos', perfil: 'Mi Perfil',
   };
   // "Mensajes" y "Mi Perfil" se añaden SIEMPRE como últimas opciones.
   type NavKey = SeccionEmpresa | 'mensajes' | 'perfil';
@@ -1039,14 +1284,201 @@ export default function DashboardEmpresa() {
   // ── RENDER SECCIONES ─────────────────────────────────────────────
   const renderSeccion = () => {
     switch (seccion) {
-      case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} />;
-      case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => setShowNuevaVacante(true)} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
+      case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} />;
+      case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => { setVacanteEditando(null); setShowNuevaVacante(true); }} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} onEditar={abrirEditarVacante} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
       case 'kanban':   return <SeccionKanban apps={apps} onMover={moverEstado} onSeleccionar={(a) => { setRatingEstudiante(0); setCandidatoSeleccionado(a); }} />;
-      case 'activas':  return <SeccionActivas apps={apps} onFirmar={setShowFirmaModal} />;
+      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} />;
       case 'historial': return <HistorialPasantes empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
       case 'pagos':    return <SeccionPagos apps={apps} perfil={perfil} onPagar={setPagoModal} onCardChange={abrirCardModal} />;
+      case 'perfil':   return renderPerfilSeccion();
       default:         return null;
     }
+  };
+
+  // ── Sección "Mi Perfil" (master-detail): rango, plan, método de pago,
+  //    estadísticas y preferencias. Reemplaza al antiguo modal. ──
+  const renderPerfilSeccion = () => {
+    const planKey = (perfil?.plan ?? 'gratuito') as 'gratuito' | 'mensual' | 'premium';
+    const info = PLAN_DISPLAY[planKey];
+    const ilimitado = (perfil?.limiteVacantes ?? 0) >= 9999;
+    const tieneTarjeta = !!perfil?.tarjeta_numero;
+    return (
+      <PerfilMasterDetail
+        name={nombreEmpresa}
+        subtitle={`${perfil?.industria ?? 'Empresa'} · ${perfil?.premium ? '⭐ Premium' : 'Plan Básico'}`}
+        avatarUrl={perfil?.logo_url}
+        avatarStoragePath={`logos_empresas/${user!.uid}/logo.jpg`}
+        fallbackIcon="business"
+        onEditPhoto={handleUploadLogo}
+        uploadingPhoto={uploadingLogo}
+        onAyuda={handleAyuda}
+        onAcerca={handleAcerca}
+        onLogout={() => setLogoutModalVisible(true)}
+        sections={[
+          {
+            id: 'datos',
+            title: 'Datos de la empresa',
+            subtitle: 'Información pública y de contacto',
+            icon: 'business-outline',
+            tone: 'blue',
+            description: 'Estos datos los ven las universidades y estudiantes. Puedes editarlos.',
+            fields: [
+              { key: 'nombre_empresa', label: 'Nombre de la empresa', value: (perfil as any)?.nombre_empresa ?? '' },
+              { key: 'nit', label: 'NIT', value: (perfil as any)?.nit ?? '', placeholder: '####-######-###-#' },
+              { key: 'industria', label: 'Industria / Rubro', value: (perfil as any)?.industria ?? '' },
+              { key: 'descripcion', label: 'Descripción', value: (perfil as any)?.descripcion ?? '', multiline: true },
+              { key: 'sitio_web', label: 'Sitio web', value: (perfil as any)?.sitio_web ?? '', keyboardType: 'url', autoCapitalize: 'none' },
+              { key: 'telefono', label: 'Teléfono', value: (perfil as any)?.telefono ?? '', keyboardType: 'phone-pad' },
+              { key: 'direccion', label: 'Dirección', value: (perfil as any)?.direccion ?? '' },
+              { key: 'departamento', label: 'Departamento', value: (perfil as any)?.departamento ?? '' },
+              { key: 'ciudad', label: 'Municipio / Ciudad', value: (perfil as any)?.ciudad ?? '' },
+              { key: 'instagram', label: 'Instagram', value: (perfil as any)?.instagram ?? '', autoCapitalize: 'none' },
+              { key: 'facebook', label: 'Facebook', value: (perfil as any)?.facebook ?? '', autoCapitalize: 'none' },
+            ],
+            onSave: async (v) => {
+              try {
+                await updateDoc(doc(db, 'perfiles_empresas', user!.uid), {
+                  nombre_empresa: v.nombre_empresa,
+                  nit: v.nit,
+                  industria: v.industria,
+                  descripcion: v.descripcion,
+                  sitio_web: v.sitio_web,
+                  telefono: v.telefono,
+                  direccion: v.direccion,
+                  departamento: v.departamento,
+                  ciudad: v.ciudad,
+                  instagram: v.instagram,
+                  facebook: v.facebook,
+                });
+              } catch { Alert.alert('Error', 'No se pudo guardar.'); }
+            },
+          },
+          {
+            id: 'contacto',
+            title: 'Contacto / Responsable',
+            subtitle: 'Persona de contacto de la empresa',
+            icon: 'person-outline',
+            tone: 'green',
+            fields: [
+              { key: 'contacto_nombre', label: 'Nombre del responsable', value: (perfil as any)?.contacto_nombre ?? '' },
+              { key: 'contacto_cargo', label: 'Cargo', value: (perfil as any)?.contacto_cargo ?? '' },
+              { key: 'contacto_telefono', label: 'Teléfono de contacto', value: (perfil as any)?.contacto_telefono ?? '', keyboardType: 'phone-pad' },
+              { key: 'contacto_correo', label: 'Correo de contacto', value: (perfil as any)?.contacto_correo ?? '', keyboardType: 'email-address', autoCapitalize: 'none' },
+              { key: 'contacto_documento_numero', label: 'Documento del responsable', value: (perfil as any)?.contacto_documento_numero ?? '' },
+            ],
+            onSave: async (v) => {
+              try {
+                await updateDoc(doc(db, 'perfiles_empresas', user!.uid), {
+                  contacto_nombre: v.contacto_nombre,
+                  contacto_cargo: v.contacto_cargo,
+                  contacto_telefono: v.contacto_telefono,
+                  contacto_correo: v.contacto_correo,
+                  contacto_documento_numero: v.contacto_documento_numero,
+                });
+              } catch { Alert.alert('Error', 'No se pudo guardar.'); }
+            },
+          },
+          {
+            id: 'rango',
+            title: 'Mi rango',
+            subtitle: 'Nivel y experiencia',
+            icon: 'ribbon-outline',
+            tone: 'orange',
+            render: () => (
+              <RangoCard
+                xp={Number((perfil as any)?.puntos_experiencia ?? 0)}
+                calificacion={Number((perfil as any)?.calificacion_promedio ?? 0)}
+                pasantias={Number((perfil as any)?.pasantias_completadas ?? 0)}
+                rol="empresa"
+                theme="dark"
+              />
+            ),
+          },
+          {
+            id: 'plan',
+            title: 'Mi plan',
+            subtitle: `${info.nombre} · ${info.precio}`,
+            icon: 'star-outline',
+            tone: 'purple',
+            render: () => (
+              <BlurView intensity={30} tint="dark" style={styles.planBox}>
+                <View style={styles.planBoxHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="ribbon-outline" size={18} color={colors.primaryLight} />
+                    <Text style={styles.planBoxLabel}>Plan actual</Text>
+                  </View>
+                  {perfil?.verificado && (
+                    <View style={styles.planBoxVerif}>
+                      <Ionicons name="checkmark-circle" size={13} color={COLORS.success} />
+                      <Text style={styles.planBoxVerifText}>Verificada</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.planBoxName}>{info.nombre} · {info.precio}</Text>
+                <View style={styles.planBoxStats}>
+                  <View style={styles.planBoxStat}>
+                    <Text style={styles.planBoxStatNum}>{ilimitado ? '∞' : (perfil?.limiteVacantes ?? 2)}</Text>
+                    <Text style={styles.planBoxStatLbl}>Vacantes</Text>
+                  </View>
+                  <View style={styles.planBoxStat}>
+                    <Text style={styles.planBoxStatNum}>{ilimitado ? '∞' : (perfil?.limiteAlianzas ?? 1)}</Text>
+                    <Text style={styles.planBoxStatLbl}>Alianzas</Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                  {planKey !== 'premium' && (
+                    <TouchableOpacity style={[styles.planBoxBtn, { flex: 1, backgroundColor: colors.primary, borderColor: colors.primary }]} onPress={() => setShowPlanUpgradeModal(true)}>
+                      <Text style={[styles.planBoxBtnText, { color: '#fff' }]}>Mejorar tu plan</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={[styles.planBoxBtn, { flex: 1 }]} onPress={() => setShowPlanUpgradeModal(true)}>
+                    <Text style={styles.planBoxBtnText}>Ver detalles del plan</Text>
+                    <Ionicons name="chevron-forward" size={14} color={colors.primaryLight} />
+                  </TouchableOpacity>
+                </View>
+              </BlurView>
+            ),
+          },
+          {
+            id: 'pago',
+            title: 'Método de pago',
+            subtitle: tieneTarjeta ? `•••• ${perfil?.tarjeta_numero}` : 'Sin tarjeta registrada',
+            icon: 'wallet-outline',
+            tone: 'green',
+            render: () => (
+              <View style={styles.payCard}>
+                <View style={styles.payCardHeader}>
+                  <Ionicons name="card-outline" size={18} color={colors.primaryLight} />
+                  <Text style={styles.payCardTitle}>Método de pago</Text>
+                </View>
+                {tieneTarjeta ? (
+                  <Text style={styles.payCardNumber}>**** **** **** {perfil?.tarjeta_numero}</Text>
+                ) : (
+                  <Text style={styles.payCardEmpty}>No hay tarjeta registrada</Text>
+                )}
+                {!!perfil?.tarjeta_alias && tieneTarjeta && (
+                  <Text style={styles.payCardAlias}>{perfil.tarjeta_alias}</Text>
+                )}
+                <TouchableOpacity style={styles.payCardBtn} onPress={abrirCardModal}>
+                  <Ionicons name={tieneTarjeta ? 'sync-outline' : 'add-outline'} size={16} color={colors.primaryLight} />
+                  <Text style={styles.payCardBtnText}>
+                    {tieneTarjeta ? 'Cambiar método de pago' : 'Agregar método de pago'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ),
+          },
+          {
+            id: 'stats',
+            title: 'Estadísticas',
+            subtitle: 'Pagos y aliados',
+            icon: 'stats-chart-outline',
+            tone: 'blue',
+            render: () => <PerfilStatsEmpresa empresaId={user!.uid} />,
+          },
+        ]}
+      />
+    );
   };
 
   // ─────────────────────────────────────────────
@@ -1071,7 +1503,7 @@ export default function DashboardEmpresa() {
       <View style={styles.main}>
         {/* Header superior */}
         <View style={styles.mainHeader}>
-          <TouchableOpacity onPress={() => setShowPerfil(true)} activeOpacity={0.8}>
+          <TouchableOpacity onPress={() => setSeccion('perfil')} activeOpacity={0.8}>
             <StorageAvatar
               url={perfil?.logo_url}
               storagePath={user ? `logos_empresas/${user.uid}/logo.jpg` : null}
@@ -1081,7 +1513,7 @@ export default function DashboardEmpresa() {
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.mainTitle} numberOfLines={1}>
-              {MENU.find(m => m.key === seccion)?.label ?? 'Inicio'}
+              {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
             </Text>
             <Text style={styles.mainGreeting} numberOfLines={1}>
               {perfil?.premium ? '⭐ Premium' : 'Plan Básico'} · {nombreEmpresa}
@@ -1095,8 +1527,8 @@ export default function DashboardEmpresa() {
       {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ── */}
       <FloatingTopBar userId={user?.uid} />
 
-      {/* ── BÚSQUEDA FLOTANTE ── */}
-      <FloatingSearchButton placeholder="Buscar candidatos o vacantes..." />
+      {/* ── BÚSQUEDA FLOTANTE (oculta en "Mi Perfil") ── */}
+      {seccion !== 'perfil' && <FloatingSearchButton placeholder="Buscar candidatos o vacantes..." />}
 
       {/* ── FORMULARIO OBLIGATORIO DE EXPERIENCIA (pasantías finalizadas) ── */}
       <FeedbackGate />
@@ -1106,160 +1538,11 @@ export default function DashboardEmpresa() {
         items={navItems}
         activeKey={seccion}
         onChange={(k) =>
-          k === 'perfil'
-            ? setShowPerfil(true)
-            : k === 'mensajes'
-              ? router.push('/mensajes' as any)
-              : setSeccion(k)
+          k === 'mensajes'
+            ? router.push('/mensajes' as any)
+            : setSeccion(k)
         }
       />
-
-      {/* ── MODAL: Mi Perfil (cuenta) ── */}
-      <Modal visible={showPerfil} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.sheetCard}>
-            <Text style={styles.modalTitle}>Mi perfil</Text>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 8 }}>
-            <View style={styles.perfilCard}>
-              <TouchableOpacity onPress={handleUploadLogo} disabled={uploadingLogo} activeOpacity={0.8}>
-                <StorageAvatar
-                  url={perfil?.logo_url}
-                  storagePath={user ? `logos_empresas/${user.uid}/logo.jpg` : null}
-                  size={56}
-                  fallbackIcon="business"
-                />
-                <View style={styles.logoEditBadge}>
-                  {uploadingLogo
-                    ? <ActivityIndicator size="small" color="#fff" />
-                    : <Ionicons name="camera" size={12} color="#fff" />}
-                </View>
-              </TouchableOpacity>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.perfilNombre} numberOfLines={1}>{nombreEmpresa}</Text>
-                  {perfil?.verificado && (
-                    <Ionicons name="checkmark-circle" size={18} color={COLORS.primaryLight} />
-                  )}
-                </View>
-                <Text style={styles.perfilMeta} numberOfLines={1}>
-                  {perfil?.industria ?? 'Empresa'} · {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
-                </Text>
-                <TouchableOpacity onPress={handleUploadLogo} disabled={uploadingLogo}>
-                  <Text style={styles.logoEditText}>{uploadingLogo ? 'Subiendo…' : 'Cambiar logo'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* ── Rango gamificado de la empresa ── */}
-            <RangoCard
-              xp={Number((perfil as any)?.puntos_experiencia ?? 0)}
-              calificacion={Number((perfil as any)?.calificacion_promedio ?? 0)}
-              pasantias={Number((perfil as any)?.pasantias_completadas ?? 0)}
-              rol="empresa"
-              theme="dark"
-            />
-
-            {/* ── Plan actual (Liquid Glass) ── */}
-            {(() => {
-              const planKey = (perfil?.plan ?? 'gratuito') as 'gratuito' | 'mensual' | 'premium';
-              const info = PLAN_DISPLAY[planKey];
-              const ilimitado = (perfil?.limiteVacantes ?? 0) >= 9999;
-              return (
-                <BlurView intensity={30} tint="dark" style={styles.planBox}>
-                  <View style={styles.planBoxHeader}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Ionicons name="ribbon-outline" size={18} color={colors.primaryLight} />
-                      <Text style={styles.planBoxLabel}>Plan actual</Text>
-                    </View>
-                    {perfil?.verificado && (
-                      <View style={styles.planBoxVerif}>
-                        <Ionicons name="checkmark-circle" size={13} color={COLORS.success} />
-                        <Text style={styles.planBoxVerifText}>Verificada</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.planBoxName}>{info.nombre} · {info.precio}</Text>
-                  <View style={styles.planBoxStats}>
-                    <View style={styles.planBoxStat}>
-                      <Text style={styles.planBoxStatNum}>{ilimitado ? '∞' : (perfil?.limiteVacantes ?? 2)}</Text>
-                      <Text style={styles.planBoxStatLbl}>Vacantes</Text>
-                    </View>
-                    <View style={styles.planBoxStat}>
-                      <Text style={styles.planBoxStatNum}>{ilimitado ? '∞' : (perfil?.limiteAlianzas ?? 1)}</Text>
-                      <Text style={styles.planBoxStatLbl}>Alianzas</Text>
-                    </View>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                    {planKey !== 'premium' && (
-                      <TouchableOpacity style={[styles.planBoxBtn, { flex: 1, backgroundColor: colors.primary, borderColor: colors.primary }]} onPress={() => setShowPlanUpgradeModal(true)}>
-                        <Text style={[styles.planBoxBtnText, { color: '#fff' }]}>Mejorar tu plan</Text>
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity style={[styles.planBoxBtn, { flex: 1 }]} onPress={() => setShowPlanUpgradeModal(true)}>
-                      <Text style={styles.planBoxBtnText}>Ver detalles del plan</Text>
-                      <Ionicons name="chevron-forward" size={14} color={colors.primaryLight} />
-                    </TouchableOpacity>
-                  </View>
-                </BlurView>
-              );
-            })()}
-
-            {/* ── Método de pago ── */}
-            {(() => {
-              const tieneTarjeta = !!perfil?.tarjeta_numero;
-              return (
-                <View style={styles.payCard}>
-                  <View style={styles.payCardHeader}>
-                    <Ionicons name="card-outline" size={18} color={colors.primaryLight} />
-                    <Text style={styles.payCardTitle}>Método de pago</Text>
-                  </View>
-                  {tieneTarjeta ? (
-                    <Text style={styles.payCardNumber}>**** **** **** {perfil?.tarjeta_numero}</Text>
-                  ) : (
-                    <Text style={styles.payCardEmpty}>No hay tarjeta registrada</Text>
-                  )}
-                  {!!perfil?.tarjeta_alias && tieneTarjeta && (
-                    <Text style={styles.payCardAlias}>{perfil.tarjeta_alias}</Text>
-                  )}
-                  <TouchableOpacity style={styles.payCardBtn} onPress={abrirCardModal}>
-                    <Ionicons name={tieneTarjeta ? 'sync-outline' : 'add-outline'} size={16} color={colors.primaryLight} />
-                    <Text style={styles.payCardBtnText}>
-                      {tieneTarjeta ? 'Cambiar método de pago' : 'Agregar método de pago'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })()}
-
-            {/* ── Panel de estadísticas (gráficas) ── */}
-            <PerfilStatsEmpresa empresaId={user!.uid} />
-
-            {/* ── Cuenta: ayuda · acerca · cerrar sesión (al final) ── */}
-            <View style={styles.perfilFooter}>
-              <TouchableOpacity style={styles.footerBtn} onPress={handleAyuda}>
-                <Ionicons name="help-circle-outline" size={18} color={colors.primaryLight} />
-                <Text style={styles.footerBtnText}>Ayuda</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.footerBtn} onPress={handleAcerca}>
-                <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} />
-                <Text style={styles.footerBtnText}>Acerca de Gradly</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.logoutFooterBtn}
-                onPress={() => setLogoutModalVisible(true)}
-              >
-                <Ionicons name="log-out-outline" size={18} color={colors.error} />
-                <Text style={styles.logoutFooterText}>Cerrar sesión</Text>
-              </TouchableOpacity>
-            </View>
-            </ScrollView>
-
-            <TouchableOpacity style={[styles.modalCancel, { marginTop: 12 }]} onPress={() => setShowPerfil(false)}>
-              <Text style={styles.modalCancelText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       {/* ── MODAL: Detalles de Vacante (incluye mapa solo lectura) ── */}
       <Modal visible={!!vacanteSeleccionada} transparent animationType="slide">
@@ -1273,20 +1556,27 @@ export default function DashboardEmpresa() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
-              <Text style={{ color: '#fff', fontFamily: FONTS.soraBold, fontSize: 18 }}>{vacanteSeleccionada?.titulo}</Text>
+              <AutoText style={{ color: '#fff', fontFamily: FONTS.soraBold, fontSize: 18 }}>{vacanteSeleccionada?.titulo}</AutoText>
 
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {!!vacanteSeleccionada?.categoria && (
+                  <View style={styles.pickerChip}>
+                    <Text style={styles.pickerText}>{vacanteSeleccionada.categoria === 'pasantia' ? 'Pasantía' : 'Vacante'}</Text>
+                  </View>
+                )}
                 <View style={styles.pickerChip}><Text style={styles.pickerText}>{vacanteSeleccionada?.area}</Text></View>
                 <View style={styles.pickerChip}><Text style={styles.pickerText}>{vacanteSeleccionada?.tipo}</Text></View>
                 <View style={styles.pickerChip}><Text style={styles.pickerText}>{vacanteSeleccionada?.modalidad}</Text></View>
               </View>
 
-              <Text style={styles.fieldLabel}>Descripción</Text>
-              <Text style={styles.modalDesc}>{vacanteSeleccionada?.descripcion}</Text>
+              <AutoText style={styles.fieldLabel}>Descripción</AutoText>
+              <AutoText style={styles.modalDesc}>{vacanteSeleccionada?.descripcion}</AutoText>
 
-              <Text style={styles.fieldLabel}>Requisitos y Horas</Text>
+              <Text style={styles.fieldLabel}>Requisitos</Text>
               <Text style={styles.modalDesc}>• Skills: {vacanteSeleccionada?.skills_requeridas?.join(', ')}</Text>
-              <Text style={styles.modalDesc}>• Total: {vacanteSeleccionada?.horas_requeridas} h  |  Semanales: {vacanteSeleccionada?.horas_semanales} h</Text>
+              {!!(vacanteSeleccionada?.horas_requeridas || vacanteSeleccionada?.horas_semanales) && (
+                <Text style={styles.modalDesc}>• Total: {vacanteSeleccionada?.horas_requeridas ?? 0} h  |  Semanales: {vacanteSeleccionada?.horas_semanales ?? 0} h</Text>
+              )}
 
               {(vacanteSeleccionada?.modalidad === 'Presencial' || vacanteSeleccionada?.modalidad === 'Híbrido') && vacanteSeleccionada?.ubicacion_coords && (
                 <View style={mapStyles.glassBox}>
@@ -1321,7 +1611,22 @@ export default function DashboardEmpresa() {
       <Modal visible={showNuevaVacante && estadoGuardado === 'idle'} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.sheetCard}>
-            <Text style={styles.modalTitle}>Nueva pasantía</Text>
+            <Text style={styles.modalTitle}>
+              {vacanteEditando
+                ? 'Editar publicación'
+                : nvTipo === 'Pasantía' ? 'Nueva pasantía' : nvTipo ? 'Nueva vacante' : 'Nueva pasantía o vacante'}
+            </Text>
+            {/* Aviso al editar algo que ya tiene compromisos con universidades. */}
+            {vacanteEditando && cuposComprometidos > 0 && (
+              <View style={s.avisoEdicion}>
+                <Ionicons name="information-circle-outline" size={16} color={COLORS.warning} />
+                <Text style={s.avisoEdicionTxt}>
+                  Esta publicación ya tiene {cuposComprometidos} cupo(s) comprometido(s). No puedes
+                  reducir el total por debajo de esa cifra, y cambiar el horario no altera las
+                  reservas ya hechas.
+                </Text>
+              </View>
+            )}
             <ScrollView showsVerticalScrollIndicator={false}>
               <FieldInput
                 label="Título*" value={nvTitulo} onChange={onChangeTitulo}
@@ -1373,29 +1678,48 @@ export default function DashboardEmpresa() {
                 </View>
               )}
 
-              <PickerRow label="Tipo*" options={TIPOS} selected={nvTipo} onSelect={onSelectTipo} error={nvErrors.tipo} />
+              {/* Roles dentro del área: solo aparecen en las áreas anchas
+                  (Tecnología, Administración…). Son opcionales — afinan el
+                  match, no lo condicionan. */}
+              {tagsDeArea(nvArea).length > 0 && (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={s.tagsLabel}>Rol o especialidad (opcional)</Text>
+                  <Text style={s.tagsHint}>
+                    Ayuda a que te lleguen los estudiantes correctos: "Tecnología" abarca desde
+                    programar hasta soporte técnico.
+                  </Text>
+                  <View style={s.tagsWrap}>
+                    {tagsDeArea(nvArea).map(tag => {
+                      const activo = nvTags.includes(tag);
+                      return (
+                        <TouchableOpacity
+                          key={tag}
+                          style={[s.tagChip, activo && s.tagChipOn]}
+                          onPress={() => setNvTags(prev =>
+                            prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag],
+                          )}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[s.tagChipText, activo && s.tagChipTextOn]}>{tag}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              <PickerRow
+                label="Tipo*" options={TIPOS} selected={nvTipo} onSelect={onSelectTipo}
+                error={cambioDeCarrilBloqueado
+                  ? 'No puedes cambiar el tipo: ya hay cupos comprometidos con universidades.'
+                  : nvErrors.tipo}
+              />
               <FieldInput
                 label="Descripción*" value={nvDesc} onChange={onChangeDesc}
                 placeholder="Descripción de la vacante..." multiline
                 error={nvErrors.desc} valid={!nvErrors.desc && !!nvDesc.trim()}
                 infoText="💡 Agrega detalles relevantes acerca de la vacante, responsabilidades y beneficios."
               />
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <FieldInput
-                    label="Horas totales*" value={nvHoras} onChange={onChangeHoras}
-                    placeholder="150" keyboardType="number-pad" maxLength={3}
-                    error={nvErrors.horas} valid={!nvErrors.horas && !!nvHoras.trim()}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <FieldInput
-                    label="Horas/semana*" value={nvHorasSem} onChange={onChangeHorasSem}
-                    placeholder="20" keyboardType="number-pad" maxLength={2}
-                    error={nvErrors.horasSem} valid={!nvErrors.horasSem && !!nvHorasSem.trim()}
-                  />
-                </View>
-              </View>
               <FieldInput
                 label="Skills (separadas por coma)*" value={nvSkills} onChange={onChangeSkills}
                 placeholder="React, TypeScript, Node.js"
@@ -1407,9 +1731,42 @@ export default function DashboardEmpresa() {
                 error={nvErrors.fecha} valid={!nvErrors.fecha && !!nvFechaLim.trim()}
                 infoText="💡 La fecha debe ser al menos 5 días después de hoy, con un plazo máximo de 3 meses."
               />
+              <FieldInput
+                label="Cupos disponibles*" value={nvCupos} onChange={onChangeCupos}
+                placeholder="Ej. 8" keyboardType="number-pad" maxLength={3}
+                error={nvErrors.cupos} valid={!nvErrors.cupos && !!nvCupos.trim()}
+                infoText="💡 Cuántos estudiantes puedes recibir. Las universidades reservan cupos para sus grupos hasta agotarlos."
+              />
+              <HorarioVacanteSelector
+                value={nvHorario}
+                onChange={h => { setNvHorario(h); setErr('horario', valHorario(h)); }}
+                error={nvErrors.horario}
+              />
+
+              {/* Control de la empresa sobre quién reserva sus cupos. */}
+              <TouchableOpacity
+                style={s.autoRow}
+                onPress={() => setNvReclamosAuto(v => !v)}
+                activeOpacity={0.7}
+              >
+                <View style={[s.autoCheck, nvReclamosAuto && s.autoCheckOn]}>
+                  {nvReclamosAuto && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.autoTitle}>Aceptar reclamos de cupos automáticamente</Text>
+                  <Text style={s.autoHint}>
+                    {nvReclamosAuto
+                      ? 'Las universidades reservan cupos al instante, sin esperar tu confirmación.'
+                      : 'Recibirás una solicitud por cada universidad y decides si aceptas (un solo toque).'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
             </ScrollView>
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowNuevaVacante(false)}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => { setShowNuevaVacante(false); setVacanteEditando(null); }}
+              >
                 <Text style={styles.modalCancelText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1417,7 +1774,9 @@ export default function DashboardEmpresa() {
                 onPress={handlePublicarVacante}
                 disabled={savingVac || !formularioValido}
               >
-                {savingVac ? <ActivityIndicator color={COLORS.textPrimary} /> : <Text style={styles.modalSaveText}>Publicar</Text>}
+                {savingVac
+                  ? <ActivityIndicator color={COLORS.textPrimary} />
+                  : <Text style={styles.modalSaveText}>{vacanteEditando ? 'Guardar cambios' : 'Publicar'}</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -1633,8 +1992,14 @@ export default function DashboardEmpresa() {
             {estadoGuardado === 'success' && (
               <>
                 <Ionicons name="checkmark-circle" size={80} color="#10b981" style={{ marginBottom: 16 }} />
-                <Text style={{ color: '#fff', fontSize: 20, fontFamily: FONTS.soraBold, marginBottom: 8 }}>¡Vacante Publicada!</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.interRegular, textAlign: 'center', marginBottom: 24 }}>La oferta ya está disponible para todos los estudiantes de la red.</Text>
+                <Text style={{ color: '#fff', fontSize: 20, fontFamily: FONTS.soraBold, marginBottom: 8 }}>
+                  {vacanteEditando ? '¡Cambios guardados!' : '¡Vacante Publicada!'}
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.interRegular, textAlign: 'center', marginBottom: 24 }}>
+                  {vacanteEditando
+                    ? 'La publicación se actualizó. Las reservas de cupos ya hechas se mantienen.'
+                    : 'La oferta ya está disponible para todos los estudiantes de la red.'}
+                </Text>
                 <TouchableOpacity
                   style={{ backgroundColor: '#8b5cf6', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
                   onPress={finalizarGuardadoExitoso}
@@ -1819,7 +2184,7 @@ export default function DashboardEmpresa() {
                   <Text style={{ color: '#fff' }}>📧 {candidatoSeleccionado?.estudiante_email || 'No visible'}</Text>
                   <Text style={{ color: '#fff' }}>📱 {candidatoSeleccionado?.estudiante_telefono || 'No visible'}</Text>
                   <Text style={{ color: '#fff' }}>🔗 {candidatoSeleccionado?.estudiante_linkedin || 'Sin redes'}</Text>
-                  <Text style={{ color: '#10b981', marginTop: 5 }}>⏳ Horas Sociales: {candidatoSeleccionado?.estado_horas || 'En proceso'}</Text>
+                  <Text style={{ color: '#10b981', marginTop: 5 }}>⏳ Horas de práctica: {candidatoSeleccionado?.estado_horas || 'En proceso'}</Text>
                 </View>
 
                 {/* ESTRELLAS (CALIFICACIÓN) */}
@@ -1898,6 +2263,19 @@ export default function DashboardEmpresa() {
           </View>
         </View>
       </Modal>
+
+      {/* ── SUB-MODAL: Horario al contratar (vacante individual) ──
+          Solo horario: el pago/salario se acuerda de forma privada entre la
+          empresa y el postulante (graduado), fuera de Gradly. */}
+      <ProponerHorarioModal
+        visible={!!horarioContratoApp}
+        onClose={() => setHorarioContratoApp(null)}
+        onSubmit={confirmarContratacion}
+        title={`Horario · ${horarioContratoApp?.estudiante_nombre ?? ''}`}
+        submitLabel="Confirmar contratación"
+        showPago={false}
+        helperText="El salario o pago se acuerda de forma directa y privada entre tu empresa y el postulante graduado, fuera de Gradly. Aquí solo defines el horario de trabajo."
+      />
     </View>
     </LiquidBackground>
   );
@@ -1906,8 +2284,9 @@ export default function DashboardEmpresa() {
 // ─────────────────────────────────────────────
 // SECCIÓN: INICIO
 // ─────────────────────────────────────────────
-function SeccionInicio({ metricas, apps, perfil, empresaId }: {
+function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitudesGrupo }: {
   metricas: any; apps: Aplicacion[]; perfil: PerfilEmpresa | null; empresaId: string;
+  vacantes: Vacante[]; solicitudesGrupo: SolicitudGrupo[];
 }) {
   const { s } = useThemedStyles();
   const recientes = [...apps].sort((a, b) => {
@@ -1934,13 +2313,16 @@ function SeccionInicio({ metricas, apps, perfil, empresaId }: {
         </View>
       </GlassCard>
 
-      {/* Métricas */}
-      <View style={s.metricasGrid}>
-        <MetricCard icon="briefcase-outline" label="Vacantes activas" value={metricas.vacantesActivas} color={COLORS.primaryLight} />
-        <MetricCard icon="person-add-outline" label="Pendientes"  value={metricas.pendientes}  color={COLORS.warning} />
-        <MetricCard icon="people-outline"     label="Pasantes activos" value={metricas.activos} color={COLORS.success} />
-        <MetricCard icon="time-outline"       label="Horas validadas"  value={metricas.horasValidadas} color={COLORS.accent} />
-      </View>
+      {/* ── Calendario de hitos de la cuenta (registro, vacantes, pasantías) ── */}
+      <CalendarioEventos uid={empresaId} rol="empresa" />
+
+      {/* ── Tarjetas resumen agrupadas (Resumen / Análisis) ── */}
+      <EmpresaHomeCards
+        metricas={metricas}
+        vacantes={vacantes}
+        apps={apps}
+        solicitudesGrupo={solicitudesGrupo}
+      />
 
       {/* ── Matchmaking: solicitudes entrantes de universidades ── */}
       <View style={{ marginTop: 8, marginBottom: 16 }}>
@@ -1978,9 +2360,10 @@ function MetricCard({ icon, label, value, color }: any) {
 // ─────────────────────────────────────────────
 // SECCIÓN: VACANTES
 // ─────────────────────────────────────────────
-function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, puedeCrear, limiteVacantes, vacantesRestantes, plan, onMejorarPlan }: {
+function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar, puedeCrear, limiteVacantes, vacantesRestantes, plan, onMejorarPlan }: {
   vacantes: Vacante[]; onNueva: () => void; onToggle: (v: Vacante) => void;
   onVerDetalles: (v: Vacante) => void;
+  onEditar: (v: Vacante) => void;
   puedeCrear: boolean; limiteVacantes: number; vacantesRestantes: number;
   plan?: 'gratuito' | 'mensual' | 'premium';
   onMejorarPlan: () => void;
@@ -2022,10 +2405,27 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, puedeCrea
         renderItem={({ item }) => (
           <GlassCard style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
             <TouchableOpacity style={{ flex: 1 }} onPress={() => onVerDetalles(item)} activeOpacity={0.7}>
-              <Text style={s.vacanteTitle} numberOfLines={1}>{item.titulo}</Text>
-              <Text style={s.vacanteMeta}>{item.area} · {item.modalidad} · {item.aplicantes_count ?? 0} aplicantes</Text>
+              <AutoText style={s.vacanteTitle} numberOfLines={1}>{item.titulo}</AutoText>
+              <Text style={s.vacanteMeta}>
+                {item.categoria === 'vacante' ? 'Vacante' : 'Pasantía'} · {item.area} · {item.modalidad} · {item.aplicantes_count ?? 0} aplicantes
+              </Text>
+              {/* Cupos y horario: se omiten en vacantes legadas (sin el campo). */}
+              {textoCupos(item) && (
+                <Text style={s.vacanteCupos}>{textoCupos(item)}</Text>
+              )}
+              {textoHorario(item.horario) && (
+                <Text style={s.vacanteMeta}>{textoHorario(item.horario)}</Text>
+              )}
             </TouchableOpacity>
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <TouchableOpacity
+                style={s.editarBtn}
+                onPress={() => onEditar(item)}
+                hitSlop={8}
+                accessibilityLabel="Editar publicación"
+              >
+                <Ionicons name="create-outline" size={17} color={COLORS.primaryLight} />
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[s.toggleBtn, item.activa ? s.toggleBtnOn : s.toggleBtnOff]}
                 onPress={() => onToggle(item)}
@@ -2139,17 +2539,56 @@ function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; o
 // ─────────────────────────────────────────────
 // SECCIÓN: PASANTÍAS ACTIVAS
 // ─────────────────────────────────────────────
-function SeccionActivas({ apps, onFirmar }: {
-  apps: Aplicacion[]; onFirmar: (a: Aplicacion) => void;
+function SeccionActivas({ apps, solicitudesGrupo, onFirmar }: {
+  apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[]; onFirmar: (a: Aplicacion) => void;
 }) {
   const { s } = useThemedStyles();
   const activos    = apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado');
   const pendFirma  = apps.filter(a => a.estado === 'finalizado');
+  const grupoActivas = solicitudesGrupo.filter(sg => sg.estado === 'aprobado' && sg.fechaInicio);
+
+  // Encabezado con las pasantías de grupo y su línea de tiempo porcentual.
+  const Header = grupoActivas.length === 0 ? null : (
+    <View style={{ marginBottom: 16 }}>
+      <Text style={[s.activaNombre, { marginBottom: 10 }]}>Pasantías de grupo</Text>
+      {grupoActivas.map(sg => {
+        const prog = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
+        const color = prog.estado === 'completado' ? COLORS.gold : prog.estado === 'en_curso' ? COLORS.success : COLORS.primaryLight;
+        const conPago = sg.pago?.tipo === 'con_pago';
+        return (
+          <GlassCard key={sg.id} style={{ marginBottom: 8 }} contentStyle={{ padding: 16, gap: 8 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.activaNombre} numberOfLines={1}>{sg.grupoNombre ?? 'Grupo'}</Text>
+                <Text style={s.activaMeta} numberOfLines={1}>
+                  {sg.carrera ?? ''}{sg.alumnos?.length ? ` · ${sg.alumnos.length} estudiante(s)` : ''}
+                </Text>
+              </View>
+              <Text style={[s.activaNombre, { color }]}>{prog.pct}%</Text>
+            </View>
+            <View style={{ height: 6, backgroundColor: COLORS.backgroundSurface, borderRadius: 3, overflow: 'hidden' }}>
+              <View style={{ height: '100%', width: `${prog.pct}%` as any, backgroundColor: color, borderRadius: 3 }} />
+            </View>
+            <Text style={s.activaMeta}>
+              {prog.estado === 'por_iniciar'
+                ? `Inicia ${sg.fechaInicio}`
+                : `Día ${prog.diasTranscurridos} de ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
+            </Text>
+            <Text style={[s.activaMeta, conPago && { color: COLORS.success }]}>
+              {conPago ? `Pago: $${Number(sg.pago?.monto ?? 0).toFixed(2)} / estudiante` : 'Sin pago'}
+            </Text>
+          </GlassCard>
+        );
+      })}
+      <Text style={[s.activaNombre, { marginTop: 14, marginBottom: 4 }]}>Pasantes individuales</Text>
+    </View>
+  );
 
   return (
     <FlatList
       data={activos}
       keyExtractor={item => item.id}
+      ListHeaderComponent={Header}
       contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
       renderItem={({ item }) => {
         const necesitaFirma = item.estado === 'finalizado';
@@ -2157,6 +2596,11 @@ function SeccionActivas({ apps, onFirmar }: {
           <GlassCard style={[{ marginBottom: 8 }, necesitaFirma && s.activaCardPendiente]} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
             <View style={{ flex: 1 }}>
               <Text style={s.activaNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
+              {!!item.acuerdo && (
+                <Text style={s.activaMeta} numberOfLines={1}>
+                  Horario: {item.acuerdo.dias.join(', ')} · {item.acuerdo.horaInicio} - {item.acuerdo.horaFin}
+                </Text>
+              )}
               <Text style={s.activaMeta}>Horas: {item.horas_completadas ?? 0}</Text>
               <Text style={s.activaMeta}>Pago: {item.pago_confirmado ? '✓ Pagado' : '⏳ Pendiente'}</Text>
             </View>
@@ -2569,6 +3013,43 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
   },
   vacanteTitle: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
   vacanteMeta: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  vacanteCupos: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, marginTop: 3 },
+  autoRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: COLORS.backgroundCard,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: 12,
+    padding: 12, marginBottom: 14,
+  },
+  autoCheck: {
+    width: 22, height: 22, borderRadius: 6, marginTop: 1,
+    borderWidth: 1.5, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  autoCheckOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  avisoEdicion: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: COLORS.warning + '18',
+    borderWidth: 1, borderColor: COLORS.warning + '55',
+    borderRadius: 10, padding: 10, marginBottom: 10,
+  },
+  avisoEdicionTxt: { flex: 1, fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 16 },
+  tagsLabel: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary, marginBottom: 3 },
+  tagsHint: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginBottom: 8, lineHeight: 16 },
+  tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  tagChip: {
+    paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999,
+    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.backgroundCard,
+  },
+  tagChipOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  tagChipText: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  tagChipTextOn: { color: '#FFF', fontFamily: FONTS.interSemiBold },
+  autoTitle: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  autoHint: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 3, lineHeight: 16 },
+  editarBtn: {
+    width: 32, height: 32, borderRadius: 10,
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
   toggleBtn: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10,
     borderWidth: 1,

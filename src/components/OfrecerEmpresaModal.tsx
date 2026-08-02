@@ -6,11 +6,12 @@ import {
   Modal,
   SafeAreaView,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from "react-native";
+import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import {
   buscarEmpresas,
   crearSolicitudPractica,

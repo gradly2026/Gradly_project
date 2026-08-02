@@ -7,26 +7,31 @@ import FloatingNavBar, { type NavItem } from '../../src/components/FloatingNavBa
 import FloatingSearchButton from '../../src/components/FloatingSearchButton';
 import FloatingTopBar from '../../src/components/FloatingTopBar';
 import { useAuth } from '../../src/context/AuthContext';
+import { useTranslation } from '../../src/context/TranslationContext';
 import { db } from '../../src/config/firebaseConfig';
 import { subscribeUnreadTotal } from '../../src/services/chatService';
 
 // Rutas de las tabs en orden, mapeadas a los items del menú flotante
 type TabKey = 'index' | 'progreso' | 'academia' | 'mensajes' | 'perfil';
 
-const TAB_ITEMS: NavItem<TabKey>[] = [
-  { key: 'index',     label: 'Vacantes', icon: 'briefcase-outline' },
-  { key: 'progreso',  label: 'Progreso', icon: 'stats-chart-outline' },
-  { key: 'academia',  label: 'Academia', icon: 'school-outline' },
-  { key: 'mensajes',  label: 'Mensajes', icon: 'chatbubble-ellipses-outline' },
-  { key: 'perfil',    label: 'Perfil',   icon: 'person-circle-outline' },
+// La etiqueta se traduce en tiempo de render con t(labelKey).
+const TAB_ITEMS: { key: TabKey; labelKey: string; icon: NavItem<TabKey>['icon'] }[] = [
+  { key: 'index',     labelKey: 'tab_vacantes', icon: 'briefcase-outline' },
+  { key: 'progreso',  labelKey: 'tab_progreso', icon: 'stats-chart-outline' },
+  { key: 'academia',  labelKey: 'tab_academia', icon: 'school-outline' },
+  { key: 'mensajes',  labelKey: 'tab_mensajes', icon: 'chatbubble-ellipses-outline' },
+  { key: 'perfil',    labelKey: 'tab_perfil',   icon: 'person-circle-outline' },
 ];
 
 // Barra inferior personalizada — usa el FloatingNavBar (Liquid Glass)
 function GlassTabBar({ state, navigation, vacantesBadge, mensajesBadge }: BottomTabBarProps & { vacantesBadge: number; mensajesBadge: number }) {
+  const { t } = useTranslation();
   const activeKey = state.routes[state.index]?.name as TabKey;
 
-  const items = TAB_ITEMS.map(it => ({
-    ...it,
+  const items: NavItem<TabKey>[] = TAB_ITEMS.map(it => ({
+    key: it.key,
+    icon: it.icon,
+    label: t(it.labelKey),
     badge:
       it.key === 'index'
         ? vacantesBadge

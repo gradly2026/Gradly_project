@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   collection,
+  doc,
   documentId,
   getDocs,
   onSnapshot,
@@ -10,8 +11,9 @@ import {
   where,
 } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { aplicarAVacante } from '../../src/services/pasantiaService';
+import { aplicarAVacante, calcularNivelEstudiante, estudianteHabilitadoParaVacantes } from '../../src/services/pasantiaService';
 import { abrirChatDirectoEmpresaEstudiante } from '../../src/services/chatService';
+import { esVacanteAfin, puntuarVacante } from '../../src/data/areas';
 import {
   ActivityIndicator,
   Alert,
@@ -21,8 +23,8 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -34,6 +36,7 @@ import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import VacanteDetailModal from '../../src/components/VacanteDetailModal';
 import SelloEmpresa from '../../src/components/SelloEmpresa';
+import { AutoText, AutoText as Text, AutoTextInput as TextInput, useAutoText } from '../../src/components/AutoText';
 import { calcularRango, type RangoTier } from '../../src/services/feedbackService';
 
 // Hook que recrea los estilos según el tema activo (claro/oscuro)
@@ -58,6 +61,8 @@ interface Vacante {
   skills_requeridas: string[];
   fecha_publicacion: any;
   premium?: boolean;
+  /** 'pasantia' se maneja por matchmaking universidad↔empresa; el feed individual solo muestra 'vacante' (o legado sin categoría). */
+  categoria?: 'pasantia' | 'vacante';
 }
 
 // ─────────────────────────────────────────────
@@ -164,7 +169,7 @@ function VacanteCard({
                 <SelloEmpresa tier={empresaTier} />
               </View>
             )}
-            <Text style={styles.titulo} numberOfLines={2}>{vacante.titulo}</Text>
+            <AutoText style={styles.titulo} numberOfLines={2}>{vacante.titulo}</AutoText>
           </View>
         </View>
 
@@ -172,7 +177,9 @@ function VacanteCard({
         <View style={styles.chipsRow}>
           <Chip label={vacante.tipo} color={COLORS.primary} />
           <Chip label={vacante.modalidad} color={COLORS.backgroundSurface} textColor={COLORS.textSecondary} />
-          <Chip label={`${vacante.horas_requeridas}h`} color={COLORS.backgroundSurface} textColor={COLORS.textMuted} />
+          {!!vacante.horas_requeridas && (
+            <Chip label={`${vacante.horas_requeridas}h`} color={COLORS.backgroundSurface} textColor={COLORS.textMuted} />
+          )}
         </View>
 
         {/* Skills */}
@@ -227,6 +234,9 @@ export default function FeedVacantes() {
   const { user, userProfile } = useAuth();
   const { styles, colors } = useThemedStyles();
   const router = useRouter();
+  const webScrollStyle = Platform.OS === 'web'
+    ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
+    : undefined;
 
   const [vacantes,       setVacantes]       = useState<Vacante[]>([]);
   const [aplicaciones,   setAplicaciones]   = useState<Record<string, string>>({});
@@ -238,9 +248,38 @@ export default function FeedVacantes() {
   const [cargando,       setCargando]       = useState(true);
   const [vacanteDetalle, setVacanteDetalle] = useState<Vacante | null>(null);
 
+  // ── Elegibilidad: solo estudiantes que ya culminaron su práctica/pasantía
+  //    o están graduados pueden ver y aplicar a vacantes ──────────────
+  const [perfilEstudiante, setPerfilEstudiante] = useState<{
+    graduado?: boolean; horas_aprobadas?: number; horas_objetivo?: number;
+    // Necesarios para el tablero de cupos reservados por su universidad.
+    universidad_id?: string; grupo_id?: string;
+    // Para el filtro/orden por afinidad de carrera.
+    carrera?: string; skills?: string[];
+  } | null>(null);
+  const [perfilCargado, setPerfilCargado] = useState(false);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const phraseOpacity = useRef(new Animated.Value(1)).current;
   const toastOpacity  = useRef(new Animated.Value(0)).current;
+
+  // ── Flechas de navegación de la fila de filtros (útil en web/escritorio,
+  // donde no hay swipe táctil) ──
+  const filtrosScrollRef = useRef<ScrollView | null>(null);
+  const [filtrosViewportW, setFiltrosViewportW] = useState(0);
+  const [filtrosContentW, setFiltrosContentW] = useState(0);
+  const [filtrosScrollX, setFiltrosScrollX] = useState(0);
+  const canScrollFiltros = filtrosContentW > filtrosViewportW + 8;
+  const canScrollLeft = filtrosScrollX > 4;
+  const canScrollRight = filtrosScrollX < Math.max(0, filtrosContentW - filtrosViewportW - 4);
+  const moverFiltros = useCallback((delta: number) => {
+    const siguiente = Math.max(0, Math.min(
+      filtrosScrollX + delta,
+      Math.max(0, filtrosContentW - filtrosViewportW),
+    ));
+    filtrosScrollRef.current?.scrollTo({ x: siguiente, animated: true });
+    setFiltrosScrollX(siguiente);
+  }, [filtrosContentW, filtrosScrollX, filtrosViewportW]);
   const toastY        = useRef(new Animated.Value(20)).current;
 
   // Nombre del estudiante
@@ -257,6 +296,21 @@ export default function FeedVacantes() {
     });
     return unsub;
   }, [user]);
+
+  // ── Firebase: perfil del estudiante (elegibilidad para vacantes) ────
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(doc(db, 'perfiles_estudiantes', user.uid), snap => {
+      setPerfilEstudiante(snap.exists() ? (snap.data() as any) : null);
+      setPerfilCargado(true);
+    });
+    return unsub;
+  }, [user]);
+
+  const habilitadoParaVacantes = useMemo(
+    () => estudianteHabilitadoParaVacantes(perfilEstudiante),
+    [perfilEstudiante],
+  );
 
   // ── Sello de prestigio de la empresa por vacante ────────────────
   // Resolvemos el tier (oro/plata/bronce) de las empresas de las vacantes
@@ -338,7 +392,24 @@ export default function FeedVacantes() {
 
   // ── Filtrado local ───────────────────────────────────────────────
   const filteredVacantes = useMemo(() => {
-    let res = vacantes;
+    // Las de categoría 'pasantia' se gestionan por el matchmaking
+    // universidad↔empresa (Matchmaking.tsx); este feed individual es solo
+    // para 'vacante' (o vacantes legado sin categoría asignada aún).
+    let res = vacantes.filter(v => v.categoria !== 'pasantia');
+
+    // Filtro duro por carrera: el estudiante no ve vacantes de un área ajena a
+    // la suya, así no puede postularse a algo que su universidad rechazaría
+    // después. NO oculta las de área "Otra" ni las legadas sin área: un dato
+    // ausente no debe costarle una oportunidad (ver esVacanteAfin).
+    const miCarrera = perfilEstudiante?.carrera ?? (userProfile as any)?.carrera;
+    if (miCarrera) res = res.filter(v => esVacanteAfin(miCarrera, v));
+
+    // Orden por afinidad: primero lo que mejor encaja con su carrera y skills.
+    const misSkills = perfilEstudiante?.skills ?? [];
+    res = [...res].sort(
+      (a, b) => puntuarVacante(miCarrera, misSkills, b) - puntuarVacante(miCarrera, misSkills, a),
+    );
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       res = res.filter(v =>
@@ -351,11 +422,15 @@ export default function FeedVacantes() {
       res = res.filter(v => v.modalidad === filtroActivo || v.area === filtroActivo);
     }
     return res;
-  }, [vacantes, searchQuery, filtroActivo]);
+  }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, userProfile]);
 
   // ── Aplicar a vacante ────────────────────────────────────────────
   const handleAplicar = useCallback(async (vacante: Vacante) => {
     if (!user) { Alert.alert('Debes iniciar sesión.'); return; }
+    if (!habilitadoParaVacantes) {
+      Alert.alert('Vacantes no disponibles', 'Las vacantes se habilitan cuando culmines tu práctica o pasantía, o estés graduado.');
+      return;
+    }
 
     setApplying(vacante.id);
     try {
@@ -377,7 +452,7 @@ export default function FeedVacantes() {
     } finally {
       setApplying(null);
     }
-  }, [user, userProfile, showToast]);
+  }, [user, userProfile, showToast, habilitadoParaVacantes]);
 
   // ── Contactar empresa (chat directo estudiante↔empresa) ──────────
   const handleContactarEmpresa = useCallback(async (vacante: Vacante) => {
@@ -410,6 +485,26 @@ export default function FeedVacantes() {
     </View>
   );
 
+  // ── Bloqueado: aún no culmina su práctica/pasantía ni está graduado ──
+  const nivelActual = calcularNivelEstudiante(
+    perfilEstudiante?.horas_aprobadas ?? 0,
+    perfilEstudiante?.horas_objetivo ?? 0,
+  );
+  const BloqueadoState = () => (
+    <View style={styles.empty}>
+      <GlassCard style={{ width: '100%', maxWidth: 420 }} contentStyle={{ padding: 20, alignItems: 'center', gap: 10 }}>
+        <Ionicons name="lock-closed-outline" size={40} color={colors.primaryLight} />
+        <Text style={[styles.emptyTitle, { textAlign: 'center' }]}>Vacantes bloqueadas</Text>
+        <Text style={[styles.emptyDesc, { textAlign: 'center' }]}>
+          Las vacantes se habilitan cuando culminas tu práctica o pasantía, o cuando ya estás graduado.
+          {perfilEstudiante?.horas_objetivo
+            ? ` Llevas ${nivelActual.porcentaje}% de tus horas requeridas.`
+            : ''}
+        </Text>
+      </GlassCard>
+    </View>
+  );
+
   // ── Render ────────────────────────────────────────────────────────
   return (
     <LiquidBackground>
@@ -418,18 +513,22 @@ export default function FeedVacantes() {
 
       {/* ── HEADER ── */}
       <View style={styles.header}>
+        {/* Contenedor responsive: centra y limita el ancho en web/tablet. */}
+        <View style={{ maxWidth: 640, alignSelf: 'center', width: '100%' }}>
         {/* Saludo */}
         <View style={styles.greetingRow}>
           <View>
             <Text style={styles.greeting}>Hola, {nombre}! 👋</Text>
             <Animated.Text style={[styles.phrase, { opacity: phraseOpacity }]}>
-              {FRASES[phraseIdx]}
+              {useAutoText(FRASES[phraseIdx])}
             </Animated.Text>
           </View>
           <Text style={styles.fecha}>{fecha}</Text>
         </View>
 
-        {/* Búsqueda */}
+        {/* Búsqueda y filtros (solo si las vacantes están habilitadas) */}
+        {habilitadoParaVacantes && (
+          <>
         <View style={styles.searchWrap}>
           <Ionicons name="search-outline" size={18} color={COLORS.textMuted} style={{ marginRight: 8 }} />
           <TextInput
@@ -448,35 +547,69 @@ export default function FeedVacantes() {
           )}
         </View>
 
-        {/* Chips de filtro */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filtrosScroll}
-        >
-          {FILTROS.map(f => (
-            <JellyButton
-              key={f.key}
-              style={[styles.filtroChip, { borderRadius: 20 }, filtroActivo === f.key && styles.filtroChipActive]}
-              contentStyle={{ paddingHorizontal: 14, paddingVertical: 6 }}
-              onPress={() => setFiltroActivo(f.key)}
+        {/* Chips de filtro (con flechas ◀▶ para navegar en web/escritorio) */}
+        <View style={styles.filtrosOuter} onLayout={(e) => setFiltrosViewportW(e.nativeEvent.layout.width)}>
+          {canScrollFiltros ? (
+            <TouchableOpacity
+              style={[styles.filtrosArrow, !canScrollLeft && styles.filtrosArrowDisabled]}
+              onPress={() => moverFiltros(-180)}
+              disabled={!canScrollLeft}
+              activeOpacity={0.8}
             >
-              <Text style={[
-                styles.filtroChipText,
-                filtroActivo === f.key && styles.filtroChipTextActive,
-              ]}>
-                {f.label}
-              </Text>
-            </JellyButton>
-          ))}
-        </ScrollView>
+              <Ionicons name="chevron-back" size={18} color={canScrollLeft ? colors.primaryLight : colors.textMuted} />
+            </TouchableOpacity>
+          ) : null}
+
+          <ScrollView
+            ref={filtrosScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            onContentSizeChange={(w) => setFiltrosContentW(w)}
+            onScroll={(e) => setFiltrosScrollX(e.nativeEvent.contentOffset.x)}
+            scrollEventThrottle={16}
+            contentContainerStyle={styles.filtrosScroll}
+            style={styles.filtrosViewport}
+          >
+            {FILTROS.map(f => (
+              <JellyButton
+                key={f.key}
+                style={[styles.filtroChip, { borderRadius: 20 }, filtroActivo === f.key && styles.filtroChipActive]}
+                contentStyle={{ paddingHorizontal: 14, paddingVertical: 6 }}
+                onPress={() => setFiltroActivo(f.key)}
+              >
+                <Text style={[
+                  styles.filtroChipText,
+                  filtroActivo === f.key && styles.filtroChipTextActive,
+                ]}>
+                  {f.label}
+                </Text>
+              </JellyButton>
+            ))}
+          </ScrollView>
+
+          {canScrollFiltros ? (
+            <TouchableOpacity
+              style={[styles.filtrosArrow, !canScrollRight && styles.filtrosArrowDisabled]}
+              onPress={() => moverFiltros(180)}
+              disabled={!canScrollRight}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="chevron-forward" size={18} color={canScrollRight ? colors.primaryLight : colors.textMuted} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+          </>
+        )}
+        </View>
       </View>
 
       {/* ── FEED ── */}
-      {cargando ? (
+      {cargando || !perfilCargado ? (
         <View style={styles.loader}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
+      ) : !habilitadoParaVacantes ? (
+        <BloqueadoState />
       ) : (
         <FlatList
           data={filteredVacantes}
@@ -491,8 +624,11 @@ export default function FeedVacantes() {
               empresaTier={empresaTiers[item.empresa_id]}
             />
           )}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100 }}
+          showsVerticalScrollIndicator
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          style={[{ flex: 1 }, webScrollStyle]}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100, maxWidth: 640, alignSelf: 'center', width: '100%', flexGrow: 1 }}
           ListEmptyComponent={<EmptyState />}
           keyExtractor={item => item.id}
         />
@@ -577,7 +713,27 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   },
 
   // Filtros
-  filtrosScroll: { paddingHorizontal: 16, gap: 8 },
+  filtrosOuter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  filtrosViewport: { flex: 1 },
+  filtrosScroll: { gap: 8, paddingRight: 4 },
+  filtrosArrow: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.backgroundSurface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  filtrosArrowDisabled: {
+    opacity: 0.45,
+  },
   filtroChip: {
     paddingHorizontal: 14,
     paddingVertical: 6,

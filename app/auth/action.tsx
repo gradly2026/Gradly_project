@@ -15,11 +15,12 @@ import {
   ActivityIndicator,
   Platform,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from "react-native";
+import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
 
 import { auth, db } from "../../src/config/firebaseConfig";
 import type { UserRole } from "../../src/context/AuthContext";
@@ -78,7 +79,7 @@ function mapActionError(code: string): string {
 function routeForRole(rol: UserRole | null): string {
   switch (rol) {
     case "admin":
-      return "/dashboard-admin";
+      return "/admin";
     case "universidad":
       return "/dashboard-universidad";
     case "empresa":

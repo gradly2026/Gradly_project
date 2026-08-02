@@ -9,6 +9,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
@@ -22,28 +23,37 @@ import { createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth'
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Clipboard from 'expo-clipboard';
 import { firebaseConfig } from '../src/config/firebaseConfig';
-import { universidadApruebaHoras } from '../src/services/pasantiaService';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import FloatingTopBar from '../src/components/FloatingTopBar';
+import PeriodoPracticasField, {
+  PERIODO_VACIO,
+  periodoValido,
+  type PeriodoValue,
+} from '../src/components/PeriodoPracticasField';
 import StorageAvatar from '../src/components/StorageAvatar';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
+  Linking,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AutoText as Text, AutoTextInput as TextInput } from "../src/components/AutoText";
 import * as XLSX from 'xlsx';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
+import UniversidadHomeCards from '../src/components/UniversidadHomeCards';
+import CalendarioEventos from '../src/components/CalendarioEventos';
+import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import { VacantesDisponibles } from '../src/components/Matchmaking';
 import { PerfilStatsUniversidad, RedGradlyBanner } from '../src/components/NetworkStats';
 import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTour';
@@ -54,6 +64,11 @@ import { auth, db, storage } from '../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
 import { shadow } from '../src/utils/shadow';
+import { progresoPorFechas } from '../src/utils/progresoPasantia';
+import { calcularHorasAcuerdo } from '../src/utils/horasPasantia';
+import { esCarreraSoportada, cargarOverridesCarreras, CARRERAS_EL_SALVADOR } from '../src/data/carreras';
+import CarrerasEditorModal from '../src/components/CarrerasEditorModal';
+import { certificarPasantia } from '../src/services/solicitudPracticaService';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../components/ui/liquid-glass/JellyButton';
@@ -73,7 +88,7 @@ const IS_WIDE = SCREEN_W >= 768;
 // ─────────────────────────────────────────────
 // TIPOS
 // ─────────────────────────────────────────────
-type SeccionUni = 'inicio' | 'estudiantes' | 'aprobar' | 'estadisticas';
+type SeccionUni = 'inicio' | 'estudiantes' | 'aprobar' | 'estadisticas' | 'perfil';
 
 interface EstudianteRow {
   id: string;
@@ -85,6 +100,7 @@ interface EstudianteRow {
   horas_en_proceso: number;
   foto_url?: string;
   activo: boolean;
+  grupo_id?: string;
 }
 
 interface Aplicacion {
@@ -102,6 +118,22 @@ interface Aplicacion {
   // campos desnormalizados que cargaremos
   nombre_empresa?: string;
   titulo_vacante?: string;
+}
+
+/** Pasantía de grupo (flujo Universidad↔Empresa, colección solicitudes_practicas). */
+interface SolicitudGrupo {
+  id: string;
+  grupoId?: string;
+  grupoNombre?: string;
+  carrera?: string;
+  empresaId?: string;
+  estado?: string;
+  fechaInicio?: string;
+  fechaFin?: string;
+  alumnos?: { id: string; nombre: string }[];
+  pago?: { tipo: 'con_pago' | 'sin_pago'; monto?: number };
+  /** Acuerdo firmado (días, horario, fechas) — base del cálculo de horas X/Y. */
+  acuerdo?: any;
 }
 
 interface PerfilUni {
@@ -212,6 +244,7 @@ interface Grupo {
   horasRequeridas: number;
   docente: string;
   estudiantes_registrados: number;
+  egresado: boolean;
 }
 
 // ── Heurística de columnas del Excel ──
@@ -255,15 +288,16 @@ function extraerEstudiantes(rows: ExcelRow[]): EstudianteNuevo[] {
   return out;
 }
 
+// Nota: la sección "Estadísticas" se eliminó del menú; su contenido se movió al
+// carrusel de tarjetas del Inicio (ver <UniversidadHomeCards />).
 const MENU: { key: SeccionUni; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'inicio',       label: 'Inicio',            icon: 'home-outline' },
   { key: 'estudiantes',  label: 'Mis Estudiantes',   icon: 'people-outline' },
-  { key: 'aprobar',      label: 'Aprobar Pasantías', icon: 'checkmark-done-outline' },
-  { key: 'estadisticas', label: 'Estadísticas',      icon: 'bar-chart-outline' },
+  { key: 'aprobar',      label: 'Prácticas',         icon: 'ribbon-outline' },
 ];
 
 // ── Onboarding (guía por globos) ──────────────────────────────────
-const TOUR_CLAVES: SeccionUni[] = ['inicio', 'estudiantes', 'aprobar', 'estadisticas'];
+const TOUR_CLAVES: SeccionUni[] = ['inicio', 'estudiantes', 'aprobar'];
 const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
   inicio: {
     titulo: '¡Bienvenido a tu panel! 🎓',
@@ -273,7 +307,7 @@ const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
   estudiantes: {
     titulo: 'Mis Estudiantes',
     texto:
-      'Administra a tus estudiantes, su carrera y su progreso de horas sociales. Puedes registrarlos uno a uno o importarlos masivamente desde un Excel.',
+      'Administra a tus estudiantes, su carrera y su progreso de horas de práctica. Puedes registrarlos uno a uno o importarlos masivamente desde un Excel.',
   },
   aprobar: {
     titulo: 'Aprobar Pasantías',
@@ -284,6 +318,11 @@ const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
     titulo: 'Estadísticas',
     texto:
       'Visualiza métricas y tendencias del avance de tus estudiantes y de tu institución.',
+  },
+  perfil: {
+    titulo: 'Mi Perfil',
+    texto:
+      'Consulta y edita los datos de tu institución, revisa tus estadísticas y ajusta tus preferencias.',
   },
 };
 
@@ -301,8 +340,33 @@ export default function DashboardUniversidad() {
   const [perfil,       setPerfil]       = useState<PerfilUni | null>(null);
   const [estudiantes,  setEstudiantes]  = useState<EstudianteRow[]>([]);
   const [apps,         setApps]         = useState<Aplicacion[]>([]);
+  const [solicitudesGrupo, setSolicitudesGrupo] = useState<SolicitudGrupo[]>([]);
   const [showEditPerfil, setShowEditPerfil] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [showCarrerasEditor, setShowCarrerasEditor] = useState(false);
+
+  // Nombres de las carreras ofertadas (normaliza string u objeto).
+  const carrerasNombres = useMemo(() => {
+    const raw = (perfil as any)?.carreras_ofertadas ?? [];
+    return Array.isArray(raw)
+      ? raw.map((it: any) => (typeof it === 'string' ? it : String(it?.nombre ?? ''))).filter(Boolean)
+      : [];
+  }, [perfil]);
+
+  // Guarda las carreras editadas como objetos con modalidad/duración.
+  const guardarCarreras = async (nombres: string[]) => {
+    const objs = nombres.map((nombre) => {
+      const c = CARRERAS_EL_SALVADOR.find((x) => x.nombre === nombre);
+      return {
+        nombre,
+        modalidad: c?.modalidad ?? '',
+        duracion: c?.duracion ?? '',
+        tipo: c?.tipo ?? '',
+        zona: c?.zona ?? 'verde',
+      };
+    });
+    await updateDoc(doc(db, 'perfiles_universidades', user!.uid), { carreras_ofertadas: objs });
+  };
 
   const confirmarCierreSesion = async () => {
     try {
@@ -315,10 +379,10 @@ export default function DashboardUniversidad() {
   };
 
   const handleAyuda = () => {
-    Alert.alert('Ayuda', 'Escríbenos a soporte@gradly.app y te ayudaremos con cualquier duda.');
+    router.push('/help-gradly' as any);
   };
   const handleAcerca = () => {
-    Alert.alert('Acerca de Gradly', 'Gradly conecta estudiantes, universidades y empresas para gestionar pasantías y horas sociales.\n\nVersión 1.0.0');
+    router.push('/about-gradly' as any);
   };
 
   const abrirEditPerfil = () => {
@@ -337,6 +401,9 @@ export default function DashboardUniversidad() {
   const [editContacto, setEditContacto] = useState('');
   const [editCorreo,   setEditCorreo]   = useState('');
   const [uploadingLogo,setUploadingLogo]= useState(false);
+
+  // Overrides de zona de carreras (config/carreras) — habilitar/bloquear sin redeploy.
+  useEffect(() => { cargarOverridesCarreras(); }, []);
 
   // ── Firestore ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -378,13 +445,37 @@ export default function DashboardUniversidad() {
     return unsub;
   }, [user]);
 
+  // Pasantías de grupo (flujo Universidad↔Empresa). Alimenta la línea de tiempo
+  // porcentual y el conteo de pasantías aprobadas en estadísticas.
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'solicitudes_practicas'), where('universidadId', '==', user.uid));
+    const unsub = onSnapshot(
+      q,
+      snap => setSolicitudesGrupo(snap.docs.map(d => ({ id: d.id, ...d.data() } as SolicitudGrupo))),
+      error => console.warn('Error en listener (solicitudes_practicas):', error),
+    );
+    return unsub;
+  }, [user]);
+
   // ── Métricas ──────────────────────────────────────────────────────
   const metricas = useMemo(() => ({
     totalEstudiantes: estudiantes.length,
-    enPasantia:   apps.filter(a => a.estado === 'contratado').length,
+    // "En pasantía": estudiantes actualmente cursando una práctica, sumando
+    // AMBOS flujos —individual legado (`aplicaciones` contratado) y el de
+    // GRUPO real de la plataforma (`solicitudes_practicas` aprobado, aún sin
+    // finalizar). Antes solo contaba el flujo individual, así que un grupo con
+    // pasantía aprobada por chat/acuerdo no sumaba aquí (aunque sí aparecía en
+    // "Instituciones afiliadas", que ya combinaba ambas fuentes).
+    enPasantia:
+      apps.filter(a => a.estado === 'contratado').length +
+      solicitudesGrupo
+        .filter(sg => sg.estado === 'aprobado')
+        .reduce((acc, sg) => acc + (sg.alumnos?.length ?? 0), 0),
     horasAprobadas: estudiantes.reduce((acc, e) => acc + (e.horas_aprobadas ?? 0), 0),
-    pendAprobacion: apps.filter(a => a.estado === 'finalizado').length,
-  }), [estudiantes, apps]);
+    // Pasantías finalizadas que esperan la certificación de la universidad.
+    pendAprobacion: solicitudesGrupo.filter(x => x.estado === 'finalizado' && (x as any).certificacion !== 'certificada').length,
+  }), [estudiantes, apps, solicitudesGrupo]);
 
   // ── Upload logo ────────────────────────────────────────────────────
   const handleUploadLogo = async () => {
@@ -429,27 +520,6 @@ export default function DashboardUniversidad() {
     } catch { Alert.alert('Error', 'No se pudo guardar.'); }
   };
 
-  // ── Aprobar pasantía (usa universidadApruebaHoras del servicio) ───
-  const handleAprobar = async (app: Aplicacion, horasAjustadas: number) => {
-    try {
-      const nivel = await universidadApruebaHoras(
-        app.id,
-        app.estudiante_id,
-        horasAjustadas,
-        500, // horas objetivo default
-      );
-      Alert.alert('Aprobado', `Se sumaron ${horasAjustadas} horas.\nNivel: ${nivel.titulo}`);
-    } catch { Alert.alert('Error', 'No se pudo aprobar.'); }
-  };
-
-  const handleRechazar = async (app: Aplicacion, motivo: string) => {
-    try {
-      await updateDoc(doc(db, 'aplicaciones', app.id), {
-        estado: 'rechazado', notas: motivo,
-      });
-    } catch { Alert.alert('Error', 'No se pudo rechazar.'); }
-  };
-
   // ── RENDER ───────────────────────────────────────────────────────
   const nombreUni = perfil?.nombre_universidad ?? (userProfile as any)?.nombre_completo ?? 'Universidad';
 
@@ -471,10 +541,139 @@ export default function DashboardUniversidad() {
 
   const renderSeccion = () => {
     switch (seccion) {
-      case 'inicio':       return <SeccionInicio metricas={metricas} perfil={perfil} nombreUni={nombreUni} uid={user!.uid} />;
-      case 'estudiantes':  return <SeccionEstudiantes estudiantes={estudiantes} uid={user!.uid} />;
-      case 'aprobar':      return <SeccionAprobar apps={apps} onAprobar={handleAprobar} onRechazar={handleRechazar} />;
-      case 'estadisticas': return <SeccionEstadisticas estudiantes={estudiantes} apps={apps} />;
+      case 'inicio':       return <SeccionInicio metricas={metricas} perfil={perfil} nombreUni={nombreUni} uid={user!.uid} estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
+      case 'estudiantes':  return <SeccionEstudiantes estudiantes={estudiantes} uid={user!.uid} solicitudesGrupo={solicitudesGrupo} />;
+      case 'aprobar':      return <SeccionPracticas solicitudes={solicitudesGrupo} />;
+      case 'estadisticas': return <SeccionEstadisticas estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
+      case 'perfil':       return (
+        <PerfilMasterDetail
+          name={nombreUni}
+          subtitle={perfil?.dominio_correo || 'Universidad'}
+          avatarUrl={perfil?.logo_url}
+          avatarStoragePath={`logos/${user!.uid}`}
+          fallbackIcon="school"
+          onEditPhoto={handleUploadLogo}
+          uploadingPhoto={uploadingLogo}
+          onAyuda={handleAyuda}
+          onAcerca={handleAcerca}
+          onLogout={() => setLogoutModalVisible(true)}
+          sections={[
+            {
+              id: 'datos',
+              title: 'Datos de la universidad',
+              subtitle: 'Información pública de la institución',
+              icon: 'business-outline',
+              tone: 'blue',
+              description: 'Todos estos datos provienen de tu registro. Puedes editarlos.',
+              fields: [
+                { key: 'nombre_universidad', label: 'Nombre de la universidad', value: (perfil as any)?.nombre_universidad ?? '' },
+                { key: 'siglas', label: 'Siglas', value: (perfil as any)?.siglas ?? '' },
+                { key: 'dominio_correo', label: 'Dominio de correo', value: (perfil as any)?.dominio_correo ?? '', placeholder: '@uca.edu.sv', autoCapitalize: 'none' },
+                { key: 'descripcion', label: 'Descripción', value: (perfil as any)?.descripcion ?? '', multiline: true },
+                { key: 'sitio_web', label: 'Sitio web', value: (perfil as any)?.sitio_web ?? '', keyboardType: 'url', autoCapitalize: 'none' },
+                { key: 'telefono', label: 'Teléfono', value: (perfil as any)?.telefono ?? '', keyboardType: 'phone-pad' },
+                { key: 'direccion', label: 'Dirección', value: (perfil as any)?.direccion ?? '' },
+                { key: 'departamento', label: 'Departamento', value: (perfil as any)?.departamento ?? '' },
+                { key: 'ciudad', label: 'Municipio / Ciudad', value: (perfil as any)?.ciudad ?? '' },
+                { key: 'instagram', label: 'Instagram', value: (perfil as any)?.instagram ?? '', autoCapitalize: 'none' },
+              ],
+              onSave: async (v) => {
+                try {
+                  await updateDoc(doc(db, 'perfiles_universidades', user!.uid), {
+                    nombre_universidad: v.nombre_universidad,
+                    siglas: v.siglas,
+                    dominio_correo: v.dominio_correo,
+                    descripcion: v.descripcion,
+                    sitio_web: v.sitio_web,
+                    telefono: v.telefono,
+                    direccion: v.direccion,
+                    departamento: v.departamento,
+                    ciudad: v.ciudad,
+                    instagram: v.instagram,
+                  });
+                } catch { Alert.alert('Error', 'No se pudo guardar.'); }
+              },
+            },
+            {
+              id: 'contacto',
+              title: 'Contacto / Responsable',
+              subtitle: 'Persona responsable ante Gradly',
+              icon: 'person-outline',
+              tone: 'green',
+              fields: [
+                { key: 'contacto_nombre', label: 'Nombre del responsable', value: (perfil as any)?.contacto_nombre ?? '' },
+                { key: 'contacto_cargo', label: 'Cargo', value: (perfil as any)?.contacto_cargo ?? '' },
+                { key: 'contacto_telefono', label: 'Teléfono de contacto', value: (perfil as any)?.contacto_telefono ?? '', keyboardType: 'phone-pad' },
+                { key: 'contacto_correo', label: 'Correo del contacto', value: (perfil as any)?.contacto_correo ?? '', keyboardType: 'email-address', autoCapitalize: 'none' },
+                { key: 'contacto_documento_numero', label: 'Documento del responsable', value: (perfil as any)?.contacto_documento_numero ?? '' },
+              ],
+              onSave: async (v) => {
+                try {
+                  await updateDoc(doc(db, 'perfiles_universidades', user!.uid), {
+                    contacto_nombre: v.contacto_nombre,
+                    contacto_cargo: v.contacto_cargo,
+                    contacto_telefono: v.contacto_telefono,
+                    contacto_correo: v.contacto_correo,
+                    contacto_documento_numero: v.contacto_documento_numero,
+                  });
+                } catch { Alert.alert('Error', 'No se pudo guardar.'); }
+              },
+            },
+            {
+              id: 'carreras',
+              title: 'Carreras ofertadas',
+              subtitle: 'Con modalidad y duración',
+              icon: 'library-outline',
+              tone: 'orange',
+              render: () => {
+                const raw = (perfil as any)?.carreras_ofertadas ?? [];
+                const lista: { nombre: string; modalidad?: string; duracion?: string }[] =
+                  Array.isArray(raw)
+                    ? raw.map((it: any) =>
+                        typeof it === 'string'
+                          ? { nombre: it }
+                          : { nombre: String(it?.nombre ?? ''), modalidad: it?.modalidad, duracion: it?.duracion },
+                      ).filter((c: any) => c.nombre)
+                    : [];
+                return (
+                  <View style={{ gap: 10 }}>
+                    {lista.length === 0 ? (
+                      <Text style={{ color: colors.textMuted, fontSize: 14 }}>Aún no has registrado carreras ofertadas.</Text>
+                    ) : (
+                      lista.map((c, i) => (
+                        <View key={i} style={{ backgroundColor: colors.white4, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: colors.border }}>
+                          <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 14 }}>{c.nombre}</Text>
+                          {(c.modalidad || c.duracion) ? (
+                            <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>
+                              {[c.modalidad, c.duracion].filter(Boolean).join(' · ')}
+                            </Text>
+                          ) : null}
+                        </View>
+                      ))
+                    )}
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, borderRadius: 12, height: 46, marginTop: 4 }}
+                      onPress={() => setShowCarrerasEditor(true)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="create-outline" size={18} color="#fff" />
+                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Editar carreras</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              },
+            },
+            {
+              id: 'stats',
+              title: 'Estadísticas',
+              subtitle: 'Avance de tus estudiantes',
+              icon: 'stats-chart-outline',
+              tone: 'purple',
+              render: () => <PerfilStatsUniversidad universidadId={user!.uid} />,
+            },
+          ]}
+        />
+      );
       default:             return null;
     }
   };
@@ -497,7 +696,7 @@ export default function DashboardUniversidad() {
       {/* ── CONTENIDO ── */}
       <View style={styles.main}>
         <View style={styles.mainHeader}>
-          <TouchableOpacity onPress={abrirEditPerfil} activeOpacity={0.8}>
+          <TouchableOpacity onPress={() => setSeccion('perfil')} activeOpacity={0.8}>
             <StorageAvatar
               url={perfil?.logo_url}
               storagePath={user ? `logos/${user.uid}` : null}
@@ -507,7 +706,7 @@ export default function DashboardUniversidad() {
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.mainTitle} numberOfLines={1}>
-              {MENU.find(m => m.key === seccion)?.label ?? 'Inicio'}
+              {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
             </Text>
             <Text style={styles.mainSubtitle} numberOfLines={1}>{nombreUni}</Text>
           </View>
@@ -519,87 +718,18 @@ export default function DashboardUniversidad() {
       <FloatingTopBar userId={user?.uid} />
 
       {/* ── BÚSQUEDA FLOTANTE (oculta en "Mis Estudiantes", que tiene su propia barra) ── */}
-      {seccion !== 'estudiantes' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
+      {seccion !== 'estudiantes' && seccion !== 'perfil' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
 
       {/* ── MENÚ FLOTANTE (Glassmorphism) ── */}
       <FloatingNavBar
         items={navItems}
         activeKey={seccion}
         onChange={(k) =>
-          k === 'perfil'
-            ? abrirEditPerfil()
-            : k === 'mensajes'
-              ? router.push('/mensajes' as any)
-              : setSeccion(k)
+          k === 'mensajes'
+            ? router.push('/mensajes' as any)
+            : setSeccion(k)
         }
       />
-
-      {/* ── MODAL: Editar Perfil ── */}
-      <Modal visible={showEditPerfil} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.sheetCard}>
-            <Text style={styles.modalTitle}>Perfil de la universidad</Text>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 8 }}>
-            {/* ── Panel de estadísticas (gráficas) ── */}
-            <View style={{ marginBottom: 6 }}>
-              <PerfilStatsUniversidad universidadId={user!.uid} />
-            </View>
-            <TouchableOpacity style={styles.logoUploadBtn} onPress={handleUploadLogo} disabled={uploadingLogo}>
-              {uploadingLogo
-                ? <ActivityIndicator color={COLORS.primaryLight} />
-                : <Ionicons name="image-outline" size={20} color={COLORS.primaryLight} />
-              }
-              <Text style={styles.logoUploadText}>Cambiar logo</Text>
-            </TouchableOpacity>
-            {[
-              { label: 'Nombre de la universidad', value: editNombre, set: setEditNombre },
-              { label: 'Dominio de correo (ej. @uca.edu.sv)', value: editDominio, set: setEditDominio },
-              { label: 'Dirección', value: editDir, set: setEditDir },
-              { label: 'Contacto principal', value: editContacto, set: setEditContacto },
-              { label: 'Correo del contacto', value: editCorreo, set: setEditCorreo },
-            ].map(f => (
-              <View key={f.label}>
-                <Text style={styles.fieldLabel}>{f.label}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={f.value}
-                  onChangeText={f.set}
-                  placeholderTextColor={COLORS.textMuted}
-                  selectionColor={COLORS.primary}
-                />
-              </View>
-            ))}
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowEditPerfil(false)}>
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <JellyButton style={styles.modalSave} contentStyle={{ paddingVertical: 0 }} onPress={handleSavePerfil}>
-                <Text style={styles.modalSaveText}>Guardar</Text>
-              </JellyButton>
-            </View>
-
-            {/* ── Cuenta: ayuda · acerca de · cerrar sesión (al final) ── */}
-            <View style={styles.perfilFooter}>
-              <TouchableOpacity style={styles.footerBtn} onPress={handleAyuda}>
-                <Ionicons name="help-circle-outline" size={18} color={colors.primaryLight} />
-                <Text style={styles.footerBtnText}>Ayuda</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.footerBtn} onPress={handleAcerca}>
-                <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} />
-                <Text style={styles.footerBtnText}>Acerca de Gradly</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.logoutFooterBtn}
-                onPress={() => setLogoutModalVisible(true)}
-              >
-                <Ionicons name="log-out-outline" size={18} color={colors.error} />
-                <Text style={styles.logoutFooterText}>Cerrar sesión</Text>
-              </TouchableOpacity>
-            </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
 
       {/* ── Onboarding (guía por globos) ── */}
       <OnboardingBubble
@@ -630,6 +760,13 @@ export default function DashboardUniversidad() {
           </View>
         </View>
       </Modal>
+
+      <CarrerasEditorModal
+        visible={showCarrerasEditor}
+        initial={carrerasNombres}
+        onClose={() => setShowCarrerasEditor(false)}
+        onSave={guardarCarreras}
+      />
     </View>
     </LiquidBackground>
   );
@@ -638,7 +775,7 @@ export default function DashboardUniversidad() {
 // ─────────────────────────────────────────────
 // SECCIÓN: INICIO
 // ─────────────────────────────────────────────
-function SeccionInicio({ metricas, perfil, nombreUni, uid }: any) {
+function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, solicitudesGrupo }: any) {
   const { s } = useThemedStyles();
   return (
     <ScrollView contentContainerStyle={s.scroll}>
@@ -657,12 +794,18 @@ function SeccionInicio({ metricas, perfil, nombreUni, uid }: any) {
         )}
       </GlassCard>
 
-      <View style={s.metricasGrid}>
-        <MetricCard icon="people-outline"         label="Estudiantes"       value={metricas.totalEstudiantes} color={COLORS.primaryLight} />
-        <MetricCard icon="briefcase-outline"       label="En pasantía"      value={metricas.enPasantia}       color={COLORS.success} />
-        <MetricCard icon="time-outline"            label="Horas aprobadas"  value={metricas.horasAprobadas}   color={COLORS.accent} />
-        <MetricCard icon="alert-circle-outline"    label="Pend. aprobación" value={metricas.pendAprobacion}   color={COLORS.warning} />
-      </View>
+      {/* ── Calendario de hitos de la cuenta (registro, grupos, pasantías, egresos) ── */}
+      <CalendarioEventos uid={uid} />
+
+      {/* ── Tarjetas resumen agrupadas (Resumen / Análisis) — sustituyen a la
+             grilla de métricas y a la vieja sección "Estadísticas" ── */}
+      <UniversidadHomeCards
+        uid={uid}
+        estudiantes={estudiantes}
+        apps={apps}
+        solicitudesGrupo={solicitudesGrupo}
+        metricas={metricas}
+      />
 
       {/* ── Matchmaking: vacantes disponibles y postulaciones ── */}
       <View style={{ marginTop: 8 }}>
@@ -686,7 +829,7 @@ function MetricCard({ icon, label, value, color }: any) {
 // ─────────────────────────────────────────────
 // SECCIÓN: ESTUDIANTES + IMPORTAR EXCEL
 // ─────────────────────────────────────────────
-function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]; uid: string }) {
+function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiantes: EstudianteRow[]; uid: string; solicitudesGrupo: SolicitudGrupo[] }) {
   const { styles, s, colors } = useThemedStyles();
   const router = useRouter();
 
@@ -703,8 +846,11 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
   // ── Formulario de creación de grupo (Paso 1) ──
   const [gNombre, setGNombre]   = useState('');
   const [gCarrera, setGCarrera] = useState('');
-  const [gHoras, setGHoras]     = useState('');
   const [gDocente, setGDocente] = useState('');
+  // Período de prácticas (reemplaza el viejo campo de horas).
+  const [periodo, setPeriodo]   = useState<PeriodoValue>(PERIODO_VACIO);
+  // Selector de carrera: lista las carreras ofertadas por esta universidad.
+  const [showCarreraPicker, setShowCarreraPicker] = useState(false);
 
   // ── Flujo de modales ──
   const [showModalGrupo, setShowModalGrupo]       = useState(false); // Paso 1
@@ -715,12 +861,39 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
   const [credenciales, setCredenciales] = useState<EstudianteNuevo[]>([]);
   const [grupoCreadoNombre, setGrupoCreadoNombre] = useState('');
 
+  // ── Carreras ofertadas por la universidad (para el selector) ──
+  const [carrerasUni, setCarrerasUni] = useState<string[]>([]);
+  useEffect(() => {
+    if (!uid) return;
+    let cancel = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'perfiles_universidades', uid));
+        const data = snap.data() as any;
+        const raw = data?.carreras_ofertadas ?? data?.carreras;
+        const arr = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
+        const norm = arr
+          .map((it: any) =>
+            typeof it === 'string' ? it : it && typeof it === 'object' ? String(it.nombre ?? '') : String(it ?? ''),
+          )
+          .filter(Boolean)
+          // Gate defensivo: aunque el registro ya bloquea Zona Roja, filtramos
+          // aquí por si la universidad tenía carreras reguladas de antes.
+          .filter((nombre: string) => esCarreraSoportada(nombre));
+        if (!cancel) setCarrerasUni(norm);
+      } catch (e) {
+        console.warn('Error cargando carreras de la universidad:', e);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [uid]);
+
   // ── Validaciones en tiempo real del formulario de grupo ──
   const errNombre  = valGrupoNombre(gNombre);
   const errCarrera = valGrupoCarrera(gCarrera);
-  const errHoras   = valGrupoHoras(gHoras);
   const errDocente = valGrupoDocente(gDocente);
-  const formGrupoValido = !errNombre && !errCarrera && !errHoras && !errDocente;
+  const periodoOk  = periodoValido(periodo);
+  const formGrupoValido = !errNombre && !errCarrera && periodoOk && !errDocente;
 
   // ── Suscripción en tiempo real a los grupos de esta universidad ──
   useEffect(() => {
@@ -738,6 +911,7 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
               horasRequeridas: (data.horasRequeridas as number) ?? 0,
               docente: (data.docente as string) ?? 'Sin asignar',
               estudiantes_registrados: (data.estudiantes_registrados as number) ?? 0,
+              egresado: (data.egresado as boolean) ?? false,
             };
           })
           .sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -763,7 +937,27 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
     );
   }, [estudiantes, busquedaAplicada]);
 
-  const resetForm = () => { setGNombre(''); setGCarrera(''); setGHoras(''); setGDocente(''); };
+  // ── Horas laborales por grupo (X/Y), calculadas del acuerdo firmado ──
+  // Para cada grupo con una pasantía aprobada/finalizada y acuerdo válido,
+  // derivamos horas transcurridas y totales. El conteo avanza con la fecha.
+  const horasPorGrupo = useMemo(() => {
+    const map: Record<string, ReturnType<typeof calcularHorasAcuerdo>> = {};
+    solicitudesGrupo.forEach(sg => {
+      if (!sg.grupoId || !sg.acuerdo) return;
+      if (sg.estado !== 'aprobado' && sg.estado !== 'finalizado') return;
+      const h = calcularHorasAcuerdo(sg.acuerdo);
+      if (h.valido) map[sg.grupoId] = h;
+    });
+    return map;
+  }, [solicitudesGrupo]);
+
+  const resetForm = () => {
+    setGNombre('');
+    setGCarrera('');
+    setGDocente('');
+    setPeriodo(PERIODO_VACIO);
+    setShowCarreraPicker(false);
+  };
 
   // ── Chat grupal oficial: crea (o reutiliza) la sala y la abre ──
   const [creandoChatGrupo, setCreandoChatGrupo] = useState<string | null>(null);
@@ -786,6 +980,79 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
     } finally {
       setCreandoChatGrupo(null);
     }
+  };
+
+  // ── ¿El grupo puede egresar? ────────────────────────────────────
+  // Condición: debe haber realizado una pasantía cuyo TIEMPO ya finalizó
+  // (estado 'finalizado' o cuyo período por fechas ya se completó). Si aún no
+  // ha terminado la pasantía, no puede egresar.
+  const grupoPuedeEgresar = (grupoId: string) =>
+    solicitudesGrupo.some(sg => {
+      if (sg.grupoId !== grupoId) return false;
+      if (sg.estado === 'finalizado') return true;
+      if ((sg.estado === 'aprobado' || sg.estado === 'aceptada') && sg.fechaFin) {
+        return progresoPorFechas(sg.fechaInicio, sg.fechaFin).estado === 'completado';
+      }
+      return false;
+    });
+
+  // ── Egresar (graduar) un grupo ──────────────────────────────────
+  // Marca a TODOS los estudiantes del grupo como `graduado` y sella el grupo
+  // con `egresado`/`fecha_egreso`. Esto alimenta la métrica "Egresados" del
+  // Inicio y crea el evento de egreso en el calendario. Es irreversible.
+  const [egresando, setEgresando] = useState<string | null>(null);
+  const egresarGrupo = (grupo: Grupo) => {
+    if (grupo.egresado || egresando) return;
+    // Guardia: solo grupos con una pasantía ya finalizada (cumplida).
+    if (!grupoPuedeEgresar(grupo.id)) {
+      Alert.alert(
+        'Aún no puede egresar',
+        `El grupo "${grupo.nombre}" solo puede egresar cuando haya completado una pasantía (su período debe haber finalizado).`,
+      );
+      return;
+    }
+    Alert.alert(
+      'Egresar grupo',
+      `¿Marcar como egresados a los estudiantes del grupo "${grupo.nombre}"? Esta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Egresar',
+          style: 'destructive',
+          onPress: async () => {
+            setEgresando(grupo.id);
+            try {
+              const estSnap = await getDocs(
+                query(collection(db, 'perfiles_estudiantes'), where('grupo_id', '==', grupo.id)),
+              );
+              const batch = writeBatch(db);
+              estSnap.docs.forEach(d => {
+                batch.update(d.ref, { graduado: true, fecha_graduacion: serverTimestamp() });
+              });
+              batch.update(doc(db, 'grupos', grupo.id), { egresado: true, fecha_egreso: serverTimestamp() });
+              await batch.commit();
+
+              try {
+                await enviarNotificacion(
+                  uid,
+                  'Grupo egresado 🎓',
+                  `El grupo "${grupo.nombre}" fue marcado como egresado (${estSnap.size} estudiante(s)).`,
+                  'success',
+                  grupo.id,
+                );
+              } catch { /* la notificación no debe afectar el flujo principal */ }
+
+              Alert.alert('Listo', `El grupo "${grupo.nombre}" egresó correctamente.`);
+            } catch (e) {
+              console.warn('Error al egresar grupo:', e);
+              Alert.alert('Error', 'No se pudo egresar el grupo. Intenta de nuevo.');
+            } finally {
+              setEgresando(null);
+            }
+          },
+        },
+      ],
+    );
   };
 
   // ── Paso 0 → 1: abrir el formulario de grupo ──
@@ -854,21 +1121,35 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
       ?? initializeApp(firebaseConfig, 'Secondary');
     const secondaryAuth = getAuth(secondaryApp);
 
+    // Período de prácticas → campos persistibles (ISO + duración).
+    const toISO = (d: Date | null) =>
+      d
+        ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        : null;
+    // En modo 'horas' las horas son explícitas; en modos por fecha/ciclos no
+    // medimos en horas (0 → el perfil del estudiante usa el objetivo por defecto).
+    const horasGrupo = periodo.modo === 'horas' ? periodo.horas ?? 0 : 0;
+
     try {
       // 1) Guardamos el grupo y obtenemos su ID.
       const grupoRef = await addDoc(collection(db, 'grupos'), {
         nombre:          gNombre.trim(),
         carrera:         gCarrera.trim(),
-        horasRequeridas: Number(gHoras.trim()),
+        horasRequeridas: horasGrupo,
         docente:         gDocente.trim() || 'Sin asignar',
         universidad_id:  uid,
         fecha_creacion:  serverTimestamp(),
         estudiantes_registrados: 0,
+        // ── Período de prácticas ──
+        modo_duracion:   periodo.modo,
+        fecha_inicio:    toISO(periodo.fechaInicio),
+        fecha_fin:       toISO(periodo.fechaFin),
+        duracion_meses:  periodo.meses ?? null,
+        ciclos:          periodo.ciclos ?? null,
       });
       const grupoId = grupoRef.id;
       const nombreGrupo = gNombre.trim();
       const carreraGrupo = gCarrera.trim();
-      const horasGrupo = Number(gHoras.trim());
 
       // 2) Creamos cada cuenta de estudiante en la app secundaria.
       const creados: EstudianteNuevo[] = [];
@@ -898,6 +1179,8 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
             horas_en_proceso: 0,
             skills:           [],
             activo:           true,
+            graduado:         false,
+            fecha_registro:   serverTimestamp(),
           });
 
           creados.push(est);
@@ -912,6 +1195,16 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
       try {
         await updateDoc(doc(db, 'grupos', grupoId), { estudiantes_registrados: creados.length });
       } catch { /* informativo */ }
+
+      // 3.5) Creamos AUTOMÁTICAMENTE el chat grupal oficial (id `grupo_{grupoId}`)
+      // con los estudiantes recién registrados. Es exactamente la MISMA sala que
+      // abre el botón de chat del grupo en la lista. No bloquea el flujo: si
+      // fallara, se (re)crea al pulsar ese botón.
+      try {
+        await crearChatGrupoOficial({ universidadId: uid, grupoId, grupoNombre: nombreGrupo });
+      } catch (e) {
+        console.warn('No se pudo crear el chat del grupo automáticamente:', e);
+      }
 
       // Confirmación a la universidad (no bloquea la creación del grupo).
       try {
@@ -1034,13 +1327,40 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
                 <Ionicons name="people" size={18} color={colors.primaryLight} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre}</Text>
+                  {item.egresado && (
+                    <View style={s.egresadoBadge}>
+                      <Text style={s.egresadoBadgeText}>🎓 Egresado</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera} · {item.docente}</Text>
               </View>
               <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                <Text style={s.estudianteHoras}>{item.horasRequeridas}h</Text>
+                {horasPorGrupo[item.id] ? (
+                  <Text style={s.estudianteHoras}>
+                    {horasPorGrupo[item.id].transcurridas}/{horasPorGrupo[item.id].total} h
+                  </Text>
+                ) : (
+                  <Text style={s.estudianteHoras}>{item.horasRequeridas}h</Text>
+                )}
                 <Text style={s.estudianteMeta}>{item.estudiantes_registrados} est.</Text>
               </View>
+              {!item.egresado && (
+                <TouchableOpacity
+                  style={[s.grupoEgresarBtn, !grupoPuedeEgresar(item.id) && { opacity: 0.4 }]}
+                  onPress={() => egresarGrupo(item)}
+                  disabled={egresando === item.id}
+                  accessibilityLabel="Egresar grupo"
+                >
+                  {egresando === item.id ? (
+                    <ActivityIndicator size="small" color={colors.gold} />
+                  ) : (
+                    <Ionicons name="school-outline" size={18} color={colors.gold} />
+                  )}
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={s.grupoChatBtn}
                 onPress={() => abrirChatGrupo(item)}
@@ -1063,18 +1383,22 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 110, gap: 8 }}
           renderItem={({ item }) => {
-            const pct = Math.round((item.horas_aprobadas / (item.horas_objetivo || 500)) * 100);
+            // Si el grupo del estudiante tiene un acuerdo activo, mostramos las
+            // horas laborales cumplidas/total (X/Y) con el conteo automático;
+            // de lo contrario, caemos a las horas aprobadas por la universidad.
+            const h = item.grupo_id ? horasPorGrupo[item.grupo_id] : undefined;
+            const pct = h ? h.pct : Math.round((item.horas_aprobadas / (item.horas_objetivo || 500)) * 100);
             return (
               <GlassCard contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }}>
-                <View style={s.estudianteAvatar}>
-                  <Text style={s.estudianteInitial}>{item.nombre_completo?.[0]?.toUpperCase() ?? '?'}</Text>
-                </View>
+                <StorageAvatar url={item.foto_url} size={44} fallbackIcon="person" />
                 <View style={{ flex: 1 }}>
                   <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre_completo}</Text>
                   <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera || 'Sin carrera'}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                  <Text style={s.estudianteHoras}>{item.horas_aprobadas}h</Text>
+                  <Text style={s.estudianteHoras}>
+                    {h ? `${h.transcurridas}/${h.total} h` : `${item.horas_aprobadas}h`}
+                  </Text>
                   <View style={s.miniBarTrack}>
                     <View style={[s.miniBarFill, { width: `${Math.min(pct, 100)}%` as any }]} />
                   </View>
@@ -1100,6 +1424,21 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
               Define el grupo o aula. Aún no se guarda; en el siguiente paso cargarás el Excel.
             </Text>
 
+            {/* Aviso: un grupo = un horario. Disponibilidad incompatible → grupos separados. */}
+            <View style={{
+              flexDirection: 'row', gap: 10, alignItems: 'flex-start',
+              backgroundColor: COLORS.primary + '12',
+              borderWidth: 1, borderColor: COLORS.primary + '30',
+              borderRadius: 12, padding: 12, marginBottom: 12,
+            }}>
+              <Ionicons name="information-circle-outline" size={18} color={COLORS.primaryLight} style={{ marginTop: 1 }} />
+              <Text style={{ flex: 1, color: COLORS.textMuted, fontSize: 12, lineHeight: 17 }}>
+                Cada grupo acuerda <Text style={{ color: COLORS.textPrimary, fontFamily: FONTS.interSemiBold }}>un solo horario</Text> con la empresa.
+                Si tienes estudiantes con disponibilidad incompatible (por ejemplo, unos trabajan de mañana y otros de tarde),
+                crea <Text style={{ color: COLORS.textPrimary, fontFamily: FONTS.interSemiBold }}>grupos separados</Text> para que cada uno pueda cumplir sus prácticas.
+              </Text>
+            </View>
+
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 4, paddingVertical: 6 }}>
               {(() => {
                 const tiene = gNombre.trim().length > 0; const malo = tiene && !!errNombre;
@@ -1122,48 +1461,72 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
                 return (
                   <View style={{ marginBottom: 6 }}>
                     <Text style={styles.fieldLabel}>CARRERA / ESPECIALIDAD *</Text>
-                    <TextInput
-                      style={[styles.modalInput, malo ? s.campoErr : (tiene ? s.campoOk : null)]}
-                      value={gCarrera} onChangeText={setGCarrera}
-                      placeholder="Ej. Ingeniería en Sistemas"
-                      placeholderTextColor={COLORS.textMuted} selectionColor={COLORS.primary}
-                    />
+                    <TouchableOpacity
+                      style={[
+                        styles.modalInput,
+                        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+                        malo ? s.campoErr : (tiene ? s.campoOk : null),
+                      ]}
+                      onPress={() => setShowCarreraPicker(v => !v)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={{ color: gCarrera ? COLORS.textPrimary : COLORS.textMuted, flex: 1 }}>
+                        {gCarrera || (carrerasUni.length ? 'Selecciona una carrera' : 'No hay carreras registradas')}
+                      </Text>
+                      <Ionicons
+                        name={showCarreraPicker ? 'chevron-up-outline' : 'chevron-down-outline'}
+                        size={18}
+                        color={COLORS.textMuted}
+                      />
+                    </TouchableOpacity>
+                    {showCarreraPicker && (
+                      <ScrollView
+                        nestedScrollEnabled
+                        style={{
+                          maxHeight: 200,
+                          marginTop: 6,
+                          borderWidth: 1,
+                          borderColor: COLORS.border,
+                          borderRadius: 10,
+                          backgroundColor: COLORS.white4,
+                        }}
+                      >
+                        {carrerasUni.length === 0 ? (
+                          <Text style={{ color: COLORS.textMuted, fontSize: 13, padding: 14 }}>
+                            Registra carreras en el perfil de la universidad para poder elegirlas aquí.
+                          </Text>
+                        ) : (
+                          carrerasUni.map((c, i) => (
+                            <TouchableOpacity
+                              key={c}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                paddingVertical: 12,
+                                paddingHorizontal: 14,
+                                borderTopWidth: i === 0 ? 0 : 1,
+                                borderTopColor: COLORS.border,
+                              }}
+                              activeOpacity={0.85}
+                              onPress={() => { setGCarrera(c); setShowCarreraPicker(false); }}
+                            >
+                              <Text style={{ color: COLORS.textPrimary, fontSize: 13, flex: 1 }}>{c}</Text>
+                              {gCarrera === c && <Ionicons name="checkmark" size={16} color={COLORS.primary} />}
+                            </TouchableOpacity>
+                          ))
+                        )}
+                      </ScrollView>
+                    )}
                     {malo && <Text style={s.campoErrText}>{errCarrera}</Text>}
                   </View>
                 );
               })()}
 
-              {(() => {
-                const tiene = gHoras.trim().length > 0; const malo = tiene && !!errHoras;
-                return (
-                  <View style={{ marginBottom: 6 }}>
-                    <Text style={styles.fieldLabel}>HORAS A CUMPLIR (PASANTÍA / SOCIALES) *</Text>
-                    <TextInput
-                      style={[styles.modalInput, malo ? s.campoErr : (tiene ? s.campoOk : null)]}
-                      value={gHoras} onChangeText={t => setGHoras(t.replace(/[^0-9]/g, ''))}
-                      placeholder="Ej. 500" keyboardType="number-pad"
-                      placeholderTextColor={COLORS.textMuted} selectionColor={COLORS.primary}
-                    />
-                    {malo && <Text style={s.campoErrText}>{errHoras}</Text>}
-                  </View>
-                );
-              })()}
-
-              {(() => {
-                const tiene = gDocente.trim().length > 0; const malo = tiene && !!errDocente;
-                return (
-                  <View style={{ marginBottom: 6 }}>
-                    <Text style={styles.fieldLabel}>DOCENTE / SUPERVISOR A CARGO (opcional)</Text>
-                    <TextInput
-                      style={[styles.modalInput, malo ? s.campoErr : (tiene ? s.campoOk : null)]}
-                      value={gDocente} onChangeText={setGDocente}
-                      placeholder="Ej. Lic. Ana Martínez"
-                      placeholderTextColor={COLORS.textMuted} selectionColor={COLORS.primary}
-                    />
-                    {malo && <Text style={s.campoErrText}>{errDocente}</Text>}
-                  </View>
-                );
-              })()}
+              {/* Período de prácticas — reemplaza el antiguo campo de horas */}
+              <View style={{ marginBottom: 6, marginTop: 4 }}>
+                <PeriodoPracticasField value={periodo} onChange={setPeriodo} />
+              </View>
             </ScrollView>
 
             <View style={styles.modalActions}>
@@ -1287,137 +1650,135 @@ function SeccionEstudiantes({ estudiantes, uid }: { estudiantes: EstudianteRow[]
 // ─────────────────────────────────────────────
 // SECCIÓN: APROBAR PASANTÍAS
 // ─────────────────────────────────────────────
-function SeccionAprobar({ apps, onAprobar, onRechazar }: {
-  apps: Aplicacion[];
-  onAprobar: (a: Aplicacion, horas: number) => void;
-  onRechazar: (a: Aplicacion, motivo: string) => void;
-}) {
-  const { styles, s } = useThemedStyles();
-  const pendientes = apps.filter(a => a.estado === 'finalizado');
-  const [aprobarApp, setAprobarApp] = useState<Aplicacion | null>(null);
-  const [rechazarApp, setRechazarApp] = useState<Aplicacion | null>(null);
-  const [horasAjustadas, setHorasAjustadas] = useState('');
-  const [motivo, setMotivo] = useState('');
+// ── SECCIÓN PRÁCTICAS (reemplaza "Aprobar Pasantías") ──────────────
+// Gestiona las pasantías de grupo (solicitudes_practicas): en curso, por
+// certificar (la empresa ya finalizó y emitió constancia) y certificadas.
+// La universidad revisa la constancia y pulsa "Certificar" → acredita horas.
+function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
+  const { s, colors } = useThemedStyles();
+  const [certificando, setCertificando] = useState<string | null>(null);
 
-  const ahora = new Date();
+  const porCertificar = solicitudes.filter(x => x.estado === 'finalizado' && (x as any).certificacion !== 'certificada');
+  const activas       = solicitudes.filter(x => x.estado === 'aprobado');
+  const certificadas  = solicitudes.filter(x => (x as any).certificacion === 'certificada');
+
+  const handleCertificar = (sol: SolicitudGrupo) => {
+    const h = calcularHorasAcuerdo(sol.acuerdo);
+    Alert.alert(
+      'Certificar pasantía',
+      `Grupo "${sol.grupoNombre ?? '—'}"\nSe acreditarán ${h.total} horas a ${sol.alumnos?.length ?? 0} estudiante(s). Esta acción es definitiva.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Certificar',
+          onPress: async () => {
+            setCertificando(sol.id);
+            try {
+              const r = await certificarPasantia(sol.id);
+              Alert.alert('✅ Certificada', `Se acreditaron ${r.horas} horas a ${r.totalEstudiantes} estudiante(s).`);
+            } catch {
+              Alert.alert('Error', 'No se pudo certificar la pasantía.');
+            } finally {
+              setCertificando(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const Card = ({ sol, accion }: { sol: SolicitudGrupo; accion?: 'certificar' }) => {
+    const h = calcularHorasAcuerdo(sol.acuerdo);
+    const cert = (sol as any).certificacion;
+    const badge =
+      cert === 'certificada' ? { txt: 'Certificada', col: COLORS.gold }
+      : sol.estado === 'finalizado' ? { txt: 'Por certificar', col: COLORS.warning }
+      : { txt: 'En curso', col: COLORS.success };
+    return (
+      <GlassCard style={{ marginBottom: 10 }} contentStyle={{ padding: 14, gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 15, flex: 1 }} numberOfLines={1}>
+            {sol.grupoNombre ?? 'Grupo'}
+          </Text>
+          <View style={{ borderWidth: 1, borderColor: badge.col + '55', backgroundColor: badge.col + '22', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 }}>
+            <Text style={{ color: badge.col, fontSize: 11, fontWeight: '700' }}>{badge.txt}</Text>
+          </View>
+        </View>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>{sol.carrera ?? '—'}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>
+          {sol.alumnos?.length ?? 0} estudiante(s) · {h.total} h {sol.fechaInicio ? `· ${sol.fechaInicio} → ${sol.fechaFin}` : ''}
+        </Text>
+        {cert === 'certificada' && (
+          <Text style={{ color: COLORS.gold, fontSize: 12, fontWeight: '600' }}>
+            ✓ {(sol as any).horasCertificadas ?? h.total} horas acreditadas
+          </Text>
+        )}
+        {accion === 'certificar' && (
+          <View style={{ gap: 6, marginTop: 4 }}>
+            {((sol as any).constancia?.tipo === 'pdf' && (sol as any).constancia?.url) ? (
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                onPress={() => Linking.openURL((sol as any).constancia.url)}
+              >
+                <Ionicons name="document-attach-outline" size={16} color={colors.primaryLight} />
+                <Text style={{ color: colors.primaryLight, fontSize: 12, fontWeight: '600', textDecorationLine: 'underline' }}>
+                  Ver constancia (PDF)
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="document-text-outline" size={15} color={colors.primaryLight} />
+                <Text style={{ color: colors.textMuted, fontSize: 12 }}>Constancia automática emitida</Text>
+              </View>
+            )}
+            <JellyButton
+              style={{ backgroundColor: COLORS.primary, borderRadius: 12 }}
+              contentStyle={{ paddingVertical: 10 }}
+              onPress={() => handleCertificar(sol)}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700' }}>
+                {certificando === sol.id ? 'Certificando…' : 'Certificar y acreditar horas'}
+              </Text>
+            </JellyButton>
+          </View>
+        )}
+      </GlassCard>
+    );
+  };
 
   return (
-    <View style={{ flex: 1 }}>
-      <FlatList
-        data={pendientes}
-        keyExtractor={item => item.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
-        renderItem={({ item }) => {
-          const fechaApp = item.fecha_aplicacion?.toDate?.() ?? new Date();
-          const diasEspera = Math.floor((ahora.getTime() - fechaApp.getTime()) / 86_400_000);
-          const urgente = diasEspera > 7;
-          return (
-            <GlassCard style={[{ marginBottom: 8 }, urgente && s.aprobacionCardUrgente]} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.aprobNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
-                <Text style={s.aprobMeta}>{item.nombre_empresa ?? 'Empresa'} · {item.titulo_vacante ?? 'Pasantía'}</Text>
-                <Text style={s.aprobMeta}>Horas: {item.horas_completadas ?? 0}</Text>
-                <Text style={s.aprobMeta}>Pago: {item.pago_confirmado ? '✓ Pagado' : '⏳ Pendiente'}</Text>
-                {urgente && <Text style={s.aprobUrgente}>⚠️ Esperando {diasEspera} días</Text>}
-              </View>
-              <View style={{ gap: 8 }}>
-                <JellyButton
-                  style={s.aprobBtn}
-                  contentStyle={{ paddingVertical: 8, paddingHorizontal: 14 }}
-                  onPress={() => { setHorasAjustadas(String(item.horas_completadas ?? 0)); setAprobarApp(item); }}
-                >
-                  <Text style={s.aprobBtnText}>Aprobar</Text>
-                </JellyButton>
-                <JellyButton
-                  style={s.rechazarBtn}
-                  contentStyle={{ paddingVertical: 8, paddingHorizontal: 14 }}
-                  onPress={() => { setMotivo(''); setRechazarApp(item); }}
-                >
-                  <Text style={s.rechazarText}>Rechazar</Text>
-                </JellyButton>
-              </View>
-            </GlassCard>
-          );
-        }}
-        ListEmptyComponent={<Text style={s.emptyText}>Sin pasantías pendientes de aprobación.</Text>}
-      />
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110 }}>
+      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginBottom: 8 }}>
+        Por certificar ({porCertificar.length})
+      </Text>
+      {porCertificar.length === 0
+        ? <Text style={s.emptyText}>No hay pasantías esperando certificación.</Text>
+        : porCertificar.map(sol => <Card key={sol.id} sol={sol} accion="certificar" />)}
 
-      {/* Modal aprobar */}
-      <Modal visible={!!aprobarApp} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Confirmar aprobación</Text>
-            <Text style={styles.modalDesc}>
-              Estudiante: {aprobarApp?.estudiante_nombre}{'\n'}
-              Empresa: {aprobarApp?.nombre_empresa ?? 'Empresa'}
-            </Text>
-            <Text style={styles.fieldLabel}>Horas a sumar al estudiante</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={horasAjustadas}
-              onChangeText={setHorasAjustadas}
-              keyboardType="number-pad"
-              placeholderTextColor={COLORS.textMuted}
-              selectionColor={COLORS.primary}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setAprobarApp(null)}>
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <JellyButton
-                style={styles.modalSave}
-                contentStyle={{ paddingVertical: 0 }}
-                onPress={() => { aprobarApp && onAprobar(aprobarApp, parseInt(horasAjustadas) || 0); setAprobarApp(null); }}
-              >
-                <Text style={styles.modalSaveText}>Aprobar y sumar</Text>
-              </JellyButton>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: 18, marginBottom: 8 }}>
+        En curso ({activas.length})
+      </Text>
+      {activas.length === 0
+        ? <Text style={s.emptyText}>Sin pasantías en curso.</Text>
+        : activas.map(sol => <Card key={sol.id} sol={sol} />)}
 
-      {/* Modal rechazar */}
-      <Modal visible={!!rechazarApp} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Rechazar pasantía</Text>
-            <Text style={styles.fieldLabel}>Motivo del rechazo (obligatorio)</Text>
-            <TextInput
-              style={[styles.modalInput, { height: 80, textAlignVertical: 'top' }]}
-              value={motivo}
-              onChangeText={setMotivo}
-              placeholder="Describe el motivo..."
-              placeholderTextColor={COLORS.textMuted}
-              multiline selectionColor={COLORS.primary}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setRechazarApp(null)}>
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <JellyButton
-                style={[styles.modalDelete]}
-                contentStyle={{ paddingVertical: 0 }}
-                onPress={() => {
-                  if (!motivo.trim()) { Alert.alert('Motivo requerido'); return; }
-                  rechazarApp && onRechazar(rechazarApp, motivo);
-                  setRechazarApp(null);
-                }}
-              >
-                <Text style={styles.modalDeleteText}>Rechazar</Text>
-              </JellyButton>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
+      {certificadas.length > 0 && (
+        <>
+          <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: 18, marginBottom: 8 }}>
+            Certificadas ({certificadas.length})
+          </Text>
+          {certificadas.map(sol => <Card key={sol.id} sol={sol} />)}
+        </>
+      )}
+    </ScrollView>
   );
 }
 
-// ─────────────────────────────────────────────
-// SECCIÓN: ESTADÍSTICAS
-// ─────────────────────────────────────────────
-function SeccionEstadisticas({ estudiantes, apps }: { estudiantes: EstudianteRow[]; apps: Aplicacion[] }) {
+function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudiantes: EstudianteRow[]; apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[] }) {
   const { s } = useThemedStyles();
+
+  // "Carreras con más pasantías": combina pasantías individuales (aplicaciones)
+  // y de grupo (solicitudes_practicas), cada grupo cuenta por su nº de alumnos.
   const carreras = useMemo(() => {
     const map: Record<string, number> = {};
     apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado' || a.estado === 'aprobado')
@@ -1425,10 +1786,25 @@ function SeccionEstadisticas({ estudiantes, apps }: { estudiantes: EstudianteRow
         const e = estudiantes.find(est => est.id === a.estudiante_id);
         if (e?.carrera) map[e.carrera] = (map[e.carrera] ?? 0) + 1;
       });
+    solicitudesGrupo
+      .filter(sg => sg.estado === 'aprobado' || sg.estado === 'finalizado')
+      .forEach(sg => {
+        if (sg.carrera) map[sg.carrera] = (map[sg.carrera] ?? 0) + (sg.alumnos?.length ?? 1);
+      });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  }, [estudiantes, apps]);
+  }, [estudiantes, apps, solicitudesGrupo]);
 
   const maxVal = Math.max(...carreras.map(c => c[1]), 1);
+
+  // Pasantías de grupo activas (aprobadas) con su línea de tiempo porcentual.
+  const activas = useMemo(
+    () => solicitudesGrupo.filter(sg => sg.estado === 'aprobado' && sg.fechaInicio),
+    [solicitudesGrupo],
+  );
+
+  const aprobadasCount =
+    solicitudesGrupo.filter(sg => sg.estado === 'aprobado' || sg.estado === 'finalizado').length +
+    apps.filter(a => a.estado === 'aprobado').length;
 
   return (
     <ScrollView contentContainerStyle={s.scroll}>
@@ -1446,10 +1822,36 @@ function SeccionEstadisticas({ estudiantes, apps }: { estudiantes: EstudianteRow
           ))
       }
 
+      {/* ── Línea de tiempo de pasantías activas ── */}
+      <Text style={[s.statTitle, { marginTop: 24 }]}>Pasantías activas</Text>
+      {activas.length === 0
+        ? <Text style={s.emptyText}>No hay pasantías en curso.</Text>
+        : activas.map(sg => {
+            const prog = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
+            const color = prog.estado === 'completado' ? COLORS.gold : prog.estado === 'en_curso' ? COLORS.success : COLORS.primaryLight;
+            return (
+              <View key={sg.id} style={{ marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={s.barLabel} numberOfLines={1}>{sg.grupoNombre ?? 'Grupo'}</Text>
+                  <Text style={[s.barValue, { color }]}>{prog.pct}%</Text>
+                </View>
+                <View style={s.barTrack}>
+                  <View style={[s.barFill, { width: `${prog.pct}%` as any, backgroundColor: color }]} />
+                </View>
+                <Text style={[s.emptyText, { textAlign: 'left', marginTop: 4, fontSize: 11 }]}>
+                  {prog.estado === 'por_iniciar'
+                    ? `Inicia ${sg.fechaInicio}`
+                    : `Día ${prog.diasTranscurridos} de ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
+                </Text>
+              </View>
+            );
+          })
+      }
+
       <Text style={[s.statTitle, { marginTop: 24 }]}>Resumen general</Text>
       <View style={s.metricasGrid}>
         <MetricCard icon="people-outline"   label="Total estudiantes"  value={estudiantes.length}                                   color={COLORS.primaryLight} />
-        <MetricCard icon="checkmark-circle-outline" label="Pasantías aprobadas" value={apps.filter(a=>a.estado==='aprobado').length} color={COLORS.success} />
+        <MetricCard icon="checkmark-circle-outline" label="Pasantías aprobadas" value={aprobadasCount} color={COLORS.success} />
         <MetricCard icon="time-outline"     label="Horas totales"      value={estudiantes.reduce((acc,e)=>acc+(e.horas_aprobadas??0),0)} color={COLORS.accent} />
       </View>
     </ScrollView>
@@ -1532,6 +1934,23 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderRadius: 20, padding: 20,
     borderWidth: 1, borderColor: COLORS.border,
     maxHeight: '85%', gap: 8,
+  },
+  // ── Modal "Mi Perfil" (master-detail) ──
+  perfilModalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center', alignItems: 'center', padding: 14,
+  },
+  perfilModalCard: {
+    width: '100%', maxWidth: 520, height: '90%',
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 24, overflow: 'hidden',
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  perfilCloseBtn: {
+    position: 'absolute', top: 12, right: 12, zIndex: 30,
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.white4, borderWidth: 1, borderColor: COLORS.border,
   },
   modalCard: {
     backgroundColor: COLORS.backgroundCard,
@@ -1767,6 +2186,18 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginLeft: 4,
   },
+  grupoEgresarBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: COLORS.gold + '1f',
+    borderWidth: 1, borderColor: COLORS.gold + '55',
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 4,
+  },
+  egresadoBadge: {
+    backgroundColor: COLORS.gold + '22',
+    borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2,
+  },
+  egresadoBadgeText: { fontSize: 10, fontFamily: FONTS.interSemiBold, color: COLORS.gold },
   estudianteInitial: { fontSize: 16, fontFamily: FONTS.soraBold, color: COLORS.primaryLight },
   estudianteNombre: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
   estudianteMeta: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },

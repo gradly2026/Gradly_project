@@ -10,7 +10,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,16 +18,35 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import type { AcuerdoData } from '../types/chat';
+import ProponerHorarioModal from './ProponerHorarioModal';
 import VacanteDetailModal, { type VacanteDetalle } from './VacanteDetailModal';
+import { cuposAsegurados, cuposDisponibles, hayCupos, textoCupos } from '../utils/cupos';
+import { afinidadCarreraVacante } from '../data/areas';
 import {
-  DIAS_SEMANA,
+  COLECCION_RECLAMOS,
+  liberarCupos,
+  reclamarCupos,
+  responderReclamo,
+  type ReclamoCupos,
+} from '../services/reclamoCuposService';
+import {
+  contarCompatibilidad,
+  normalizarHorario,
+  textoHorario,
+  type DisponibilidadHoraria,
+  type HorarioPasantia,
+  type ResumenCompatibilidad,
+} from '../data/disponibilidad';
+import {
   evaluarGrupoPorEmpresa,
   postularGrupoAVacante,
   respuestaFinalUniversidad,
@@ -45,7 +64,24 @@ interface Vacante {
   area?: string;
   modalidad?: string;
   horas_requeridas?: number;
+  /** Roles concretos dentro del área (afinan el match). */
+  tags?: string[] | null;
+  /** Ausente = vacante legada, sin límite de cupos declarado. */
+  cupos?: number | null;
+  cupos_reclamados?: number | null;
+  contratados_count?: number | null;
+  /** Horario declarado al publicar. Ausente = vacante legada. */
+  horario?: HorarioPasantia | null;
   fecha_publicacion?: any;
+  /** 'vacante' (aplicación individual, graduados) se excluye de esta vista de matchmaking por grupo. */
+  categoria?: 'pasantia' | 'vacante';
+}
+
+/** Alumno con su disponibilidad horaria, para cruzarla con el horario de la vacante. */
+interface EstudianteDisp {
+  id: string;
+  grupo_id?: string;
+  disponibilidad_horaria?: DisponibilidadHoraria | null;
 }
 
 interface Grupo {
@@ -54,6 +90,15 @@ interface Grupo {
   carrera?: string;
   total_horas?: number;
   estudiantes_count?: number;
+}
+
+/** Pasantía de grupo ya aprobada (colección `solicitudes_practicas`). Solo
+ * se usa aquí para saber qué grupos ya están en pasantía activa y no deben
+ * postularse a otra vacante en paralelo. */
+interface SolicitudPractica {
+  id: string;
+  grupoId?: string;
+  estado?: string;
 }
 
 // ─────────────────────────────────────────────
@@ -89,11 +134,24 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
   const [vacantes, setVacantes] = useState<Vacante[]>([]);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [postulaciones, setPostulaciones] = useState<AplicacionGrupo[]>([]);
+  const [solicitudesPracticas, setSolicitudesPracticas] = useState<SolicitudPractica[]>([]);
+  const [estudiantes, setEstudiantes] = useState<EstudianteDisp[]>([]);
+
+  // Reclamo de cupos por lote
+  const [reclamos, setReclamos] = useState<ReclamoCupos[]>([]);
+  const [reclamoVac, setReclamoVac] = useState<Vacante | null>(null);
+  const [reclamoCant, setReclamoCant] = useState('1');
+  const [reclamoGrupo, setReclamoGrupo] = useState<string | null>(null);
+  const [reclamando, setReclamando] = useState(false);
+  const [nombreUniversidad, setNombreUniversidad] = useState('');
 
   // Modal de postulación
   const [vacanteSel, setVacanteSel] = useState<Vacante | null>(null);
   const [grupoSel, setGrupoSel] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  // Modal de confirmación: se abre al tocar un grupo elegible (evita depender
+  // del botón "Enviar postulación", que en iOS quedaba fuera de la vista).
+  const [grupoConfirmar, setGrupoConfirmar] = useState<Grupo | null>(null);
 
   // Modal de detalle de vacante
   const [detalleVac, setDetalleVac] = useState<VacanteDetalle | null>(null);
@@ -132,8 +190,82 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
     return unsub;
   }, [universidadId]);
 
+  // Pasantías de grupo ya aprobadas: mientras estén 'aprobado' (activas, sin
+  // finalizar aún) el grupo no debe postularse a otra vacante en paralelo.
+  useEffect(() => {
+    if (!universidadId) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'solicitudes_practicas'), where('universidadId', '==', universidadId)),
+      snap => setSolicitudesPracticas(snap.docs.map(d => ({ id: d.id, ...d.data() } as SolicitudPractica))),
+      error => console.warn('Error en listener (solicitudes_practicas matchmaking):', error),
+    );
+    return unsub;
+  }, [universidadId]);
+
+  // Alumnos de la universidad con su disponibilidad horaria: permite avisar,
+  // ANTES de postular, cuántos del grupo pueden cumplir el horario declarado
+  // en la vacante (evita comprometer un grupo que en la práctica no puede ir).
+  useEffect(() => {
+    if (!universidadId) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'perfiles_estudiantes'), where('universidad_id', '==', universidadId)),
+      snap => setEstudiantes(snap.docs.map(d => ({ id: d.id, ...d.data() } as EstudianteDisp))),
+      error => console.warn('Error en listener (estudiantes matchmaking):', error),
+    );
+    return unsub;
+  }, [universidadId]);
+
+  // Reclamos de cupos de esta universidad (para la bandeja y el conteo).
+  useEffect(() => {
+    if (!universidadId) return;
+    const unsub = onSnapshot(
+      query(collection(db, COLECCION_RECLAMOS), where('universidadId', '==', universidadId)),
+      snap => setReclamos(snap.docs.map(d => ({ id: d.id, ...d.data() } as ReclamoCupos))),
+      error => console.warn('Error en listener (reclamos cupos):', error),
+    );
+    return unsub;
+  }, [universidadId]);
+
+  // Nombre de la universidad, para desnormalizarlo en el reclamo.
+  useEffect(() => {
+    if (!universidadId) return;
+    let vivo = true;
+    getDoc(doc(db, 'perfiles_universidades', universidadId))
+      .then(s => { if (vivo && s.exists()) setNombreUniversidad((s.data() as any).nombre ?? ''); })
+      .catch(e => console.warn('Error leyendo perfil universidad:', e));
+    return () => { vivo = false; };
+  }, [universidadId]);
+
+  const asegurados = useMemo(() => cuposAsegurados(reclamos), [reclamos]);
+  /** Alumnos aún sin cupo asegurado — guía cuántos reclamar. */
+  const faltantesPorCubrir = Math.max(0, estudiantes.length - asegurados);
+
+  /** Compatibilidad de un grupo con el horario de la vacante seleccionada. */
+  const compatibilidadGrupo = (grupoId: string): ResumenCompatibilidad | null => {
+    const horario = normalizarHorario(vacanteSel?.horario);
+    if (!horario) return null; // vacante legada, sin horario declarado
+    const delGrupo = estudiantes.filter(e => e.grupo_id === grupoId);
+    if (delGrupo.length === 0) return null;
+    return contarCompatibilidad(delGrupo, horario);
+  };
+
+  // Set de grupoId con una pasantía aprobada y aún no finalizada.
+  const gruposEnPasantiaActiva = useMemo(
+    () => new Set(
+      solicitudesPracticas
+        .filter(s => s.estado === 'aprobado' && s.grupoId)
+        .map(s => s.grupoId as string),
+    ),
+    [solicitudesPracticas],
+  );
+
   const vacantesOrdenadas = useMemo(
-    () => [...vacantes].sort((a, b) => fechaMs(b.fecha_publicacion) - fechaMs(a.fecha_publicacion)),
+    () => vacantes
+      // Las de categoría 'vacante' son aplicación individual (solo graduados,
+      // vía el feed del estudiante); aquí solo interesan las de 'pasantia'
+      // (o legado sin categoría, para no perder publicaciones antiguas).
+      .filter(v => v.categoria !== 'vacante')
+      .sort((a, b) => fechaMs(b.fecha_publicacion) - fechaMs(a.fecha_publicacion)),
     [vacantes],
   );
 
@@ -144,6 +276,57 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
   const abrirPostular = (v: Vacante) => {
     setVacanteSel(v);
     setGrupoSel(null);
+    setGrupoConfirmar(null);
+  };
+
+  // ── Reclamo de cupos por lote ──────────────────────────────────────
+  const abrirReclamo = (v: Vacante) => {
+    const libres = cuposDisponibles(v) ?? 0;
+    setReclamoVac(v);
+    // Sugerencia: lo que falta por cubrir, acotado a lo que la vacante ofrece.
+    setReclamoCant(String(Math.max(1, Math.min(libres, faltantesPorCubrir || libres))));
+    setReclamoGrupo(null);
+  };
+
+  const confirmarReclamo = async () => {
+    if (!reclamoVac) return;
+    const n = Number(reclamoCant);
+    const libres = cuposDisponibles(reclamoVac) ?? 0;
+    if (!Number.isFinite(n) || n < 1) { Alert.alert('Cantidad inválida', 'Indica cuántos cupos necesitas.'); return; }
+    if (n > libres) { Alert.alert('Sin suficientes cupos', `Solo quedan ${libres} disponible(s).`); return; }
+
+    setReclamando(true);
+    try {
+      const grupo = grupos.find(g => g.id === reclamoGrupo);
+      const { estado } = await reclamarCupos({
+        universidadId,
+        vacanteId: reclamoVac.id,
+        cantidad: n,
+        grupoId: reclamoGrupo,
+        grupoNombre: grupo?.nombre,
+        universidadNombre: nombreUniversidad,
+      });
+      Alert.alert(
+        estado === 'aceptado' ? '¡Cupos reservados!' : 'Solicitud enviada',
+        estado === 'aceptado'
+          ? `Reservaste ${n} cupo(s). Ya puedes asignarlos a tus estudiantes.`
+          : `La empresa debe confirmar tus ${n} cupo(s). Te avisaremos.`,
+      );
+      setReclamoVac(null);
+    } catch (e: any) {
+      Alert.alert('No se pudo reservar', e?.message ?? 'Intenta de nuevo.');
+    } finally {
+      setReclamando(false);
+    }
+  };
+
+  const liberar = async (r: ReclamoCupos) => {
+    try {
+      await liberarCupos(r.id, r.cantidad);
+      Alert.alert('Cupos liberados', 'Vuelven a estar disponibles y se avisó a la empresa.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'No se pudo liberar.');
+    }
   };
 
   const confirmarPostular = async () => {
@@ -152,10 +335,12 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
     try {
       await postularGrupoAVacante(universidadId, vacanteSel.id, grupoSel);
       Alert.alert('¡Postulación enviada!', 'La empresa revisará a tu grupo.');
+      setGrupoConfirmar(null);
       setVacanteSel(null);
       setGrupoSel(null);
     } catch (e: any) {
       Alert.alert('No se pudo postular', e?.message ?? 'Intenta de nuevo.');
+      setGrupoConfirmar(null);
     } finally {
       setEnviando(false);
     }
@@ -182,6 +367,67 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
 
   return (
     <View style={{ gap: 12 }}>
+      {/* ── Cuota de cupos de la universidad ── */}
+      {estudiantes.length > 0 && (
+        <GlassCard colors={colors} isDark={isDark} column>
+          <Text style={styles.cardTitle}>Cupos asegurados</Text>
+          <Text style={styles.cardMeta}>
+            {asegurados} de {estudiantes.length} estudiantes tienen cupo reservado
+            {faltantesPorCubrir > 0 ? ` · faltan ${faltantesPorCubrir}` : ' · cuota cubierta'}
+          </Text>
+          <View style={styles.barraFondo}>
+            <View
+              style={[
+                styles.barraRelleno,
+                {
+                  width: `${Math.min(100, Math.round((asegurados / Math.max(1, estudiantes.length)) * 100))}%`,
+                  backgroundColor: faltantesPorCubrir === 0 ? colors.success : colors.primary,
+                },
+              ]}
+            />
+          </View>
+        </GlassCard>
+      )}
+
+      {/* ── Mis reservas de cupos ── */}
+      {reclamos.filter(r => r.estado === 'pendiente' || r.estado === 'aceptado').length > 0 && (
+        <>
+          <Text style={styles.heading}>Mis reservas de cupos</Text>
+          {reclamos
+            .filter(r => r.estado === 'pendiente' || r.estado === 'aceptado')
+            .map(r => (
+              <GlassCard key={r.id} colors={colors} isDark={isDark} column>
+                <View style={styles.rowBetween}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle} numberOfLines={1}>
+                      {r.cantidad} cupo(s) · {r.vacanteTitulo || 'Vacante'}
+                    </Text>
+                    <Text style={styles.cardMeta} numberOfLines={1}>
+                      {r.empresaNombre || 'Empresa'}
+                      {r.grupoNombre ? ` · ${r.grupoNombre}` : ''}
+                    </Text>
+                    {textoHorario(r.horario) && (
+                      <Text style={styles.cardMeta}>{textoHorario(r.horario)}</Text>
+                    )}
+                  </View>
+                  <Text
+                    style={[
+                      styles.badgeReclamo,
+                      { color: r.estado === 'aceptado' ? colors.success : colors.warning },
+                    ]}
+                  >
+                    {r.estado === 'aceptado' ? 'Confirmado' : 'Esperando empresa'}
+                  </Text>
+                </View>
+                <TouchableOpacity style={styles.liberarBtn} onPress={() => liberar(r)}>
+                  <Ionicons name="return-up-back-outline" size={14} color={colors.textMuted} />
+                  <Text style={styles.liberarTxt}>Liberar cupos</Text>
+                </TouchableOpacity>
+              </GlassCard>
+            ))}
+        </>
+      )}
+
       {/* ── Vacantes disponibles ── */}
       <Text style={styles.heading}>Vacantes disponibles</Text>
       {vacantesOrdenadas.length === 0 ? (
@@ -194,12 +440,37 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
               <Text style={styles.cardMeta} numberOfLines={1}>
                 {v.nombre_empresa ?? 'Empresa'}{v.area ? ` · ${v.area}` : ''}{v.modalidad ? ` · ${v.modalidad}` : ''}
               </Text>
-              <Text style={styles.cardMeta}>{v.horas_requeridas ?? 0} horas requeridas</Text>
+              {!!v.horas_requeridas && (
+                <Text style={styles.cardMeta}>{v.horas_requeridas} horas requeridas</Text>
+              )}
+              {/* Horario declarado por la empresa (ausente en vacantes legadas). */}
+              {textoHorario(v.horario) && (
+                <Text style={styles.cardMeta}>{textoHorario(v.horario)}</Text>
+              )}
+              {/* Cupos libres: ausente en vacantes legadas (sin el campo). */}
+              {textoCupos(v) && (
+                <Text style={[styles.cardCupos, !hayCupos(v) && styles.cardCuposAgotado]}>
+                  {textoCupos(v)}
+                </Text>
+              )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cta} onPress={() => abrirPostular(v)}>
-              <Ionicons name="people-outline" size={15} color="#fff" />
-              <Text style={styles.ctaText}>Postular grupo</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+              <TouchableOpacity
+                style={[styles.cta, !hayCupos(v) && styles.ctaDisabled]}
+                onPress={() => abrirPostular(v)}
+                disabled={!hayCupos(v)}
+              >
+                <Ionicons name="people-outline" size={15} color="#fff" />
+                <Text style={styles.ctaText}>{hayCupos(v) ? 'Postular grupo' : 'Sin cupos'}</Text>
+              </TouchableOpacity>
+              {/* Reclamar por lote: solo en vacantes que declaran cupos. */}
+              {cuposDisponibles(v) !== null && hayCupos(v) && (
+                <TouchableOpacity style={styles.ctaAlt} onPress={() => abrirReclamo(v)}>
+                  <Ionicons name="bookmark-outline" size={15} color={colors.primaryLight} />
+                  <Text style={styles.ctaAltText}>Reservar cupos</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </GlassCard>
         ))
       )}
@@ -231,7 +502,8 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                       <Text style={styles.ofertaTitle}>Oferta de la empresa</Text>
                       <OfertaDetalle icon="time-outline" label="Horario" value={p.horarioPropuesto || '—'} colors={colors} styles={styles} />
                       <OfertaDetalle icon="calendar-outline" label="Días" value={(p.diasTrabajo ?? []).join(', ') || '—'} colors={colors} styles={styles} />
-                      <OfertaDetalle icon="cash-outline" label="Pago" value={typeof p.pagoTotal === 'number' ? `$${p.pagoTotal}` : 'No especificado'} colors={colors} styles={styles} />
+                      <OfertaDetalle icon="hourglass-outline" label="Periodo" value={p.fechaInicio && p.fechaFin ? `${p.fechaInicio} → ${p.fechaFin}` : '—'} colors={colors} styles={styles} />
+                      <OfertaDetalle icon="cash-outline" label="Pago" value={typeof p.pagoTotal === 'number' ? `$${p.pagoTotal} por estudiante` : 'Sin pago'} colors={colors} styles={styles} />
                       <View style={styles.actionsRow}>
                         <TouchableOpacity style={styles.rejectBtn} onPress={() => { setJustif(''); setRechazoApp(p); }}>
                           <Text style={styles.rejectText}>Rechazar</Text>
@@ -257,45 +529,234 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
         </>
       )}
 
-      {/* ── Modal: seleccionar grupo y postular ── */}
-      <Modal visible={!!vacanteSel} transparent animationType="slide" onRequestClose={() => setVacanteSel(null)}>
+      {/* ── Modal: postular un grupo (un solo <Modal> con dos pasos internos) ──
+          IMPORTANTE: en nativo (iOS/Android) NO se pueden tener dos <Modal>
+          visibles a la vez de forma confiable — cada uno monta una ventana/
+          overlay nativa real, y apilar dos deja el segundo sin mostrarse (o el
+          primero sin poder cerrarse bien) hasta recargar la app. En web, el
+          <Modal> de react-native-web es solo una View posicionada, por eso ahí
+          "funcionaba" apilando dos. La solución es UN solo <Modal> que cambia
+          de contenido (lista → confirmación) según `grupoConfirmar`. */}
+      <Modal
+        visible={!!vacanteSel}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          if (enviando) return;
+          if (grupoConfirmar) { setGrupoConfirmar(null); setGrupoSel(null); return; }
+          setVacanteSel(null);
+        }}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.sheet}>
+            {grupoConfirmar ? (
+              <>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.sheetTitle}>Confirmar postulación</Text>
+                  <TouchableOpacity
+                    onPress={() => { setGrupoConfirmar(null); setGrupoSel(null); }}
+                    disabled={enviando}
+                    hitSlop={10}
+                  >
+                    <Ionicons name="close" size={22} color={colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.cardMeta}>
+                  Vas a postular al grupo “{grupoConfirmar.nombre ?? 'Grupo'}” para la vacante “{vacanteSel?.titulo ?? ''}”.
+                </Text>
+                <Text style={styles.note}>
+                  La empresa revisará esta postulación y podrás seguir su estado en “Mis postulaciones”.
+                </Text>
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity
+                    style={styles.cancelBtn}
+                    onPress={() => { setGrupoConfirmar(null); setGrupoSel(null); }}
+                    disabled={enviando}
+                  >
+                    <Text style={styles.cancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.acceptBtn, { marginTop: 0 }, enviando && { opacity: 0.6 }]}
+                    onPress={confirmarPostular}
+                    disabled={enviando}
+                  >
+                    {enviando
+                      ? <ActivityIndicator color="#fff" />
+                      : <Text style={styles.acceptText}>Confirmar</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.sheetTitle}>Postular un grupo</Text>
+                  <TouchableOpacity onPress={() => setVacanteSel(null)} hitSlop={10}>
+                    <Ionicons name="close" size={22} color={colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.cardMeta}>{vacanteSel?.titulo} · {vacanteSel?.nombre_empresa}</Text>
+                <Text style={styles.sheetHint}>
+                  Máximo 2 grupos por vacante. Postulados: {vacanteSel ? postulacionesActivasPorVacante(vacanteSel.id).length : 0}/2
+                </Text>
+
+                {limiteAlcanzado ? (
+                  <Text style={[styles.sheetHint, { color: colors.error }]}>Límite de 2 grupos alcanzado para esta vacante.</Text>
+                ) : (
+                  <Text style={styles.note}>Toca un grupo para postularlo (se pedirá confirmación).</Text>
+                )}
+
+                <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                  {gruposDisponibles.length === 0 ? (
+                    <Text style={styles.empty}>No tienes grupos creados todavía.</Text>
+                  ) : (
+                    gruposDisponibles.map(g => {
+                      const yaPost = yaPostulados.includes(g.id);
+                      const enPasantia = gruposEnPasantiaActiva.has(g.id);
+                      const bloqueado = yaPost || enPasantia || limiteAlcanzado;
+                      return (
+                        <TouchableOpacity
+                          key={g.id}
+                          disabled={bloqueado}
+                          style={[styles.grupoRow, bloqueado && { opacity: 0.5 }]}
+                          onPress={() => {
+                            setGrupoSel(g.id);
+                            setGrupoConfirmar(g);
+                          }}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.cardTitle} numberOfLines={1}>{g.nombre ?? 'Grupo'}</Text>
+                            <Text style={styles.cardMeta} numberOfLines={1}>
+                              {g.carrera ?? '—'} · {g.estudiantes_count ?? 0} estudiantes · {g.total_horas ?? 0}h
+                            </Text>
+                            {enPasantia && !yaPost && (
+                              <Text style={[styles.cardMeta, { color: colors.warning, marginTop: 2 }]}>
+                                Ya está en una pasantía activa
+                              </Text>
+                            )}
+                            {/* Aviso (no bloqueo) si el área de la vacante no
+                                corresponde a la carrera del grupo. */}
+                            {afinidadCarreraVacante(g.carrera, vacanteSel) === 'ninguna' && (
+                              <Text style={[styles.cardMeta, { color: colors.warning, marginTop: 2 }]}>
+                                ⚠ Área no afín a {g.carrera}
+                              </Text>
+                            )}
+                            {/* Compatibilidad con el horario declarado en la vacante.
+                                Los "desconocidos" (alumnos sin disponibilidad marcada)
+                                se muestran aparte: NO se cuentan como que pueden. */}
+                            {(() => {
+                              const comp = compatibilidadGrupo(g.id);
+                              if (!comp) return null;
+                              const todos = comp.compatibles === comp.total;
+                              return (
+                                <Text
+                                  style={[
+                                    styles.cardMeta,
+                                    { marginTop: 2, color: todos ? colors.success : colors.warning },
+                                  ]}
+                                >
+                                  {comp.compatibles}/{comp.total} pueden con este horario
+                                  {comp.desconocidos > 0 ? ` · ${comp.desconocidos} sin disponibilidad marcada` : ''}
+                                </Text>
+                              );
+                            })()}
+                          </View>
+                          <Ionicons
+                            name={yaPost ? 'checkmark-done' : enPasantia ? 'briefcase' : 'chevron-forward'}
+                            size={20}
+                            color={colors.textMuted}
+                          />
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal: reservar cupos por lote ── */}
+      <Modal
+        visible={!!reclamoVac}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { if (!reclamando) setReclamoVac(null); }}
+      >
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.rowBetween}>
-              <Text style={styles.sheetTitle}>Postular un grupo</Text>
-              <TouchableOpacity onPress={() => setVacanteSel(null)} hitSlop={10}>
+              <Text style={styles.sheetTitle}>Reservar cupos</Text>
+              <TouchableOpacity onPress={() => setReclamoVac(null)} disabled={reclamando} hitSlop={10}>
                 <Ionicons name="close" size={22} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.cardMeta}>{vacanteSel?.titulo} · {vacanteSel?.nombre_empresa}</Text>
+            <Text style={styles.cardMeta}>
+              {reclamoVac?.titulo} · {reclamoVac?.nombre_empresa}
+            </Text>
+            {textoHorario(reclamoVac?.horario) && (
+              <Text style={styles.cardMeta}>{textoHorario(reclamoVac?.horario)}</Text>
+            )}
             <Text style={styles.sheetHint}>
-              Máximo 2 grupos por vacante. Postulados: {vacanteSel ? postulacionesActivasPorVacante(vacanteSel.id).length : 0}/2
+              Disponibles: {cuposDisponibles(reclamoVac) ?? 0} · Te faltan por cubrir: {faltantesPorCubrir}
             </Text>
 
-            <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
-              {gruposDisponibles.length === 0 ? (
-                <Text style={styles.empty}>No tienes grupos creados todavía.</Text>
+            <Text style={styles.campoLabel}>¿Cuántos cupos necesitas?</Text>
+            <TextInput
+              style={styles.inputNum}
+              value={reclamoCant}
+              onChangeText={t => setReclamoCant(t.replace(/\D/g, '').slice(0, 3))}
+              keyboardType="number-pad"
+              placeholder="Ej. 8"
+              placeholderTextColor={colors.textMuted}
+              selectionColor={colors.primary}
+            />
+
+            <Text style={styles.campoLabel}>Grupo destino (opcional)</Text>
+            <ScrollView style={{ maxHeight: 150 }} showsVerticalScrollIndicator={false}>
+              {grupos.length === 0 ? (
+                <Text style={styles.empty}>No tienes grupos creados.</Text>
               ) : (
-                gruposDisponibles.map(g => {
-                  const yaPost = yaPostulados.includes(g.id);
-                  const selected = grupoSel === g.id;
+                grupos.map(g => {
+                  const sel = reclamoGrupo === g.id;
+                  const comp = normalizarHorario(reclamoVac?.horario)
+                    ? contarCompatibilidad(
+                        estudiantes.filter(e => e.grupo_id === g.id),
+                        normalizarHorario(reclamoVac?.horario)!,
+                      )
+                    : null;
                   return (
                     <TouchableOpacity
                       key={g.id}
-                      disabled={yaPost}
-                      style={[styles.grupoRow, selected && styles.grupoRowSel, yaPost && { opacity: 0.5 }]}
-                      onPress={() => setGrupoSel(g.id)}
+                      style={[styles.grupoRow, sel && styles.grupoRowSel]}
+                      onPress={() => setReclamoGrupo(sel ? null : g.id)}
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={styles.cardTitle} numberOfLines={1}>{g.nombre ?? 'Grupo'}</Text>
                         <Text style={styles.cardMeta} numberOfLines={1}>
-                          {g.carrera ?? '—'} · {g.estudiantes_count ?? 0} estudiantes · {g.total_horas ?? 0}h
+                          {g.carrera ?? '—'} · {g.estudiantes_count ?? 0} estudiantes
                         </Text>
+                        {/* Afinidad de la carrera del grupo con el área de la vacante. */}
+                        {afinidadCarreraVacante(g.carrera, reclamoVac) === 'ninguna' && (
+                          <Text style={[styles.cardMeta, { color: colors.warning }]}>
+                            ⚠ El área de la vacante no coincide con {g.carrera}
+                          </Text>
+                        )}
+                        {comp && comp.total > 0 && (
+                          <Text
+                            style={[
+                              styles.cardMeta,
+                              { color: comp.compatibles === comp.total ? colors.success : colors.warning },
+                            ]}
+                          >
+                            {comp.compatibles}/{comp.total} pueden con este horario
+                          </Text>
+                        )}
                       </View>
                       <Ionicons
-                        name={yaPost ? 'checkmark-done' : selected ? 'radio-button-on' : 'radio-button-off'}
+                        name={sel ? 'radio-button-on' : 'radio-button-off'}
                         size={20}
-                        color={selected ? colors.primaryLight : colors.textMuted}
+                        color={sel ? colors.primary : colors.textMuted}
                       />
                     </TouchableOpacity>
                   );
@@ -303,15 +764,24 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
               )}
             </ScrollView>
 
-            <TouchableOpacity
-              style={[styles.acceptBtn, (!grupoSel || limiteAlcanzado || enviando) && { opacity: 0.5 }]}
-              onPress={confirmarPostular}
-              disabled={!grupoSel || limiteAlcanzado || enviando}
-            >
-              {enviando
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.acceptText}>{limiteAlcanzado ? 'Límite de 2 grupos alcanzado' : 'Enviar postulación'}</Text>}
-            </TouchableOpacity>
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setReclamoVac(null)}
+                disabled={reclamando}
+              >
+                <Text style={styles.cancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.acceptBtn, reclamando && { opacity: 0.6 }]}
+                onPress={confirmarReclamo}
+                disabled={reclamando}
+              >
+                {reclamando
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.acceptText}>Reservar</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -371,11 +841,17 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
   // Modal de evaluación
   const [sel, setSel] = useState<AplicacionGrupo | null>(null);
   const [modo, setModo] = useState<'aceptar' | 'rechazar'>('aceptar');
-  const [dias, setDias] = useState<string[]>([]);
-  const [horario, setHorario] = useState('');
-  const [pago, setPago] = useState('');
   const [motivo, setMotivo] = useState('');
   const [enviando, setEnviando] = useState(false);
+  // Horario/fechas/pago acordado (modal reutilizado del chat, para que el
+  // formato sea idéntico al que ya calcula las horas de la pasantía).
+  const [showHorarioModal, setShowHorarioModal] = useState(false);
+
+  // Reclamos de cupos pendientes de confirmación (solo si la vacante NO tiene
+  // `reclamos_auto`; con auto, el reclamo nace ya aceptado y no aparece aquí).
+  const [reclamos, setReclamos] = useState<ReclamoCupos[]>([]);
+  const [rechazoReclamo, setRechazoReclamo] = useState<ReclamoCupos | null>(null);
+  const [motivoReclamo, setMotivoReclamo] = useState('');
 
   useEffect(() => {
     if (!empresaId) return;
@@ -386,6 +862,29 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
     );
     return unsub;
   }, [empresaId]);
+
+  useEffect(() => {
+    if (!empresaId) return;
+    const unsub = onSnapshot(
+      query(collection(db, COLECCION_RECLAMOS), where('empresaId', '==', empresaId)),
+      snap => setReclamos(snap.docs.map(d => ({ id: d.id, ...d.data() } as ReclamoCupos))),
+      error => console.warn('Error en listener (reclamos cupos empresa):', error),
+    );
+    return unsub;
+  }, [empresaId]);
+
+  const reclamosPendientes = reclamos.filter(r => r.estado === 'pendiente');
+
+  const responderCupos = async (r: ReclamoCupos, decision: 'aceptar' | 'rechazar', motivo?: string) => {
+    try {
+      await responderReclamo(r.id, decision, motivo);
+      setRechazoReclamo(null);
+      setMotivoReclamo('');
+      Alert.alert(decision === 'aceptar' ? 'Cupos confirmados' : 'Solicitud rechazada');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'No se pudo procesar.');
+    }
+  };
 
   const pendientes = solicitudes.filter(s => s.estado === 'pendiente');
   const enProceso  = solicitudes.filter(s => s.estado !== 'pendiente');
@@ -405,47 +904,53 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
   const abrir = (s: AplicacionGrupo) => {
     setSel(s);
     setModo('aceptar');
-    setDias([]);
-    setHorario('');
-    setPago('');
     setMotivo('');
+    setShowHorarioModal(false);
   };
 
-  const toggleDia = (d: string) =>
-    setDias(prev => (prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]));
+  // Chequeo de límite de alianzas del plan (aplica solo al aceptar): bloquea
+  // una universidad NUEVA si ya se alcanzó el cupo (las ya aliadas no cuentan
+  // de nuevo). Se valida ANTES de abrir el selector de horario, para no hacer
+  // que la empresa llene todo el formulario y recién ahí se le niegue.
+  const puedeAceptar = (s: AplicacionGrupo) =>
+    ilimitadas || universidadesAliadas.has(s.universidadId) || universidadesAliadas.size < limiteAlianzas;
 
-  const confirmar = async () => {
+  const abrirSelectorHorario = () => {
     if (!sel) return;
-    // Límite de alianzas del plan: bloquea aceptar una universidad NUEVA si ya
-    // se alcanzó el cupo (las universidades ya aliadas no cuentan de nuevo).
-    if (
-      modo === 'aceptar' &&
-      !ilimitadas &&
-      !universidadesAliadas.has(sel.universidadId) &&
-      universidadesAliadas.size >= limiteAlianzas
-    ) {
+    if (!puedeAceptar(sel)) {
       Alert.alert(
         'Límite de alianzas alcanzado',
         `Tu plan permite ${limiteAlianzas} alianza${limiteAlianzas === 1 ? '' : 's'} con universidades. Mejora tu plan para aliarte con más instituciones.`,
       );
       return;
     }
+    setShowHorarioModal(true);
+  };
+
+  // Se dispara al enviar el modal de horario (mismo componente que usa el
+  // chat) — aceptar el grupo con el acuerdo ya estructurado.
+  const aceptarConAcuerdo = async (acuerdo: AcuerdoData) => {
+    if (!sel) return;
+    setShowHorarioModal(false);
     setEnviando(true);
     try {
-      if (modo === 'aceptar') {
-        await evaluarGrupoPorEmpresa(sel.id, 'aceptar', {
-          horarioPropuesto: horario,
-          diasTrabajo: dias,
-          pagoTotal: pago.trim() ? Number(pago) : undefined,
-        });
-      } else {
-        await evaluarGrupoPorEmpresa(sel.id, 'rechazar', {
-          horarioPropuesto: '',
-          diasTrabajo: [],
-          justificacionRechazo: motivo,
-        });
-      }
-      Alert.alert('Listo', modo === 'aceptar' ? 'Oferta enviada a la universidad.' : 'Grupo rechazado.');
+      await evaluarGrupoPorEmpresa(sel.id, 'aceptar', { acuerdo });
+      Alert.alert('Listo', 'Oferta enviada a la universidad.');
+      setSel(null);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'No se pudo procesar.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const confirmarRechazo = async () => {
+    if (!sel) return;
+    if (!motivo.trim()) { Alert.alert('Motivo requerido'); return; }
+    setEnviando(true);
+    try {
+      await evaluarGrupoPorEmpresa(sel.id, 'rechazar', { justificacionRechazo: motivo });
+      Alert.alert('Listo', 'Grupo rechazado.');
       setSel(null);
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'No se pudo procesar.');
@@ -456,6 +961,81 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
 
   return (
     <View style={{ gap: 12 }}>
+      {/* ── Solicitudes de cupos pendientes de confirmar ── */}
+      {reclamosPendientes.length > 0 && (
+        <>
+          <Text style={styles.heading}>Solicitudes de cupos</Text>
+          {reclamosPendientes.map(r => (
+            <GlassCard key={r.id} colors={colors} isDark={isDark} column>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {r.universidadNombre || 'Una universidad'} solicita {r.cantidad} cupo(s)
+              </Text>
+              <Text style={styles.cardMeta} numberOfLines={1}>
+                {r.vacanteTitulo || 'Vacante'}
+                {r.grupoNombre ? ` · ${r.grupoNombre}` : ''}
+              </Text>
+              {textoHorario(r.horario) && (
+                <Text style={styles.cardMeta}>{textoHorario(r.horario)}</Text>
+              )}
+              <Text style={styles.note}>
+                Los cupos ya están apartados mientras decides. Si rechazas, vuelven a estar disponibles.
+              </Text>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity
+                  style={styles.rejectBtn}
+                  onPress={() => { setMotivoReclamo(''); setRechazoReclamo(r); }}
+                >
+                  <Text style={styles.rejectText}>Rechazar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.acceptBtn}
+                  onPress={() => responderCupos(r, 'aceptar')}
+                >
+                  <Text style={styles.acceptText}>Confirmar cupos</Text>
+                </TouchableOpacity>
+              </View>
+            </GlassCard>
+          ))}
+        </>
+      )}
+
+      {/* ── Modal: rechazar solicitud de cupos ── */}
+      <Modal
+        visible={!!rechazoReclamo}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRechazoReclamo(null)}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Rechazar solicitud de cupos</Text>
+            <Text style={styles.cardMeta}>
+              Explica por qué no puedes recibir a estos estudiantes.
+            </Text>
+            <TextInput
+              style={styles.textArea}
+              value={motivoReclamo}
+              onChangeText={setMotivoReclamo}
+              placeholder="Escribe el motivo…"
+              placeholderTextColor={colors.textMuted}
+              multiline
+              selectionColor={colors.primary}
+            />
+            <View style={styles.actionsRow}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setRechazoReclamo(null)}>
+                <Text style={styles.cancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.rejectBtn}
+                onPress={() => rechazoReclamo && responderCupos(rechazoReclamo, 'rechazar', motivoReclamo)}
+              >
+                <Text style={styles.rejectText}>Rechazar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.rowBetween}>
         <Text style={styles.heading}>Solicitudes de universidades</Text>
         <Text style={styles.note}>
@@ -515,8 +1095,11 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
         </>
       )}
 
-      {/* ── Modal de evaluación ── */}
-      <Modal visible={!!sel} transparent animationType="slide" onRequestClose={() => setSel(null)}>
+      {/* ── Modal de evaluación ──
+          `visible` se apaga mientras `showHorarioModal` está abierto: apilar
+          dos <Modal> nativos deja un overlay fantasma que bloquea los toques
+          (mismo problema ya resuelto en ChatThread.tsx). */}
+      <Modal visible={!!sel && !showHorarioModal} transparent animationType="slide" onRequestClose={() => setSel(null)}>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.rowBetween}>
@@ -534,11 +1117,15 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
               <OfertaDetalle icon="people-outline" label="Estudiantes" value={`${sel?.estudiantesCount ?? 0}`} colors={colors} styles={styles} />
             </View>
 
-            {/* Tabs aceptar / rechazar */}
+            {/* Tabs aceptar / rechazar — Aceptar dispara el selector de horario
+                de inmediato (antes requería un segundo botón debajo cuyas
+                propiedades responsive fallaban en móvil y podía quedar
+                inalcanzable en pantallas pequeñas). */}
             <View style={styles.segment}>
               <TouchableOpacity
                 style={[styles.segmentBtn, modo === 'aceptar' && styles.segmentBtnActive]}
-                onPress={() => setModo('aceptar')}
+                onPress={() => { setModo('aceptar'); abrirSelectorHorario(); }}
+                disabled={enviando}
               >
                 <Text style={[styles.segmentText, modo === 'aceptar' && styles.segmentTextActive]}>Aceptar</Text>
               </TouchableOpacity>
@@ -552,44 +1139,12 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
 
             <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
               {modo === 'aceptar' ? (
-                <>
-                  <Text style={styles.label}>Días de trabajo</Text>
-                  <View style={styles.diasWrap}>
-                    {DIAS_SEMANA.map(d => {
-                      const on = dias.includes(d);
-                      return (
-                        <TouchableOpacity
-                          key={d}
-                          style={[styles.diaChip, on && styles.diaChipOn]}
-                          onPress={() => toggleDia(d)}
-                        >
-                          <Text style={[styles.diaText, on && styles.diaTextOn]}>{d.slice(0, 3)}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-
-                  <Text style={styles.label}>Horario propuesto</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={horario}
-                    onChangeText={setHorario}
-                    placeholder="Ej. 7:00 a 17:00"
-                    placeholderTextColor={colors.textMuted}
-                    selectionColor={colors.primary}
-                  />
-
-                  <Text style={styles.label}>Pago total (opcional)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={pago}
-                    onChangeText={t => setPago(t.replace(/[^0-9.]/g, ''))}
-                    placeholder="0.00"
-                    keyboardType="decimal-pad"
-                    placeholderTextColor={colors.textMuted}
-                    selectionColor={colors.primary}
-                  />
-                </>
+                <Text style={[styles.note, { marginTop: 10 }]}>
+                  Al pulsar Aceptar se abrirá el formulario para definir el horario
+                  (días y horas), el período de la pasantía y el pago acordado. Ese
+                  acuerdo es lo que permite calcular las horas de práctica de cada
+                  estudiante del grupo.
+                </Text>
               ) : (
                 <>
                   <Text style={styles.label}>Justificación del rechazo *</Text>
@@ -606,20 +1161,27 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
               )}
             </ScrollView>
 
-            <TouchableOpacity
-              style={[modo === 'aceptar' ? styles.acceptBtn : styles.rejectBtnSolid, enviando && { opacity: 0.6 }]}
-              onPress={confirmar}
-              disabled={enviando}
-            >
-              {enviando
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={modo === 'aceptar' ? styles.acceptText : styles.rejectSolidText}>
-                    {modo === 'aceptar' ? 'Enviar oferta' : 'Rechazar grupo'}
-                  </Text>}
-            </TouchableOpacity>
+            {modo === 'rechazar' && (
+              <TouchableOpacity
+                style={[styles.rejectBtnSolid, enviando && { opacity: 0.6 }]}
+                onPress={confirmarRechazo}
+                disabled={enviando}
+              >
+                {enviando
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.rejectSolidText}>Rechazar grupo</Text>}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>
+
+      {/* ── Selector de horario/fechas/pago (mismo componente que el chat) ── */}
+      <ProponerHorarioModal
+        visible={showHorarioModal}
+        onClose={() => setShowHorarioModal(false)}
+        onSubmit={aceptarConAcuerdo}
+      />
     </View>
   );
 }
@@ -706,7 +1268,41 @@ const makeStyles = (C: GradlyColors, _isDark: boolean) => {
       backgroundColor: C.primary, borderRadius: 12,
       paddingHorizontal: 14, paddingVertical: 9, alignSelf: 'flex-start',
     },
+    ctaDisabled: { backgroundColor: C.textMuted, opacity: 0.55 },
+    ctaAlt: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      backgroundColor: 'transparent', borderRadius: 12,
+      borderWidth: 1, borderColor: C.primary,
+      paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start',
+    },
+    ctaAltText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: C.primaryLight },
+    barraFondo: {
+      height: 7, borderRadius: 4, backgroundColor: C.border,
+      overflow: 'hidden', marginTop: 8,
+    },
+    barraRelleno: { height: '100%', borderRadius: 4 },
+    badgeReclamo: { fontSize: 11, fontFamily: FONTS.interSemiBold },
+    liberarBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      alignSelf: 'flex-start', marginTop: 8,
+      paddingVertical: 5, paddingHorizontal: 9,
+      borderRadius: 9, borderWidth: 1, borderColor: C.border,
+    },
+    liberarTxt: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: C.textMuted },
+    grupoRowSel: { borderColor: C.primary, borderWidth: 1 },
+    campoLabel: {
+      fontSize: 12, fontFamily: FONTS.interSemiBold,
+      color: C.textPrimary, marginTop: 12, marginBottom: 5,
+    },
+    inputNum: {
+      borderWidth: 1, borderColor: C.border, borderRadius: 10,
+      paddingHorizontal: 12, paddingVertical: 9,
+      color: C.textPrimary, fontSize: 15, fontFamily: FONTS.interSemiBold,
+      backgroundColor: C.backgroundCard,
+    },
     ctaText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: '#fff' },
+    cardCupos: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: C.primaryLight, marginTop: 3 },
+    cardCuposAgotado: { color: C.error },
 
     tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
     infoTag: {
@@ -768,7 +1364,6 @@ const makeStyles = (C: GradlyColors, _isDark: boolean) => {
       backgroundColor: C.backgroundSurface, borderRadius: 12, padding: 12, marginTop: 8,
       borderWidth: 1, borderColor: C.border,
     },
-    grupoRowSel: { borderColor: C.primary },
 
     // Segment
     segment: {
@@ -784,24 +1379,11 @@ const makeStyles = (C: GradlyColors, _isDark: boolean) => {
       fontSize: 11, fontFamily: FONTS.interMedium, color: C.primaryLight,
       marginTop: 12, marginBottom: 6, letterSpacing: 0.3,
     },
-    input: {
-      backgroundColor: C.backgroundSurface, borderRadius: 10, borderWidth: 1, borderColor: C.border,
-      height: 46, paddingHorizontal: 14, fontSize: 14, fontFamily: FONTS.interRegular, color: C.textPrimary,
-    },
     textArea: {
       backgroundColor: C.backgroundSurface, borderRadius: 10, borderWidth: 1, borderColor: C.border,
       minHeight: 90, padding: 14, fontSize: 14, fontFamily: FONTS.interRegular, color: C.textPrimary,
       textAlignVertical: 'top', marginTop: 6,
     },
-
-    diasWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    diaChip: {
-      paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
-      backgroundColor: C.backgroundSurface, borderWidth: 1, borderColor: C.border,
-    },
-    diaChipOn: { backgroundColor: C.primary, borderColor: C.primary },
-    diaText: { fontSize: 12, fontFamily: FONTS.interMedium, color: C.textMuted },
-    diaTextOn: { color: '#fff' },
   });
   return sheet;
 };

@@ -7,6 +7,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 import {
   collection,
   doc,
@@ -23,12 +24,14 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
+
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '../config/firebaseConfig';
+import { resolverRutaNotif } from '../utils/notifRoute';
+import { AutoText, AutoText as Text } from './AutoText';
 import { FONTS, useTheme } from '../context/ThemeContext';
 import { useTranslationContext } from '../context/TranslationContext';
 import { shadow } from '../utils/shadow';
@@ -39,16 +42,25 @@ interface Notif {
   mensaje: string;
   leida: boolean;
   created_at: string;
+  link_accion?: string;
+  tipo?: string;
 }
 
 interface FloatingTopBarProps {
   userId?: string | null;
 }
 
+// Endónimos: cada idioma se muestra en su propio nombre (no se traducen).
+const LANGS: { code: 'es' | 'en'; label: string }[] = [
+  { code: 'es', label: 'Español' },
+  { code: 'en', label: 'English' },
+];
+
 export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, isDark, toggleTheme } = useTheme();
-  const { language } = useTranslationContext();
+  const { language, setLanguage, t, locale } = useTranslationContext();
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
@@ -76,6 +88,8 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
             mensaje: data.mensaje ?? '',
             leida: !!data.leido,
             created_at: created ? created.toISOString() : new Date(0).toISOString(),
+            link_accion: data.link_accion ?? data.referencia_id ?? '',
+            tipo: data.tipo ?? '',
           };
         });
         list.sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -100,6 +114,17 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
     await updateDoc(doc(db, 'notificaciones_app', id), { leido: true });
     setNotifs(prev => prev.map(n => (n.id === id ? { ...n, leida: true } : n)));
     setUnread(prev => Math.max(0, prev - 1));
+  };
+
+  // Al tocar una notificación: marcarla leída, cerrar el panel y navegar al
+  // objeto consecuente (deep link) según su `link_accion`/`referencia_id`.
+  const abrirNotif = (n: Notif) => {
+    if (!n.leida) markOneRead(n.id);
+    setNotifOpen(false);
+    const ruta = resolverRutaNotif(n.link_accion, n.tipo);
+    if (ruta) {
+      try { router.push(ruta as any); } catch { /* ruta inválida → no navega */ }
+    }
   };
 
   const tap = (fn: () => void) => () => {
@@ -154,7 +179,7 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
           </Pressable>
         </BlurView>
 
-        {/* Menú idioma (la app es español fijo por ahora → no-op) */}
+        {/* Menú de idioma — Español / Inglés */}
         {langOpen && (
           <View
             style={[
@@ -162,12 +187,33 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
               { backgroundColor: colors.backgroundCard, borderColor: colors.border },
             ]}
           >
-            <TouchableOpacity style={styles.langItem} onPress={() => setLangOpen(false)}>
-              <Ionicons name="swap-horizontal-outline" size={16} color={colors.primary} />
-              <Text style={[styles.langItemText, { color: colors.textPrimary }]}>
-                {language === 'es' ? 'Switch to English' : 'Cambiar a Español'}
-              </Text>
-            </TouchableOpacity>
+            {LANGS.map(({ code, label }) => {
+              const active = language === code;
+              return (
+                <TouchableOpacity
+                  key={code}
+                  style={styles.langItem}
+                  onPress={() => {
+                    setLanguage(code);
+                    setLangOpen(false);
+                  }}
+                >
+                  <Ionicons
+                    name={active ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={16}
+                    color={active ? colors.primary : colors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.langItemText,
+                      { color: active ? colors.primary : colors.textPrimary },
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
       </View>
@@ -184,11 +230,11 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
               <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
             <Text style={[styles.notifTitle, { color: colors.textPrimary }]}>
-              Notificaciones
+              {t('notifications')}
             </Text>
             {unread > 0 ? (
               <TouchableOpacity onPress={markAllRead}>
-                <Text style={[styles.markAll, { color: colors.primary }]}>Marcar todas</Text>
+                <Text style={[styles.markAll, { color: colors.primary }]}>{t('marcar_todas')}</Text>
               </TouchableOpacity>
             ) : (
               <View style={{ width: 80 }} />
@@ -200,7 +246,7 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
               <View style={styles.empty}>
                 <Ionicons name="notifications-off-outline" size={48} color={colors.textMuted} />
                 <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                  No tienes notificaciones aún
+                  {t('sin_notificaciones')}
                 </Text>
               </View>
             ) : (
@@ -212,18 +258,18 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
                     { borderBottomColor: colors.border },
                     !n.leida && { backgroundColor: colors.primary12 },
                   ]}
-                  onPress={() => { if (!n.leida) markOneRead(n.id); }}
+                  onPress={() => abrirNotif(n)}
                 >
                   {!n.leida && <View style={[styles.dot, { backgroundColor: colors.primary }]} />}
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.itemTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                    <AutoText style={[styles.itemTitle, { color: colors.textPrimary }]} numberOfLines={1}>
                       {n.titulo}
-                    </Text>
-                    <Text style={[styles.itemMsg, { color: colors.textMuted }]} numberOfLines={2}>
+                    </AutoText>
+                    <AutoText style={[styles.itemMsg, { color: colors.textMuted }]} numberOfLines={2}>
                       {n.mensaje}
-                    </Text>
+                    </AutoText>
                     <Text style={[styles.itemTime, { color: colors.textMuted }]}>
-                      {new Date(n.created_at).toLocaleDateString('es-SV', {
+                      {new Date(n.created_at).toLocaleDateString(locale, {
                         day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
                       })}
                     </Text>

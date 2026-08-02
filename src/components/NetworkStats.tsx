@@ -13,8 +13,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { BarChart, PieChart } from 'react-native-chart-kit';
+import { Dimensions, ScrollView, StyleSheet, View } from 'react-native';
+import { AutoText as Text } from "./AutoText";
+import { BarChart } from 'react-native-chart-kit';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
@@ -287,64 +288,70 @@ export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
 
 // ═════════════════════════════════════════════
 // PANEL MI PERFIL — UNIVERSIDAD
+// Avance formativo de los estudiantes: distribución por % de horas cumplidas
+// (barras) + indicadores de promedio, estudiantes en proceso y egresados.
+// Datos reales de `perfiles_estudiantes` de la universidad.
 // ═════════════════════════════════════════════
+const BUCKET_LABELS = ['0-25%', '26-50%', '51-75%', '76-99%', '100%'];
+
 export function PerfilStatsUniversidad({ universidadId }: { universidadId: string }) {
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [apps, setApps] = useState<any[]>([]);
+  const [estudiantes, setEstudiantes] = useState<any[]>([]);
 
   useEffect(() => {
     if (!universidadId) return;
     const unsub = onSnapshot(
-      query(collection(db, 'aplicaciones_grupos'), where('universidadId', '==', universidadId)),
-      s => setApps(s.docs.map(d => d.data())),
-      error => console.warn('Error en listener (aplicaciones_grupos universidad):', error),
+      query(collection(db, 'perfiles_estudiantes'), where('universidad_id', '==', universidadId)),
+      s => setEstudiantes(s.docs.map(d => d.data())),
+      error => console.warn('Error en listener (perfiles_estudiantes universidad):', error),
     );
     return unsub;
   }, [universidadId]);
 
-  const conteos = useMemo(() => {
-    let pendientes = 0, activas = 0, rechazadas = 0;
-    apps.forEach(a => {
-      if (a.estado === 'pendiente' || a.estado === 'revisando') pendientes++;
-      else if (a.estado === 'aprobada') activas++;
-      else if (a.estado === 'rechazada') rechazadas++;
+  const resumen = useMemo(() => {
+    const buckets = [0, 0, 0, 0, 0];
+    let sumaPct = 0, enProceso = 0, egresados = 0;
+    estudiantes.forEach(e => {
+      const objetivo = Number(e.horas_objetivo) || 500;
+      const pct = Math.max(0, Math.min(100, (Number(e.horas_aprobadas) || 0) / objetivo * 100));
+      const idx = pct >= 100 ? 4 : pct >= 76 ? 3 : pct >= 51 ? 2 : pct >= 26 ? 1 : 0;
+      buckets[idx]++;
+      sumaPct += pct;
+      if ((Number(e.horas_en_proceso) || 0) > 0) enProceso++;
+      if (e.graduado === true) egresados++;
     });
-    return { pendientes, activas, rechazadas };
-  }, [apps]);
+    const promedio = estudiantes.length ? Math.round(sumaPct / estudiantes.length) : 0;
+    return { buckets, promedio, enProceso, egresados };
+  }, [estudiantes]);
 
-  const total = conteos.pendientes + conteos.activas + conteos.rechazadas;
   const chartConfig = makeChartConfig(colors, isDark);
   const chartWidth = SCREEN_W - 96;
 
-  const pieData = [
-    { name: 'Activas', population: conteos.activas, color: colors.success, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: 'Pendientes', population: conteos.pendientes, color: colors.warning, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: 'Rechazadas', population: conteos.rechazadas, color: colors.error, legendFontColor: colors.textMuted, legendFontSize: 12 },
-  ].filter(d => d.population > 0);
-
   return (
     <View style={{ gap: 12 }}>
-      <Text style={styles.panelTitle}>Estado de postulaciones de tus grupos</Text>
-      {total === 0 ? (
-        <Text style={styles.empty}>Aún no hay postulaciones de grupos.</Text>
+      <Text style={styles.panelTitle}>Avance formativo de tus estudiantes</Text>
+      {estudiantes.length === 0 ? (
+        <Text style={styles.empty}>Aún no tienes estudiantes registrados.</Text>
       ) : (
         <>
-          <PieChart
-            data={pieData}
+          <BarChart
+            data={{ labels: BUCKET_LABELS, datasets: [{ data: resumen.buckets }] }}
             width={chartWidth}
             height={200}
+            yAxisLabel=""
+            yAxisSuffix=""
             chartConfig={chartConfig}
-            accessor="population"
-            backgroundColor="transparent"
-            paddingLeft="8"
-            absolute
+            fromZero
+            showValuesOnTopOfBars
+            style={styles.chart}
           />
+          <Text style={styles.empty}>Estudiantes según su porcentaje de horas cumplidas.</Text>
           <View style={styles.statsRow}>
-            <MiniStat label="Activas" value={conteos.activas} color={colors.success} styles={styles} />
-            <MiniStat label="Pendientes" value={conteos.pendientes} color={colors.warning} styles={styles} />
-            <MiniStat label="Rechazadas" value={conteos.rechazadas} color={colors.error} styles={styles} />
+            <MiniStat label="Avance prom." value={`${resumen.promedio}%` as any} color={colors.primaryLight} styles={styles} />
+            <MiniStat label="En proceso" value={resumen.enProceso} color={colors.success} styles={styles} />
+            <MiniStat label="Egresados" value={resumen.egresados} color={colors.gold} styles={styles} />
           </View>
         </>
       )}

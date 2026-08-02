@@ -1,55 +1,47 @@
-<<<<<<< HEAD
-# Welcome to your Expo app 👋
+# Gradly
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Plataforma educativa (app móvil **Expo / React Native** + **Firebase**) que conecta
+estudiantes, universidades y empresas para gestionar **prácticas laborales**:
+publicación de vacantes, grupos de estudiantes, acuerdos de pasantía,
+certificación de horas y evaluación mutua.
 
-## Get started
+## Requisitos
 
-1. Install dependencies
+- Node.js LTS
+- Expo (`npx expo`)
+
+## Empezar
+
+1. Instalar dependencias
 
    ```bash
    npm install
    ```
 
-2. Start the app
+2. Iniciar la app
 
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+Desde la salida podrás abrir la app en un [development build](https://docs.expo.dev/develop/development-builds/introduction/),
+un [emulador de Android](https://docs.expo.dev/workflow/android-studio-emulator/),
+un [simulador de iOS](https://docs.expo.dev/workflow/ios-simulator/) o
+[Expo Go](https://expo.dev/go).
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Estructura
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- **app/** — pantallas y rutas (enrutamiento por archivos con `expo-router`).
+- **src/** — servicios, componentes, contextos, utilidades y datos.
+- **functions/** — Cloud Functions (OTP de login, traducción, etc.).
 
-## Get a fresh project
+## Backend
 
-When you're ready, run:
+Firebase: **Auth**, **Firestore** y **Storage**. Las reglas de seguridad de
+Firestore están en `firestore.rules` (fuente de verdad administrada en la
+consola de Firebase).
 
-```bash
-npm run reset-project
-```
+## Aprender más
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
-=======
-# Graddly
-Plataformaeducativa
->>>>>>> ab6cebfbb95d31469889d477c58024bd7013c4f6
+- [Documentación de Expo](https://docs.expo.dev/)
+- [Enrutamiento con Expo Router](https://docs.expo.dev/router/introduction)

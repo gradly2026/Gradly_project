@@ -1,13 +1,14 @@
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Image,
   StyleSheet,
-  Text,
+
   useWindowDimensions,
   View,
 } from "react-native";
+import { AutoText as Text } from "../../src/components/AutoText";
 import { LiquidBackground } from "../../components/ui/liquid-glass/LiquidBackground";
 import ChatThread from "../../src/components/ChatThread";
 import InboxList from "../../src/components/InboxList";
@@ -32,22 +33,46 @@ export default function MensajesScreen() {
   const router = useRouter();
   const { user, rol } = useAuth();
   const { colors } = useTheme();
+  const params = useLocalSearchParams<{ chat?: string; peerName?: string }>();
 
-  const [selected, setSelected] = useState<ChatListItem | null>(null);
+  // Selección ligera: vale para clics del inbox y para aperturas por parámetro
+  // (buscador → iniciar chat). Solo se necesitan id y nombre para ChatThread.
+  const [selected, setSelected] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const handleSelect = (chat: ChatListItem) => {
-    const peerName = chatTitle(chat, user?.uid);
+  // Abre una conversación: en web la fija en el panel derecho; en móvil navega
+  // a la pantalla individual del chat.
+  const abrir = (id: string, name: string) => {
     if (isWide) {
-      setSelected(chat);
+      setSelected({ id, name });
       return;
     }
-    // Móvil: navega al chat individual.
     router.push({
       pathname: "/mensajes/[id]",
-      params: { id: chat.id, peerName },
+      params: { id, peerName: name },
     } as any);
   };
+
+  const handleSelect = (chat: ChatListItem) =>
+    abrir(chat.id, chatTitle(chat, user?.uid));
+
+  // Apertura por parámetro (proviene del buscador → useIniciarChat).
+  useEffect(() => {
+    if (!params.chat) return;
+    const id = String(params.chat);
+    const name = params.peerName ? String(params.peerName) : "Chat";
+    if (isWide) {
+      setSelected({ id, name });
+    } else {
+      router.replace({
+        pathname: "/mensajes/[id]",
+        params: { id, peerName: name },
+      } as any);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.chat, params.peerName, isWide]);
 
   return (
     <LiquidBackground>
@@ -71,7 +96,7 @@ export default function MensajesScreen() {
                 key={selected.id}
                 embedded
                 chatId={selected.id}
-                peerName={chatTitle(selected, user?.uid)}
+                peerName={selected.name}
               />
             ) : (
               <View style={styles.emptyDetail}>

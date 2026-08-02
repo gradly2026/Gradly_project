@@ -21,7 +21,7 @@ import type { UserRole } from "../context/AuthContext";
 export function rutaPorRol(rol: UserRole | null | undefined): string | null {
   switch (rol) {
     case "admin":
-      return "/dashboard-admin";
+      return "/admin";
     case "universidad":
       return "/dashboard-universidad";
     case "empresa":

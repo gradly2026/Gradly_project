@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AutoText as Text } from "../../src/components/AutoText";
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
@@ -27,7 +28,7 @@ const CURSOS = [
 const GUIAS = [
   { id: 'g1', titulo: 'Cómo redactar un CV impactante', icon: 'document-outline' },
   { id: 'g2', titulo: 'Qué esperar en tu primera pasantía', icon: 'briefcase-outline' },
-  { id: 'g3', titulo: 'Cómo negociar tu primer contrato', icon: 'handshake-outline' as any },
+  { id: 'g3', titulo: 'Cómo negociar tu primer contrato', icon: 'people-outline' },
   { id: 'g4', titulo: 'Networking desde cero', icon: 'person-add-outline' },
   { id: 'g5', titulo: 'Errores comunes en entrevistas', icon: 'warning-outline' },
 ];
@@ -84,7 +85,10 @@ function GuiaRow({ guia }: { guia: typeof GUIAS[number] }) {
 // PANTALLA
 // ─────────────────────────────────────────────
 export default function AcademiaTab() {
-  const { styles } = useThemedStyles();
+  const { styles, colors } = useThemedStyles();
+  const webScrollStyle = Platform.OS === 'web'
+    ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
+    : undefined;
   return (
     <LiquidBackground>
     <View style={[styles.root, { backgroundColor: 'transparent' }]}>
@@ -99,7 +103,13 @@ export default function AcademiaTab() {
         <Ionicons name="school-outline" size={28} color={COLORS.primaryLight} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        style={webScrollStyle}
+        showsVerticalScrollIndicator
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.scroll, { flexGrow: 1 }]}
+      >
 
         {/* ── Cursos recomendados ── */}
         <Text style={styles.sectionTitle}>Cursos recomendados</Text>

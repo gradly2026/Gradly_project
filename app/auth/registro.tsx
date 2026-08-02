@@ -26,15 +26,24 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from "react-native";
+import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
 
 import AppHeader from "../../components/AppHeader";
 import { auth, db, storage } from "../../src/config/firebaseConfig";
 import { useTheme, type GradlyColors } from "../../src/context/ThemeContext";
+import {
+  CARRERAS_EL_SALVADOR,
+  type Carrera,
+  zonaDeCarrera,
+  avisosZonaRoja,
+  carrerasRojasEn,
+  type AvisoZonaRoja,
+} from "../../src/data/carreras";
 import {
   maskExp,
   maskTarjeta,
@@ -324,7 +333,7 @@ const GEO_DATA: Record<string, string[]> = {
 
 const FLOW_LABELS: Record<Exclude<Flow, null>, string[]> = {
   empresa: ["Datos", "Logo", "Representante", "Plan", "Seguridad"],
-  universidad: ["Institución", "Logo", "Responsable", "Carreras", "Seguridad"],
+  universidad: ["Institución", "Logo", "Carreras", "Responsable", "Seguridad"],
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -334,94 +343,7 @@ const FLOW_LABELS: Record<Exclude<Flow, null>, string[]> = {
 //  Se usa en el paso 4 del flujo de universidad para que la institución
 //  declare qué carreras oferta (campo carreras_ofertadas en Firestore).
 // ══════════════════════════════════════════════════════════════════
-type CarreraTipo =
-  | "Doctorado"
-  | "Licenciatura"
-  | "Ingeniería"
-  | "Profesorado"
-  | "Técnico";
-
-interface Carrera {
-  id: string;
-  nombre: string;
-  modalidad: "Presencial" | "En línea" | "Semipresencial";
-  tipo: CarreraTipo;
-  duracion: string;
-}
-
-const CARRERAS_EL_SALVADOR: Carrera[] = [
-  // ── Facultad de Medicina y Ciencias de la Salud ──
-  { id: "med-01", nombre: "Doctorado en Medicina", modalidad: "Presencial", tipo: "Doctorado", duracion: "8 años" },
-  { id: "med-02", nombre: "Doctorado en Cirugía Dental", modalidad: "Presencial", tipo: "Doctorado", duracion: "5 años" },
-  { id: "med-03", nombre: "Licenciatura en Laboratorio Clínico", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "med-04", nombre: "Licenciatura en Fisioterapia y Terapia Ocupacional", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "med-05", nombre: "Licenciatura en Nutrición", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "med-06", nombre: "Licenciatura en Anestesiología e Inhaloterapia", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "med-07", nombre: "Licenciatura en Enfermería", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "med-08", nombre: "Licenciatura en Salud Materno Infantil", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "med-09", nombre: "Licenciatura en Radiología e Imágenes", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "med-10", nombre: "Técnico en Enfermería", modalidad: "Presencial", tipo: "Técnico", duracion: "3 años" },
-
-  // ── Facultad de Ingeniería y Arquitectura ──
-  { id: "ing-01", nombre: "Arquitectura", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-02", nombre: "Ingeniería Civil", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-03", nombre: "Ingeniería Industrial", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-04", nombre: "Ingeniería Industrial (en línea)", modalidad: "En línea", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-05", nombre: "Ingeniería Mecánica", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-06", nombre: "Ingeniería de Sistemas Informáticos", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-07", nombre: "Ingeniería Eléctrica", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-08", nombre: "Ingeniería Química", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-09", nombre: "Ingeniería Electrónica", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-10", nombre: "Ingeniería Agroindustrial", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-11", nombre: "Ingeniería en Alimentos", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-12", nombre: "Ingeniería en Telecomunicaciones", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "ing-13", nombre: "Técnico en Ingeniería de Sistemas Informáticos", modalidad: "Semipresencial", tipo: "Técnico", duracion: "2 años" },
-  { id: "ing-14", nombre: "Técnico en Redes Computacionales", modalidad: "Presencial", tipo: "Técnico", duracion: "2 años" },
-
-  // ── Facultad de Ciencias y Humanidades ──
-  { id: "hum-01", nombre: "Licenciatura en Periodismo", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "hum-02", nombre: "Licenciatura en Psicología", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "hum-03", nombre: "Licenciatura en Idiomas (Inglés y Francés)", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "hum-04", nombre: "Licenciatura en Letras", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "hum-05", nombre: "Licenciatura en Filosofía", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "hum-06", nombre: "Licenciatura en Sociología", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "hum-07", nombre: "Licenciatura en Trabajo Social", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "hum-08", nombre: "Licenciatura en Artes Plásticas", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "hum-09", nombre: "Licenciatura en Ciencias de la Educación", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-
-  // ── Profesorados (3 años) ──
-  { id: "prof-01", nombre: "Profesorado en Educación Básica (1° y 2° ciclo)", modalidad: "Presencial", tipo: "Profesorado", duracion: "3 años" },
-  { id: "prof-02", nombre: "Profesorado en Matemática para Tercer Ciclo y Bachillerato", modalidad: "Presencial", tipo: "Profesorado", duracion: "3 años" },
-  { id: "prof-03", nombre: "Profesorado en Lenguaje y Literatura", modalidad: "Presencial", tipo: "Profesorado", duracion: "3 años" },
-  { id: "prof-04", nombre: "Profesorado en Ciencias Naturales", modalidad: "Presencial", tipo: "Profesorado", duracion: "3 años" },
-  { id: "prof-05", nombre: "Profesorado en Inglés", modalidad: "Presencial", tipo: "Profesorado", duracion: "3 años" },
-  { id: "prof-06", nombre: "Profesorado en Educación Parvularia", modalidad: "Presencial", tipo: "Profesorado", duracion: "3 años" },
-  { id: "prof-07", nombre: "Profesorado en Ciencias Sociales", modalidad: "Presencial", tipo: "Profesorado", duracion: "3 años" },
-
-  // ── Facultad de Ciencias Económicas ──
-  { id: "eco-01", nombre: "Licenciatura en Administración de Empresas", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "eco-02", nombre: "Licenciatura en Contaduría Pública", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "eco-03", nombre: "Licenciatura en Mercadotecnia", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "eco-04", nombre: "Licenciatura en Economía", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "eco-05", nombre: "Licenciatura en Negocios Internacionales", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "eco-06", nombre: "Técnico en Mercadeo", modalidad: "Semipresencial", tipo: "Técnico", duracion: "2 años" },
-  { id: "eco-07", nombre: "Técnico en Administración de Empresas", modalidad: "Presencial", tipo: "Técnico", duracion: "2 años" },
-
-  // ── Facultad de Jurisprudencia y Ciencias Sociales ──
-  { id: "jur-01", nombre: "Licenciatura en Ciencias Jurídicas (Derecho)", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-  { id: "jur-02", nombre: "Licenciatura en Relaciones Internacionales", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-
-  // ── Facultad de Ciencias Agronómicas ──
-  { id: "agr-01", nombre: "Ingeniería Agronómica", modalidad: "Presencial", tipo: "Ingeniería", duracion: "5 años" },
-  { id: "agr-02", nombre: "Médico Veterinario y Zootecnista", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-
-  // ── Facultad de Química y Farmacia ──
-  { id: "qui-01", nombre: "Licenciatura en Química y Farmacia", modalidad: "Presencial", tipo: "Licenciatura", duracion: "5 años" },
-
-  // ── Otros técnicos ──
-  { id: "tec-01", nombre: "Técnico en Gastronomía", modalidad: "Presencial", tipo: "Técnico", duracion: "2 años" },
-  { id: "tec-02", nombre: "Técnico en Diseño Gráfico", modalidad: "Semipresencial", tipo: "Técnico", duracion: "2 años" },
-];
+// Catálogo de carreras: fuente única en src/data/carreras.ts (con zona).
 
 // Límite máximo de carreras que una universidad puede seleccionar.
 const MAX_CARRERAS = 65;
@@ -1218,6 +1140,8 @@ function CarrerasModal({
   const isSelected = (nombre: string) => selected.includes(nombre);
 
   const toggle = (nombre: string) => {
+    // Se permite seleccionar cualquier carrera (incluidas las Zona Roja); la
+    // validación de las reguladas por el Estado ocurre al pulsar "Siguiente".
     setSelected((prev) => {
       if (prev.includes(nombre)) return prev.filter((x) => x !== nombre);
       if (prev.length >= MAX_CARRERAS) return prev; // tope alcanzado
@@ -1229,6 +1153,7 @@ function CarrerasModal({
 
   const renderItem = ({ item }: { item: Carrera }) => {
     const sel = isSelected(item.nombre);
+    const esRoja = zonaDeCarrera(item.nombre) === "roja";
     const bloqueado = !sel && limiteAlcanzado;
     return (
       <TouchableOpacity
@@ -1250,6 +1175,7 @@ function CarrerasModal({
           </Text>
           <Text style={s.carreraItemMeta}>
             {item.tipo} · {item.modalidad} · {item.duracion}
+            {esRoja ? "  ·  🔒 Regulada por el Estado" : ""}
           </Text>
         </View>
       </TouchableOpacity>
@@ -1532,6 +1458,8 @@ export default function Registro() {
   // Carreras ofertadas (paso 4 universidad)
   const [uCarreras, setUCarreras] = useState<string[]>([]);
   const [isModal1Visible, setIsModal1Visible] = useState(false);
+  // Aviso de carreras Zona Roja detectadas al pulsar "Siguiente".
+  const [avisosRoja, setAvisosRoja] = useState<AvisoZonaRoja[] | null>(null);
   // Seguridad
   const [uPass, setUPass] = useState("");
   const [uPass2, setUPass2] = useState("");
@@ -1791,9 +1719,27 @@ export default function Registro() {
     } else if (flow === "universidad") {
       if (step === 1 && validateU1()) goNext();
       else if (step === 2 && validateU2()) goNext();
-      else if (step === 3 && validateU3()) goNext();
-      else if (step === 4 && validateU4()) goNext();
+      // Paso 3 = Carreras. Antes de avanzar, examina la selección: si hay
+      // carreras Zona Roja (Salud/Educación/Derecho), muestra el/los aviso(s)
+      // legal(es) y NO avanza; el usuario acepta y se deseleccionan.
+      else if (step === 3) {
+        const rojas = carrerasRojasEn(uCarreras);
+        if (rojas.length > 0) {
+          setAvisosRoja(avisosZonaRoja(uCarreras));
+          return;
+        }
+        if (validateU4()) goNext();
+      }
+      // Paso 4 = Responsable.
+      else if (step === 4 && validateU3()) goNext();
     }
+  };
+
+  // El usuario aceptó el aviso legal → se anulan las carreras Zona Roja de la
+  // selección y se cierra el modal. NO avanza: decide agregar otra o "Siguiente".
+  const aceptarAvisoRoja = () => {
+    setUCarreras((prev) => prev.filter((n) => zonaDeCarrera(n) !== "roja"));
+    setAvisosRoja(null);
   };
 
   // ══════════════════════════════════════════════════════════════
@@ -1888,7 +1834,10 @@ export default function Registro() {
           tarjeta_numero: tarjeta4,
           tarjeta_alias: eCard ? eCard.titular.trim() : "",
         };
-        await setDoc(doc(db, "perfiles_empresas", uid), perfilEmpresa);
+        await setDoc(doc(db, "perfiles_empresas", uid), {
+          ...perfilEmpresa,
+          fecha_registro: serverTimestamp(),
+        });
       } else {
         await setDoc(doc(db, "perfiles_universidades", uid), {
           uid,
@@ -1909,7 +1858,20 @@ export default function Registro() {
           contacto_correo: uRespEmail.trim().toLowerCase(),
           contacto_documento_tipo: uRespDocType,
           contacto_documento_numero: uRespDocNum.trim(),
-          carreras_ofertadas: uCarreras,
+          // Guardamos objetos con modalidad/duración/tipo/zona (no solo el nombre)
+          // para que el perfil y los grupos tengan el detalle completo. Los
+          // lectores del proyecto ya soportan tanto string como objeto.
+          carreras_ofertadas: uCarreras.map((nombre) => {
+            const c = CARRERAS_EL_SALVADOR.find((x) => x.nombre === nombre);
+            return {
+              nombre,
+              modalidad: c?.modalidad ?? "",
+              duracion: c?.duracion ?? "",
+              tipo: c?.tipo ?? "",
+              zona: c?.zona ?? "verde",
+            };
+          }),
+          fecha_registro: serverTimestamp(),
         });
       }
 
@@ -2424,7 +2386,7 @@ export default function Registro() {
             <InfoNote>💡 Formato cuadrado recomendado (PNG con fondo transparente).</InfoNote>
           </View>
         );
-      case 3:
+      case 4:
         return (
           <View>
             <Text style={s.stepTitle}>Responsable</Text>
@@ -2486,7 +2448,7 @@ export default function Registro() {
             />
           </View>
         );
-      case 4:
+      case 3:
         return (
           <View>
             <Text style={s.stepTitle}>Carreras universitarias</Text>
@@ -2617,9 +2579,11 @@ export default function Registro() {
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={s.scrollContent}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={Platform.OS === "web"}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Contenedor responsive: centra y limita el ancho en web/tablet. */}
+          <View style={{ maxWidth: 640, alignSelf: "center", width: "100%" }}>
           {/* Encabezado */}
           <View style={s.header}>
             <TouchableOpacity
@@ -2664,7 +2628,7 @@ export default function Registro() {
                   <Ionicons name="school-outline" size={36} color={C.accent70} />
                   <Text style={s.roleTitle}>Universidad</Text>
                   <Text style={s.roleDesc}>
-                    Gestiona y valida el progreso de horas sociales de tus estudiantes.
+                    Gestiona y valida el progreso de horas de práctica de tus estudiantes.
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -2717,11 +2681,44 @@ export default function Registro() {
             setSelected={setUCarreras}
             onClose={() => setIsModal1Visible(false)}
             onConfirm={() => {
+              // Solo cierra el selector; el avance (y la validación Zona Roja)
+              // ocurre al pulsar "Siguiente".
               setIsModal1Visible(false);
               clearErr("uCarreras");
-              goNext();
             }}
           />
+
+          {/* Aviso legal de carreras Zona Roja detectadas al continuar */}
+          <Modal
+            visible={!!avisosRoja}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setAvisosRoja(null)}
+          >
+            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>
+              <View style={[s.confirmCard, { maxHeight: "85%" }]}>
+                <View style={s.confirmIconWrap}>
+                  <Ionicons name="shield-checkmark-outline" size={34} color={C.accent70} />
+                </View>
+                <ScrollView style={{ width: "100%" }}>
+                  {(avisosRoja ?? []).map((a, i) => (
+                    <View key={a.motivo} style={{ marginBottom: i < (avisosRoja?.length ?? 0) - 1 ? 18 : 0 }}>
+                      <Text style={s.confirmTitle}>{a.titulo}</Text>
+                      <Text style={s.confirmDesc}>{a.cuerpo}</Text>
+                      <Text style={[s.confirmDesc, { fontWeight: "700", marginTop: 6 }]}>
+                        Se quitará(n): {a.carreras.join(", ")}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+                <View style={s.confirmActions}>
+                  <TouchableOpacity style={s.btnPrimary} onPress={aceptarAvisoRoja}>
+                    <Text style={s.btnPrimaryText}>Entendido</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
 
           {/* ═════ PASO 99 — Éxito ═════ */}
           {step === 99 && (
@@ -2743,6 +2740,7 @@ export default function Registro() {
               </View>
             </View>
           )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

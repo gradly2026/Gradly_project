@@ -3,18 +3,21 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
+  Platform,
   StyleSheet,
-  Text,
+
   TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
+import { AutoText, AutoText as Text } from "./AutoText";
 import {
   FONTS,
   useTheme,
   type GradlyColors,
 } from "../context/ThemeContext";
+import { useTranslation } from "../context/TranslationContext";
 import {
   chatTitle,
   markChatRead,
@@ -22,8 +25,8 @@ import {
   type ChatListItem,
 } from "../services/chatService";
 
-/** Hora corta: hoy → HH:mm; otro día → dd/mm. */
-function formatHora(d: Date | null): string {
+/** Hora corta: hoy → HH:mm; otro día → dd/mm. Respeta el idioma activo (antes fija en es-ES). */
+function formatHora(d: Date | null, locale: string): string {
   if (!d) return "";
   const hoy = new Date();
   const mismoDia =
@@ -31,12 +34,12 @@ function formatHora(d: Date | null): string {
     d.getMonth() === hoy.getMonth() &&
     d.getFullYear() === hoy.getFullYear();
   if (mismoDia) {
-    return d.toLocaleTimeString("es-ES", {
+    return d.toLocaleTimeString(locale, {
       hour: "2-digit",
       minute: "2-digit",
     });
   }
-  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" });
+  return d.toLocaleDateString(locale, { day: "2-digit", month: "2-digit" });
 }
 
 interface Props {
@@ -63,7 +66,11 @@ export default function InboxList({
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { colors } = useTheme();
+  const { locale } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const webScrollStyle = Platform.OS === 'web'
+    ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
+    : undefined;
 
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,10 +124,10 @@ export default function InboxList({
             <Text style={styles.itemTitle} numberOfLines={1}>
               {titulo}
             </Text>
-            <Text style={styles.itemTime}>{formatHora(item.updatedAt)}</Text>
+            <Text style={styles.itemTime}>{formatHora(item.updatedAt, locale)}</Text>
           </View>
           <View style={styles.itemBottom}>
-            <Text
+            <AutoText
               style={[styles.itemMsg, noLeidos && styles.itemMsgUnread]}
               numberOfLines={1}
             >
@@ -128,7 +135,7 @@ export default function InboxList({
                 (item.type === "group"
                   ? `Grupo: ${item.grupoNombre}`
                   : "Sin mensajes aún")}
-            </Text>
+            </AutoText>
             {noLeidos ? (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>
@@ -179,10 +186,14 @@ export default function InboxList({
         data={chats}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        style={[{ flex: 1 }, webScrollStyle]}
         contentContainerStyle={{
-          paddingHorizontal: 16,
+          paddingHorizontal: 8,
           paddingBottom: insets.bottom + 100,
-          gap: 10,
+          gap: 2,
+          flexGrow: 1,
         }}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -251,24 +262,26 @@ const makeStyles = (C: GradlyColors) =>
       fontFamily: FONTS.interRegular,
       color: C.textMuted,
     },
+    // Filas planas estilo WhatsApp Web: sin tarjeta, separador hairline.
     item: {
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
-      padding: 14,
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: C.border,
-      backgroundColor: C.backgroundCard,
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: C.border,
+      backgroundColor: "transparent",
     },
     itemSelected: {
-      borderColor: C.primary35,
-      backgroundColor: C.primary20,
+      backgroundColor: C.primary12,
+      borderBottomColor: "transparent",
     },
     avatar: {
-      width: 46,
-      height: 46,
-      borderRadius: 14,
+      width: 52,
+      height: 52,
+      borderRadius: 26,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: C.primary20,

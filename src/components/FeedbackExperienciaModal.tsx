@@ -5,11 +5,12 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
+
+
   TouchableOpacity,
   View,
 } from "react-native";
+import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import {
   CRITERIOS_EMPRESA_A_ESTUDIANTE,
   CRITERIOS_ESTUDIANTE_A_EMPRESA,
@@ -37,7 +38,10 @@ interface Props {
   onSubmitted: () => void;
 }
 
-/** Selector de 1 a 5 estrellas. */
+/** Escala de calificación (1..ESCALA_MAX). */
+const ESCALA_MAX = 10;
+
+/** Selector de 1 a 10 estrellas. */
 function StarRow({
   value,
   onChange,
@@ -47,20 +51,21 @@ function StarRow({
 }) {
   return (
     <View style={styles.starRow}>
-      {[1, 2, 3, 4, 5].map((n) => (
+      {Array.from({ length: ESCALA_MAX }, (_, i) => i + 1).map((n) => (
         <TouchableOpacity
           key={n}
           onPress={() => onChange(n)}
-          hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+          hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
           activeOpacity={0.7}
         >
           <Ionicons
             name={n <= value ? "star" : "star-outline"}
-            size={30}
+            size={22}
             color={n <= value ? C.star : C.starOff}
           />
         </TouchableOpacity>
       ))}
+      <Text style={styles.starValue}>{value > 0 ? `${value}/${ESCALA_MAX}` : ""}</Text>
     </View>
   );
 }
@@ -105,6 +110,7 @@ export default function FeedbackExperienciaModal({
         evaluadoRol: pendiente.evaluadoRol,
         criterios: valores,
         comentario,
+        escalaMax: ESCALA_MAX,
       });
       setResultado(res);
     } catch (error: any) {
@@ -276,7 +282,15 @@ const styles = StyleSheet.create({
   },
   starRow: {
     flexDirection: "row",
-    gap: 10,
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 4,
+  },
+  starValue: {
+    color: C.star,
+    fontSize: 13,
+    fontWeight: "700",
+    marginLeft: 6,
   },
   input: {
     backgroundColor: C.card,

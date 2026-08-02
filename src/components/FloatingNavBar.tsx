@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { AutoText as Text, useAutoText } from "./AutoText";
 import Animated, {
   interpolateColor,
   useAnimatedStyle,
@@ -120,6 +121,7 @@ function NavButton<K extends string>({
   onPress: () => void;
 }) {
   const { colors } = useTheme();
+  const labelText = useAutoText(item.label); // traduce la etiqueta de navegación
   // 0 = inactivo, 1 = activo → controla escala/rebote y color
   const progress = useSharedValue(active ? 1 : 0);
 
@@ -159,7 +161,7 @@ function NavButton<K extends string>({
         )}
       </Animated.View>
       <Animated.Text numberOfLines={1} style={[styles.label, labelStyle]}>
-        {item.label}
+        {labelText}
       </Animated.Text>
     </Pressable>
   );

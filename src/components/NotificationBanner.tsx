@@ -8,7 +8,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useEffect, useMemo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AutoText as Text } from "./AutoText";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotification, type NotifType } from '../contexts/NotificationContext';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
