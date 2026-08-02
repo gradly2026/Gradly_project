@@ -52,22 +52,35 @@ export function useAutoText(text?: string | null): string {
   return getCachedTranslation(language, value) ?? value;
 }
 
+export interface AutoTextProps extends TextProps {
+  /**
+   * Desactiva la traducción de este texto. Para NOMBRES PROPIOS: empresas,
+   * universidades, personas, grupos. Sin esto, "Ferretería Morales" se enviaría
+   * al traductor y volvería como "Morales Hardware Store" — además de gastar
+   * cuota traduciendo algo que nunca debe cambiar.
+   */
+  noTranslate?: boolean;
+}
+
 /**
  * <Text> que se auto-traduce. Seguro como reemplazo de react-native <Text>:
  *  - hijo string plano  → se traduce.
  *  - hijos que son un array SOLO de strings/números (p. ej.
  *    `{plan} · {empresa}` o `{label} ({count})`) → se unen y se traducen juntos.
  *  - cualquier otra cosa (íconos, <Text> anidados, elementos) → se deja intacto.
+ *  - con `noTranslate` → se renderiza tal cual (nombres propios).
  */
-export function AutoText({ children, ...rest }: TextProps) {
+export function AutoText({ children, noTranslate, ...rest }: AutoTextProps) {
   let plano: string | null = null;
-  if (typeof children === "string") {
-    plano = children;
-  } else if (
-    Array.isArray(children) &&
-    children.every((c) => typeof c === "string" || typeof c === "number")
-  ) {
-    plano = children.map(String).join("");
+  if (!noTranslate) {
+    if (typeof children === "string") {
+      plano = children;
+    } else if (
+      Array.isArray(children) &&
+      children.every((c) => typeof c === "string" || typeof c === "number")
+    ) {
+      plano = children.map(String).join("");
+    }
   }
   const translated = useAutoText(plano ?? "");
   return <Text {...rest}>{plano !== null ? translated : children}</Text>;

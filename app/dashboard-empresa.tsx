@@ -1512,12 +1512,30 @@ export default function DashboardEmpresa() {
             />
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.mainTitle} numberOfLines={1}>
-              {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
-            </Text>
-            <Text style={styles.mainGreeting} numberOfLines={1}>
-              {perfil?.premium ? '⭐ Premium' : 'Plan Básico'} · {nombreEmpresa}
-            </Text>
+            {/* En Inicio el título es el nombre de la empresa (más identidad que
+                un genérico "Inicio"); el subtítulo deja de repetirlo. */}
+            {/* En Inicio el título es el nombre de la empresa → `noTranslate`,
+                es un nombre propio y no debe pasar por el traductor. */}
+            {seccion === 'inicio' ? (
+              <Text style={styles.mainTitle} numberOfLines={1} noTranslate>
+                {nombreEmpresa || 'Inicio'}
+              </Text>
+            ) : (
+              <Text style={styles.mainTitle} numberOfLines={1}>
+                {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
+              </Text>
+            )}
+            {seccion === 'inicio' ? (
+              <Text style={styles.mainGreeting} numberOfLines={1}>
+                {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
+              </Text>
+            ) : (
+              <Text style={styles.mainGreeting} numberOfLines={1}>
+                {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
+                {' · '}
+                <Text noTranslate>{nombreEmpresa}</Text>
+              </Text>
+            )}
           </View>
         </View>
 

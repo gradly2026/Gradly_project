@@ -6,10 +6,11 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from "react-native";
+// Drop-in de traducción automática (mismo patrón que el resto del proyecto).
+import { AutoText as Text } from "../src/components/AutoText";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../src/config/firebaseConfig";
 import CertificadoGradly from "../src/components/CertificadoGradly";

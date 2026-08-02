@@ -84,7 +84,10 @@ export const TAGS_POR_AREA: Record<string, string[]> = {
     "Motion graphics",
     "Diseño de producto",
   ],
-  Finanzas: ["Contabilidad", "Auditoría", "Impuestos", "Tesorería", "Análisis financiero"],
+  // "Auditoría financiera" y no "Auditoría" a secas: el caché de traducción se
+  // indexa por el string en español, y "Auditoría" ya significa "Audit log" en
+  // el panel admin. Desambiguar aquí evita que un tag pise esa traducción.
+  Finanzas: ["Contabilidad", "Auditoría financiera", "Impuestos", "Tesorería", "Análisis financiero"],
   Manufactura: [
     "Producción",
     "Control de calidad",

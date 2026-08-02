@@ -705,10 +705,21 @@ export default function DashboardUniversidad() {
             />
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.mainTitle} numberOfLines={1}>
-              {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
-            </Text>
-            <Text style={styles.mainSubtitle} numberOfLines={1}>{nombreUni}</Text>
+            {/* En Inicio el título es el nombre de la universidad; el subtítulo
+                se oculta para no repetirlo justo debajo. */}
+            {/* El nombre de la universidad es nombre propio → `noTranslate`. */}
+            {seccion === 'inicio' ? (
+              <Text style={styles.mainTitle} numberOfLines={1} noTranslate>
+                {nombreUni || 'Inicio'}
+              </Text>
+            ) : (
+              <>
+                <Text style={styles.mainTitle} numberOfLines={1}>
+                  {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
+                </Text>
+                <Text style={styles.mainSubtitle} numberOfLines={1} noTranslate>{nombreUni}</Text>
+              </>
+            )}
           </View>
         </View>
         {renderSeccion()}

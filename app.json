@@ -48,7 +48,8 @@
         }
       ],
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -57,6 +58,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Gradly usa tu ubicación para marcar el lugar de trabajo de una vacante.",
+          "locationWhenInUsePermission": "Gradly usa tu ubicación para marcar el lugar de trabajo de una vacante.",
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
       [
         "expo-image-picker",
         {

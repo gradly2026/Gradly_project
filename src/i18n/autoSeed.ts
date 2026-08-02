@@ -424,4 +424,140 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "Volumen general de aplicaciones registradas.": "Overall volume of registered applications.",
 };
 
+/**
+ * Reparto de cupos: disponibilidad horaria del estudiante, cupos y horario
+ * declarado en la vacante, reclamo por lote, tablero de selección, áreas/tags
+ * y editor de publicación.
+ *
+ * Se siembra aparte para que el flujo completo (empresa → universidad →
+ * estudiante) esté traducido AL INSTANTE, sin depender de que la Cloud
+ * Function responda: es el camino crítico del producto y un parpadeo en
+ * español ahí se nota mucho más que en una pantalla secundaria.
+ */
+export const CUPOS_SEED_EN: Record<string, string> = {
+  // ── Disponibilidad horaria (estudiante) ──
+  "Mañana": "Morning",
+  "Tarde": "Afternoon",
+  "Noche": "Evening",
+  "Entrada": "Start",
+  "Salida": "End",
+  "Elegir": "Choose",
+  "Hora de entrada": "Start time",
+  "Hora de salida": "End time",
+  "Horario de la pasantía*": "Internship schedule*",
+  "Horario": "Schedule",
+
+  // ── Cupos (empresa) ──
+  "Cupos disponibles*": "Available spots*",
+  "Sin cupos": "No spots left",
+  "Cupos asegurados": "Secured spots",
+  "Aceptar reclamos de cupos automáticamente": "Automatically accept spot claims",
+  "Rol o especialidad (opcional)": "Role or specialty (optional)",
+
+  // ── Reclamo por lote (universidad) ──
+  "Reservar cupos": "Reserve spots",
+  "Postular grupo": "Submit group",
+  "Mis reservas de cupos": "My spot reservations",
+  "Liberar cupos": "Release spots",
+  "Confirmado": "Confirmed",
+  "Esperando empresa": "Awaiting company",
+  "Grupo destino (opcional)": "Destination group (optional)",
+  "¿Cuántos cupos necesitas?": "How many spots do you need?",
+  "Reservar": "Reserve",
+  "Solicitudes de cupos": "Spot requests",
+  "Confirmar cupos": "Confirm spots",
+  "Rechazar solicitud de cupos": "Reject spot request",
+  "Cupos confirmados": "Spots confirmed",
+  "Solicitud rechazada": "Request rejected",
+  "Cupos liberados": "Spots released",
+  "¡Cupos reservados!": "Spots reserved!",
+  "Solicitud enviada": "Request sent",
+
+  // ── Tablero de selección (estudiante) ──
+  "Cupos que tu universidad aseguró para ti": "Spots your university secured for you",
+  "Tu práctica asignada": "Your assigned placement",
+  "Elegir esta": "Choose this",
+  "Cancelar mi cupo": "Cancel my spot",
+  "Cancelar tu cupo": "Cancel your spot",
+  "¡Cupo asegurado!": "Spot secured!",
+  "No se pudo tomar el cupo": "Couldn't take the spot",
+  "Vencido": "Expired",
+
+  // ── Editor de publicación (empresa) ──
+  "Editar publicación": "Edit posting",
+  "Guardar cambios": "Save changes",
+  "¡Cambios guardados!": "Changes saved!",
+  "No puedes cambiar el tipo": "You can't change the type",
+  "Vacante actualizada": "Job post updated",
+
+  // ── Áreas nuevas del catálogo ──
+  "Administración": "Administration",
+  "Comunicaciones": "Communications",
+  "Construcción": "Construction",
+  "Agroindustria": "Agribusiness",
+  "Gastronomía": "Culinary",
+  "Legal": "Legal",
+  "Tecnología": "Technology",
+  "Marketing": "Marketing",
+  "Diseño": "Design",
+  "Finanzas": "Finance",
+  "Salud": "Health",
+  "Educación": "Education",
+  "Manufactura": "Manufacturing",
+  "Otra": "Other",
+
+  // ── Tags de rol ──
+  "Desarrollo de software": "Software development",
+  "Desarrollo web": "Web development",
+  "Desarrollo móvil": "Mobile development",
+  "Soporte técnico": "Technical support",
+  "Redes e infraestructura": "Networks and infrastructure",
+  "Bases de datos": "Databases",
+  "QA y pruebas": "QA and testing",
+  "Ciberseguridad": "Cybersecurity",
+  "Datos y BI": "Data and BI",
+  "Recursos humanos": "Human resources",
+  "Operaciones": "Operations",
+  "Logística": "Logistics",
+  "Atención al cliente": "Customer service",
+  "Asistencia administrativa": "Administrative assistance",
+  "Gestión de proyectos": "Project management",
+  "Redacción de contenido": "Content writing",
+  "Community management": "Community management",
+  "Producción audiovisual": "Audiovisual production",
+  "Relaciones públicas": "Public relations",
+  "Prensa": "Press",
+  "Marketing digital": "Digital marketing",
+  "Publicidad": "Advertising",
+  "Investigación de mercado": "Market research",
+  "Ventas": "Sales",
+  "SEO y SEM": "SEO and SEM",
+  "Diseño gráfico": "Graphic design",
+  "UX/UI": "UX/UI",
+  "Ilustración": "Illustration",
+  "Motion graphics": "Motion graphics",
+  "Diseño de producto": "Product design",
+  "Contabilidad": "Accounting",
+  "Auditoría financiera": "Financial auditing",
+  "Impuestos": "Taxes",
+  "Tesorería": "Treasury",
+  "Análisis financiero": "Financial analysis",
+  "Producción": "Production",
+  "Control de calidad": "Quality control",
+  "Mantenimiento": "Maintenance",
+  "Seguridad industrial": "Industrial safety",
+  "Diseño técnico (CAD)": "Technical design (CAD)",
+  "Supervisión de obra": "Site supervision",
+  "Diseño arquitectónico": "Architectural design",
+  "Presupuestos": "Budgeting",
+  "Topografía": "Surveying",
+  "Producción agrícola": "Crop production",
+  "Inocuidad alimentaria": "Food safety",
+  "Pecuaria": "Livestock",
+  "Cocina": "Cooking",
+  "Pastelería": "Pastry",
+  "Servicio": "Service",
+  "Costos de alimentos": "Food costing",
+};
+
 export default AUTO_SEED_EN;

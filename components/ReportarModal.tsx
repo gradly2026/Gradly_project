@@ -6,11 +6,11 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+// Drop-in de traducción automática (texto y placeholders).
+import { AutoText as Text, AutoTextInput as TextInput } from "../src/components/AutoText";
 import { crearReporte } from "../src/services/reporteService";
 
 const RAZONES = [
