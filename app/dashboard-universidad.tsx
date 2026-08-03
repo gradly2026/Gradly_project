@@ -70,6 +70,7 @@ import { esCarreraSoportada, cargarOverridesCarreras, CARRERAS_EL_SALVADOR } fro
 import CarrerasEditorModal from '../src/components/CarrerasEditorModal';
 import ProfileViewerModal from '../src/components/ProfileViewerModal';
 import { certificarPasantia } from '../src/services/solicitudPracticaService';
+import { eliminarEstudiante as eliminarEstudianteCF, eliminarGrupo as eliminarGrupoCF } from '../src/services/universidadService';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../components/ui/liquid-glass/JellyButton';
@@ -1068,6 +1069,68 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
     );
   };
 
+  // ── Eliminar grupo (deshacer una carga por Excel equivocada) ──
+  // Solo antes de postularlo — la Cloud Function repite el chequeo del lado
+  // servidor (guardián autoritativo, no solo aquí). Borra también las cuentas
+  // de los estudiantes del grupo: es una unidad, no tiene sentido dejarlos
+  // huérfanos sin grupo.
+  const [eliminandoGrupo, setEliminandoGrupo] = useState<string | null>(null);
+  const handleEliminarGrupo = (grupo: Grupo) => {
+    if (eliminandoGrupo) return;
+    Alert.alert(
+      'Eliminar grupo',
+      `¿Eliminar el grupo "${grupo.nombre}" y las ${grupo.estudiantes_registrados} cuenta(s) de estudiante que contiene? Esta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setEliminandoGrupo(grupo.id);
+            try {
+              const res = await eliminarGrupoCF({ grupoId: grupo.id });
+              Alert.alert('Listo', `Se eliminó el grupo "${grupo.nombre}" y ${res.estudiantesEliminados} estudiante(s).`);
+            } catch (e: any) {
+              Alert.alert('No se pudo eliminar', e?.message ?? 'Intenta de nuevo.');
+            } finally {
+              setEliminandoGrupo(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // ── Eliminar un estudiante específico (deshacer un dato mal cargado) ──
+  // Solo antes de que tenga una pasantía o solicitud en curso — la Cloud
+  // Function repite el chequeo del lado servidor.
+  const [eliminandoEstudiante, setEliminandoEstudiante] = useState<string | null>(null);
+  const handleEliminarEstudiante = (est: EstudianteRow) => {
+    if (eliminandoEstudiante) return;
+    Alert.alert(
+      'Eliminar estudiante',
+      `¿Eliminar la cuenta de "${est.nombre_completo}"? Esta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setEliminandoEstudiante(est.id);
+            try {
+              await eliminarEstudianteCF({ estudianteId: est.id });
+              Alert.alert('Listo', `Se eliminó la cuenta de "${est.nombre_completo}".`);
+            } catch (e: any) {
+              Alert.alert('No se pudo eliminar', e?.message ?? 'Intenta de nuevo.');
+            } finally {
+              setEliminandoEstudiante(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   // ── Paso 0 → 1: abrir el formulario de grupo ──
   const abrirFlujo = () => {
     resetForm();
@@ -1386,6 +1449,18 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                   <Ionicons name="chatbubbles" size={18} color={colors.primaryLight} />
                 )}
               </TouchableOpacity>
+              <TouchableOpacity
+                style={s.grupoChatBtn}
+                onPress={() => handleEliminarGrupo(item)}
+                disabled={eliminandoGrupo === item.id}
+                accessibilityLabel="Eliminar grupo"
+              >
+                {eliminandoGrupo === item.id ? (
+                  <ActivityIndicator size="small" color={COLORS.error} />
+                ) : (
+                  <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                )}
+              </TouchableOpacity>
             </GlassCard>
           )}
           ListEmptyComponent={<Text style={s.emptyText}>Aún no has creado grupos.</Text>}
@@ -1425,6 +1500,19 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                       </Text>
                     </View>
                   </View>
+                  <TouchableOpacity
+                    onPress={() => handleEliminarEstudiante(item)}
+                    disabled={eliminandoEstudiante === item.id}
+                    hitSlop={8}
+                    accessibilityLabel="Eliminar estudiante"
+                    style={{ paddingLeft: 4 }}
+                  >
+                    {eliminandoEstudiante === item.id ? (
+                      <ActivityIndicator size="small" color={COLORS.error} />
+                    ) : (
+                      <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                    )}
+                  </TouchableOpacity>
                 </GlassCard>
               </TouchableOpacity>
             );

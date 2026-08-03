@@ -624,4 +624,18 @@ export const UBICACION_SEED_EN: Record<string, string> = {
   "No se pudo guardar. Verifica tu conexión e intenta de nuevo.": "Couldn't save. Check your connection and try again.",
 };
 
+// ── Eliminar vacante/grupo/estudiante (empresa y universidad deshacen su
+// propia carga antes de que quede ligada a algo real) + botón "Ver perfil
+// público" del panel admin + aviso de grupo cubierto en Matchmaking ──
+export const GESTION_SEED_EN: Record<string, string> = {
+  "Ver perfil público": "View public profile",
+  "Eliminar vacante": "Delete job posting",
+  "Eliminar grupo": "Delete group",
+  "Eliminar estudiante": "Delete student",
+  "No se pudo eliminar": "Couldn't delete",
+  "Eliminar": "Delete",
+  "Listo": "Done",
+  "Grupo ya cubierto": "Group already covered",
+};
+
 export default AUTO_SEED_EN;

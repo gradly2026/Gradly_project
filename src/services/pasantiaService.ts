@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -682,4 +683,32 @@ export async function respuestaFinalUniversidad(
         };
     await crearNotificacionInApp(empresaId, n.tipo, n.titulo, n.mensaje, '/dashboard-empresa');
   }
+}
+
+// ─────────────────────────────────────────────
+// 9. EMPRESA ELIMINA VACANTE
+// Solo mientras nadie la haya tocado todavía: ni un estudiante aplicó
+// individualmente, ni una universidad la postuló por grupo (matchmaking),
+// ni reclamó cupos. Borrar después de eso dejaría esos documentos
+// referenciando una vacante inexistente.
+// ─────────────────────────────────────────────
+export async function vacanteTieneSolicitudes(vacanteId: string): Promise<boolean> {
+  const [aplicaciones, aplicacionesGrupos, reclamos] = await Promise.all([
+    getDocs(query(collection(db, 'aplicaciones'), where('vacante_id', '==', vacanteId))),
+    getDocs(query(collection(db, 'aplicaciones_grupos'), where('vacanteId', '==', vacanteId))),
+    getDocs(query(collection(db, 'reclamos_cupos'), where('vacanteId', '==', vacanteId))),
+  ]);
+  return !aplicaciones.empty || !aplicacionesGrupos.empty || !reclamos.empty;
+}
+
+export async function eliminarVacante(vacanteId: string, empresaId: string): Promise<void> {
+  const vacSnap = await getDoc(doc(db, 'vacantes', vacanteId));
+  if (!vacSnap.exists()) return;
+  if ((vacSnap.data() as any)?.empresa_id !== empresaId) {
+    throw new Error('Esta vacante no te pertenece.');
+  }
+  if (await vacanteTieneSolicitudes(vacanteId)) {
+    throw new Error('No se puede eliminar: ya hay solicitudes o postulaciones para esta vacante.');
+  }
+  await deleteDoc(doc(db, 'vacantes', vacanteId));
 }

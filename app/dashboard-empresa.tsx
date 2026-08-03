@@ -21,6 +21,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import {
   cambiarEstadoAplicacion,
   empresaFirmaConstancia,
+  eliminarVacante,
 } from '../src/services/pasantiaService';
 import { abrirChatDirectoEmpresaEstudiante } from '../src/services/chatService';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -955,6 +956,27 @@ export default function DashboardEmpresa() {
   ]);
 
   // ── Abrir el formulario en modo EDICIÓN (precarga desde la vacante) ──
+  const handleEliminarVacante = (v: Vacante) => {
+    Alert.alert(
+      'Eliminar vacante',
+      `¿Eliminar "${v.titulo}"? Esta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await eliminarVacante(v.id, user!.uid);
+            } catch (e: any) {
+              Alert.alert('No se pudo eliminar', e?.message ?? 'Intenta de nuevo.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const abrirEditarVacante = (v: Vacante) => {
     setVacanteEditando(v);
     setNvTitulo(v.titulo ?? '');
@@ -1448,7 +1470,7 @@ export default function DashboardEmpresa() {
   const renderSeccion = () => {
     switch (seccion) {
       case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} onVerPerfil={setPerfilCandidatoId} />;
-      case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => { setVacanteEditando(null); setShowNuevaVacante(true); }} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} onEditar={abrirEditarVacante} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
+      case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => { setVacanteEditando(null); setShowNuevaVacante(true); }} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} onEditar={abrirEditarVacante} onEliminar={handleEliminarVacante} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
       case 'kanban':   return <SeccionKanban apps={apps} onMover={moverEstado} onSeleccionar={(a) => { setRatingEstudiante(0); setCandidatoSeleccionado(a); }} />;
       case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} />;
       case 'historial': return <HistorialPasantes empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
@@ -2673,10 +2695,11 @@ function MetricCard({ icon, label, value, color }: any) {
 // ─────────────────────────────────────────────
 // SECCIÓN: VACANTES
 // ─────────────────────────────────────────────
-function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar, puedeCrear, limiteVacantes, vacantesRestantes, plan, onMejorarPlan }: {
+function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar, onEliminar, puedeCrear, limiteVacantes, vacantesRestantes, plan, onMejorarPlan }: {
   vacantes: Vacante[]; onNueva: () => void; onToggle: (v: Vacante) => void;
   onVerDetalles: (v: Vacante) => void;
   onEditar: (v: Vacante) => void;
+  onEliminar: (v: Vacante) => void;
   puedeCrear: boolean; limiteVacantes: number; vacantesRestantes: number;
   plan?: 'gratuito' | 'mensual' | 'premium';
   onMejorarPlan: () => void;
@@ -2738,6 +2761,14 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
                 accessibilityLabel="Editar publicación"
               >
                 <Ionicons name="create-outline" size={17} color={COLORS.primaryLight} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.editarBtn}
+                onPress={() => onEliminar(item)}
+                hitSlop={8}
+                accessibilityLabel="Eliminar publicación"
+              >
+                <Ionicons name="trash-outline" size={17} color={COLORS.error} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.toggleBtn, item.activa ? s.toggleBtnOn : s.toggleBtnOff]}

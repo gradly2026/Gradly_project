@@ -13,6 +13,9 @@
  *    resolveReport / deleteUserComplete → operaciones sensibles del panel
  *    admin (admin.ts). Solo un actor con rol 'admin' puede invocarlas; cada
  *    una audita en `audit_logs`. Ver ADMIN_IMPLEMENTACION_INICIAL.md.
+ *  · eliminarEstudiante / eliminarGrupo → una universidad deshace su propia
+ *    carga por Excel (estudiante o grupo completo) antes de que quede ligada
+ *    a una pasantía real (universidad.ts). Borran también la cuenta de Auth.
  *
  * Nota: el antiguo patrón "traducir al escribir" (triggers translate_*) se
  * retiró — se reemplazó por la traducción al vuelo con caché, que cubre también
@@ -30,3 +33,4 @@ export {
   setUserRole,
   setUserStatus,
 } from "./admin";
+export { eliminarEstudiante, eliminarGrupo } from "./universidad";

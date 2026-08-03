@@ -240,6 +240,13 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
   /** Alumnos aún sin cupo asegurado — guía cuántos reclamar. */
   const faltantesPorCubrir = Math.max(0, estudiantes.length - asegurados);
 
+  /** Cupos ya asegurados SOLO para un grupo (reclamos con ese grupoId). */
+  const cuposAseguradosDeGrupo = (grupoId: string): number =>
+    cuposAsegurados(reclamos.filter(r => r.grupoId === grupoId));
+
+  /** Grupo que ya tiene cupo para todos sus estudiantes — no necesita más. */
+  const [grupoCubierto, setGrupoCubierto] = useState<Grupo | null>(null);
+
   /** Compatibilidad de un grupo con el horario de la vacante seleccionada. */
   const compatibilidadGrupo = (grupoId: string): ResumenCompatibilidad | null => {
     const horario = normalizarHorario(vacanteSel?.horario);
@@ -434,10 +441,10 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
         <Text style={styles.empty}>No hay vacantes disponibles por ahora.</Text>
       ) : (
         vacantesOrdenadas.map(v => (
-          <GlassCard key={v.id} colors={colors} isDark={isDark}>
-            <TouchableOpacity style={{ flex: 1 }} activeOpacity={0.7} onPress={() => setDetalleVac(v as VacanteDetalle)}>
+          <GlassCard key={v.id} colors={colors} isDark={isDark} column>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => setDetalleVac(v as VacanteDetalle)}>
               <Text style={styles.cardTitle} numberOfLines={1}>{v.titulo ?? 'Vacante'}</Text>
-              <Text style={styles.cardMeta} numberOfLines={1}>
+              <Text style={styles.cardMeta} numberOfLines={2}>
                 {v.nombre_empresa ?? 'Empresa'}{v.area ? ` · ${v.area}` : ''}{v.modalidad ? ` · ${v.modalidad}` : ''}
               </Text>
               {!!v.horas_requeridas && (
@@ -454,9 +461,10 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                 </Text>
               )}
             </TouchableOpacity>
-            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            {/* Botones siempre al pie de la tarjeta, repartidos en todo el ancho. */}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
               <TouchableOpacity
-                style={[styles.cta, !hayCupos(v) && styles.ctaDisabled]}
+                style={[styles.cta, !hayCupos(v) && styles.ctaDisabled, styles.ctaFull]}
                 onPress={() => abrirPostular(v)}
                 disabled={!hayCupos(v)}
               >
@@ -465,7 +473,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
               </TouchableOpacity>
               {/* Reclamar por lote: solo en vacantes que declaran cupos. */}
               {cuposDisponibles(v) !== null && hayCupos(v) && (
-                <TouchableOpacity style={styles.ctaAlt} onPress={() => abrirReclamo(v)}>
+                <TouchableOpacity style={[styles.ctaAlt, styles.ctaFull]} onPress={() => abrirReclamo(v)}>
                   <Ionicons name="bookmark-outline" size={15} color={colors.primaryLight} />
                   <Text style={styles.ctaAltText}>Reservar cupos</Text>
                 </TouchableOpacity>
@@ -612,7 +620,12 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                     gruposDisponibles.map(g => {
                       const yaPost = yaPostulados.includes(g.id);
                       const enPasantia = gruposEnPasantiaActiva.has(g.id);
-                      const bloqueado = yaPost || enPasantia || limiteAlcanzado;
+                      // 'ninguna' es la única de las 3 afinidades que bloquea — 'posible'
+                      // (dato faltante: vacante legada, área "Otra" o carrera fuera del
+                      // catálogo) NUNCA quita la oportunidad, mismo criterio que el resto
+                      // de la app (ver areas.ts).
+                      const noAfin = afinidadCarreraVacante(g.carrera, vacanteSel) === 'ninguna';
+                      const bloqueado = yaPost || enPasantia || limiteAlcanzado || noAfin;
                       return (
                         <TouchableOpacity
                           key={g.id}
@@ -633,11 +646,11 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                                 Ya está en una pasantía activa
                               </Text>
                             )}
-                            {/* Aviso (no bloqueo) si el área de la vacante no
+                            {/* Bloquea la selección: el área de la vacante no
                                 corresponde a la carrera del grupo. */}
-                            {afinidadCarreraVacante(g.carrera, vacanteSel) === 'ninguna' && (
-                              <Text style={[styles.cardMeta, { color: colors.warning, marginTop: 2 }]}>
-                                ⚠ Área no afín a {g.carrera}
+                            {noAfin && (
+                              <Text style={[styles.cardMeta, { color: colors.error, marginTop: 2 }]}>
+                                ⚠ Área no afín a {g.carrera} — no se puede postular
                               </Text>
                             )}
                             {/* Compatibilidad con el horario declarado en la vacante.
@@ -705,7 +718,14 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
             <TextInput
               style={styles.inputNum}
               value={reclamoCant}
-              onChangeText={t => setReclamoCant(t.replace(/\D/g, '').slice(0, 3))}
+              onChangeText={t => {
+                const digits = t.replace(/\D/g, '').slice(0, 3);
+                if (digits === '') { setReclamoCant(''); return; }
+                // Tope duro: nunca se puede escribir más de lo que la vacante
+                // tiene disponible — no basta con avisar al enviar.
+                const libres = cuposDisponibles(reclamoVac) ?? 0;
+                setReclamoCant(String(Math.min(Number(digits), libres)));
+              }}
               keyboardType="number-pad"
               placeholder="Ej. 8"
               placeholderTextColor={colors.textMuted}
@@ -719,6 +739,9 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
               ) : (
                 grupos.map(g => {
                   const sel = reclamoGrupo === g.id;
+                  // 'ninguna' es la única afinidad que bloquea (ver el mismo criterio
+                  // aplicado arriba, en "Postular un grupo").
+                  const noAfin = afinidadCarreraVacante(g.carrera, reclamoVac) === 'ninguna';
                   const comp = normalizarHorario(reclamoVac?.horario)
                     ? contarCompatibilidad(
                         estudiantes.filter(e => e.grupo_id === g.id),
@@ -728,18 +751,30 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                   return (
                     <TouchableOpacity
                       key={g.id}
-                      style={[styles.grupoRow, sel && styles.grupoRowSel]}
-                      onPress={() => setReclamoGrupo(sel ? null : g.id)}
+                      disabled={noAfin}
+                      style={[styles.grupoRow, sel && styles.grupoRowSel, noAfin && { opacity: 0.5 }]}
+                      onPress={() => {
+                        if (sel) { setReclamoGrupo(null); return; }
+                        // Grupo ya cubierto (cupo asegurado para todos sus
+                        // estudiantes): avisar en vez de dejar reservar de más.
+                        const total = g.estudiantes_count ?? 0;
+                        if (total > 0 && cuposAseguradosDeGrupo(g.id) >= total) {
+                          setGrupoCubierto(g);
+                          return;
+                        }
+                        setReclamoGrupo(g.id);
+                      }}
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={styles.cardTitle} numberOfLines={1}>{g.nombre ?? 'Grupo'}</Text>
                         <Text style={styles.cardMeta} numberOfLines={1}>
                           {g.carrera ?? '—'} · {g.estudiantes_count ?? 0} estudiantes
                         </Text>
-                        {/* Afinidad de la carrera del grupo con el área de la vacante. */}
-                        {afinidadCarreraVacante(g.carrera, reclamoVac) === 'ninguna' && (
-                          <Text style={[styles.cardMeta, { color: colors.warning }]}>
-                            ⚠ El área de la vacante no coincide con {g.carrera}
+                        {/* Bloquea la selección: el área de la vacante no
+                            corresponde a la carrera del grupo. */}
+                        {noAfin && (
+                          <Text style={[styles.cardMeta, { color: colors.error }]}>
+                            ⚠ Área no afín a {g.carrera} — no se puede reservar para este grupo
                           </Text>
                         )}
                         {comp && comp.total > 0 && (
@@ -782,6 +817,35 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                   : <Text style={styles.acceptText}>Reservar</Text>}
               </TouchableOpacity>
             </View>
+
+            {/* ── Aviso: grupo ya cubierto — overlay INTERNO, no un <Modal>
+                aparte. Dos <Modal> nativos a la vez no se pueden apilar de
+                forma confiable en iOS/Android (el segundo no llega a
+                mostrarse); mismo cuidado ya aplicado en ChatThread.tsx. */}
+            {grupoCubierto ? (
+              <TouchableOpacity
+                style={[StyleSheet.absoluteFill, styles.avisoBackdrop]}
+                activeOpacity={1}
+                onPress={() => setGrupoCubierto(null)}
+              >
+                <View style={styles.avisoCard}>
+                  <Ionicons name="checkmark-circle" size={40} color={colors.success} />
+                  <Text style={[styles.sheetTitle, { textAlign: 'center', marginTop: 8 }]}>
+                    Grupo ya cubierto
+                  </Text>
+                  <Text style={[styles.cardMeta, { textAlign: 'center', marginTop: 4 }]}>
+                    El grupo "{grupoCubierto.nombre ?? 'Grupo'}" ya tiene cupo asegurado para sus{' '}
+                    {grupoCubierto.estudiantes_count ?? 0} estudiante(s). No hace falta reservar más para él.
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.acceptBtn, { marginTop: 14, alignSelf: 'stretch' }]}
+                    onPress={() => setGrupoCubierto(null)}
+                  >
+                    <Text style={styles.acceptText}>Entendido</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -1269,6 +1333,11 @@ const makeStyles = (C: GradlyColors, _isDark: boolean) => {
       paddingHorizontal: 14, paddingVertical: 9, alignSelf: 'flex-start',
     },
     ctaDisabled: { backgroundColor: C.textMuted, opacity: 0.55 },
+    // Botones de "Vacantes disponibles": reparten el ancho de la tarjeta a
+    // partes iguales en vez de quedar apiñados a la izquierda (`cta`/`ctaAlt`
+    // traen `alignSelf: 'flex-start'` para su uso original en fila junto a
+    // texto — aquí van solos en su propia franja al pie de la tarjeta).
+    ctaFull: { flex: 1, alignSelf: 'stretch', justifyContent: 'center' },
     ctaAlt: {
       flexDirection: 'row', alignItems: 'center', gap: 6,
       backgroundColor: 'transparent', borderRadius: 12,
@@ -1358,6 +1427,22 @@ const makeStyles = (C: GradlyColors, _isDark: boolean) => {
     },
     sheetTitle: { fontSize: 18, fontFamily: FONTS.soraBold, color: C.textPrimary, flex: 1 },
     sheetHint: { fontSize: 12, fontFamily: FONTS.interMedium, color: C.primaryLight, marginTop: 2 },
+
+    // Aviso "grupo ya cubierto" — overlay interno sobre el modal de reservar
+    // cupos (no un <Modal> aparte, ver comentario en el punto de uso).
+    avisoBackdrop: {
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      alignItems: 'center', justifyContent: 'center',
+      padding: 24,
+      // Solo las esquinas de arriba: el sheet que cubre no tiene radio abajo
+      // (llega al borde de la pantalla), así que solo esas hacían falta.
+      borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    },
+    avisoCard: {
+      backgroundColor: C.backgroundCard,
+      borderRadius: 18, padding: 20, width: '100%', maxWidth: 340,
+      borderWidth: 1, borderColor: C.border, alignItems: 'center',
+    },
 
     grupoRow: {
       flexDirection: 'row', alignItems: 'center', gap: 10,
