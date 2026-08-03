@@ -16,7 +16,7 @@ import {
 import { db } from "../config/firebaseConfig";
 import { AutoText, AutoText as Text } from "./AutoText";
 import MapViewer from "./MapViewer";
-import { hayCupos, textoCupos } from "../utils/cupos";
+import { hayCupos, textoCupos, textoSalario } from "../utils/cupos";
 import { textoHorario, type HorarioPasantia } from "../data/disponibilidad";
 
 // Forma flexible de vacante para reutilizar el modal en varios dashboards.
@@ -29,8 +29,13 @@ export interface VacanteDetalle {
   descripcion?: string;
   modalidad?: string;
   tipo?: string;
+  /** Granularidad de empleo (solo en tipo 'Vacante'): Tiempo completo/Medio tiempo/Por proyecto. */
+  modalidad_contrato?: string;
   area?: string;
   horas_requeridas?: number;
+  /** Rango salarial opcional (solo 'Vacante'). Informativo: se negocia fuera de Gradly. */
+  salario_min?: number | null;
+  salario_max?: number | null;
   /** Ausente = vacante legada, sin límite de cupos declarado. */
   /** Roles concretos dentro del área. */
   tags?: string[] | null;
@@ -170,7 +175,7 @@ export default function VacanteDetailModal({ visible, vacante, onClose, onContac
 
             {/* Chips */}
             <View style={styles.chipsRow}>
-              {[vacante.tipo, vacante.modalidad, vacante.area].filter(Boolean).map((c, i) => (
+              {[vacante.tipo, vacante.modalidad_contrato, vacante.modalidad, vacante.area].filter(Boolean).map((c, i) => (
                 <View key={i} style={styles.chip}>
                   <AutoText style={styles.chipText}>{String(c)}</AutoText>
                 </View>
@@ -201,6 +206,24 @@ export default function VacanteDetailModal({ visible, vacante, onClose, onContac
               <View style={styles.horarioBox}>
                 <Text style={styles.horarioLabel}>Horario</Text>
                 <Text style={styles.horarioValor}>{textoHorario(vacante.horario)}</Text>
+              </View>
+            )}
+
+            {/* Rango salarial (opcional, solo 'Vacante'): informativo, con nota
+                de que la negociación final ocurre fuera de Gradly. */}
+            {textoSalario(vacante.salario_min, vacante.salario_max) && (
+              <View style={styles.horarioBox}>
+                <Text style={styles.horarioLabel}>Salario estimado</Text>
+                <Text style={styles.horarioValor}>
+                  {textoSalario(vacante.salario_min, vacante.salario_max)}
+                </Text>
+                <View style={styles.salarioNota}>
+                  <Ionicons name="information-circle-outline" size={14} color={C.muted} />
+                  <Text style={styles.salarioNotaTxt}>
+                    Informativo. La negociación final se realiza de forma privada entre la
+                    empresa y el postulante, fuera de Gradly.
+                  </Text>
+                </View>
               </View>
             )}
 
@@ -343,6 +366,8 @@ const styles = StyleSheet.create({
   },
   horarioLabel: { fontSize: 11.5, color: C.muted, marginBottom: 3 },
   horarioValor: { fontSize: 14, color: C.text, fontWeight: "700" },
+  salarioNota: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 8 },
+  salarioNotaTxt: { flex: 1, fontSize: 11, color: C.muted, lineHeight: 15 },
   chipTag: { backgroundColor: C.surface },
   chipAgotado: { backgroundColor: C.redBg, borderColor: C.red },
   chipTextAgotado: { color: C.red },

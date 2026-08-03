@@ -367,7 +367,11 @@ export default function ProgresoTab() {
   }, [user]);
 
   // ── Firestore: acuerdo de pasantía del grupo (notificaciones del estudiante)
-  // Toma el acuerdo aprobado más reciente para mostrar "Mi pasantía".
+  // Toma el acuerdo vigente más reciente para mostrar "Mi pasantía".
+  // Incluye `horario_modificado` (renegociación aceptada por ambas partes): esa
+  // notificación trae los MISMOS campos que la original, así que al ser la más
+  // nueva sustituye al acuerdo previo. Sin ella, el estudiante recibiría el
+  // aviso del cambio pero su tarjeta seguiría mostrando el horario viejo.
   useEffect(() => {
     if (!user) return;
     const q = query(
@@ -379,7 +383,11 @@ export default function ProgresoTab() {
       snap => {
         const acuerdos = snap.docs
           .map(d => ({ id: d.id, ...(d.data() as any) }))
-          .filter(a => a.tipo === 'acuerdo_aprobado' && a.fechaInicio)
+          .filter(
+            a =>
+              (a.tipo === 'acuerdo_aprobado' || a.tipo === 'horario_modificado') &&
+              a.fechaInicio,
+          )
           .sort(
             (a, b) =>
               (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0),

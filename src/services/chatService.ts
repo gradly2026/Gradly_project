@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -41,6 +42,53 @@ function hashIds(ids: string[]): string {
   return h.toString(36);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  "ESTÁ ESCRIBIENDO…"
+// ═══════════════════════════════════════════════════════════════════
+
+// La lógica pura (parseo, vigencia, texto) vive en utils/typing.ts para poder
+// probarla sin arrastrar Firestore. Se re-exporta aquí por comodidad de los
+// consumidores, que ya importan de este servicio.
+// OJO: `export ... from` NO introduce los nombres en este módulo, por eso hace
+// falta además el `import` para usarlos aquí abajo.
+export {
+  parseEscribiendo,
+  textoEscribiendo,
+  TYPING_THROTTLE_MS,
+  TYPING_VIGENCIA_MS,
+  type EscribiendoInfo,
+} from "../utils/typing";
+import { parseEscribiendo, type EscribiendoInfo } from "../utils/typing";
+
+/**
+ * Marca (o limpia) que este usuario está escribiendo en el chat.
+ *
+ * `at` es `serverTimestamp()` para no depender del reloj del dispositivo, y se
+ * escribe con dot-path porque Firestore solo admite el centinela en la posición
+ * de un campo, no anidado dentro de un objeto literal.
+ *
+ * Errores silenciados a propósito: que falle un indicador de tecleo nunca debe
+ * interrumpir la conversación.
+ */
+export async function setTyping(
+  chatId: string,
+  uid: string,
+  nombre: string,
+  activo: boolean,
+): Promise<void> {
+  if (!chatId || !uid) return;
+  try {
+    await updateDoc(
+      doc(db, "chats", chatId),
+      activo
+        ? { [`typing.${uid}.nombre`]: nombre || "", [`typing.${uid}.at`]: serverTimestamp() }
+        : { [`typing.${uid}`]: deleteField() },
+    );
+  } catch {
+    /* el indicador es cosmético: nunca romper el chat por esto */
+  }
+}
+
 /** Tipo de sala: 1:1 universidad↔empresa o grupo oficial administrado. */
 export type ChatType = "direct" | "group";
 
@@ -72,6 +120,8 @@ export interface ChatListItem {
    * que el inbox y `chatTitle` resuelvan el nombre del otro sin lecturas extra.
    */
   participantsInfo?: Record<string, { nombre: string; rol: string }>;
+  /** Participantes (sin contar al usuario actual) que están escribiendo ahora. */
+  escribiendo?: EscribiendoInfo[];
 }
 
 /**
@@ -393,6 +443,8 @@ export function subscribeUserChats(
           estudianteId: data.estudianteId ?? "",
           estudianteNombre: data.estudianteNombre ?? "",
           participantsInfo: data.participantsInfo ?? undefined,
+          // Quién teclea AHORA en esta sala (para el "escribiendo…" del inbox).
+          escribiendo: parseEscribiendo(data, uid),
         };
       });
       onData(items);

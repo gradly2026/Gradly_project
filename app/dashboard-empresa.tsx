@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   getDocs,
   onSnapshot,
@@ -62,10 +63,12 @@ import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/Theme
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
 import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
-import { cuposOcupados, cuposTotales, textoCupos, valCupos } from '../src/utils/cupos';
+import { cuposOcupados, cuposTotales, textoCupos, textoSalario, valCupos } from '../src/utils/cupos';
 import { AREAS as AREAS_CATALOGO, tagsDeArea } from '../src/data/areas';
 import { normalizarHorario, textoHorario, valHorario, type HorarioPasantia } from '../src/data/disponibilidad';
 import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
+import CandidatosVacante from '../src/components/CandidatosVacante';
+import PerfilPublicoModal from '../components/PerfilPublicoModal';
 import MapViewer from '../src/components/MapViewer';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
@@ -135,6 +138,11 @@ interface Vacante {
   reclamos_auto?: boolean;
   /** Roles concretos dentro del área (afinan el match). */
   tags?: string[];
+  /** Granularidad de empleo (solo tipo 'Vacante'). */
+  modalidad_contrato?: string;
+  /** Rango salarial opcional (solo 'Vacante'); informativo, se negocia fuera de Gradly. */
+  salario_min?: number | null;
+  salario_max?: number | null;
   horas_requeridas?: number;
   horas_semanales?: number;
   skills_requeridas: string[];
@@ -285,7 +293,17 @@ const mapStyles = StyleSheet.create({
   detailLine:  { color: 'rgba(255,255,255,0.85)', fontFamily: FONTS.interRegular, fontSize: 13 },
   detailLabel: { color: COLORS.primaryLight, fontFamily: FONTS.interSemiBold },
 });
-const TIPOS = ['Pasantía', 'Proyecto', 'Tiempo parcial'];
+// El fork real del sistema: 'Pasantía' enruta por matchmaking universidad↔
+// empresa (con cupos reclamables por lote); 'Vacante' es aplicación individual
+// para quien ya culminó su primera pasantía o está graduado. Antes este campo
+// tenía 3 opciones ('Pasantía'/'Proyecto'/'Tiempo parcial') y las 2 últimas
+// colapsaban a 'vacante' de forma oculta — ahora el fork es explícito, y la
+// granularidad de empleo vive en MODALIDADES_CONTRATO (solo aplica a Vacante).
+const TIPOS = ['Pasantía', 'Vacante'];
+// "Por proyecto" se quitó por el momento (a petición explícita, es reversible:
+// basta con añadirlo de nuevo aquí — la lógica de horario opcional que
+// depende de ese valor exacto ya está lista y no hace falta reconstruirla).
+const MODALIDADES_CONTRATO = ['Tiempo completo', 'Medio tiempo'];
 // El catálogo de áreas vive en src/data/areas.ts (compartido con el mapeo
 // carrera→área que usan el filtro del estudiante y las sugerencias).
 const AREAS = [...AREAS_CATALOGO];
@@ -341,6 +359,42 @@ const valFecha = (v: string, original?: string): string => {
   if (fecha < min) return 'Debe ser al menos 5 días después de hoy.';
   if (fecha > max) return 'El plazo máximo es de 3 meses.';
   return '';
+};
+
+/** Solo se pide cuando el Tipo es 'Vacante' (la Pasantía no la usa). */
+const valModalidadContrato = (v: string): string =>
+  v ? '' : 'Selecciona la modalidad de contrato.';
+
+/**
+ * Rango salarial: 100% opcional. Se puede dejar "desde X" o "hasta X" sin el
+ * otro extremo (rango abierto); solo se valida cuando SÍ hay algo escrito, y
+ * que el mínimo no supere al máximo si ambos están presentes.
+ */
+const valSalario = (min: string, max: string): string => {
+  const mn = min.trim() ? Number(min.trim()) : null;
+  const mx = max.trim() ? Number(max.trim()) : null;
+  if (mn !== null && (!Number.isFinite(mn) || mn < 0)) return 'Salario mínimo inválido.';
+  if (mx !== null && (!Number.isFinite(mx) || mx < 0)) return 'Salario máximo inválido.';
+  if (mn !== null && mx !== null && mn > mx) return 'El mínimo no puede ser mayor que el máximo.';
+  return '';
+};
+
+/** ¿El horario quedó completamente vacío (el usuario no tocó nada)? */
+const horarioVacio = (h: Partial<HorarioPasantia>): boolean =>
+  !(h?.dias?.length) && !h?.horaInicio && !h?.horaFin;
+
+/**
+ * El horario es obligatorio salvo en Vacante + "Por proyecto": un trabajo por
+ * entregables no siempre tiene un horario semanal fijo. Si el usuario SÍ
+ * empezó a llenarlo aun siendo opcional, debe quedar completo (no se admite
+ * a medias) — por eso solo se perdona cuando está 100% vacío.
+ */
+const valHorarioCondicional = (
+  h: Partial<HorarioPasantia>,
+  requerido: boolean,
+): string => {
+  if (!requerido && horarioVacio(h)) return '';
+  return valHorario(h);
 };
 // Auto-formato YYYY-MM-DD a partir de solo dígitos (máx 8: YYYYMMDD).
 const formatFecha = (raw: string): string => {
@@ -500,6 +554,9 @@ export default function DashboardEmpresa() {
   const [apps,        setApps]        = useState<Aplicacion[]>([]);
   const [solicitudesGrupo, setSolicitudesGrupo] = useState<SolicitudGrupo[]>([]);
   const [vacanteSeleccionada, setVacanteSeleccionada] = useState<Vacante | null>(null);
+  // Candidato elegido en la lista de "Detalles de Vacante" → abre su perfil
+  // completo reutilizando el mismo visor que ya usa Historial de Pasantes.
+  const [perfilCandidatoId, setPerfilCandidatoId] = useState<string | null>(null);
 
   // Modales
   const [showNuevaVacante,  setShowNuevaVacante]  = useState(false);
@@ -523,6 +580,8 @@ export default function DashboardEmpresa() {
   const [nvArea,     setNvArea]     = useState('');
   const [nvModalidad,setNvModalidad]= useState('');
   const [nvTipo,     setNvTipo]     = useState('');
+  // Solo aplica cuando nvTipo === 'Vacante' (granularidad de empleo).
+  const [nvModalidadContrato, setNvModalidadContrato] = useState('');
   const [nvDesc,     setNvDesc]     = useState('');
   const [nvSkills,   setNvSkills]   = useState('');
   const [nvFechaLim, setNvFechaLim] = useState('');
@@ -532,6 +591,11 @@ export default function DashboardEmpresa() {
   // false = la empresa confirma cada reclamo de cupos (default: protege a la
   // empresa). true = las universidades reservan al instante.
   const [nvReclamosAuto, setNvReclamosAuto] = useState(false);
+  // Rango salarial (opcional): solo se muestra/aplica a 'Vacante'. El pago de
+  // una Pasantía se negocia por el acuerdo del chat (AcuerdoData), un mecanismo
+  // aparte que no se toca aquí.
+  const [nvSalarioMin, setNvSalarioMin] = useState('');
+  const [nvSalarioMax, setNvSalarioMax] = useState('');
   // Roles concretos dentro del área (afinan el match; opcionales).
   const [nvTags, setNvTags] = useState<string[]>([]);
   // Campo dinámico cuando el área seleccionada es "Otra".
@@ -794,6 +858,18 @@ export default function DashboardEmpresa() {
     setErr('cupos', valCupos(v, vacanteEditando ? cuposOcupados(vacanteEditando) : 0));
   };
 
+  // Salario: solo dígitos, ambos extremos opcionales (rango abierto permitido).
+  const onChangeSalarioMin = (raw: string) => {
+    const v = raw.replace(/\D/g, '').slice(0, 6);
+    setNvSalarioMin(v);
+    setErr('salario', valSalario(v, nvSalarioMax));
+  };
+  const onChangeSalarioMax = (raw: string) => {
+    const v = raw.replace(/\D/g, '').slice(0, 6);
+    setNvSalarioMax(v);
+    setErr('salario', valSalario(nvSalarioMin, v));
+  };
+
   // Selecciones (chips): limpian su error; al cambiar de "Otra" se resetea el sub-campo.
   const onSelectArea = (v: string) => {
     setNvArea(v);
@@ -807,6 +883,16 @@ export default function DashboardEmpresa() {
   };
   const onSelectModalidad = (v: string) => { setNvModalidad(v); setErr('modalidad', ''); };
   const onSelectTipo      = (v: string) => { setNvTipo(v);      setErr('tipo', ''); };
+  const onSelectModalidadContrato = (v: string) => {
+    setNvModalidadContrato(v);
+    setNvErrors(prev => ({
+      ...prev,
+      modalidadContrato: v ? '' : 'Selecciona la modalidad de contrato.',
+      // El horario cambia de obligatorio a opcional (o viceversa) según la
+      // modalidad elegida: se recalcula aquí para que el error no quede rancio.
+      horario: valHorarioCondicional(nvHorario, !(v === 'Por proyecto')),
+    }));
+  };
 
   /**
    * Cupos ya comprometidos de la vacante en edición (reservados por
@@ -835,6 +921,13 @@ export default function DashboardEmpresa() {
   const cambioDeCarrilBloqueado =
     !!vacanteEditando && cuposComprometidos > 0 && !!nvTipo && categoriaActual !== categoriaNueva;
 
+  /**
+   * El horario es obligatorio salvo en Vacante + "Por proyecto" (ver
+   * `valHorarioCondicional`). Un trabajo por entregables no siempre tiene
+   * horario semanal fijo; el resto de modalidades sí lo requieren.
+   */
+  const horarioRequerido = !(nvTipo === 'Vacante' && nvModalidadContrato === 'Por proyecto');
+
   // Validez global del formulario (recalcula sobre los valores actuales, no sobre
   // nvErrors, para cubrir también los campos que el usuario aún no ha tocado).
   // Se usa para atenuar/deshabilitar el botón Publicar (sin alerts).
@@ -844,16 +937,22 @@ export default function DashboardEmpresa() {
     if (nvArea === 'Otra' && valAreaOtra(nvAreaOtra)) return false;
     if (!nvModalidad) return false;
     if (!nvTipo) return false;
+    if (nvTipo === 'Vacante' && valModalidadContrato(nvModalidadContrato)) return false;
     if (valDesc(nvDesc)) return false;
     if (valSkills(nvSkills)) return false;
     if (valFecha(nvFechaLim, fechaLimiteOriginal)) return false;
     if (valCupos(nvCupos, cuposComprometidos)) return false;
-    if (valHorario(nvHorario)) return false;
+    if (valHorarioCondicional(nvHorario, horarioRequerido)) return false;
+    if (valSalario(nvSalarioMin, nvSalarioMax)) return false;
     if (cambioDeCarrilBloqueado) return false;
     // Ubicación obligatoria para Presencial / Híbrido (mapa o GPS).
     if ((nvModalidad === 'Presencial' || nvModalidad === 'Híbrido') && !markerPos) return false;
     return true;
-  }, [nvTitulo, nvArea, nvAreaOtra, nvModalidad, nvTipo, nvDesc, nvSkills, nvFechaLim, nvCupos, nvHorario, markerPos, cuposComprometidos, fechaLimiteOriginal, cambioDeCarrilBloqueado]);
+  }, [
+    nvTitulo, nvArea, nvAreaOtra, nvModalidad, nvTipo, nvModalidadContrato, nvDesc, nvSkills,
+    nvFechaLim, nvCupos, nvHorario, nvSalarioMin, nvSalarioMax, markerPos, cuposComprometidos,
+    fechaLimiteOriginal, cambioDeCarrilBloqueado, horarioRequerido,
+  ]);
 
   // ── Abrir el formulario en modo EDICIÓN (precarga desde la vacante) ──
   const abrirEditarVacante = (v: Vacante) => {
@@ -865,13 +964,46 @@ export default function DashboardEmpresa() {
     setNvArea(areaConocida ? (v.area ?? '') : 'Otra');
     setNvAreaOtra(areaConocida ? '' : (v.area ?? ''));
     setNvModalidad(v.modalidad ?? '');
-    setNvTipo(v.tipo ?? '');
+
+    // Migración de vacantes legadas: el Tipo tenía 3 valores libres
+    // ('Pasantía'/'Proyecto'/'Tiempo parcial') y las 2 últimas colapsaban a
+    // categoria:'vacante'. Se reconstruye desde `categoria` (la fuente real de
+    // verdad) para que una publicación vieja no aparezca sin nada seleccionado.
+    const tipoLegacy = v.tipo ?? '';
+    const esPasantiaLegacy = v.categoria === 'pasantia' || (!v.categoria && tipoLegacy === 'Pasantía');
+    const tipoNuevo = esPasantiaLegacy ? 'Pasantía' : 'Vacante';
+    setNvTipo(tipoNuevo);
+
+    // La granularidad que antes vivía en Tipo ('Proyecto'→Por proyecto,
+    // 'Tiempo parcial'→Medio tiempo) se traslada a Modalidad de contrato para
+    // no perder el dato al editar una publicación antigua.
+    const modalidadContratoGuardada = (v as any).modalidad_contrato ?? '';
+    const modalidadContratoDerivada =
+      modalidadContratoGuardada ||
+      (tipoNuevo === 'Vacante'
+        ? tipoLegacy === 'Proyecto'
+          ? 'Por proyecto'
+          : tipoLegacy === 'Tiempo parcial'
+            ? 'Medio tiempo'
+            : tipoLegacy === 'Tiempo completo'
+              ? 'Tiempo completo'
+              : ''
+        : '');
+    // Si la opción derivada ya no está en el catálogo vigente (p. ej. "Por
+    // proyecto" se quitó temporalmente), no se preselecciona nada en vez de
+    // dejar un botón "elegido" que en realidad no existe en la lista.
+    setNvModalidadContrato(
+      MODALIDADES_CONTRATO.includes(modalidadContratoDerivada) ? modalidadContratoDerivada : '',
+    );
+
     setNvDesc(v.descripcion ?? '');
     setNvSkills((v.skills_requeridas ?? []).join(', '));
     setNvFechaLim(typeof v.fecha_limite === 'string' ? v.fecha_limite : '');
     setNvCupos(cuposTotales(v) != null ? String(cuposTotales(v)) : '');
     setNvHorario(normalizarHorario(v.horario) ?? {});
     setNvReclamosAuto(v.reclamos_auto === true);
+    setNvSalarioMin((v as any).salario_min != null ? String((v as any).salario_min) : '');
+    setNvSalarioMax((v as any).salario_max != null ? String((v as any).salario_max) : '');
     setNvTags(v.tags ?? []);
     setNvErrors({});
     setMarkerPos(
@@ -908,9 +1040,11 @@ export default function DashboardEmpresa() {
       skills:    valSkills(nvSkills),
       fecha:     valFecha(nvFechaLim, fechaLimiteOriginal),
       cupos:     valCupos(nvCupos, cuposComprometidos),
-      horario:   valHorario(nvHorario),
+      horario:   valHorarioCondicional(nvHorario, horarioRequerido),
+      salario:   valSalario(nvSalarioMin, nvSalarioMax),
     };
     if (nvArea === 'Otra') errs.areaOtra = valAreaOtra(nvAreaOtra);
+    if (nvTipo === 'Vacante') errs.modalidadContrato = valModalidadContrato(nvModalidadContrato);
 
     if (cambioDeCarrilBloqueado) {
       Alert.alert(
@@ -955,6 +1089,9 @@ export default function DashboardEmpresa() {
         categoria:          nvTipo === 'Pasantía' ? 'pasantia' : 'vacante',
         modalidad:          nvModalidad,
         tipo:               nvTipo,
+        // Granularidad de empleo: solo tiene sentido en 'Vacante' (la
+        // Pasantía ya la expresa con precisión vía el horario declarado).
+        modalidad_contrato: nvTipo === 'Vacante' ? nvModalidadContrato : undefined,
         area:               nvArea === 'Otra' ? nvAreaOtra.trim() : nvArea,
         skills_requeridas:  nvSkills.split(',').map(s => s.trim()).filter(Boolean),
         fecha_publicacion:  serverTimestamp(),
@@ -971,7 +1108,15 @@ export default function DashboardEmpresa() {
         // Horario declarado: misma forma que el `AcuerdoData` del chat, para
         // que ambos caminos sean intercambiables al calcular horas/compatibilidad.
         horario:            normalizarHorario(nvHorario),
-        reclamos_auto:      nvReclamosAuto,
+        // El reclamo por lote es exclusivo del carril de Pasantía: en
+        // 'Vacante' nunca aparece en `VacantesDisponibles` (la universidad no
+        // lo ve), así que el interruptor sería un control muerto. Se omite
+        // por completo en vez de guardarlo en falso.
+        reclamos_auto:      nvTipo === 'Pasantía' ? nvReclamosAuto : undefined,
+        // Rango salarial (opcional, solo 'Vacante'). Informativo: la
+        // negociación final ocurre fuera de Gradly (ver nota en el formulario).
+        salario_min:        nvTipo === 'Vacante' && nvSalarioMin.trim() ? Number(nvSalarioMin.trim()) : undefined,
+        salario_max:        nvTipo === 'Vacante' && nvSalarioMax.trim() ? Number(nvSalarioMax.trim()) : undefined,
         ubicacion_coords:   markerPos ? { latitude: markerPos.latitude, longitude: markerPos.longitude } : null,
         ubicacion_texto:    markerPos ? {
           direccion:    ubicacionDetalle.direccion || '',
@@ -998,6 +1143,17 @@ export default function DashboardEmpresa() {
         ];
         const cambios: Record<string, any> = { ...payloadVacante };
         NO_EDITABLES.forEach(k => delete cambios[k]);
+
+        // Campos opcionales que pueden pasar de "con valor" a "ya no aplica"
+        // (p. ej. cambiar de 'Vacante' a 'Pasantía', o borrar el salario que
+        // antes se había puesto). La sanitización de arriba los quitó de
+        // `cambios` por venir `undefined` — sin este paso quedarían huérfanos
+        // en el documento en vez de desaparecer de verdad.
+        const OPCIONALES_BORRABLES = ['modalidad_contrato', 'salario_min', 'salario_max', 'reclamos_auto'];
+        OPCIONALES_BORRABLES.forEach(k => {
+          if (!(k in cambios)) cambios[k] = deleteField();
+        });
+
         cambios.fecha_modificacion = serverTimestamp();
 
         await updateDoc(doc(db, 'vacantes', vacanteEditando.id), cambios);
@@ -1040,8 +1196,10 @@ export default function DashboardEmpresa() {
     setEstadoGuardado('idle');
     setShowNuevaVacante(false);
     setNvTitulo(''); setNvArea(''); setNvModalidad(''); setNvTipo('');
+    setNvModalidadContrato('');
     setNvDesc(''); setNvSkills(''); setNvFechaLim(''); setNvCupos(''); setNvHorario({});
-    setNvReclamosAuto(false); setNvTags([]); setVacanteEditando(null);
+    setNvReclamosAuto(false); setNvSalarioMin(''); setNvSalarioMax('');
+    setNvTags([]); setVacanteEditando(null);
     setNvAreaOtra(''); setNvErrors({});
     setMarkerPos(null);
     setUbicacionDetalle({ direccion: '', municipio: '', departamento: '', pais: '' });
@@ -1054,10 +1212,15 @@ export default function DashboardEmpresa() {
     if (estadoGuardado === 'success') {
       const t = setTimeout(() => {
         // Mismo cuerpo que finalizarGuardadoExitoso, pero capturado correctamente.
+        // (Este bloque había quedado desactualizado: no reseteaba cupos/horario/
+        // tags/reclamosAuto desde que se añadieron esas fases — corregido aquí.)
         setEstadoGuardado('idle');
         setShowNuevaVacante(false);
         setNvTitulo(''); setNvArea(''); setNvModalidad(''); setNvTipo('');
-        setNvDesc(''); setNvSkills(''); setNvFechaLim('');
+        setNvModalidadContrato('');
+        setNvDesc(''); setNvSkills(''); setNvFechaLim(''); setNvCupos(''); setNvHorario({});
+        setNvReclamosAuto(false); setNvSalarioMin(''); setNvSalarioMax('');
+        setNvTags([]); setVacanteEditando(null);
         setNvAreaOtra(''); setNvErrors({});
         setMarkerPos(null);
         setUbicacionDetalle({ direccion: '', municipio: '', departamento: '', pais: '' });
@@ -1284,12 +1447,12 @@ export default function DashboardEmpresa() {
   // ── RENDER SECCIONES ─────────────────────────────────────────────
   const renderSeccion = () => {
     switch (seccion) {
-      case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} />;
+      case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} onVerPerfil={setPerfilCandidatoId} />;
       case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => { setVacanteEditando(null); setShowNuevaVacante(true); }} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} onEditar={abrirEditarVacante} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
       case 'kanban':   return <SeccionKanban apps={apps} onMover={moverEstado} onSeleccionar={(a) => { setRatingEstudiante(0); setCandidatoSeleccionado(a); }} />;
-      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} />;
+      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} />;
       case 'historial': return <HistorialPasantes empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
-      case 'pagos':    return <SeccionPagos apps={apps} perfil={perfil} onPagar={setPagoModal} onCardChange={abrirCardModal} />;
+      case 'pagos':    return <SeccionPagos apps={apps} perfil={perfil} onPagar={setPagoModal} onCardChange={abrirCardModal} onVerPerfil={setPerfilCandidatoId} />;
       case 'perfil':   return renderPerfilSeccion();
       default:         return null;
     }
@@ -1577,14 +1740,31 @@ export default function DashboardEmpresa() {
               <AutoText style={{ color: '#fff', fontFamily: FONTS.soraBold, fontSize: 18 }}>{vacanteSeleccionada?.titulo}</AutoText>
 
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {!!vacanteSeleccionada?.categoria && (
+                {/* Un solo chip de tipo: antes `categoria` y `tipo` mostraban el
+                    mismo texto duplicado (desde que Tipo pasó a ser
+                    exactamente Pasantía/Vacante). `categoria` es la fuente
+                    correcta incluso para publicaciones legadas con un `tipo`
+                    de texto libre ("Proyecto", etc.). */}
+                <View style={styles.pickerChip}>
+                  <Text style={styles.pickerText}>
+                    {vacanteSeleccionada?.categoria === 'pasantia' || vacanteSeleccionada?.tipo === 'Pasantía'
+                      ? 'Pasantía'
+                      : 'Vacante'}
+                  </Text>
+                </View>
+                {!!vacanteSeleccionada?.modalidad_contrato && (
                   <View style={styles.pickerChip}>
-                    <Text style={styles.pickerText}>{vacanteSeleccionada.categoria === 'pasantia' ? 'Pasantía' : 'Vacante'}</Text>
+                    <Text style={styles.pickerText}>{vacanteSeleccionada.modalidad_contrato}</Text>
                   </View>
                 )}
                 <View style={styles.pickerChip}><Text style={styles.pickerText}>{vacanteSeleccionada?.area}</Text></View>
-                <View style={styles.pickerChip}><Text style={styles.pickerText}>{vacanteSeleccionada?.tipo}</Text></View>
                 <View style={styles.pickerChip}><Text style={styles.pickerText}>{vacanteSeleccionada?.modalidad}</Text></View>
+                {/* Roles concretos dentro del área (p. ej. "Desarrollo web"). */}
+                {(vacanteSeleccionada?.tags ?? []).map((t: string, i: number) => (
+                  <View key={`tag-${i}`} style={[styles.pickerChip, { backgroundColor: COLORS.backgroundSurface }]}>
+                    <Text style={styles.pickerText}>{t}</Text>
+                  </View>
+                ))}
               </View>
 
               <AutoText style={styles.fieldLabel}>Descripción</AutoText>
@@ -1594,6 +1774,45 @@ export default function DashboardEmpresa() {
               <Text style={styles.modalDesc}>• Skills: {vacanteSeleccionada?.skills_requeridas?.join(', ')}</Text>
               {!!(vacanteSeleccionada?.horas_requeridas || vacanteSeleccionada?.horas_semanales) && (
                 <Text style={styles.modalDesc}>• Total: {vacanteSeleccionada?.horas_requeridas ?? 0} h  |  Semanales: {vacanteSeleccionada?.horas_semanales ?? 0} h</Text>
+              )}
+
+              {/* Horario declarado al publicar (ausente en vacantes legadas). */}
+              {textoHorario(vacanteSeleccionada?.horario) && (
+                <View style={s.horarioBoxDetalle}>
+                  <Text style={styles.fieldLabel}>Horario</Text>
+                  <Text style={styles.modalDesc}>{textoHorario(vacanteSeleccionada?.horario)}</Text>
+                </View>
+              )}
+
+              {/* Salario (opcional, solo 'Vacante'): informativo. */}
+              {textoSalario(vacanteSeleccionada?.salario_min, vacanteSeleccionada?.salario_max) && (
+                <View style={s.horarioBoxDetalle}>
+                  <Text style={styles.fieldLabel}>Salario estimado</Text>
+                  <Text style={styles.modalDesc}>
+                    {textoSalario(vacanteSeleccionada?.salario_min, vacanteSeleccionada?.salario_max)}
+                  </Text>
+                  <View style={s.avisoEdicion}>
+                    <Ionicons name="information-circle-outline" size={14} color={COLORS.textMuted} />
+                    <Text style={s.avisoEdicionTxt}>
+                      Informativo. La negociación final se realiza de forma privada entre la
+                      empresa y el postulante, fuera de Gradly.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Candidatos que ya ocupan un cupo de esta vacante. */}
+              {!!vacanteSeleccionada && (
+                <>
+                  <Text style={styles.fieldLabel}>Candidatos</Text>
+                  <CandidatosVacante
+                    vacanteId={vacanteSeleccionada.id}
+                    empresaId={user?.uid ?? ''}
+                    categoria={vacanteSeleccionada.categoria}
+                    cupos={vacanteSeleccionada.cupos}
+                    onVerPerfil={setPerfilCandidatoId}
+                  />
+                </>
               )}
 
               {(vacanteSeleccionada?.modalidad === 'Presencial' || vacanteSeleccionada?.modalidad === 'Híbrido') && vacanteSeleccionada?.ubicacion_coords && (
@@ -1622,6 +1841,18 @@ export default function DashboardEmpresa() {
           </View>
         </View>
       </Modal>
+
+      {/* Perfil completo de un candidato — se abre al tocar su fila en la
+          lista de candidatos de "Detalles de Vacante". Reutiliza el mismo
+          visor que ya usa Historial de Pasantes (rol="talento"). */}
+      <PerfilPublicoModal
+        visible={!!perfilCandidatoId}
+        onClose={() => setPerfilCandidatoId(null)}
+        userId={perfilCandidatoId ?? ''}
+        rol="talento"
+        viewerUserId={user?.uid ?? ''}
+        theme="dark"
+      />
 
       {/* ── MODAL: Nueva Vacante ──
           FIXED: se oculta mientras estadoGuardado !== 'idle' para que el Modal
@@ -1732,6 +1963,17 @@ export default function DashboardEmpresa() {
                   ? 'No puedes cambiar el tipo: ya hay cupos comprometidos con universidades.'
                   : nvErrors.tipo}
               />
+              {/* Granularidad de empleo: solo aplica a Vacante. La Pasantía ya
+                  queda descrita con precisión por el horario declarado. */}
+              {nvTipo === 'Vacante' && (
+                <PickerRow
+                  label="Modalidad de contrato*"
+                  options={MODALIDADES_CONTRATO}
+                  selected={nvModalidadContrato}
+                  onSelect={onSelectModalidadContrato}
+                  error={nvErrors.modalidadContrato}
+                />
+              )}
               <FieldInput
                 label="Descripción*" value={nvDesc} onChange={onChangeDesc}
                 placeholder="Descripción de la vacante..." multiline
@@ -1757,28 +1999,65 @@ export default function DashboardEmpresa() {
               />
               <HorarioVacanteSelector
                 value={nvHorario}
-                onChange={h => { setNvHorario(h); setErr('horario', valHorario(h)); }}
+                onChange={h => { setNvHorario(h); setErr('horario', valHorarioCondicional(h, horarioRequerido)); }}
                 error={nvErrors.horario}
+                requerido={horarioRequerido}
               />
 
-              {/* Control de la empresa sobre quién reserva sus cupos. */}
-              <TouchableOpacity
-                style={s.autoRow}
-                onPress={() => setNvReclamosAuto(v => !v)}
-                activeOpacity={0.7}
-              >
-                <View style={[s.autoCheck, nvReclamosAuto && s.autoCheckOn]}>
-                  {nvReclamosAuto && <Ionicons name="checkmark" size={14} color="#FFF" />}
+              {/* Rango salarial: opcional, solo tiene sentido en Vacante (la
+                  Pasantía usa el `pago` del acuerdo negociado por chat). */}
+              {nvTipo === 'Vacante' && (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={s.tagsLabel}>Rango salarial (opcional)</Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <FieldInput
+                        label="Mínimo" value={nvSalarioMin} onChange={onChangeSalarioMin}
+                        placeholder="Ej. 400" keyboardType="number-pad" maxLength={6}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <FieldInput
+                        label="Máximo" value={nvSalarioMax} onChange={onChangeSalarioMax}
+                        placeholder="Ej. 600" keyboardType="number-pad" maxLength={6}
+                      />
+                    </View>
+                  </View>
+                  {!!nvErrors.salario && <Text style={styles.fieldError}>{nvErrors.salario}</Text>}
+                  <View style={s.avisoEdicion}>
+                    <Ionicons name="information-circle-outline" size={16} color={COLORS.textMuted} />
+                    <Text style={s.avisoEdicionTxt}>
+                      El salario es informativo y queda a discreción tuya publicarlo. La negociación
+                      final de las condiciones económicas se realiza de forma privada entre la
+                      empresa y el postulante, fuera de Gradly.
+                    </Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.autoTitle}>Aceptar reclamos de cupos automáticamente</Text>
-                  <Text style={s.autoHint}>
-                    {nvReclamosAuto
-                      ? 'Las universidades reservan cupos al instante, sin esperar tu confirmación.'
-                      : 'Recibirás una solicitud por cada universidad y decides si aceptas (un solo toque).'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+              )}
+
+              {/* Control de la empresa sobre quién reserva sus cupos — exclusivo
+                  de Pasantía: en Vacante ninguna universidad ve ni reclama estos
+                  cupos (VacantesDisponibles excluye categoria:'vacante'), así que
+                  el interruptor sería un control muerto sin efecto alguno. */}
+              {nvTipo === 'Pasantía' && (
+                <TouchableOpacity
+                  style={s.autoRow}
+                  onPress={() => setNvReclamosAuto(v => !v)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[s.autoCheck, nvReclamosAuto && s.autoCheckOn]}>
+                    {nvReclamosAuto && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.autoTitle}>Aceptar reclamos de cupos automáticamente</Text>
+                    <Text style={s.autoHint}>
+                      {nvReclamosAuto
+                        ? 'Las universidades reservan cupos al instante, sin esperar tu confirmación.'
+                        : 'Recibirás una solicitud por cada universidad y decides si aceptas (un solo toque).'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             </ScrollView>
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -2195,7 +2474,17 @@ export default function DashboardEmpresa() {
 
               {/* INFO ESTUDIANTE */}
               <View style={{ padding: 20, gap: 12 }}>
-                <Text style={{ color: '#fff', fontSize: 20, fontFamily: 'Sora-Bold' }}>{candidatoSeleccionado?.estudiante_nombre}</Text>
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                  activeOpacity={0.7}
+                  disabled={!candidatoSeleccionado?.estudiante_id}
+                  onPress={() => setPerfilCandidatoId(candidatoSeleccionado?.estudiante_id ?? null)}
+                >
+                  <Text style={{ color: '#fff', fontSize: 20, fontFamily: 'Sora-Bold' }}>{candidatoSeleccionado?.estudiante_nombre}</Text>
+                  {!!candidatoSeleccionado?.estudiante_id && (
+                    <Ionicons name="chevron-forward-circle-outline" size={18} color="#a78bfa" />
+                  )}
+                </TouchableOpacity>
                 <Text style={{ color: '#a78bfa', fontSize: 14 }}>{candidatoSeleccionado?.estudiante_carrera}</Text>
 
                 <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 10, gap: 8 }}>
@@ -2302,9 +2591,9 @@ export default function DashboardEmpresa() {
 // ─────────────────────────────────────────────
 // SECCIÓN: INICIO
 // ─────────────────────────────────────────────
-function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitudesGrupo }: {
+function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitudesGrupo, onVerPerfil }: {
   metricas: any; apps: Aplicacion[]; perfil: PerfilEmpresa | null; empresaId: string;
-  vacantes: Vacante[]; solicitudesGrupo: SolicitudGrupo[];
+  vacantes: Vacante[]; solicitudesGrupo: SolicitudGrupo[]; onVerPerfil: (estudianteId: string) => void;
 }) {
   const { s } = useThemedStyles();
   const recientes = [...apps].sort((a, b) => {
@@ -2352,12 +2641,18 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
       {recientes.length === 0
         ? <Text style={s.emptyText}>Sin actividad reciente.</Text>
         : recientes.map(a => (
-            <View key={a.id} style={s.actividadRow}>
+            <TouchableOpacity
+              key={a.id}
+              style={s.actividadRow}
+              activeOpacity={0.7}
+              onPress={() => a.estudiante_id && onVerPerfil(a.estudiante_id)}
+              disabled={!a.estudiante_id}
+            >
               <View style={s.actividadDot} />
               <Text style={s.actividadText} numberOfLines={1}>
                 {a.estudiante_nombre} — {a.estado.replace('_', ' ')}
               </Text>
-            </View>
+            </TouchableOpacity>
           ))
       }
     </ScrollView>
@@ -2557,8 +2852,9 @@ function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; o
 // ─────────────────────────────────────────────
 // SECCIÓN: PASANTÍAS ACTIVAS
 // ─────────────────────────────────────────────
-function SeccionActivas({ apps, solicitudesGrupo, onFirmar }: {
+function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
   apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[]; onFirmar: (a: Aplicacion) => void;
+  onVerPerfil: (estudianteId: string) => void;
 }) {
   const { s } = useThemedStyles();
   const activos    = apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado');
@@ -2611,24 +2907,30 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar }: {
       renderItem={({ item }) => {
         const necesitaFirma = item.estado === 'finalizado';
         return (
-          <GlassCard style={[{ marginBottom: 8 }, necesitaFirma && s.activaCardPendiente]} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.activaNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
-              {!!item.acuerdo && (
-                <Text style={s.activaMeta} numberOfLines={1}>
-                  Horario: {item.acuerdo.dias.join(', ')} · {item.acuerdo.horaInicio} - {item.acuerdo.horaFin}
-                </Text>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            disabled={!item.estudiante_id}
+            onPress={() => item.estudiante_id && onVerPerfil(item.estudiante_id)}
+          >
+            <GlassCard style={[{ marginBottom: 8 }, necesitaFirma && s.activaCardPendiente]} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.activaNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
+                {!!item.acuerdo && (
+                  <Text style={s.activaMeta} numberOfLines={1}>
+                    Horario: {item.acuerdo.dias.join(', ')} · {item.acuerdo.horaInicio} - {item.acuerdo.horaFin}
+                  </Text>
+                )}
+                <Text style={s.activaMeta}>Horas: {item.horas_completadas ?? 0}</Text>
+                <Text style={s.activaMeta}>Pago: {item.pago_confirmado ? '✓ Pagado' : '⏳ Pendiente'}</Text>
+              </View>
+              {necesitaFirma && (
+                <JellyButton style={s.firmarBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 }} onPress={() => onFirmar(item)}>
+                  <Ionicons name="pencil-outline" size={14} color={COLORS.textPrimary} />
+                  <Text style={s.firmarText}>Firmar constancia</Text>
+                </JellyButton>
               )}
-              <Text style={s.activaMeta}>Horas: {item.horas_completadas ?? 0}</Text>
-              <Text style={s.activaMeta}>Pago: {item.pago_confirmado ? '✓ Pagado' : '⏳ Pendiente'}</Text>
-            </View>
-            {necesitaFirma && (
-              <JellyButton style={s.firmarBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 }} onPress={() => onFirmar(item)}>
-                <Ionicons name="pencil-outline" size={14} color={COLORS.textPrimary} />
-                <Text style={s.firmarText}>Firmar constancia</Text>
-              </JellyButton>
-            )}
-          </GlassCard>
+            </GlassCard>
+          </TouchableOpacity>
         );
       }}
       ListEmptyComponent={<Text style={s.emptyText}>Sin pasantes activos.</Text>}
@@ -2639,9 +2941,10 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar }: {
 // ─────────────────────────────────────────────
 // SECCIÓN: PAGOS
 // ─────────────────────────────────────────────
-function SeccionPagos({ apps, perfil, onPagar, onCardChange }: {
+function SeccionPagos({ apps, perfil, onPagar, onCardChange, onVerPerfil }: {
   apps: Aplicacion[]; perfil: PerfilEmpresa | null;
   onPagar: (a: Aplicacion) => void; onCardChange: () => void;
+  onVerPerfil: (estudianteId: string) => void;
 }) {
   const { s } = useThemedStyles();
   const pendientes  = apps.filter(a => a.estado === 'finalizado' && !a.pago_confirmado);
@@ -2668,10 +2971,15 @@ function SeccionPagos({ apps, perfil, onPagar, onCardChange }: {
       <Text style={s.sectionTitle}>Pagos pendientes ({pendientes.length})</Text>
       {pendientes.map(a => (
         <GlassCard key={a.id} style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
-          <View style={{ flex: 1 }}>
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            activeOpacity={0.7}
+            disabled={!a.estudiante_id}
+            onPress={() => a.estudiante_id && onVerPerfil(a.estudiante_id)}
+          >
             <Text style={s.pagoNombre}>{a.estudiante_nombre}</Text>
             <Text style={s.pagoMeta}>Pasantía finalizada</Text>
-          </View>
+          </TouchableOpacity>
           <JellyButton style={s.pagarBtn} contentStyle={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={() => onPagar(a)}>
             <Text style={s.pagarText}>Pagar ahora</Text>
           </JellyButton>
@@ -2682,11 +2990,17 @@ function SeccionPagos({ apps, perfil, onPagar, onCardChange }: {
       {/* Historial */}
       <Text style={s.sectionTitle}>Historial de pagos</Text>
       {completados.map(a => (
-        <View key={a.id} style={s.historialRow}>
+        <TouchableOpacity
+          key={a.id}
+          style={s.historialRow}
+          activeOpacity={0.7}
+          disabled={!a.estudiante_id}
+          onPress={() => a.estudiante_id && onVerPerfil(a.estudiante_id)}
+        >
           <Ionicons name="checkmark-circle" size={18} color={COLORS.success} />
           <Text style={[s.pagoNombre, { flex: 1 }]} numberOfLines={1}>{a.estudiante_nombre}</Text>
           <Text style={s.pagoMeta}>Pagado</Text>
-        </View>
+        </TouchableOpacity>
       ))}
       {completados.length === 0 && <Text style={s.emptyText}>Sin historial.</Text>}
     </ScrollView>
@@ -2970,6 +3284,16 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 // Estilos de secciones (s)
 const makeS = (COLORS: GradlyColors) => StyleSheet.create({
   scroll: { padding: 16, paddingBottom: 110 },
+
+  // Detalles de Vacante: caja de horario/salario (mismo lenguaje visual).
+  horarioBoxDetalle: {
+    backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 10,
+    gap: 2,
+  },
 
   // Inicio
   banner: {

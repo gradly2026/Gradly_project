@@ -6,6 +6,7 @@ import FeedbackGate from '../../src/components/FeedbackGate';
 import FloatingNavBar, { type NavItem } from '../../src/components/FloatingNavBar';
 import FloatingSearchButton from '../../src/components/FloatingSearchButton';
 import FloatingTopBar from '../../src/components/FloatingTopBar';
+import OnboardingDireccionGate from '../../src/components/OnboardingDireccionGate';
 import { useAuth } from '../../src/context/AuthContext';
 import { useTranslation } from '../../src/context/TranslationContext';
 import { db } from '../../src/config/firebaseConfig';
@@ -97,6 +98,9 @@ export default function TabLayout() {
 
       {/* Formulario obligatorio de experiencia (pasantías finalizadas) */}
       <FeedbackGate />
+
+      {/* Compuerta obligatoria: departamento/municipio si el perfil no los tiene */}
+      <OnboardingDireccionGate />
     </>
   );
 }

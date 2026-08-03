@@ -14,6 +14,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
+import ProfileViewerModal, { type ProfileTipo } from "../../src/components/ProfileViewerModal";
 import { signOut } from "firebase/auth";
 import {
   addDoc,
@@ -326,6 +327,17 @@ export default function AdminPreview() {
 
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [verPerfilPublico, setVerPerfilPublico] = useState<{ tipo: ProfileTipo; id: string } | null>(null);
+  // Cierra el modal de gestión (el que esté abierto: detalle de usuario o de
+  // reporte) antes de abrir el visor público: dos `Modal` nativos presentados
+  // a la vez fallan silenciosamente en iOS si uno se está cerrando justo
+  // cuando el otro se abre.
+  const abrirPerfilPublico = (role: Role, id: string) => {
+    if (role === "admin") return;
+    setDetailOpen(false);
+    setReportDetailOpen(false);
+    setTimeout(() => setVerPerfilPublico({ tipo: role, id }), Platform.OS === "ios" ? 350 : 0);
+  };
   const [selectedReport, setSelectedReport] = useState<ReportCase | null>(null);
   const [reportDetailOpen, setReportDetailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -2294,6 +2306,7 @@ export default function AdminPreview() {
   );
 
   const DetailModal = () => (
+    <>
     <Modal visible={detailOpen} transparent animationType="slide" onRequestClose={() => setDetailOpen(false)}>
       <View style={s.modalOverlay}>
         <View style={[s.modal, isPhone && s.modalCompact]}>
@@ -2342,6 +2355,15 @@ export default function AdminPreview() {
                   >
                     <Text style={[s.btnPrimaryText, s.btnSmText]}>Editar</Text>
                   </TouchableOpacity>
+                  {selected.role !== "admin" ? (
+                    <TouchableOpacity
+                      style={[s.btnOutline, s.btnSm]}
+                      onPress={() => abrirPerfilPublico(selected.role, selected.id)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[s.btnOutlineText, s.btnSmText]}>Ver perfil público</Text>
+                    </TouchableOpacity>
+                  ) : null}
                   {!roleRequiresApproval(selected.role) ? (
                     <>
                       <TouchableOpacity
@@ -2461,6 +2483,16 @@ export default function AdminPreview() {
         </View>
       </View>
     </Modal>
+
+    {verPerfilPublico ? (
+      <ProfileViewerModal
+        visible
+        tipo={verPerfilPublico.tipo}
+        profileId={verPerfilPublico.id}
+        onClose={() => setVerPerfilPublico(null)}
+      />
+    ) : null}
+    </>
   );
 
   const EditModal = () => (
@@ -2623,21 +2655,32 @@ export default function AdminPreview() {
                     <Text style={[s.textMuted, { marginTop: 6 }]}>
                       Estado: {reportedUser.banned ? "Baneado" : "Sin baneo"}
                     </Text>
-                    <TouchableOpacity
-                      style={[s.btnOutline, { marginTop: 14, alignSelf: "flex-start" }]}
-                      onPress={() => {
-                        setReportDetailOpen(false);
-                        navigateToUserList({
-                          role: reportedUser.role,
-                          status: "todos",
-                          search: "",
-                          user: reportedUser,
-                        });
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={s.btnOutlineText}>Abrir usuario</Text>
-                    </TouchableOpacity>
+                    <View style={[s.row, { gap: 10, marginTop: 14, flexWrap: "wrap" }]}>
+                      <TouchableOpacity
+                        style={s.btnOutline}
+                        onPress={() => {
+                          setReportDetailOpen(false);
+                          navigateToUserList({
+                            role: reportedUser.role,
+                            status: "todos",
+                            search: "",
+                            user: reportedUser,
+                          });
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={s.btnOutlineText}>Abrir usuario</Text>
+                      </TouchableOpacity>
+                      {reportedUser.role !== "admin" ? (
+                        <TouchableOpacity
+                          style={s.btnOutline}
+                          onPress={() => abrirPerfilPublico(reportedUser.role, reportedUser.id)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={s.btnOutlineText}>Ver perfil público</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
                     <TouchableOpacity
                       style={[s.btnPrimary, { marginTop: 10, alignSelf: "flex-start", backgroundColor: reportedUser.banned ? C.green : C.red }]}
                       onPress={() => confirmBanToggle(reportedUser, !reportedUser.banned)}

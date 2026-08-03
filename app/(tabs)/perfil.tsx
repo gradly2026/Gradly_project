@@ -34,12 +34,14 @@ import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import CertificadoGradly from '../../src/components/CertificadoGradly';
 import PerfilMasterDetail from '../../src/components/PerfilMasterDetail';
 import DisponibilidadSelector from '../../src/components/DisponibilidadSelector';
+import UbicacionSelector from '../../src/components/UbicacionSelector';
 import {
   contarBloques,
   normalizarDisponibilidad,
   resumenDisponibilidad,
   type DisponibilidadHoraria,
 } from '../../src/data/disponibilidad';
+import { textoUbicacion, type UbicacionEstudiante } from '../../src/data/ubicacionElSalvador';
 
 // Hook que recrea los estilos según el tema activo (claro/oscuro)
 function useThemedStyles() {
@@ -63,6 +65,9 @@ interface EstudiantePerfil {
    *  sistema compara contra horarios es `disponibilidad_horaria`. */
   disponibilidad:     string;
   disponibilidad_horaria?: DisponibilidadHoraria;
+  departamento?:      string;
+  municipio?:         string;
+  direccion?:         string;
   cv_url:             string;
   foto_url:           string;
   linkedin:           string;
@@ -124,6 +129,12 @@ export default function PerfilTab() {
   const [dispDirty, setDispDirty] = useState(false);
   const [dispSaving, setDispSaving] = useState(false);
 
+  // ── Ubicación (departamento/municipio/dirección) — mismo patrón: borrador
+  // local + guardado explícito, para no escribir en cada tap de chip. ──
+  const [ubicDraft, setUbicDraft] = useState<Partial<UbicacionEstudiante>>({});
+  const [ubicDirty, setUbicDirty] = useState(false);
+  const [ubicSaving, setUbicSaving] = useState(false);
+
   // ── Firestore: perfil ────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
@@ -134,6 +145,16 @@ export default function PerfilTab() {
       // No pisar lo que el usuario está editando ahora mismo.
       setDispDirty(dirty => {
         if (!dirty) setDispDraft(normalizarDisponibilidad(data.disponibilidad_horaria));
+        return dirty;
+      });
+      setUbicDirty(dirty => {
+        if (!dirty) {
+          setUbicDraft({
+            departamento: data.departamento,
+            municipio: data.municipio,
+            direccion: data.direccion,
+          });
+        }
         return dirty;
       });
     });
@@ -152,6 +173,23 @@ export default function PerfilTab() {
       Alert.alert(t('error_generico'), t('err_guardar'));
     } finally {
       setDispSaving(false);
+    }
+  };
+
+  const guardarUbicacion = async () => {
+    if (!user || !ubicDraft.departamento || !ubicDraft.municipio) return;
+    setUbicSaving(true);
+    try {
+      await updateDoc(doc(db, 'perfiles_estudiantes', user.uid), {
+        departamento: ubicDraft.departamento,
+        municipio: ubicDraft.municipio,
+        direccion: ubicDraft.direccion?.trim() || '',
+      });
+      setUbicDirty(false);
+    } catch {
+      Alert.alert(t('error_generico'), t('err_guardar'));
+    } finally {
+      setUbicSaving(false);
     }
   };
 
@@ -382,6 +420,33 @@ export default function PerfilTab() {
                       ? <ActivityIndicator size="small" color="#FFF" />
                       : <Ionicons name="checkmark" size={16} color="#FFF" />}
                     <Text style={styles.dispSaveTxt}>{t('disp_guardar')}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ),
+          },
+          {
+            id: 'ubicacion',
+            title: t('ubicacion_titulo'),
+            subtitle: textoUbicacion(ubicDraft) || t('ubicacion_sin_definir'),
+            icon: 'location-outline',
+            tone: ubicDraft.departamento && ubicDraft.municipio ? 'green' : 'orange',
+            render: () => (
+              <View style={{ gap: 12 }}>
+                <UbicacionSelector
+                  value={ubicDraft}
+                  onChange={next => { setUbicDraft(next); setUbicDirty(true); }}
+                />
+                {ubicDirty && (
+                  <TouchableOpacity
+                    style={[styles.dispSaveBtn, (!ubicDraft.departamento || !ubicDraft.municipio) && { opacity: 0.45 }]}
+                    onPress={guardarUbicacion}
+                    disabled={ubicSaving || !ubicDraft.departamento || !ubicDraft.municipio}
+                  >
+                    {ubicSaving
+                      ? <ActivityIndicator size="small" color="#FFF" />
+                      : <Ionicons name="checkmark" size={16} color="#FFF" />}
+                    <Text style={styles.dispSaveTxt}>{t('ubicacion_guardar')}</Text>
                   </TouchableOpacity>
                 )}
               </View>

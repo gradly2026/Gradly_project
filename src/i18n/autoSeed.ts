@@ -558,6 +558,70 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Pastelería": "Pastry",
   "Servicio": "Service",
   "Costos de alimentos": "Food costing",
+
+  // ── Indicador "está escribiendo…" ──
+  // El nombre va interpolado, así que no se puede sembrar la frase completa:
+  // AutoText traducirá cada variante por su cuenta. Se siembran los sufijos
+  // fijos por si la CF falla, y las variantes sin nombre.
+  "Alguien está escribiendo…": "Someone is typing…",
+
+  // ── Renegociación del horario de una pasantía aprobada ──
+  "Cambiar horario": "Change schedule",
+  "Enviar cambio": "Send change",
+  "Cambio de horario propuesto": "Schedule change proposed",
+  "Aceptar cambio": "Accept change",
+  "Cambio aplicado": "Change applied",
+  "Horario actualizado": "Schedule updated",
+  "La pasantía ya está aprobada: el cambio se aplica solo si la contraparte lo acepta. El pago pactado no se modifica.":
+    "The internship is already approved: the change only applies if the other party accepts it. The agreed payment is not modified.",
+
+  // ── Fork explícito Pasantía/Vacante + Modalidad de contrato + salario ──
+  "Vacante": "Job opening",
+  "Pasantía": "Internship",
+  "Tiempo completo": "Full-time",
+  "Medio tiempo": "Part-time",
+  "Por proyecto": "Project-based",
+  "Modalidad de contrato*": "Employment type*",
+  "Selecciona la modalidad de contrato.": "Select the employment type.",
+  "No puedes cambiar el tipo: ya hay cupos comprometidos con universidades.":
+    "You can't change the type: there are already spots committed with universities.",
+  "Rango salarial (opcional)": "Salary range (optional)",
+  "Mínimo": "Minimum",
+  "Máximo": "Maximum",
+  "Salario mínimo inválido.": "Invalid minimum salary.",
+  "Salario máximo inválido.": "Invalid maximum salary.",
+  "El mínimo no puede ser mayor que el máximo.": "The minimum can't be greater than the maximum.",
+  "El salario es informativo y queda a discreción tuya publicarlo. La negociación final de las condiciones económicas se realiza de forma privada entre la empresa y el postulante, fuera de Gradly.":
+    "Salary is informational and it's up to you whether to publish it. Final negotiation of economic terms happens privately between the company and the applicant, outside Gradly.",
+  "Salario estimado": "Estimated salary",
+  "Informativo. La negociación final se realiza de forma privada entre la empresa y el postulante, fuera de Gradly.":
+    "Informational. Final negotiation happens privately between the company and the applicant, outside Gradly.",
+  "Horario*": "Schedule*",
+  "Horario (opcional)": "Schedule (optional)",
+
+  // ── Candidatos de una vacante (Detalles de Vacante) ──
+  "Candidatos": "Candidates",
+  "Todavía no hay candidatos admitidos.": "No candidates admitted yet.",
+  "Dirección no especificada": "Address not specified",
+  "está escribiendo…": "is typing…",
+  "están escribiendo…": "are typing…",
+};
+
+// ── Onboarding de dirección del estudiante (UbicacionSelector,
+// OnboardingDireccionModal) ── ver [[project_reparto_cupos]] Fase 9.1.
+export const UBICACION_SEED_EN: Record<string, string> = {
+  "Departamento*": "Department*",
+  "Municipio*": "Municipality*",
+  "Buscar municipio…": "Search municipality…",
+  "Dirección específica (opcional)": "Specific address (optional)",
+  "Colonia, calle, referencia…": "Neighborhood, street, landmark…",
+  "Un último paso": "One last step",
+  "¿Dónde vivís?": "Where do you live?",
+  "Nos falta tu ubicación para mostrarte a empresas y universidades cercanas a vos. Es obligatorio completarlo una sola vez.":
+    "We're missing your location to show you nearby companies and universities. It's mandatory to complete this once.",
+  "Guardar y continuar": "Save and continue",
+  "Elige tu departamento y municipio para continuar.": "Choose your department and municipality to continue.",
+  "No se pudo guardar. Verifica tu conexión e intenta de nuevo.": "Couldn't save. Check your connection and try again.",
 };
 
 export default AUTO_SEED_EN;

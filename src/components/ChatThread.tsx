@@ -20,7 +20,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -57,14 +57,21 @@ import { useTheme, type GradlyColors } from "../context/ThemeContext";
 import {
   chatTitle,
   markChatRead,
+  parseEscribiendo,
+  setTyping,
   subscribeUserChats,
+  textoEscribiendo,
   touchChatOnMessage,
+  TYPING_THROTTLE_MS,
+  TYPING_VIGENCIA_MS,
   type ChatListItem,
+  type EscribiendoInfo,
 } from "../services/chatService";
 import {
   aceptarGrupoCompartido,
   finalizarPasantia,
   firmarAcuerdo,
+  modificarAcuerdo,
   subirConstanciaPdf,
   type FirmarAcuerdoResult,
 } from "../services/solicitudPracticaService";
@@ -275,6 +282,8 @@ export default function ChatThread({
 
   // Composer controlado: necesario para precargar el texto al editar.
   const [inputText, setInputText] = useState("");
+  // Quién más está escribiendo en esta sala (viene del doc del chat).
+  const [escribiendo, setEscribiendo] = useState<EscribiendoInfo[]>([]);
   // Cita estilo WhatsApp encima del input (responder).
   const [replyTo, setReplyTo] = useState<ReplyMessage | null>(null);
   // Mensaje en edición (si no es null, onSend hace updateDoc).
@@ -585,11 +594,64 @@ export default function ChatThread({
         const mi = user?.uid;
         const ca = mi ? (d.clearedAt ?? {})[mi]?.toDate?.() ?? null : null;
         setClearedAtMe(ca);
+        // Indicador "está escribiendo…" de los demás participantes.
+        setEscribiendo(parseEscribiendo(d, mi ?? ""));
       },
       (error) => console.warn("Error en listener (chat doc):", error),
     );
     return unsub;
   }, [chatId]);
+
+  // ── "Está escribiendo…": emisión ────────────────────────────────
+  // Se avisa como MUCHO una vez cada TYPING_THROTTLE_MS mientras se teclea
+  // (una escritura por tecla saturaría Firestore y la cuota), y se limpia al
+  // dejar de escribir, al enviar y al salir de la sala.
+  const ultimoAvisoRef = useRef(0);
+  const paroTecleoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const avisarTecleo = useCallback(
+    (texto: string) => {
+      const uid = user?.uid;
+      if (!chatId || !uid) return;
+
+      if (paroTecleoRef.current) clearTimeout(paroTecleoRef.current);
+
+      if (!texto.trim()) {
+        ultimoAvisoRef.current = 0;
+        void setTyping(chatId, uid, giftedUser.name ?? "", false);
+        return;
+      }
+
+      const ahora = Date.now();
+      if (ahora - ultimoAvisoRef.current > TYPING_THROTTLE_MS) {
+        ultimoAvisoRef.current = ahora;
+        void setTyping(chatId, uid, giftedUser.name ?? "", true);
+      }
+      // Si deja de teclear, la marca se retira sola.
+      paroTecleoRef.current = setTimeout(() => {
+        ultimoAvisoRef.current = 0;
+        void setTyping(chatId, uid, giftedUser.name ?? "", false);
+      }, TYPING_VIGENCIA_MS);
+    },
+    [chatId, user?.uid, giftedUser.name],
+  );
+
+  // Al cambiar de sala o desmontar: limpiar la marca para no dejarla colgada.
+  useEffect(() => {
+    return () => {
+      if (paroTecleoRef.current) clearTimeout(paroTecleoRef.current);
+      const uid = user?.uid;
+      if (chatId && uid) void setTyping(chatId, uid, giftedUser.name ?? "", false);
+    };
+  }, [chatId, user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // El doc del chat no re-emite cuando la marca ajena simplemente CADUCA, así
+  // que se programa una reevaluación local para que el indicador desaparezca.
+  useEffect(() => {
+    if (escribiendo.length === 0) return;
+    const t = setTimeout(() => setEscribiendo([]), TYPING_VIGENCIA_MS);
+    return () => clearTimeout(t);
+  }, [escribiendo]);
 
   // ── Carga del contexto: chat → solicitud → nombre de empresa ──
   useEffect(() => {
@@ -705,6 +767,9 @@ export default function ChatThread({
   const onSend = useCallback(
     (nuevos: IMessage[] = []) => {
       if (!chatId) return;
+      // Al enviar ya no se está escribiendo: retirar la marca de inmediato
+      // (si no, el destinatario vería "escribiendo…" junto al mensaje ya recibido).
+      avisarTecleo("");
 
       // Modo edición: actualiza el mensaje existente en vez de crear uno nuevo.
       if (editing) {
@@ -978,9 +1043,21 @@ export default function ChatThread({
           }}
         >
           {mostrarNombre ? (
-            <Text style={styles.senderName} numberOfLines={1}>
-              {nombreRemitente}
-            </Text>
+            <TouchableOpacity
+              disabled={!sid}
+              activeOpacity={0.6}
+              onPress={() => {
+                const rol = group?.participantsInfo?.[sid]?.rol ?? "";
+                const tipo = (["estudiante", "empresa", "universidad"].includes(rol)
+                  ? rol
+                  : "estudiante") as ProfileTipo;
+                setVerPerfil({ tipo, id: sid });
+              }}
+            >
+              <Text style={styles.senderName} numberOfLines={1}>
+                {nombreRemitente}
+              </Text>
+            </TouchableOpacity>
           ) : null}
           {msg?.forwarded && !esSistema ? (
             <View
@@ -1107,6 +1184,10 @@ export default function ChatThread({
     (acuerdo: AcuerdoData) => {
       setShowPropuesta(false);
       if (!chatId) return;
+      // Si la pasantía ya está aprobada, esta propuesta RENEGOCIA el horario en
+      // vez de abrirla: se marca para que la contraparte vea "Aceptar cambio" y
+      // se aplique con `modificarAcuerdo` (que conserva el pago y el estado).
+      const esCambio = ctx?.estado === "aprobado";
       const ref = doc(collection(db, "chats", chatId, "messages"));
       void setDoc(ref, {
         _id: ref.id,
@@ -1115,17 +1196,18 @@ export default function ChatThread({
         acuerdo,
         scheduleData: acuerdoToSchedule(acuerdo),
         approved: false,
+        cambioHorario: esCambio,
         createdAt: serverTimestamp(),
         user: { _id: giftedUser._id, name: giftedUser.name },
       });
       void touchChatOnMessage(
         chatId,
-        "📅 Propuesta de acuerdo",
+        esCambio ? "🕒 Propuesta de cambio de horario" : "📅 Propuesta de acuerdo",
         giftedUser._id,
         chatUsers,
       );
     },
-    [chatId, giftedUser._id, giftedUser.name, chatUsers],
+    [chatId, giftedUser._id, giftedUser.name, chatUsers, ctx?.estado],
   );
 
   // ── Compartir grupo de estudiantes (acción rápida de la Universidad) ──
@@ -1281,6 +1363,28 @@ export default function ChatThread({
 
       setAprobando(true);
       try {
+        // Renegociación: la pasantía ya está aprobada y esta propuesta solo
+        // cambia el horario → `modificarAcuerdo` (conserva pago y estado).
+        if (message.cambioHorario) {
+          const res = await modificarAcuerdo({
+            solicitudId: ctx.solicitudId,
+            chatId,
+            messageId: String(message._id),
+            universidadId: ctx.universidadId,
+            empresaId: ctx.empresaId,
+            empresaNombre: ctx.empresaNombre,
+            grupoId: ctx.grupoId,
+            aceptadoPor: user?.uid ?? "",
+            acuerdo,
+          });
+          Alert.alert(
+            "Horario actualizado",
+            `El nuevo horario rige del ${res.fechaInicio} al ${res.fechaFin}. ` +
+              `Se notificó a ${res.totalEstudiantes} estudiante(s).`,
+          );
+          return;
+        }
+
         const res = await firmarAcuerdo({
           solicitudId: ctx.solicitudId,
           chatId,
@@ -1296,9 +1400,9 @@ export default function ChatThread({
         // Refleja el nuevo estado localmente (habilita "finalizar pasantía").
         setCtx((p) => (p ? { ...p, estado: "aprobado" } : p));
         setAcuerdoFirmado(res); // Abre el modal "Inicio de la pasantía".
-      } catch (error) {
-        console.warn("Error firmando el acuerdo:", error);
-        Alert.alert("Error", "No se pudo firmar el acuerdo. Intenta de nuevo.");
+      } catch (error: any) {
+        console.warn("Error procesando el acuerdo:", error);
+        Alert.alert("Error", error?.message ?? "No se pudo procesar el acuerdo. Intenta de nuevo.");
       } finally {
         setAprobando(false);
       }
@@ -1398,8 +1502,14 @@ export default function ChatThread({
       return (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="document-text" size={16} color={C.accent} />
-            <Text style={styles.cardTitle}>Propuesta de acuerdo</Text>
+            <Ionicons
+              name={msg.cambioHorario ? "time" : "document-text"}
+              size={16}
+              color={C.accent}
+            />
+            <Text style={styles.cardTitle}>
+              {msg.cambioHorario ? "Cambio de horario propuesto" : "Propuesta de acuerdo"}
+            </Text>
           </View>
 
           <View style={styles.cardRow}>
@@ -1420,7 +1530,9 @@ export default function ChatThread({
               </Text>
             </View>
           ) : null}
-          {ac?.pago ? (
+          {/* En una renegociación el pago NO se toca: mostrarlo confundiría
+              (el modal lo oculta y enviaría "sin pago", pero se conserva). */}
+          {ac?.pago && !msg.cambioHorario ? (
             <View style={styles.cardRow}>
               <Text style={styles.cardLabel}>Pago</Text>
               <Text
@@ -1442,7 +1554,7 @@ export default function ChatThread({
             <View style={[styles.statusPill, styles.statusApproved]}>
               <Ionicons name="checkmark-circle" size={16} color={C.green} />
               <Text style={[styles.statusText, { color: C.green }]}>
-                Acuerdo aprobado
+                {msg.cambioHorario ? "Cambio aplicado" : "Acuerdo aprobado"}
               </Text>
             </View>
           ) : puedeFirmar ? (
@@ -1456,8 +1568,14 @@ export default function ChatThread({
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
                 <>
-                  <Ionicons name="ribbon-outline" size={16} color="#fff" />
-                  <Text style={styles.approveBtnText}>Aceptar acuerdo</Text>
+                  <Ionicons
+                    name={msg.cambioHorario ? "time-outline" : "ribbon-outline"}
+                    size={16}
+                    color="#fff"
+                  />
+                  <Text style={styles.approveBtnText}>
+                    {msg.cambioHorario ? "Aceptar cambio" : "Aceptar acuerdo"}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
@@ -1556,12 +1674,24 @@ export default function ChatThread({
         </View>
       )}
 
-      {/* En grupos, pulsar el nombre abre el panel de administración. */}
+      {/* En grupos, pulsar el nombre abre el panel de administración; en
+          chats 1:1 abre el perfil público de la contraparte. */}
       <TouchableOpacity
         style={{ flex: 1 }}
-        activeOpacity={isGroup ? 0.6 : 1}
-        disabled={!isGroup}
-        onPress={abrirGroupInfo}
+        activeOpacity={isGroup || peerUid ? 0.6 : 1}
+        disabled={!isGroup && !peerUid}
+        onPress={() => {
+          if (isGroup) {
+            abrirGroupInfo();
+            return;
+          }
+          if (!peerUid) return;
+          const rol = group?.participantsInfo?.[peerUid]?.rol ?? "";
+          const tipo = (["estudiante", "empresa", "universidad"].includes(rol)
+            ? rol
+            : "estudiante") as ProfileTipo;
+          setVerPerfil({ tipo, id: peerUid });
+        }}
       >
         <Text style={styles.headerTitle} numberOfLines={1}>
           {tituloHeader}
@@ -1616,12 +1746,20 @@ export default function ChatThread({
               <Ionicons name="people-outline" size={22} color={C.accent} />
             </TouchableOpacity>
           ) : null}
+          {/* Con la pasantía ya aprobada, el mismo botón sirve para RENEGOCIAR
+              el horario (la contraparte deberá aceptar el cambio). */}
           <TouchableOpacity
             onPress={() => setShowPropuesta(true)}
             style={styles.iconBtn}
-            accessibilityLabel="Proponer Horario"
+            accessibilityLabel={
+              ctx?.estado === "aprobado" ? "Proponer cambio de horario" : "Proponer Horario"
+            }
           >
-            <Ionicons name="calendar-outline" size={22} color={C.accent} />
+            <Ionicons
+              name={ctx?.estado === "aprobado" ? "time-outline" : "calendar-outline"}
+              size={22}
+              color={C.accent}
+            />
           </TouchableOpacity>
         </View>
       )}
@@ -1629,6 +1767,21 @@ export default function ChatThread({
   );
 
   // Banner de edición sobre el input (la cita de reply la dibuja GiftedChat).
+  /**
+   * Indicador "está escribiendo…" al pie de la lista de mensajes (justo encima
+   * del input), que es donde lo espera cualquiera acostumbrado a WhatsApp.
+   */
+  const renderFooterTecleo = useCallback(() => {
+    const texto = textoEscribiendo(escribiendo);
+    if (!texto) return null;
+    return (
+      <View style={styles.tecleoRow}>
+        <View style={styles.tecleoDot} />
+        <Text style={styles.tecleoText}>{texto}</Text>
+      </View>
+    );
+  }, [escribiendo, styles]);
+
   const renderChatFooter = useCallback(() => {
     if (editing) {
       return (
@@ -1700,20 +1853,33 @@ export default function ChatThread({
         renderCustomView={renderCustomView}
         renderMessageText={renderMessageText}
         renderChatFooter={renderChatFooter}
+        renderFooter={renderFooterTecleo}
         renderInputToolbar={inputBloqueado ? renderInputBloqueado : renderInputToolbarStyled}
         renderComposer={renderComposerStyled}
         textInputProps={{
           placeholder: editing ? "Edita tu mensaje..." : "Escribe un mensaje...",
-          onChangeText: setInputText,
+          onChangeText: (t: string) => { setInputText(t); avisarTecleo(t); },
           placeholderTextColor: C.textMuted,
           keyboardAppearance: isDark ? "dark" : "light",
         }}
       />
 
+      {/* Renegociación: se oculta el pago (no se toca en un cambio de horario;
+          `modificarAcuerdo` conserva el pactado) y cambian los textos. */}
       <ProponerHorarioModal
         visible={showPropuesta}
         onClose={() => setShowPropuesta(false)}
         onSubmit={enviarPropuesta}
+        showPago={ctx?.estado !== "aprobado"}
+        title={ctx?.estado === "aprobado" ? "Cambiar horario" : "Proponer acuerdo"}
+        submitLabel={
+          ctx?.estado === "aprobado" ? "Enviar cambio" : "Enviar propuesta"
+        }
+        helperText={
+          ctx?.estado === "aprobado"
+            ? "La pasantía ya está aprobada: el cambio se aplica solo si la contraparte lo acepta. El pago pactado no se modifica."
+            : undefined
+        }
       />
 
       {/* ── Modal de confirmación: inicio de la pasantía (tras firmar) ── */}
@@ -2521,6 +2687,24 @@ const makeStyles = (C: ChatColors) => StyleSheet.create({
     marginTop: -2,
   },
   // ── Banner de edición ──
+  tecleoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  tecleoDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.accent,
+  },
+  tecleoText: {
+    fontSize: 12,
+    color: C.textMuted,
+    fontStyle: "italic",
+  },
   editBanner: {
     flexDirection: "row",
     alignItems: "center",

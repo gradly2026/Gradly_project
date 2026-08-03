@@ -13,9 +13,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from "./AutoText";
 import { BarChart } from 'react-native-chart-kit';
+import PerfilPublicoModal from '../../components/PerfilPublicoModal';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
@@ -164,6 +165,7 @@ export function RedGradlyBanner() {
 // PANEL MI PERFIL — EMPRESA
 // ═════════════════════════════════════════════
 export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
+  const [verPerfilId, setVerPerfilId] = useState<string | null>(null);
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -275,13 +277,28 @@ export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
           <Text style={styles.empty}>Aún sin estudiantes contratados.</Text>
         ) : (
           contratados.map((a, i) => (
-            <View key={a.estudiante_id ?? i} style={styles.listRow}>
+            <TouchableOpacity
+              key={a.estudiante_id ?? i}
+              style={styles.listRow}
+              activeOpacity={0.7}
+              disabled={!a.estudiante_id}
+              onPress={() => a.estudiante_id && setVerPerfilId(a.estudiante_id)}
+            >
               <Ionicons name="person-outline" size={18} color={colors.success} />
               <Text style={styles.listText} numberOfLines={1}>{a.estudiante_nombre ?? 'Estudiante'}</Text>
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </View>
+
+      <PerfilPublicoModal
+        visible={!!verPerfilId}
+        onClose={() => setVerPerfilId(null)}
+        userId={verPerfilId ?? ''}
+        rol="talento"
+        viewerUserId={empresaId}
+        theme="dark"
+      />
     </View>
   );
 }

@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -424,6 +425,142 @@ export async function firmarAcuerdo(
     totalConPago: conPago ? alumnos.length : 0,
     fechaInicio: acuerdo.fechaInicio,
     fechaFin: acuerdo.fechaFin,
+  };
+}
+
+export interface ModificarAcuerdoParams {
+  solicitudId: string;
+  chatId: string;
+  /** Mensaje-propuesta de CAMBIO que se está aceptando (se marca `approved`). */
+  messageId: string;
+  universidadId: string;
+  empresaId: string;
+  empresaNombre: string;
+  grupoId: string;
+  /** uid de quien ACEPTA el cambio (la contraparte que no lo propuso). */
+  aceptadoPor: string;
+  /** Nuevo horario/fechas. El PAGO no viaja aquí: se conserva el original. */
+  acuerdo: AcuerdoData;
+}
+
+/**
+ * **Renegociación del horario** de una pasantía YA aprobada.
+ *
+ * Igual que la firma inicial, exige que ambas partes estén de acuerdo: una
+ * propone el cambio en el chat y la CONTRAPARTE lo acepta; solo entonces se
+ * aplica. Se implementa aparte de `firmarAcuerdo` porque los efectos son
+ * distintos:
+ *
+ *  - **NO toca el pago ni crea transacciones.** El modal de renegociación
+ *    oculta la sección de pago y por tanto enviaría `sin_pago`, lo que
+ *    borraría las condiciones económicas pactadas. Aquí se conserva el `pago`
+ *    original leyéndolo de la solicitud. Cambiar dinero es otra conversación,
+ *    y crear transacciones nuevas duplicaría cobros ya emitidos.
+ *  - **NO reabre la pasantía**: exige `estado === 'aprobado'` y lo mantiene.
+ *  - Guarda el acuerdo anterior en `acuerdoHistorial` para dejar rastro de qué
+ *    se cambió, cuándo y quién lo aceptó.
+ *
+ * ⚠️ Efecto esperado: las horas cumplidas (`calcularHorasAcuerdo`) y los días
+ * marcados en el calendario del estudiante se recalculan con el horario nuevo,
+ * porque ambos se derivan del acuerdo vigente.
+ */
+export async function modificarAcuerdo(
+  params: ModificarAcuerdoParams,
+): Promise<{ totalEstudiantes: number; fechaInicio: string; fechaFin: string }> {
+  const {
+    solicitudId, chatId, messageId, universidadId,
+    empresaId, empresaNombre, grupoId, aceptadoPor, acuerdo,
+  } = params;
+
+  if (!solicitudId || !chatId) throw new Error("Acuerdo inválido.");
+
+  const solRef = doc(db, "solicitudes_practicas", solicitudId);
+  const solSnap = await getDoc(solRef);
+  if (!solSnap.exists()) throw new Error("La pasantía ya no existe.");
+  const sol = solSnap.data() as any;
+
+  if (sol.estado !== "aprobado") {
+    throw new Error("Solo se puede cambiar el horario de una pasantía aprobada.");
+  }
+
+  // El pago pactado NO se renegocia aquí: se conserva tal cual.
+  const pagoOriginal = sol.pago ?? sol.acuerdo?.pago ?? { tipo: "sin_pago" };
+  const acuerdoFinal: AcuerdoData = { ...acuerdo, pago: pagoOriginal };
+
+  const alumnos = await alumnosRealesDeGrupo(grupoId);
+  const horario = acuerdoToSchedule(acuerdoFinal);
+  const horarioTexto = horarioToText(acuerdoFinal);
+
+  const batch = writeBatch(db);
+
+  // 1) Aplica el nuevo horario, conservando estado y pago.
+  batch.update(solRef, {
+    horarioAcordado: horario,
+    acuerdo: acuerdoFinal,
+    fechaInicio: acuerdoFinal.fechaInicio,
+    fechaFin: acuerdoFinal.fechaFin,
+    acuerdoModificadoAt: serverTimestamp(),
+    acuerdoModificadoPor: aceptadoPor,
+    // Rastro de lo que había antes (auditoría de la renegociación).
+    acuerdoHistorial: arrayUnion({
+      acuerdo: sol.acuerdo ?? null,
+      reemplazadoAt: new Date().toISOString(),
+      aceptadoPor,
+    }),
+  });
+
+  // 2) Avisar a cada estudiante: su horario cambió y deben enterarse.
+  alumnos.forEach((al) => {
+    const notiRef = doc(collection(db, "notificaciones_estudiantes"));
+    batch.set(notiRef, {
+      estudianteId: al.id,
+      estudianteNombre: al.nombre,
+      empresaId,
+      empresaNombre,
+      grupoId,
+      solicitudId,
+      fechaInicio: acuerdoFinal.fechaInicio,
+      fechaFin: acuerdoFinal.fechaFin,
+      horario,
+      // `carrera` y `pago` se REPITEN aunque no cambien: la tarjeta "Mi
+      // pasantía" del estudiante se arma con la notificación más reciente, así
+      // que omitirlos haría que perdiera esos datos al aceptarse el cambio.
+      carrera: sol.carrera ?? "",
+      pago: pagoOriginal,
+      tipo: "horario_modificado",
+      leida: false,
+      mensaje: `Cambió el horario de tu pasantía en ${empresaNombre}. Ahora es: ${horarioTexto}. Del ${acuerdoFinal.fechaInicio} al ${acuerdoFinal.fechaFin}.`,
+      createdAt: serverTimestamp(),
+    });
+  });
+
+  // 3) Marca la propuesta de cambio como aceptada + mensaje de sistema.
+  batch.update(doc(db, "chats", chatId, "messages", messageId), { approved: true });
+  const sysRef = doc(collection(db, "chats", chatId, "messages"));
+  batch.set(sysRef, {
+    _id: sysRef.id,
+    text: `Se aceptó el cambio de horario: ${horarioTexto}. Del ${acuerdoFinal.fechaInicio} al ${acuerdoFinal.fechaFin}. Se notificó a ${alumnos.length} estudiante(s).`,
+    type: "system",
+    system: true,
+    createdAt: serverTimestamp(),
+    user: { _id: "system", name: "Sistema" },
+  });
+
+  // 4) Inbox de la contraparte.
+  const otroUid = aceptadoPor === empresaId ? universidadId : empresaId;
+  batch.update(doc(db, "chats", chatId), {
+    lastMessage: "🕒 Horario actualizado",
+    lastSenderId: aceptadoPor,
+    updatedAt: serverTimestamp(),
+    [`unread.${otroUid}`]: increment(1),
+  });
+
+  await batch.commit();
+
+  return {
+    totalEstudiantes: alumnos.length,
+    fechaInicio: acuerdoFinal.fechaInicio,
+    fechaFin: acuerdoFinal.fechaFin,
   };
 }
 

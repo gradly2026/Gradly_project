@@ -71,6 +71,20 @@ export function textoCupos(v: VacanteConCupos | null | undefined): string | null
   return libres === 0 ? "Sin cupos" : `${libres} de ${total} cupos`;
 }
 
+/**
+ * Rango salarial legible: "$400 - $600", "Desde $400", "Hasta $600", o `null`
+ * si la empresa no lo declaró. Es 100% opcional (solo aplica a tipo
+ * 'Vacante') — la negociación final ocurre fuera de Gradly, esto es
+ * únicamente indicativo para que el postulante decida si le interesa.
+ */
+export function textoSalario(min?: number | null, max?: number | null): string | null {
+  const mn = typeof min === "number" && min > 0 ? min : null;
+  const mx = typeof max === "number" && max > 0 ? max : null;
+  if (mn === null && mx === null) return null;
+  if (mn !== null && mx !== null) return mn === mx ? `$${mn}` : `$${mn} - $${mx}`;
+  return mn !== null ? `Desde $${mn}` : `Hasta $${mx}`;
+}
+
 /** Forma mínima de un reclamo para contar cupos (evita depender del servicio). */
 export interface ReclamoContable {
   estado?: string;

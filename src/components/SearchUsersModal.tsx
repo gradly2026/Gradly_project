@@ -13,6 +13,7 @@ import {
   Alert,
   FlatList,
   Modal,
+  Platform,
   StyleSheet,
 
 
@@ -24,6 +25,7 @@ import { db } from "../config/firebaseConfig";
 import { useAuth, type UserRole } from "../context/AuthContext";
 import { useIniciarChat } from "../hooks/useIniciarChat";
 import { crearChatGrupoAdHoc } from "../services/chatService";
+import ProfileViewerModal, { type ProfileTipo } from "./ProfileViewerModal";
 import StorageAvatar from "./StorageAvatar";
 
 /** Estudiante de la universidad (para el modo "Chatea con tus estudiantes"). */
@@ -90,6 +92,16 @@ export default function SearchUsersModal({
 
   const esEmpresa = rol === "empresa";
   const esUniversidad = rol === "universidad";
+
+  // ── Ver perfil (en vez de chatear) ──
+  // Cierra este buscador antes de abrir el visor: dos `Modal` nativos
+  // presentados a la vez fallan silenciosamente en iOS si uno se está
+  // cerrando justo cuando el otro se abre (mismo cuidado que ChatThread).
+  const [verPerfil, setVerPerfil] = useState<{ tipo: ProfileTipo; id: string } | null>(null);
+  const abrirPerfil = (tipo: ProfileTipo, id: string) => {
+    onClose();
+    setTimeout(() => setVerPerfil({ tipo, id }), Platform.OS === "ios" ? 350 : 0);
+  };
 
   // Carga el lote base de usuarios y comprueba si la universidad tiene grupos.
   useEffect(() => {
@@ -263,6 +275,7 @@ export default function SearchUsersModal({
     : "Buscar empresas por nombre o rubro";
 
   return (
+    <>
     <Modal
       visible={visible}
       transparent
@@ -324,6 +337,14 @@ export default function SearchUsersModal({
                               {item.carrera || "Estudiante"}
                             </Text>
                           </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => abrirPerfil("estudiante", item.id)}
+                          hitSlop={8}
+                          style={styles.verPerfilBtn}
+                          accessibilityLabel="Ver perfil"
+                        >
+                          <Ionicons name="person-circle-outline" size={22} color={C.textMuted} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => toggleSeleccion(item.id)}
@@ -412,26 +433,41 @@ export default function SearchUsersModal({
                   contentContainerStyle={{ paddingVertical: 8, gap: 8 }}
                   renderItem={({ item }) => {
                     return (
-                      <TouchableOpacity
-                        style={styles.resultItem}
-                        activeOpacity={0.8}
-                        onPress={() => onPressResultado(item)}
-                      >
-                        <StorageAvatar url={item.foto} size={42} fallbackIcon="person" />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.resultName} numberOfLines={1}>
-                            {item.nombre}
-                          </Text>
-                          <Text style={styles.resultDetail} numberOfLines={1}>
-                            {item.detalle}
-                          </Text>
-                        </View>
-                        <Ionicons
-                          name="chatbubble-outline"
-                          size={18}
-                          color={C.accent70}
-                        />
-                      </TouchableOpacity>
+                      <View style={styles.resultItem}>
+                        <TouchableOpacity
+                          style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 12 }}
+                          activeOpacity={0.8}
+                          onPress={() => onPressResultado(item)}
+                        >
+                          <StorageAvatar url={item.foto} size={42} fallbackIcon="person" />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.resultName} numberOfLines={1}>
+                              {item.nombre}
+                            </Text>
+                            <Text style={styles.resultDetail} numberOfLines={1}>
+                              {item.detalle}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => abrirPerfil(esEmpresa ? "estudiante" : "empresa", item.id)}
+                          hitSlop={8}
+                          style={styles.verPerfilBtn}
+                          accessibilityLabel="Ver perfil"
+                        >
+                          <Ionicons name="person-circle-outline" size={22} color={C.textMuted} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => onPressResultado(item)}
+                          hitSlop={8}
+                        >
+                          <Ionicons
+                            name="chatbubble-outline"
+                            size={18}
+                            color={C.accent70}
+                          />
+                        </TouchableOpacity>
+                      </View>
                     );
                   }}
                   ListEmptyComponent={
@@ -448,6 +484,16 @@ export default function SearchUsersModal({
         </View>
       </View>
     </Modal>
+
+    {verPerfil ? (
+      <ProfileViewerModal
+        visible
+        tipo={verPerfil.tipo}
+        profileId={verPerfil.id}
+        onClose={() => setVerPerfil(null)}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -587,6 +633,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   checkbox: {
+    paddingLeft: 8,
+  },
+  verPerfilBtn: {
     paddingLeft: 8,
   },
   grupoBar: {

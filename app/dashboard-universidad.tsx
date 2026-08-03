@@ -68,6 +68,7 @@ import { progresoPorFechas } from '../src/utils/progresoPasantia';
 import { calcularHorasAcuerdo } from '../src/utils/horasPasantia';
 import { esCarreraSoportada, cargarOverridesCarreras, CARRERAS_EL_SALVADOR } from '../src/data/carreras';
 import CarrerasEditorModal from '../src/components/CarrerasEditorModal';
+import ProfileViewerModal from '../src/components/ProfileViewerModal';
 import { certificarPasantia } from '../src/services/solicitudPracticaService';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
@@ -864,6 +865,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
   const [showCarreraPicker, setShowCarreraPicker] = useState(false);
 
   // ── Flujo de modales ──
+  const [verPerfilEstudianteId, setVerPerfilEstudianteId] = useState<string | null>(null);
   const [showModalGrupo, setShowModalGrupo]       = useState(false); // Paso 1
   const [showModalExcel, setShowModalExcel]       = useState(false); // Paso 2
   const [showProgreso, setShowProgreso]           = useState(false); // Creando cuentas
@@ -1400,31 +1402,45 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
             const h = item.grupo_id ? horasPorGrupo[item.grupo_id] : undefined;
             const pct = h ? h.pct : Math.round((item.horas_aprobadas / (item.horas_objetivo || 500)) * 100);
             return (
-              <GlassCard contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }}>
-                <StorageAvatar url={item.foto_url} size={44} fallbackIcon="person" />
-                <View style={{ flex: 1 }}>
-                  <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre_completo}</Text>
-                  <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera || 'Sin carrera'}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                  <Text style={s.estudianteHoras}>
-                    {h ? `${h.transcurridas}/${h.total} h` : `${item.horas_aprobadas}h`}
-                  </Text>
-                  <View style={s.miniBarTrack}>
-                    <View style={[s.miniBarFill, { width: `${Math.min(pct, 100)}%` as any }]} />
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setVerPerfilEstudianteId(item.id)}
+              >
+                <GlassCard contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }}>
+                  <StorageAvatar url={item.foto_url} size={44} fallbackIcon="person" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre_completo}</Text>
+                    <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera || 'Sin carrera'}</Text>
                   </View>
-                  <View style={[s.estadoBadge, !item.activo && s.estadoBadgeOff]}>
-                    <Text style={[s.estadoText, !item.activo && { color: COLORS.textMuted }]}>
-                      {item.activo ? 'Activo' : 'Pendiente'}
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <Text style={s.estudianteHoras}>
+                      {h ? `${h.transcurridas}/${h.total} h` : `${item.horas_aprobadas}h`}
                     </Text>
+                    <View style={s.miniBarTrack}>
+                      <View style={[s.miniBarFill, { width: `${Math.min(pct, 100)}%` as any }]} />
+                    </View>
+                    <View style={[s.estadoBadge, !item.activo && s.estadoBadgeOff]}>
+                      <Text style={[s.estadoText, !item.activo && { color: COLORS.textMuted }]}>
+                        {item.activo ? 'Activo' : 'Pendiente'}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              </GlassCard>
+                </GlassCard>
+              </TouchableOpacity>
             );
           }}
           ListEmptyComponent={<Text style={s.emptyText}>Sin estudiantes registrados.</Text>}
         />
       )}
+
+      {verPerfilEstudianteId ? (
+        <ProfileViewerModal
+          visible
+          tipo="estudiante"
+          profileId={verPerfilEstudianteId}
+          onClose={() => setVerPerfilEstudianteId(null)}
+        />
+      ) : null}
 
       {/* ── MODAL · PASO 1: Crear grupo (validación en tiempo real) ── */}
       <Modal visible={showModalGrupo} transparent animationType="slide" onRequestClose={() => setShowModalGrupo(false)}>

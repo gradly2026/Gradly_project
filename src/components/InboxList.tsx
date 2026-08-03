@@ -22,6 +22,7 @@ import {
   chatTitle,
   markChatRead,
   subscribeUserChats,
+  textoEscribiendo,
   type ChatListItem,
 } from "../services/chatService";
 
@@ -127,15 +128,24 @@ export default function InboxList({
             <Text style={styles.itemTime}>{formatHora(item.updatedAt, locale)}</Text>
           </View>
           <View style={styles.itemBottom}>
-            <AutoText
-              style={[styles.itemMsg, noLeidos && styles.itemMsgUnread]}
-              numberOfLines={1}
-            >
-              {item.lastMessage ||
-                (item.type === "group"
-                  ? `Grupo: ${item.grupoNombre}`
-                  : "Sin mensajes aún")}
-            </AutoText>
+            {/* Mientras el otro teclea, "escribiendo…" sustituye al último
+                mensaje (como en cualquier app de mensajería). Se marca en
+                cursiva y color de acento para distinguirlo del contenido. */}
+            {textoEscribiendo(item.escribiendo ?? []) ? (
+              <AutoText style={[styles.itemMsg, styles.itemEscribiendo]} numberOfLines={1}>
+                {textoEscribiendo(item.escribiendo ?? [])!}
+              </AutoText>
+            ) : (
+              <AutoText
+                style={[styles.itemMsg, noLeidos && styles.itemMsgUnread]}
+                numberOfLines={1}
+              >
+                {item.lastMessage ||
+                  (item.type === "group"
+                    ? `Grupo: ${item.grupoNombre}`
+                    : "Sin mensajes aún")}
+              </AutoText>
+            )}
             {noLeidos ? (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>
@@ -326,6 +336,10 @@ const makeStyles = (C: GradlyColors) =>
     itemMsgUnread: {
       color: C.textPrimary,
       fontFamily: FONTS.interSemiBold,
+    },
+    itemEscribiendo: {
+      color: C.primaryLight,
+      fontStyle: "italic",
     },
     badge: {
       minWidth: 20,

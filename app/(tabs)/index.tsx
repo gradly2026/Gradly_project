@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { aplicarAVacante, calcularNivelEstudiante, estudianteHabilitadoParaVacantes } from '../../src/services/pasantiaService';
 import { abrirChatDirectoEmpresaEstudiante } from '../../src/services/chatService';
 import { esVacanteAfin, puntuarVacante } from '../../src/data/areas';
+import { textoSalario } from '../../src/utils/cupos';
 import {
   ActivityIndicator,
   Alert,
@@ -56,8 +57,13 @@ interface Vacante {
   titulo: string;
   modalidad: 'Presencial' | 'Remoto' | 'Híbrido';
   tipo: string;
+  /** Granularidad de empleo (solo tipo 'Vacante'). */
+  modalidad_contrato?: string;
   area: string;
   horas_requeridas: number;
+  /** Rango salarial opcional (solo 'Vacante'); informativo, se negocia fuera de Gradly. */
+  salario_min?: number | null;
+  salario_max?: number | null;
   skills_requeridas: string[];
   fecha_publicacion: any;
   premium?: boolean;
@@ -176,9 +182,20 @@ function VacanteCard({
         {/* Chips de tipo */}
         <View style={styles.chipsRow}>
           <Chip label={vacante.tipo} color={COLORS.primary} />
+          {!!vacante.modalidad_contrato && (
+            <Chip label={vacante.modalidad_contrato} color={COLORS.backgroundSurface} textColor={COLORS.textSecondary} />
+          )}
           <Chip label={vacante.modalidad} color={COLORS.backgroundSurface} textColor={COLORS.textSecondary} />
           {!!vacante.horas_requeridas && (
             <Chip label={`${vacante.horas_requeridas}h`} color={COLORS.backgroundSurface} textColor={COLORS.textMuted} />
+          )}
+          {/* Rango salarial: quick-scan en la tarjeta, como cualquier job board. */}
+          {textoSalario(vacante.salario_min, vacante.salario_max) && (
+            <Chip
+              label={textoSalario(vacante.salario_min, vacante.salario_max)!}
+              color={COLORS.success + '22'}
+              textColor={COLORS.success}
+            />
           )}
         </View>
 

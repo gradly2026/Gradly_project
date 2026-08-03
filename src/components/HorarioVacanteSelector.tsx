@@ -18,10 +18,18 @@ export default function HorarioVacanteSelector({
   value,
   onChange,
   error,
+  requerido = true,
 }: {
   value: Partial<HorarioPasantia>;
   onChange: (siguiente: Partial<HorarioPasantia>) => void;
   error?: string;
+  /**
+   * `false` en Vacante + "Por proyecto": un trabajo por entregables no
+   * siempre tiene horario semanal fijo. Solo cambia el rótulo/ayuda — si el
+   * usuario empieza a llenarlo de todos modos, debe quedar completo (lo exige
+   * `valHorarioCondicional` del lado del formulario).
+   */
+  requerido?: boolean;
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -42,7 +50,7 @@ export default function HorarioVacanteSelector({
 
   return (
     <View style={s.wrap}>
-      <Text style={s.label}>Horario de la pasantía*</Text>
+      <Text style={s.label}>{requerido ? "Horario*" : "Horario (opcional)"}</Text>
 
       <View style={s.diasRow}>
         {DIAS_LABORALES.map((d) => {

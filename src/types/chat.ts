@@ -93,6 +93,12 @@ export interface ChatMessage extends IMessage {
   /** Payload de la tarjeta de grupo compartido (`type: 'group_offer'`). */
   groupOffer?: GroupOfferData;
   approved?: boolean;
+  /**
+   * `true` cuando la propuesta NO abre la pasantía sino que renegocia el
+   * horario de una ya aprobada. Cambia el texto de la tarjeta y hace que al
+   * aceptarla se llame `modificarAcuerdo` en vez de `firmarAcuerdo`.
+   */
+  cambioHorario?: boolean;
   /** Borrado lógico: el texto se sustituye por "Mensaje eliminado". */
   isDeleted?: boolean;
   /** Marca de edición (muestra "Editado" bajo la burbuja). */
