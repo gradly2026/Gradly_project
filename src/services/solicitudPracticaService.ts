@@ -2,6 +2,7 @@ import {
   addDoc,
   arrayUnion,
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -44,6 +45,32 @@ export const buildChatId = (
   empresaId: string,
   grupoId: string,
 ) => `${universidadId}_${empresaId}_${grupoId}`;
+
+export const MENSAJE_GRUPO_COMPROMETIDO =
+  "Este grupo ya tiene una pasantía aprobada con otra empresa y no puede comprometerse con una nueva hasta que esa termine.";
+
+/**
+ * Verifica si un grupo ya está comprometido en una pasantía activa (una
+ * `solicitudes_practicas` en `estado:'aprobado'`, sin importar cuál de los 3
+ * flujos — Matchmaking, Ofrecer a Empresa o Compartir en chat — la creó).
+ *
+ * Lee el flag denormalizado `pasantia_activa_id` en el propio documento del
+ * grupo (`grupos/{grupoId}`, lectura abierta a cualquier autenticado) en vez
+ * de consultar `solicitudes_practicas` directamente: esa colección exige que
+ * la query incluya un `where` que calce con la regla de permisos
+ * (`universidadId` o `empresaId` igual al uid del llamante) para poder
+ * evaluarse en tiempo de consulta, y una empresa nunca puede probar la rama
+ * de OTRA empresa — la query se rechazaría con permission-denied. El flag en
+ * `grupos` lo fija `firmarAcuerdo`/`respuestaFinalUniversidad` al aprobar, y
+ * lo libera `finalizarPasantia`.
+ */
+export async function grupoComprometido(
+  grupoId: string,
+): Promise<{ comprometido: boolean; solicitudId: string | null }> {
+  const snap = await getDoc(doc(db, "grupos", grupoId));
+  const solicitudId = (snap.data() as any)?.pasantia_activa_id ?? null;
+  return { comprometido: !!solicitudId, solicitudId };
+}
 
 /** Empresa mostrada en el buscador "Ofrecer a Empresa". */
 export interface EmpresaResult {
@@ -141,6 +168,11 @@ export async function crearSolicitudPractica(
     fechaFin,
   } = params;
 
+  // Aviso temprano: si el grupo ya está comprometido con otra empresa, no
+  // tiene sentido abrir una negociación nueva que nunca podrá aprobarse.
+  const { comprometido } = await grupoComprometido(grupoId);
+  if (comprometido) throw new Error(MENSAJE_GRUPO_COMPROMETIDO);
+
   // uids reales de Auth del grupo → permiten al estudiante LEER su propia
   // pasantía (regla `request.auth.uid in resource.data.estudianteIds`) y ver
   // el estado en vivo. Los `alumnos[].id` del param pueden ser sintéticos.
@@ -213,6 +245,11 @@ export async function aceptarGrupoCompartido(params: {
     grupoNombre,
     carrera,
   } = params;
+
+  // Aviso temprano: evita que la empresa acepte en el chat un grupo que ya
+  // no va a poder confirmarse (ahorra una negociación de horario inútil).
+  const { comprometido } = await grupoComprometido(grupoId);
+  if (comprometido) throw new Error(MENSAJE_GRUPO_COMPROMETIDO);
 
   // Alumnos reales del grupo (uids de Auth + nombre).
   const alumnos = await alumnosRealesDeGrupo(grupoId);
@@ -334,6 +371,21 @@ export async function firmarAcuerdo(
 
   if (!solicitudId || !chatId) throw new Error("Acuerdo inválido.");
 
+  // Evita doble-disparo (reintento de red, doble tap) sobre una solicitud
+  // que ya quedó aprobada — antes esta función no releía nada.
+  const solSnapPrevio = await getDoc(doc(db, "solicitudes_practicas", solicitudId));
+  if (!solSnapPrevio.exists()) throw new Error("La pasantía ya no existe.");
+  if ((solSnapPrevio.data() as any)?.estado === "aprobado") {
+    throw new Error("Este acuerdo ya fue firmado.");
+  }
+
+  // El grupo no puede quedar comprometido con dos empresas a la vez. Si el
+  // flag ya apunta a ESTA misma solicitud (reintento) se deja pasar.
+  const { comprometido, solicitudId: otraSolicitudId } = await grupoComprometido(grupoId);
+  if (comprometido && otraSolicitudId !== solicitudId) {
+    throw new Error(MENSAJE_GRUPO_COMPROMETIDO);
+  }
+
   // Alumnos reales del grupo (uid de Auth + nombre).
   const alumnos = await alumnosRealesDeGrupo(grupoId);
 
@@ -357,6 +409,20 @@ export async function firmarAcuerdo(
     fechaFin: acuerdo.fechaFin,
     aprobadoAt: serverTimestamp(),
     aprobadoPor: firmadoPor,
+  });
+
+  // 1.5) Bloquea el grupo: no puede comprometerse con otra empresa mientras
+  // esta pasantía siga aprobada (se libera en `finalizarPasantia`).
+  batch.update(doc(db, "grupos", grupoId), { pasantia_activa_id: solicitudId });
+
+  // Registra la alianza en AMBOS perfiles (arrayUnion dedupe solo). Alimenta
+  // "Top Empresas/Universidades" sin que ese ranking necesite leer
+  // `solicitudes_practicas` (colección restringida a cada dueño).
+  batch.update(doc(db, "perfiles_universidades", universidadId), {
+    aliados_empresas_ids: arrayUnion(empresaId),
+  });
+  batch.update(doc(db, "perfiles_empresas", empresaId), {
+    aliados_universidades_ids: arrayUnion(universidadId),
   });
 
   // 2) y 3) Notificación + (opcional) transacción por estudiante real.
@@ -598,6 +664,21 @@ export async function finalizarPasantia(
       ? { tipo: "pdf", url: constanciaUrl, emitidaPor: emisor, fecha: Timestamp.now() }
       : { tipo: "auto", emitidaPor: emisor, fecha: Timestamp.now() },
   });
+
+  // Libera el grupo: ya puede comprometerse con una pasantía nueva. Solo si
+  // el flag sigue apuntando a ESTA solicitud (defensivo — evita pisar un
+  // compromiso más nuevo en algún escenario imprevisto).
+  const grupoId = data?.grupoId;
+  if (grupoId) {
+    try {
+      const grupoSnap = await getDoc(doc(db, "grupos", grupoId));
+      if ((grupoSnap.data() as any)?.pasantia_activa_id === solicitudId) {
+        await updateDoc(doc(db, "grupos", grupoId), { pasantia_activa_id: deleteField() });
+      }
+    } catch {
+      /* liberar el flag no debe bloquear la finalización de la pasantía */
+    }
+  }
 
   // Avisa a la universidad que la pasantía espera su certificación.
   const universidadId = data?.universidadId;

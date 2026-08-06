@@ -515,10 +515,6 @@ export default function InicioSesion() {
           >
           {/* ══ PANEL IZQUIERDO — marca + bullets + carrusel ══ */}
           <View style={[styles.leftPanel, isDesktopWeb && styles.leftPanelDesktop]}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-              <Text style={styles.backBtnText}>{`← ${t('accion_volver')}`}</Text>
-            </TouchableOpacity>
-
             <View style={styles.brand}>
               <Image
                 source={require("../../assets/images/LogoGradly.png")}
@@ -1031,7 +1027,7 @@ export default function InicioSesion() {
 // ══════════════════════════════════════════════════════════════════
 const makeStyles = (C: Tokens) =>
   StyleSheet.create({
-    root: { flex: 1, backgroundColor: C.bg },
+    root: { flex: 1, backgroundColor: C.bg, paddingTop: 10 },
     flex1: { flex: 1 },
     centered: { alignItems: "center", justifyContent: "center", gap: 16 },
     completingText: { color: C.textSub, fontSize: 15 },
@@ -1071,8 +1067,6 @@ const makeStyles = (C: Tokens) =>
       paddingBottom: 48,
       justifyContent: "center",
     },
-    backBtn: { alignSelf: "flex-start", marginBottom: 20 },
-    backBtnText: { fontSize: 14, color: C.accent70, fontWeight: "600" },
     brand: {
       flexDirection: "row",
       alignItems: "center",

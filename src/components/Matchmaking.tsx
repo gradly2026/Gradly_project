@@ -402,7 +402,10 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
           <Text style={styles.heading}>Mis reservas de cupos</Text>
           {reclamos
             .filter(r => r.estado === 'pendiente' || r.estado === 'aceptado')
-            .map(r => (
+            .map(r => {
+              const tomados = r.tomados ?? 0;
+              const pctTomados = Math.min(100, Math.round((tomados / Math.max(1, r.cantidad)) * 100));
+              return (
               <GlassCard key={r.id} colors={colors} isDark={isDark} column>
                 <View style={styles.rowBetween}>
                   <View style={{ flex: 1 }}>
@@ -426,12 +429,31 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                     {r.estado === 'aceptado' ? 'Confirmado' : 'Esperando empresa'}
                   </Text>
                 </View>
+                {/* Cuántos de estos cupos ya fueron tomados por un estudiante real
+                    (no solo reservados) — responde "¿mis estudiantes ya recibieron
+                    el espacio?", no solo "¿ya reservé?". */}
+                <Text style={styles.cardMeta}>
+                  {tomados === 0
+                    ? 'Aún ningún estudiante ha elegido este cupo'
+                    : tomados === r.cantidad
+                      ? `Los ${tomados} estudiante(s) ya eligieron su cupo`
+                      : `${tomados}/${r.cantidad} estudiantes ya eligieron su cupo`}
+                </Text>
+                <View style={styles.barraFondo}>
+                  <View
+                    style={[
+                      styles.barraRelleno,
+                      { width: `${pctTomados}%`, backgroundColor: colors.success },
+                    ]}
+                  />
+                </View>
                 <TouchableOpacity style={styles.liberarBtn} onPress={() => liberar(r)}>
                   <Ionicons name="return-up-back-outline" size={14} color={colors.textMuted} />
                   <Text style={styles.liberarTxt}>Liberar cupos</Text>
                 </TouchableOpacity>
               </GlassCard>
-            ))}
+              );
+            })}
         </>
       )}
 

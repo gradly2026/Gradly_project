@@ -84,6 +84,14 @@ type DeleteUserCompleteOutput = {
   uid: string;
 };
 
+type BackfillAlianzasOutput = {
+  ok: boolean;
+  empresasActualizadas: number;
+  universidadesActualizadas: number;
+  solicitudesRevisadas: number;
+  reclamosRevisados: number;
+};
+
 const functions = getFunctions(app, "us-central1");
 
 const _setUserRole = httpsCallable<SetUserRoleInput, SetUserRoleOutput>(
@@ -111,6 +119,10 @@ const _deleteUserComplete = httpsCallable<
   DeleteUserCompleteInput,
   DeleteUserCompleteOutput
 >(functions, "deleteUserComplete");
+const _backfillAlianzasCalificaciones = httpsCallable<void, BackfillAlianzasOutput>(
+  functions,
+  "backfillAlianzasCalificaciones",
+);
 
 export async function setUserRole(input: SetUserRoleInput): Promise<SetUserRoleOutput> {
   const res = await _setUserRole(input);
@@ -147,5 +159,13 @@ export async function deleteUserComplete(
   input: DeleteUserCompleteInput,
 ): Promise<DeleteUserCompleteOutput> {
   const res = await _deleteUserComplete(input);
+  return res.data;
+}
+
+/** Backfill de una sola vez: recalcula alianzas + calificación promedio de
+ * TODAS las empresas/universidades a partir del historial completo. Ver
+ * `functions/src/admin.ts` — solo admin puede invocarlo. */
+export async function backfillAlianzasCalificaciones(): Promise<BackfillAlianzasOutput> {
+  const res = await _backfillAlianzasCalificaciones();
   return res.data;
 }

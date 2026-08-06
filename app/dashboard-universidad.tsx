@@ -65,7 +65,7 @@ import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/Theme
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
 import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
-import { calcularHorasAcuerdo } from '../src/utils/horasPasantia';
+import { calcularHorasAcuerdo, progresoDeGrupo } from '../src/utils/horasPasantia';
 import { esCarreraSoportada, cargarOverridesCarreras, CARRERAS_EL_SALVADOR } from '../src/data/carreras';
 import CarrerasEditorModal from '../src/components/CarrerasEditorModal';
 import ProfileViewerModal from '../src/components/ProfileViewerModal';
@@ -103,6 +103,8 @@ interface EstudianteRow {
   foto_url?: string;
   activo: boolean;
   grupo_id?: string;
+  calificacion_promedio?: number;
+  calificaciones_recibidas?: number;
 }
 
 interface Aplicacion {
@@ -247,6 +249,11 @@ interface Grupo {
   docente: string;
   estudiantes_registrados: number;
   egresado: boolean;
+  /** Período de prácticas declarado al crear el grupo (PeriodoPracticasField). */
+  modoDuracion?: 'ciclos' | 'fecha' | 'horas';
+  fechaInicio?: string | null;
+  fechaFin?: string | null;
+  ciclos?: number | null;
 }
 
 // ── Heurística de columnas del Excel ──
@@ -435,6 +442,27 @@ export default function DashboardUniversidad() {
     );
     return unsub;
   }, [user]);
+
+  // ── Autoreporta el promedio de calificaciones de sus propios estudiantes ──
+  // Alimenta "Top Empresas/Universidades" (RedGradlyBanner): ese ranking no
+  // puede leer `solicitudes_practicas`/`perfiles_estudiantes` de TODAS las
+  // universidades (las reglas de Firestore solo dejan a cada dueño leer lo
+  // suyo), así que cada universidad reporta su propio agregado en su propio
+  // perfil (escritura de dueño, sin cambio de reglas) cuando visita su panel.
+  // Solo escribe si el valor cambió, para no generar escrituras de más.
+  const calificacionReportadaRef = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (!user?.uid || estudiantes.length === 0) return;
+    const conCalificacion = estudiantes.filter(e => (e.calificaciones_recibidas ?? 0) > 0);
+    const promedio = conCalificacion.length > 0
+      ? conCalificacion.reduce((acc, e) => acc + (e.calificacion_promedio ?? 0), 0) / conCalificacion.length
+      : null;
+    if (calificacionReportadaRef.current === promedio) return;
+    calificacionReportadaRef.current = promedio;
+    updateDoc(doc(db, 'perfiles_universidades', user.uid), {
+      calificacion_estudiantes_promedio: promedio,
+    }).catch(() => { /* no crítico: se reintenta solo si el promedio vuelve a cambiar */ });
+  }, [user?.uid, estudiantes]);
 
   useEffect(() => {
     if (!user) return;
@@ -926,6 +954,10 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
               docente: (data.docente as string) ?? 'Sin asignar',
               estudiantes_registrados: (data.estudiantes_registrados as number) ?? 0,
               egresado: (data.egresado as boolean) ?? false,
+              modoDuracion: (data.modo_duracion as Grupo['modoDuracion']) ?? undefined,
+              fechaInicio: (data.fecha_inicio as string) ?? null,
+              fechaFin: (data.fecha_fin as string) ?? null,
+              ciclos: (data.ciclos as number) ?? null,
             };
           })
           .sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -951,19 +983,31 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
     );
   }, [estudiantes, busquedaAplicada]);
 
-  // ── Horas laborales por grupo (X/Y), calculadas del acuerdo firmado ──
-  // Para cada grupo con una pasantía aprobada/finalizada y acuerdo válido,
-  // derivamos horas transcurridas y totales. El conteo avanza con la fecha.
-  const horasPorGrupo = useMemo(() => {
-    const map: Record<string, ReturnType<typeof calcularHorasAcuerdo>> = {};
+  // ── Acuerdo vigente por grupo (aprobado/finalizado con una empresa) ──
+  const acuerdoPorGrupo = useMemo(() => {
+    const map: Record<string, any> = {};
     solicitudesGrupo.forEach(sg => {
       if (!sg.grupoId || !sg.acuerdo) return;
       if (sg.estado !== 'aprobado' && sg.estado !== 'finalizado') return;
-      const h = calcularHorasAcuerdo(sg.acuerdo);
-      if (h.valido) map[sg.grupoId] = h;
+      map[sg.grupoId] = sg.acuerdo;
     });
     return map;
   }, [solicitudesGrupo]);
+
+  // ── Progreso "X/Y" por grupo, para la barra + contador de las tarjetas ──
+  // Prioriza horas reales del acuerdo firmado; si aún no hay empresa
+  // confirmada, cae a la meta en horas o al período por fechas del grupo
+  // (ver progresoDeGrupo — nunca se fabrica un número sin dato real detrás).
+  const progresoPorGrupo = useMemo(() => {
+    const map: Record<string, ReturnType<typeof progresoDeGrupo>> = {};
+    grupos.forEach(g => {
+      map[g.id] = progresoDeGrupo(
+        { horasRequeridas: g.horasRequeridas, fechaInicio: g.fechaInicio, fechaFin: g.fechaFin },
+        acuerdoPorGrupo[g.id],
+      );
+    });
+    return map;
+  }, [grupos, acuerdoPorGrupo]);
 
   const resetForm = () => {
     setGNombre('');
@@ -1397,72 +1441,81 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
           data={gruposFiltrados}
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 110, gap: 8 }}
-          renderItem={({ item }) => (
-            <GlassCard contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
-              <View style={s.estudianteAvatar}>
-                <Ionicons name="people" size={18} color={colors.primaryLight} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre}</Text>
-                  {item.egresado && (
-                    <View style={s.egresadoBadge}>
-                      <Text style={s.egresadoBadgeText}>🎓 Egresado</Text>
-                    </View>
-                  )}
+          renderItem={({ item }) => {
+            const progreso = progresoPorGrupo[item.id];
+            return (
+            <GlassCard contentStyle={{ padding: 14, gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={s.estudianteAvatar}>
+                  <Ionicons name="people" size={18} color={colors.primaryLight} />
                 </View>
-                <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera} · {item.docente}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                {horasPorGrupo[item.id] ? (
-                  <Text style={s.estudianteHoras}>
-                    {horasPorGrupo[item.id].transcurridas}/{horasPorGrupo[item.id].total} h
-                  </Text>
-                ) : (
-                  <Text style={s.estudianteHoras}>{item.horasRequeridas}h</Text>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre}</Text>
+                    {item.egresado && (
+                      <View style={s.egresadoBadge}>
+                        <Text style={s.egresadoBadgeText}>🎓 Egresado</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera} · {item.docente}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={s.estudianteMeta}>{item.estudiantes_registrados} est.</Text>
+                </View>
+                {!item.egresado && (
+                  <TouchableOpacity
+                    style={[s.grupoEgresarBtn, !grupoPuedeEgresar(item.id) && { opacity: 0.4 }]}
+                    onPress={() => egresarGrupo(item)}
+                    disabled={egresando === item.id}
+                    accessibilityLabel="Egresar grupo"
+                  >
+                    {egresando === item.id ? (
+                      <ActivityIndicator size="small" color={colors.gold} />
+                    ) : (
+                      <Ionicons name="school-outline" size={18} color={colors.gold} />
+                    )}
+                  </TouchableOpacity>
                 )}
-                <Text style={s.estudianteMeta}>{item.estudiantes_registrados} est.</Text>
-              </View>
-              {!item.egresado && (
                 <TouchableOpacity
-                  style={[s.grupoEgresarBtn, !grupoPuedeEgresar(item.id) && { opacity: 0.4 }]}
-                  onPress={() => egresarGrupo(item)}
-                  disabled={egresando === item.id}
-                  accessibilityLabel="Egresar grupo"
+                  style={s.grupoChatBtn}
+                  onPress={() => abrirChatGrupo(item)}
+                  disabled={creandoChatGrupo === item.id}
+                  accessibilityLabel="Abrir chat del grupo"
                 >
-                  {egresando === item.id ? (
-                    <ActivityIndicator size="small" color={colors.gold} />
+                  {creandoChatGrupo === item.id ? (
+                    <ActivityIndicator size="small" color={colors.primaryLight} />
                   ) : (
-                    <Ionicons name="school-outline" size={18} color={colors.gold} />
+                    <Ionicons name="chatbubbles" size={18} color={colors.primaryLight} />
                   )}
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.grupoChatBtn}
+                  onPress={() => handleEliminarGrupo(item)}
+                  disabled={eliminandoGrupo === item.id}
+                  accessibilityLabel="Eliminar grupo"
+                >
+                  {eliminandoGrupo === item.id ? (
+                    <ActivityIndicator size="small" color={COLORS.error} />
+                  ) : (
+                    <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                  )}
+                </TouchableOpacity>
+              </View>
+              {progreso?.visible && (
+                <View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text style={s.estudianteMeta}>Progreso de la pasantía</Text>
+                    <Text style={s.estudianteHoras}>{progreso.label}</Text>
+                  </View>
+                  <View style={s.progresoTrack}>
+                    <View style={[s.progresoFill, { width: `${progreso.pct}%` as any }]} />
+                  </View>
+                </View>
               )}
-              <TouchableOpacity
-                style={s.grupoChatBtn}
-                onPress={() => abrirChatGrupo(item)}
-                disabled={creandoChatGrupo === item.id}
-                accessibilityLabel="Abrir chat del grupo"
-              >
-                {creandoChatGrupo === item.id ? (
-                  <ActivityIndicator size="small" color={colors.primaryLight} />
-                ) : (
-                  <Ionicons name="chatbubbles" size={18} color={colors.primaryLight} />
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={s.grupoChatBtn}
-                onPress={() => handleEliminarGrupo(item)}
-                disabled={eliminandoGrupo === item.id}
-                accessibilityLabel="Eliminar grupo"
-              >
-                {eliminandoGrupo === item.id ? (
-                  <ActivityIndicator size="small" color={COLORS.error} />
-                ) : (
-                  <Ionicons name="trash-outline" size={18} color={COLORS.error} />
-                )}
-              </TouchableOpacity>
             </GlassCard>
-          )}
+            );
+          }}
           ListEmptyComponent={<Text style={s.emptyText}>Aún no has creado grupos.</Text>}
         />
       ) : (
@@ -1471,48 +1524,51 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 110, gap: 8 }}
           renderItem={({ item }) => {
-            // Si el grupo del estudiante tiene un acuerdo activo, mostramos las
-            // horas laborales cumplidas/total (X/Y) con el conteo automático;
-            // de lo contrario, caemos a las horas aprobadas por la universidad.
-            const h = item.grupo_id ? horasPorGrupo[item.grupo_id] : undefined;
-            const pct = h ? h.pct : Math.round((item.horas_aprobadas / (item.horas_objetivo || 500)) * 100);
+            // El progreso del estudiante es el de SU grupo (comparten
+            // pasantía): mismo helper y misma prioridad que en "Grupos Creados".
+            const progreso = item.grupo_id ? progresoPorGrupo[item.grupo_id] : undefined;
             return (
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() => setVerPerfilEstudianteId(item.id)}
               >
-                <GlassCard contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }}>
-                  <StorageAvatar url={item.foto_url} size={44} fallbackIcon="person" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre_completo}</Text>
-                    <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera || 'Sin carrera'}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                    <Text style={s.estudianteHoras}>
-                      {h ? `${h.transcurridas}/${h.total} h` : `${item.horas_aprobadas}h`}
-                    </Text>
-                    <View style={s.miniBarTrack}>
-                      <View style={[s.miniBarFill, { width: `${Math.min(pct, 100)}%` as any }]} />
+                <GlassCard contentStyle={{ padding: 12, gap: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <StorageAvatar url={item.foto_url} size={44} fallbackIcon="person" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre_completo}</Text>
+                      <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera || 'Sin carrera'}</Text>
                     </View>
                     <View style={[s.estadoBadge, !item.activo && s.estadoBadgeOff]}>
                       <Text style={[s.estadoText, !item.activo && { color: COLORS.textMuted }]}>
                         {item.activo ? 'Activo' : 'Pendiente'}
                       </Text>
                     </View>
+                    <TouchableOpacity
+                      onPress={() => handleEliminarEstudiante(item)}
+                      disabled={eliminandoEstudiante === item.id}
+                      hitSlop={8}
+                      accessibilityLabel="Eliminar estudiante"
+                      style={{ paddingLeft: 4 }}
+                    >
+                      {eliminandoEstudiante === item.id ? (
+                        <ActivityIndicator size="small" color={COLORS.error} />
+                      ) : (
+                        <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                      )}
+                    </TouchableOpacity>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => handleEliminarEstudiante(item)}
-                    disabled={eliminandoEstudiante === item.id}
-                    hitSlop={8}
-                    accessibilityLabel="Eliminar estudiante"
-                    style={{ paddingLeft: 4 }}
-                  >
-                    {eliminandoEstudiante === item.id ? (
-                      <ActivityIndicator size="small" color={COLORS.error} />
-                    ) : (
-                      <Ionicons name="trash-outline" size={18} color={COLORS.error} />
-                    )}
-                  </TouchableOpacity>
+                  {progreso?.visible && (
+                    <View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <Text style={s.estudianteMeta}>Progreso de la pasantía</Text>
+                        <Text style={s.estudianteHoras}>{progreso.label}</Text>
+                      </View>
+                      <View style={s.progresoTrack}>
+                        <View style={[s.progresoFill, { width: `${progreso.pct}%` as any }]} />
+                      </View>
+                    </View>
+                  )}
                 </GlassCard>
               </TouchableOpacity>
             );
@@ -1804,6 +1860,7 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
 
   const Card = ({ sol, accion }: { sol: SolicitudGrupo; accion?: 'certificar' }) => {
     const h = calcularHorasAcuerdo(sol.acuerdo);
+    const progreso = progresoDeGrupo({}, sol.acuerdo);
     const cert = (sol as any).certificacion;
     const badge =
       cert === 'certificada' ? { txt: 'Certificada', col: COLORS.gold }
@@ -1821,8 +1878,19 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
         </View>
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>{sol.carrera ?? '—'}</Text>
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>
-          {sol.alumnos?.length ?? 0} estudiante(s) · {h.total} h {sol.fechaInicio ? `· ${sol.fechaInicio} → ${sol.fechaFin}` : ''}
+          {sol.alumnos?.length ?? 0} estudiante(s) {sol.fechaInicio ? `· ${sol.fechaInicio} → ${sol.fechaFin}` : ''}
         </Text>
+        {progreso.visible && (
+          <View style={{ marginTop: 2 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={{ color: colors.textMuted, fontSize: 11 }}>Progreso</Text>
+              <Text style={{ color: colors.primaryLight, fontSize: 12, fontFamily: FONTS.rajdhaniBold }}>{progreso.label}</Text>
+            </View>
+            <View style={s.progresoTrack}>
+              <View style={[s.progresoFill, { width: `${progreso.pct}%` as any }]} />
+            </View>
+          </View>
+        )}
         {cert === 'certificada' && (
           <Text style={{ color: COLORS.gold, fontSize: 12, fontWeight: '600' }}>
             ✓ {(sol as any).horasCertificadas ?? h.total} horas acreditadas
@@ -1977,7 +2045,7 @@ function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudian
 // ESTILOS
 // ─────────────────────────────────────────────
 const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.backgroundDark },
+  root: { flex: 1, backgroundColor: COLORS.backgroundDark, paddingTop: 10 },
   headerAvatar: {
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: COLORS.primary12,
@@ -2322,6 +2390,13 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
     borderRadius: 2, overflow: 'hidden',
   },
   miniBarFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 2 },
+  // Barra de progreso de ancho completo al pie de las tarjetas de "Grupos
+  // Creados" y "Estudiantes Registrados" (ver progresoDeGrupo).
+  progresoTrack: {
+    width: '100%', height: 6, backgroundColor: COLORS.backgroundSurface,
+    borderRadius: 3, overflow: 'hidden',
+  },
+  progresoFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 3 },
   estadoBadge: {
     backgroundColor: COLORS.success + '15', borderRadius: 8,
     paddingHorizontal: 6, paddingVertical: 2,

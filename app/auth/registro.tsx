@@ -2778,7 +2778,7 @@ function TermsRow({
 // ══════════════════════════════════════════════════════════════════
 const makeStyles = (C: Tokens) =>
   StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
+  root: { flex: 1, backgroundColor: C.bg, paddingTop: 10 },
   flex1: { flex: 1 },
   scrollContent: { flexGrow: 1, backgroundColor: C.bg, paddingBottom: 60 },
 

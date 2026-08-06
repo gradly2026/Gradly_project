@@ -54,13 +54,28 @@ const MEDALLAS = ['🥇', '🥈', '🥉', '4°', '5°'];
 // ═════════════════════════════════════════════
 // BANNER: ESTADÍSTICAS DE LA RED GRADLY
 // ═════════════════════════════════════════════
+/** Fila del ranking: alianzas (contrapartes únicas con pasantía real) +
+ * calificación promedio de los estudiantes vinculados a esas pasantías. */
+interface RankEntry {
+  nombre: string;
+  alianzas: number;
+  /** null = ningún estudiante vinculado tiene calificaciones aún (no se penaliza). */
+  calificacion: number | null;
+}
+
+/** Calificación neutra (punto medio 1–5) para quien aún no tiene datos: no
+ * hunde el score de una institución con alianzas reales pero sin historial de
+ * calificaciones todavía — mismo principio de "dato ausente no penaliza" que
+ * ya usa el resto del proyecto (disponibilidad, afinidad, cupos). */
+const CALIFICACION_NEUTRA = 2.5;
+
 export function RedGradlyBanner() {
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [topEmpresas, setTopEmpresas] = useState<{ nombre: string; valor: number }[]>([]);
-  const [topUnis, setTopUnis] = useState<{ nombre: string; valor: number }[]>([]);
+  const [topEmpresas, setTopEmpresas] = useState<RankEntry[]>([]);
+  const [topUnis, setTopUnis] = useState<RankEntry[]>([]);
 
   useEffect(() => {
     // No ejecutar consultas a Firestore sin sesión activa.
@@ -68,48 +83,58 @@ export function RedGradlyBanner() {
     let cancel = false;
     (async () => {
       try {
-        const [empSnap, uniSnap, vacSnap, gruSnap] = await Promise.all([
+        // ⚠️ Este banner lo puede ver CUALQUIER usuario autenticado, pero las
+        // reglas de Firestore de `solicitudes_practicas` (y de `perfiles_
+        // estudiantes` para la universidad) solo dejan a cada dueño leer lo
+        // suyo — no hay forma de que este componente calcule el ranking
+        // consultándolas directamente sin toparse con "Missing or
+        // insufficient permissions". Por eso ambas cifras vienen YA
+        // calculadas: `aliados_*_ids` (arrayUnion en el propio perfil, lo
+        // escriben `respuestaFinalUniversidad`/`firmarAcuerdo` al aprobar una
+        // pasantía) y `calificacion_estudiantes_promedio` (cada institución se
+        // autoreporta desde su propio dashboard — ver dashboard-empresa.tsx/
+        // dashboard-universidad.tsx). Aquí solo se leen y ordenan.
+        const [empSnap, uniSnap] = await Promise.all([
           getDocs(query(collection(db, 'perfiles_empresas'), limit(60))),
           getDocs(query(collection(db, 'perfiles_universidades'), limit(60))),
-          getDocs(query(collection(db, 'vacantes'), limit(300))),
-          getDocs(query(collection(db, 'grupos'), limit(300))),
         ]);
         if (cancel) return;
 
-        // Volumen de pasantías por empresa = suma de contratados_count de sus vacantes
-        const empNombre = new Map<string, string>();
-        empSnap.docs.forEach(d => empNombre.set(d.id, (d.data() as any).nombre_empresa ?? 'Empresa'));
-        const empVol = new Map<string, number>();
-        vacSnap.docs.forEach(d => {
-          const v: any = d.data();
-          const prev = empVol.get(v.empresa_id) ?? 0;
-          empVol.set(v.empresa_id, prev + (v.contratados_count ?? 0) + 1); // +1 por publicar
-        });
-        const emps = [...empVol.entries()]
-          .filter(([id]) => empNombre.has(id))
-          .map(([id, valor]) => ({ nombre: empNombre.get(id)!, valor }))
-          .sort((a, b) => b.valor - a.valor)
-          .slice(0, 5);
+        // Score aditivo (nunca multiplicativo): las alianzas son el eje
+        // principal y jamás se van a cero por falta de calificaciones — la
+        // calificación solo suma o resta dentro de una banda, con 2.5 (punto
+        // medio) como aporte neutro cuando aún no hay ninguna.
+        const construirRanking = (
+          docs: typeof empSnap.docs,
+          campoNombre: string,
+          campoAliados: string,
+        ): RankEntry[] =>
+          docs
+            .map(d => {
+              const data: any = d.data();
+              const aliados: string[] = Array.isArray(data[campoAliados]) ? data[campoAliados] : [];
+              const calificacion =
+                typeof data.calificacion_estudiantes_promedio === 'number'
+                  ? data.calificacion_estudiantes_promedio
+                  : null;
+              return {
+                nombre: (data[campoNombre] as string) ?? '—',
+                alianzas: aliados.length,
+                calificacion,
+                score: aliados.length + (calificacion ?? CALIFICACION_NEUTRA),
+              };
+            })
+            .filter(e => e.alianzas > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5)
+            .map(({ nombre, alianzas, calificacion }) => ({ nombre, alianzas, calificacion }));
 
-        // Volumen por universidad = número de grupos creados
-        const uniNombre = new Map<string, string>();
-        uniSnap.docs.forEach(d => uniNombre.set(d.id, (d.data() as any).nombre_universidad ?? 'Universidad'));
-        const uniVol = new Map<string, number>();
-        gruSnap.docs.forEach(d => {
-          const g: any = d.data();
-          const prev = uniVol.get(g.universidad_id) ?? 0;
-          uniVol.set(g.universidad_id, prev + 1);
-        });
-        const unis = [...uniVol.entries()]
-          .filter(([id]) => uniNombre.has(id))
-          .map(([id, valor]) => ({ nombre: uniNombre.get(id)!, valor }))
-          .sort((a, b) => b.valor - a.valor)
-          .slice(0, 5);
-
-        setTopEmpresas(emps);
-        setTopUnis(unis);
+        setTopEmpresas(construirRanking(empSnap.docs, 'nombre_empresa', 'aliados_universidades_ids'));
+        setTopUnis(construirRanking(uniSnap.docs, 'nombre_universidad', 'aliados_empresas_ids'));
       } catch (e) {
-        console.error('[RedGradly] rank', e);
+        // No crítico (banner informativo) — se registra pero no debe verse
+        // como un crash en el LogBox del usuario.
+        console.warn('[RedGradly] rank', e);
       }
     })();
     return () => { cancel = true; };
@@ -117,9 +142,9 @@ export function RedGradlyBanner() {
 
   const cardWidth = SCREEN_W - 64;
 
-  const RankCard = ({ titulo, icon, color, data, unidad }: {
+  const RankCard = ({ titulo, icon, color, data }: {
     titulo: string; icon: keyof typeof Ionicons.glyphMap; color: string;
-    data: { nombre: string; valor: number }[]; unidad: string;
+    data: RankEntry[];
   }) => (
     <BlurView
       intensity={isDark ? 30 : 55}
@@ -137,7 +162,12 @@ export function RedGradlyBanner() {
           <View key={`${e.nombre}-${i}`} style={styles.rankRow}>
             <Text style={styles.rankMedal}>{MEDALLAS[i]}</Text>
             <Text style={styles.rankName} numberOfLines={1}>{e.nombre}</Text>
-            <Text style={[styles.rankValue, { color }]}>{e.valor} {unidad}</Text>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={[styles.rankValue, { color }]}>{e.alianzas} alianza{e.alianzas === 1 ? '' : 's'}</Text>
+              <Text style={styles.rankStars}>
+                {e.calificacion != null ? `★ ${e.calificacion.toFixed(1)}` : 'Sin calificación aún'}
+              </Text>
+            </View>
           </View>
         ))
       )}
@@ -154,8 +184,8 @@ export function RedGradlyBanner() {
         decelerationRate="fast"
         contentContainerStyle={{ gap: 12, paddingRight: 16 }}
       >
-        <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} unidad="pts" />
-        <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} unidad="grupos" />
+        <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} />
+        <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} />
       </ScrollView>
     </View>
   );
@@ -403,6 +433,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   rankMedal: { fontSize: 14, width: 24, textAlign: 'center' },
   rankName: { flex: 1, fontSize: 13, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
   rankValue: { fontSize: 13, fontFamily: FONTS.rajdhaniBold },
+  rankStars: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.gold, marginTop: 1 },
 
   panelTitle: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, marginBottom: 8, letterSpacing: 0.3 },
   empty: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, paddingVertical: 10 },

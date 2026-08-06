@@ -33,6 +33,7 @@ import {
 import { auth, db } from "../../src/config/firebaseConfig";
 import { useAuth } from "../../src/context/AuthContext";
 import {
+  backfillAlianzasCalificaciones,
   deleteUserComplete as deleteUserCompleteAction,
   resolveReport as resolveReportAction,
   setUserApproval as setUserApprovalAction,
@@ -319,6 +320,8 @@ export default function AdminPreview() {
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsAttempted, setNotificationsAttempted] = useState(false);
+
+  const [backfillLoading, setBackfillLoading] = useState(false);
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [rolePermissions, setRolePermissions] = useState<Set<string>>(new Set());
@@ -1367,8 +1370,8 @@ export default function AdminPreview() {
         refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshOverview} tintColor={C.accent70} />}
       >
         <View style={s.heroPanel}>
-          <View style={s.heroTopRow}>
-            <View style={{ flex: 1 }}>
+          <View style={[s.heroTopRow, isPhone && s.heroTopRowCompact]}>
+            <View style={[{ flex: 1 }, isPhone && { width: "100%" }]}>
               <Text style={s.heroEyebrow}>Centro de control</Text>
               <Text style={s.heroTitle}>Administra Gradly con una vista más clara y moderna</Text>
               <Text style={s.heroSubtitle}>
@@ -2283,6 +2286,55 @@ export default function AdminPreview() {
             <Text style={s.btnOutlineText}>Notificaciones</Text>
           </TouchableOpacity>
         </View>
+      </Card>
+
+      <Card style={{ marginBottom: 14 }}>
+        <Text style={s.cardTitle}>Mantenimiento</Text>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          Recalcula, para todas las empresas y universidades, sus alianzas y el promedio de
+          calificaciones de los estudiantes con los que trabajaron — alimenta "Top Empresas/
+          Universidades" del Inicio. Úsalo una vez para que las pasantías aprobadas antes de este
+          cambio también cuenten (las nuevas ya se registran solas); también sirve para
+          recalcular todo si algo queda desincronizado. Es seguro repetirlo.
+        </Text>
+        <TouchableOpacity
+          style={[s.btnOutline, { marginTop: 14, opacity: backfillLoading ? 0.6 : 1 }]}
+          disabled={backfillLoading}
+          onPress={() => {
+            Alert.alert(
+              "Recalcular alianzas y calificaciones",
+              "Va a revisar TODAS las pasantías de la plataforma y actualizar los perfiles de empresa/universidad. Puede tardar unos minutos. ¿Continuar?",
+              [
+                { text: "Cancelar", style: "cancel" },
+                {
+                  text: "Recalcular",
+                  onPress: async () => {
+                    setBackfillLoading(true);
+                    try {
+                      const r = await backfillAlianzasCalificaciones();
+                      Alert.alert(
+                        "Listo",
+                        `Se revisaron ${r.solicitudesRevisadas} pasantía(s) de grupo y ${r.reclamosRevisados} reclamo(s) de cupos. Se actualizaron ${r.empresasActualizadas} empresa(s) y ${r.universidadesActualizadas} universidad(es).`,
+                      );
+                    } catch (error) {
+                      Alert.alert(
+                        t('admin_error_titulo'),
+                        translateSync(adminDataErrorMessage(error, "recalcular alianzas y calificaciones")),
+                      );
+                    } finally {
+                      setBackfillLoading(false);
+                    }
+                  },
+                },
+              ],
+            );
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={s.btnOutlineText}>
+            {backfillLoading ? "Recalculando…" : "Recalcular alianzas y calificaciones"}
+          </Text>
+        </TouchableOpacity>
       </Card>
 
       <Card style={{ marginBottom: 14 }}>

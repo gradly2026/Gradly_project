@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -16,7 +17,12 @@ import { db } from '../config/firebaseConfig';
 import type { AcuerdoData } from '../types/chat';
 import { crearNotificacionInApp, NOTIF } from './notificacionService';
 import { enviarNotificacion } from './notificationService';
-import { alumnosRealesDeGrupo, buildChatId } from './solicitudPracticaService';
+import {
+  alumnosRealesDeGrupo,
+  buildChatId,
+  grupoComprometido,
+  MENSAJE_GRUPO_COMPROMETIDO,
+} from './solicitudPracticaService';
 import { cuposDisponibles } from '../utils/cupos';
 
 // ─────────────────────────────────────────────
@@ -363,20 +369,13 @@ export async function postularGrupoAVacante(
   // 1.5) Un grupo con una pasantía ya aprobada (activa, sin finalizar) no
   // puede postularse a otra vacante en paralelo. Repite en el servidor la
   // validación de la UI (Matchmaking.tsx) para que no se pueda saltar por una
-  // condición de carrera o llamando este servicio directamente.
-  // ⚠️ El filtro por `universidadId` es obligatorio: sin él, las reglas de
-  // Firestore no pueden garantizar en tiempo de consulta que el resultado le
-  // pertenece al llamante y rechazan la query con permission-denied.
-  const enCurso = await getDocs(
-    query(
-      collection(db, 'solicitudes_practicas'),
-      where('universidadId', '==', universidadId),
-      where('grupoId', '==', grupoId),
-      where('estado', '==', 'aprobado'),
-    ),
-  );
-  if (!enCurso.empty) {
-    throw new Error('Este grupo ya tiene una pasantía activa y no puede postularse a otra vacante.');
+  // condición de carrera o llamando este servicio directamente. Lee el flag
+  // denormalizado en `grupos` (ver `grupoComprometido`) en vez de consultar
+  // `solicitudes_practicas`: así el mismo chequeo cubre al grupo sin importar
+  // cuál de los 3 flujos (Matchmaking/Ofrecer a Empresa/Chat) lo comprometió.
+  const { comprometido } = await grupoComprometido(grupoId);
+  if (comprometido) {
+    throw new Error(MENSAJE_GRUPO_COMPROMETIDO);
   }
 
   // 2) Leer el grupo y la vacante para desnormalizar datos en la postulación
@@ -562,6 +561,18 @@ export async function respuestaFinalUniversidad(
       }
       const acuerdo = data.acuerdo;
 
+      // El grupo no puede quedar comprometido con dos pasantías a la vez.
+      // Se verifica DENTRO de la transacción (misma lectura atómica que el
+      // resto de esta operación) para que dos aprobaciones simultáneas del
+      // mismo grupo —por Matchmaking u otro flujo— no puedan colarse por una
+      // condición de carrera. Debe ser el primer `tx.get` antes de cualquier
+      // escritura (Firestore exige todas las lecturas antes que las escrituras).
+      const grupoRef = doc(db, 'grupos', data.grupoId);
+      const grupoSnap = await tx.get(grupoRef);
+      if ((grupoSnap.data() as any)?.pasantia_activa_id) {
+        throw new Error(MENSAJE_GRUPO_COMPROMETIDO);
+      }
+
       tx.update(ref, {
         estado: 'aprobada' as EstadoAplicacionGrupo,
         fechaRespuestaUniversidad: serverTimestamp(),
@@ -592,6 +603,20 @@ export async function respuestaFinalUniversidad(
         aplicacionGrupoId: aplicacionId,
         createdAt: serverTimestamp(),
         aprobadoAt: serverTimestamp(),
+      });
+
+      // Bloquea el grupo: no puede comprometerse con otra empresa mientras
+      // esta pasantía siga aprobada (se libera en `finalizarPasantia`).
+      tx.update(grupoRef, { pasantia_activa_id: solRef.id });
+
+      // Registra la alianza en AMBOS perfiles (arrayUnion dedupe solo — no
+      // pasa nada si ya se habían aliado antes). Alimenta "Top Empresas/
+      // Universidades" sin que ese ranking necesite leer `solicitudes_practicas`.
+      tx.update(doc(db, 'perfiles_universidades', data.universidadId), {
+        aliados_empresas_ids: arrayUnion(data.empresaId),
+      });
+      tx.update(doc(db, 'perfiles_empresas', data.empresaId), {
+        aliados_universidades_ids: arrayUnion(data.universidadId),
       });
 
       // Sala de chat dedicada (mismo esquema determinístico que los otros

@@ -302,6 +302,14 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "Panel de administración": "Administration panel",
   "Control operativo y moderación": "Operations and moderation",
   "Administrador": "Administrator",
+  // ── Backfill de alianzas/calificaciones (Configuración → Mantenimiento) ──
+  "Recalcular alianzas y calificaciones": "Recalculate partnerships and ratings",
+  "Recalculando…": "Recalculating…",
+  "Recalcular": "Recalculate",
+  "Va a revisar TODAS las pasantías de la plataforma y actualizar los perfiles de empresa/universidad. Puede tardar unos minutos. ¿Continuar?":
+    "This will review ALL internships on the platform and update company/university profiles. It may take a few minutes. Continue?",
+  "Recalcula, para todas las empresas y universidades, sus alianzas y el promedio de calificaciones de los estudiantes con los que trabajaron — alimenta \"Top Empresas/Universidades\" del Inicio. Úsalo una vez para que las pasantías aprobadas antes de este cambio también cuenten (las nuevas ya se registran solas); también sirve para recalcular todo si algo queda desincronizado. Es seguro repetirlo.":
+    "Recalculates every company's and university's partnerships and the average rating of the students they worked with — this feeds the \"Top Companies/Universities\" section on the home screen. Run it once so internships approved before this change count too (new ones are recorded automatically); it also works to recalculate everything if something drifts out of sync. Safe to run more than once.",
   "Centro de control": "Control center",
   "Administra Gradly con una vista más clara y moderna": "Manage Gradly with a clearer, more modern view",
   "Abierto": "Open",
@@ -636,6 +644,19 @@ export const GESTION_SEED_EN: Record<string, string> = {
   "Eliminar": "Delete",
   "Listo": "Done",
   "Grupo ya cubierto": "Group already covered",
+};
+
+// ── Barra de progreso funcional (Grupos Creados/Estudiantes Registrados/
+// Prácticas) + bloqueo de doble compromiso de un grupo entre los 3 flujos
+// que confirman una pasantía (Matchmaking/Ofrecer a Empresa/Chat) ──
+export const PROGRESO_SEED_EN: Record<string, string> = {
+  "Progreso de la pasantía": "Internship progress",
+  "Progreso": "Progress",
+  "Sin calificación aún": "No rating yet",
+  "Este grupo ya tiene una pasantía aprobada con otra empresa y no puede comprometerse con una nueva hasta que esa termine.":
+    "This group already has an approved internship with another company and can't commit to a new one until that one ends.",
+  "Este acuerdo ya fue firmado.": "This agreement has already been signed.",
+  "Aún ningún estudiante ha elegido este cupo": "No student has picked this spot yet",
 };
 
 export default AUTO_SEED_EN;

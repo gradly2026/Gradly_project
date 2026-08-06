@@ -131,6 +131,11 @@ service cloud.firestore {
       // 🆕 CAMBIO: además del dueño / admin, un ESTUDIANTE puede actualizar el
       //    perfil de la empresa SOLO en los campos de gamificación (feedback
       //    estudiante → empresa escribe XP/rango/promedio de la empresa evaluada).
+      //    Y una UNIVERSIDAD puede sumar SU propio id a `aliados_universidades_ids`
+      //    (arrayUnion, dedupe automático) al aprobar una pasantía de grupo —
+      //    alimenta "Top Empresas/Universidades" (RedGradlyBanner) sin depender de
+      //    leer `solicitudes_practicas` desde cualquier sesión (esa colección solo
+      //    la puede leer cada dueño — ver el bloque de abajo).
       allow update: if request.auth.uid == empresaId
                      || esAdmin()
                      || (esRol('estudiante')
@@ -139,14 +144,24 @@ service cloud.firestore {
                                 'puntos_experiencia', 'pasantias_completadas',
                                 'calificaciones_recibidas', 'calificacion_promedio',
                                 'rango_nivel', 'rango_tier',
-                              ]));
+                              ]))
+                     || (esRol('universidad')
+                         && request.resource.data.diff(resource.data).affectedKeys()
+                              .hasOnly(['aliados_universidades_ids']));
       allow delete: if esAdmin();
     }
 
     // 🏫 PERFILES_UNIVERSIDADES
     match /perfiles_universidades/{uniId} {
       allow read: if request.auth != null;
-      allow create, update: if request.auth.uid == uniId || esAdmin();
+      allow create: if request.auth.uid == uniId || esAdmin();
+      // 🆕 CAMBIO: espejo del bloque de arriba — una EMPRESA puede sumar su
+      //    propio id a `aliados_empresas_ids` al aprobar una pasantía de grupo.
+      allow update: if request.auth.uid == uniId
+                     || esAdmin()
+                     || (esRol('empresa')
+                         && request.resource.data.diff(resource.data).affectedKeys()
+                              .hasOnly(['aliados_empresas_ids']));
       allow delete: if esAdmin();
     }
 
@@ -316,8 +331,22 @@ service cloud.firestore {
     match /grupos/{grupoId} {
       allow read: if request.auth != null;
       allow create: if esRol('universidad') || esAdmin();
+
+      // 🆕 CAMBIO (fix doble compromiso de grupo): `pasantia_activa_id` es un
+      //    flag denormalizado que marca si el grupo ya tiene una pasantía
+      //    aprobada — lo fijan `firmarAcuerdo`/`respuestaFinalUniversidad` y lo
+      //    libera `finalizarPasantia`. La EMPRESA necesita poder escribirlo
+      //    cuando es ella quien firma el acuerdo en el chat (grupos/{id} es de
+      //    lectura abierta, pero su `update` era exclusivo de la universidad
+      //    dueña). El `hasOnly` es el mismo patrón que ya usa `vacantes` con
+      //    `cupos_reclamados`: impide que de paso altere nombre, carrera,
+      //    docente o cualquier otro campo del grupo.
       allow update: if request.auth != null && (
         resource.data.universidad_id == request.auth.uid || esAdmin()
+        || (
+          esRol('empresa')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pasantia_activa_id'])
+        )
       );
       allow delete: if resource.data.universidad_id == request.auth.uid || esAdmin();
     }

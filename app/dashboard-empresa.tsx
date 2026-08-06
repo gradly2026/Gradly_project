@@ -9,6 +9,7 @@ import {
   collection,
   deleteField,
   doc,
+  documentId,
   getDocs,
   onSnapshot,
   query,
@@ -64,6 +65,7 @@ import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/Theme
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
 import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
+import { progresoDeGrupo } from '../src/utils/horasPasantia';
 import { cuposOcupados, cuposTotales, textoCupos, textoSalario, valCupos } from '../src/utils/cupos';
 import { AREAS as AREAS_CATALOGO, tagsDeArea } from '../src/data/areas';
 import { normalizarHorario, textoHorario, valHorario, type HorarioPasantia } from '../src/data/disponibilidad';
@@ -185,7 +187,11 @@ interface SolicitudGrupo {
   fechaInicio?: string;
   fechaFin?: string;
   alumnos?: { id: string; nombre: string }[];
+  /** uids reales de Auth de los alumnos (a diferencia de alumnos[].id, que puede ser sintético). */
+  estudianteIds?: string[];
   pago?: { tipo: 'con_pago' | 'sin_pago'; monto?: number };
+  /** Acuerdo firmado (días, horario, fechas) — base del progreso en horas reales. */
+  acuerdo?: AcuerdoData;
 }
 
 interface PerfilEmpresa {
@@ -687,6 +693,51 @@ export default function DashboardEmpresa() {
     );
     return unsub;
   }, [user]);
+
+  // ── Autoreporta el promedio de calificaciones de los estudiantes con los
+  // que ha trabajado (grupos con pasantía aprobada/finalizada) — mismo
+  // principio que el lado universidad: alimenta "Top Empresas/Universidades"
+  // (RedGradlyBanner) sin que ese ranking necesite leer `solicitudes_practicas`
+  // de otras empresas (las reglas de Firestore solo dejan a cada dueño leer
+  // lo suyo). Solo escribe si el valor cambió, para no generar escrituras de más.
+  const calificacionEmpresaReportadaRef = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const ids = new Set<string>();
+    solicitudesGrupo.forEach(sg => {
+      if (sg.estado !== 'aprobado' && sg.estado !== 'finalizado') return;
+      (sg.estudianteIds ?? []).forEach(id => ids.add(id));
+    });
+    if (ids.size === 0) return;
+    let cancel = false;
+    (async () => {
+      try {
+        const idsArr = [...ids];
+        const chunks: string[][] = [];
+        for (let i = 0; i < idsArr.length; i += 30) chunks.push(idsArr.slice(i, i + 30));
+        const snaps = await Promise.all(
+          chunks.map(chunk =>
+            getDocs(query(collection(db, 'perfiles_estudiantes'), where(documentId(), 'in', chunk))),
+          ),
+        );
+        if (cancel) return;
+        const vals: number[] = [];
+        snaps.forEach(snap => snap.docs.forEach(d => {
+          const data: any = d.data();
+          if ((Number(data.calificaciones_recibidas) || 0) > 0) vals.push(Number(data.calificacion_promedio) || 0);
+        }));
+        const promedio = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+        if (calificacionEmpresaReportadaRef.current === promedio) return;
+        calificacionEmpresaReportadaRef.current = promedio;
+        await updateDoc(doc(db, 'perfiles_empresas', user.uid), {
+          calificacion_estudiantes_promedio: promedio,
+        });
+      } catch {
+        /* no crítico: se reintenta en el próximo cambio real de solicitudesGrupo */
+      }
+    })();
+    return () => { cancel = true; };
+  }, [user?.uid, solicitudesGrupo]);
 
   // Horas certificadas (`perfiles_estudiantes.horas_aprobadas`, el mismo campo
   // que incrementa `certificarPasantia`) de los estudiantes de cada grupo con
@@ -2898,6 +2949,13 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
       <Text style={[s.activaNombre, { marginBottom: 10 }]}>Pasantías de grupo</Text>
       {grupoActivas.map(sg => {
         const prog = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
+        // Con acuerdo firmado (el caso normal aquí, ya que `estado==='aprobado'`
+        // siempre lo trae), el % y el contador vienen de horas REALES
+        // trabajadas — más preciso que el % por fechas de calendario. Mismo
+        // helper que usa "Mis Estudiantes" del lado universidad, para que
+        // ambos vean el mismo avance de una misma pasantía.
+        const progreso = progresoDeGrupo({}, sg.acuerdo);
+        const pct = progreso.visible ? progreso.pct : prog.pct;
         const color = prog.estado === 'completado' ? COLORS.gold : prog.estado === 'en_curso' ? COLORS.success : COLORS.primaryLight;
         const conPago = sg.pago?.tipo === 'con_pago';
         return (
@@ -2909,15 +2967,17 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
                   {sg.carrera ?? ''}{sg.alumnos?.length ? ` · ${sg.alumnos.length} estudiante(s)` : ''}
                 </Text>
               </View>
-              <Text style={[s.activaNombre, { color }]}>{prog.pct}%</Text>
+              <Text style={[s.activaNombre, { color }]}>{pct}%</Text>
             </View>
             <View style={{ height: 6, backgroundColor: COLORS.backgroundSurface, borderRadius: 3, overflow: 'hidden' }}>
-              <View style={{ height: '100%', width: `${prog.pct}%` as any, backgroundColor: color, borderRadius: 3 }} />
+              <View style={{ height: '100%', width: `${pct}%` as any, backgroundColor: color, borderRadius: 3 }} />
             </View>
             <Text style={s.activaMeta}>
-              {prog.estado === 'por_iniciar'
-                ? `Inicia ${sg.fechaInicio}`
-                : `Día ${prog.diasTranscurridos} de ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
+              {progreso.visible
+                ? progreso.label
+                : prog.estado === 'por_iniciar'
+                  ? `Inicia ${sg.fechaInicio}`
+                  : `Día ${prog.diasTranscurridos} de ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
             </Text>
             <Text style={[s.activaMeta, conPago && { color: COLORS.success }]}>
               {conPago ? `Pago: $${Number(sg.pago?.monto ?? 0).toFixed(2)} / estudiante` : 'Sin pago'}
@@ -3100,7 +3160,7 @@ function PickerRow({ label, options, selected, onSelect, error }: {
 // ESTILOS
 // ─────────────────────────────────────────────
 const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.backgroundDark },
+  root: { flex: 1, backgroundColor: COLORS.backgroundDark, paddingTop: 10 },
   headerAvatar: {
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: COLORS.primary12,

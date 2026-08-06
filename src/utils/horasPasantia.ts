@@ -12,6 +12,7 @@
  * Se usa para mostrar "X/Y h" en la lista de grupos y de estudiantes.
  */
 import type { AcuerdoData, DiaLaboral } from '../types/chat';
+import { progresoPorFechas } from './progresoPasantia';
 
 const DIA_A_JS: Record<DiaLaboral, number> = {
   Lunes: 1,
@@ -105,4 +106,68 @@ export function calcularHorasAcuerdo(
     ultimaFecha: fechaFin,
     pct,
   };
+}
+
+/** Progreso "X/Y" listo para mostrar en una tarjeta (barra + contador). */
+export interface ProgresoGrupo {
+  /** false = no hay ningún dato de período; no mostrar barra ni contador. */
+  visible: boolean;
+  pct: number;
+  label: string;
+}
+
+/** Datos de período de un grupo, tal como los guarda `PeriodoPracticasField`. */
+export interface GrupoPeriodo {
+  horasRequeridas?: number | null;
+  fechaInicio?: string | null;
+  fechaFin?: string | null;
+}
+
+/**
+ * Progreso a mostrar para un grupo (o para un estudiante, vía el grupo al que
+ * pertenece), con esta prioridad — nunca se fabrica un número que no venga de
+ * un dato real guardado:
+ *
+ *  1. Ya hay un acuerdo real aprobado/finalizado con una empresa → horas
+ *     REALES trabajadas (`calcularHorasAcuerdo`). Es el caso más preciso: se
+ *     deriva del horario que puso la empresa, no de una estimación.
+ *  2. Sin acuerdo todavía, pero el grupo definió una meta en horas al
+ *     crearse (modo 'horas' de `PeriodoPracticasField`) → "0/{horas} h": el
+ *     trabajo real aún no arrancó, pero la meta mostrada ya es la real (antes
+ *     cualquier grupo sin acuerdo mostraba "0h" sueltas, sin fracción).
+ *  3. Sin acuerdo ni meta en horas, pero el grupo tiene su propio período de
+ *     fechas (modo 'ciclos', o el legado modo 'fecha' — ambos guardan
+ *     `fecha_inicio`/`fecha_fin`) → días transcurridos del período declarado
+ *     (`progresoPorFechas`). Deliberadamente NO se inventa una conversión
+ *     ciclos→horas: no existe un estándar confiable de "horas por ciclo".
+ *  4. Sin ningún dato de período (grupo muy antiguo, anterior a este campo)
+ *     → oculto.
+ */
+export function progresoDeGrupo(
+  grupo: GrupoPeriodo,
+  acuerdo: Partial<AcuerdoData> | null | undefined,
+): ProgresoGrupo {
+  const porAcuerdo = calcularHorasAcuerdo(acuerdo);
+  if (porAcuerdo.valido) {
+    return {
+      visible: true,
+      pct: porAcuerdo.pct,
+      label: `${porAcuerdo.transcurridas}/${porAcuerdo.total} h`,
+    };
+  }
+
+  if (grupo.horasRequeridas && grupo.horasRequeridas > 0) {
+    return { visible: true, pct: 0, label: `0/${grupo.horasRequeridas} h` };
+  }
+
+  if (grupo.fechaInicio && grupo.fechaFin) {
+    const prog = progresoPorFechas(grupo.fechaInicio, grupo.fechaFin);
+    return {
+      visible: true,
+      pct: prog.pct,
+      label: `${prog.diasTranscurridos}/${prog.diasTotales} días`,
+    };
+  }
+
+  return { visible: false, pct: 0, label: '' };
 }

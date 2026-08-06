@@ -47,7 +47,7 @@ export function useAdminTheme() {
 }
 
 export const makeStyles = (C: AdminColors) => StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
+  root: { flex: 1, backgroundColor: C.bg, paddingTop: 10 },
   topbar: {
     flexDirection: "row",
     alignItems: "center",
@@ -342,6 +342,14 @@ export const makeStyles = (C: AdminColors) => StyleSheet.create({
     gap: 14,
     flexWrap: "wrap",
   },
+  // Apila el bloque de texto sobre los botones en vez de dejarlos competir
+  // por espacio en la misma fila: en `row` + `flexWrap`, el texto ({flex:1})
+  // podía terminar comprimido a un ancho mínimo y partirse palabra por
+  // palabra. En columna, el texto ocupa todo el ancho y envuelve con normalidad.
+  heroTopRowCompact: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+  },
   heroEyebrow: {
     color: "rgba(196,181,253,0.96)",
     fontSize: 11,
@@ -452,7 +460,10 @@ export const makeStyles = (C: AdminColors) => StyleSheet.create({
     backgroundColor: C.cardBg,
     padding: 18,
     minHeight: 150,
-    justifyContent: "space-between",
+    // NO "space-between": el ícono, el número y la etiqueta deben quedar
+    // juntos arriba (el espaciado real ya lo dan los marginTop de cada
+    // Text) — con space-between se estiraban a los extremos de la tarjeta,
+    // dejando huecos enormes en el medio.
     ...shadow({ color: "#05030b", y: 12, blur: 24, opacity: 0.14, elevation: 6 }),
   },
   statCardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

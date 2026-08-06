@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -9,6 +10,7 @@ import {
   runTransaction,
   serverTimestamp,
   Timestamp,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 import { db } from '../config/firebaseConfig';
@@ -178,6 +180,28 @@ export async function reclamarCupos(datos: DatosReclamo): Promise<{ id: string; 
     fechaReclamo: serverTimestamp(),
     fechaRespuesta: null,
   });
+
+  // Registra la alianza en AMBOS perfiles desde el momento en que se pide el
+  // cupo — no se espera a que la empresa confirme. Pedir un cupo ya es un
+  // gesto de confianza hacia esa empresa, y esa alianza no se retira aunque
+  // el reclamo termine rechazado o liberado más tarde (arrayUnion: nunca
+  // duplica, y solo se agrega, nunca se quita). Mismos campos que usa
+  // "Top Empresas/Universidades" (RedGradlyBanner) — best-effort: un fallo
+  // aquí no debe impedir la reserva, que ya quedó confirmada arriba.
+  if (resultado.empresaId) {
+    try {
+      await Promise.all([
+        updateDoc(doc(db, 'perfiles_universidades', universidadId), {
+          aliados_empresas_ids: arrayUnion(resultado.empresaId),
+        }),
+        updateDoc(doc(db, 'perfiles_empresas', resultado.empresaId), {
+          aliados_universidades_ids: arrayUnion(universidadId),
+        }),
+      ]);
+    } catch (e) {
+      console.warn('No se pudo registrar la alianza del reclamo de cupos:', e);
+    }
+  }
 
   if (resultado.empresaId) {
     const msg =

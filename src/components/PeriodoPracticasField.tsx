@@ -23,7 +23,7 @@ import { useTheme, type GradlyColors } from "../context/ThemeContext";
 //  propio calendario sin dependencias nativas.
 // ════════════════════════════════════════════════════════════════════
 
-export type ModoPeriodo = "ciclos" | "fecha" | "horas";
+export type ModoPeriodo = "ciclos" | "horas";
 
 export interface PeriodoValue {
   modo: ModoPeriodo;
@@ -87,7 +87,6 @@ const MESES = [
 export function periodoValido(p: PeriodoValue): boolean {
   if (!p.fechaInicio) return false;
   if (p.modo === "ciclos") return !!p.ciclos && p.ciclos >= 1 && p.ciclos <= MAX_CICLOS;
-  if (p.modo === "fecha") return !!p.fechaFin && p.fechaFin >= p.fechaInicio;
   if (p.modo === "horas") return !!p.horas && p.horas > 0;
   return false;
 }
@@ -214,7 +213,8 @@ export default function PeriodoPracticasField({
 }) {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
-  const [picker, setPicker] = useState<"inicio" | "fin" | null>(null);
+  // Sin el modo "fecha" manual, el único selector es la fecha de inicio.
+  const [picker, setPicker] = useState<"inicio" | null>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const maxDate = useMemo(() => addMonths(today, 48), [today]); // hasta 4 años
@@ -226,13 +226,6 @@ export default function PeriodoPracticasField({
       next.meses = next.ciclos * MESES_POR_CICLO;
       next.fechaFin = addMonths(next.fechaInicio, next.meses);
       next.horas = null;
-    } else if (next.modo === "fecha") {
-      next.ciclos = null;
-      next.horas = null;
-      next.meses =
-        next.fechaInicio && next.fechaFin
-          ? mesesEntre(next.fechaInicio, next.fechaFin)
-          : null;
     } else if (next.modo === "horas") {
       next.ciclos = null;
       next.fechaFin = null;
@@ -242,8 +235,7 @@ export default function PeriodoPracticasField({
   };
 
   const seleccionarFecha = (date: Date) => {
-    if (picker === "inicio") emitir({ fechaInicio: date });
-    else if (picker === "fin") emitir({ fechaFin: date });
+    emitir({ fechaInicio: date });
     setPicker(null);
   };
 
@@ -254,7 +246,6 @@ export default function PeriodoPracticasField({
 
   const MODOS: { key: ModoPeriodo; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { key: "ciclos", label: "Por ciclos", icon: "repeat-outline" },
-    { key: "fecha", label: "Fecha de fin", icon: "calendar-outline" },
     { key: "horas", label: "Por horas", icon: "time-outline" },
   ];
 
@@ -323,30 +314,6 @@ export default function PeriodoPracticasField({
         </View>
       )}
 
-      {/* ── Modo FECHA DE FIN MANUAL ── */}
-      {value.modo === "fecha" && (
-        <View style={{ marginTop: 12 }}>
-          <Text style={styles.label}>FECHA DE FIN *</Text>
-          <TouchableOpacity
-            style={[styles.input, styles.inputRow, value.fechaFin && styles.inputOk]}
-            onPress={() => {
-              if (!value.fechaInicio) { setPicker("inicio"); return; }
-              setPicker("fin");
-            }}
-            activeOpacity={0.85}
-          >
-            <Text style={{ color: value.fechaFin ? C.textPrimary : C.textMuted, flex: 1 }}>
-              {value.fechaFin
-                ? formatFecha(value.fechaFin)
-                : value.fechaInicio
-                  ? "dd/mm/aaaa"
-                  : "Elige primero la fecha de inicio"}
-            </Text>
-            <Ionicons name="calendar-outline" size={18} color={C.textMuted} />
-          </TouchableOpacity>
-        </View>
-      )}
-
       {/* ── Modo HORAS ── */}
       {value.modo === "horas" && (
         <View style={{ marginTop: 12 }}>
@@ -374,10 +341,10 @@ export default function PeriodoPracticasField({
 
       <CalendarModal
         visible={picker !== null}
-        value={picker === "inicio" ? value.fechaInicio : value.fechaFin}
-        minimumDate={picker === "fin" && value.fechaInicio ? value.fechaInicio : today}
+        value={value.fechaInicio}
+        minimumDate={today}
         maximumDate={maxDate}
-        title={picker === "inicio" ? "Fecha de inicio" : "Fecha de fin"}
+        title="Fecha de inicio"
         onSelect={seleccionarFecha}
         onClose={() => setPicker(null)}
         C={C}

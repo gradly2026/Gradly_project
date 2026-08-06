@@ -86,6 +86,7 @@ async function requireAdmin(auth: { uid?: string; token?: Record<string, unknown
 async function writeAuditLog(params: {
   actor: AdminActor;
   action: string;
+  entityType?: string;
   entityId: string;
   payload: Record<string, unknown>;
 }): Promise<void> {
@@ -93,7 +94,7 @@ async function writeAuditLog(params: {
     actor_id: params.actor.uid,
     actor_email: params.actor.email,
     action: params.action,
-    entity_type: "usuarios",
+    entity_type: params.entityType ?? "usuarios",
     entity_id: params.entityId,
     payload: params.payload,
     source: "cloud_function",
@@ -104,6 +105,7 @@ async function writeAuditLog(params: {
 async function safeWriteAuditLog(params: {
   actor: AdminActor;
   action: string;
+  entityType?: string;
   entityId: string;
   payload: Record<string, unknown>;
 }): Promise<void> {
@@ -554,6 +556,187 @@ export const resolveReport = onCall({ region: REGION }, async (req) => {
     );
   }
 });
+
+/**
+ * Recalcula desde cero, para TODAS las empresas y universidades, las
+ * "alianzas" (contrapartes únicas con al menos una pasantía de grupo
+ * aprobada/finalizada, O al menos un reclamo de cupos — cualquier estado,
+ * incluso rechazado/liberado: pedir cupos ya es un gesto de confianza hacia
+ * esa empresa) y el promedio de calificaciones de los estudiantes vinculados
+ * (de grupo o de cupos tomados). Alimenta "Top Empresas/Universidades"
+ * (RedGradlyBanner).
+ *
+ * Necesita Admin SDK porque nadie del lado cliente puede leer
+ * `solicitudes_practicas`/`reclamos_cupos` de TODAS las instituciones a la
+ * vez (las reglas de Firestore solo dejan a cada dueño leer lo suyo) —
+ * normalmente estos dos campos los mantiene cada institución sola, en tiempo
+ * real, al aprobar una pasantía o reclamar cupos (`arrayUnion` en su propio
+ * perfil) o al visitar su panel (autoreporte de calificación). Esta función
+ * es el backfill de una sola vez para que lo aprobado/reclamado ANTES de que
+ * existiera ese mecanismo también cuente, y sirve además como "recalcular
+ * todo" si algún día hiciera falta reconciliar drift.
+ */
+export const backfillAlianzasCalificaciones = onCall(
+  { region: REGION, timeoutSeconds: 300, memory: "512MiB" },
+  async (req) => {
+    try {
+      const actor = await requireAdmin(req.auth);
+
+      const aliadosDeEmpresa = new Map<string, Set<string>>();
+      const aliadosDeUni = new Map<string, Set<string>>();
+      const estudiantesDeEmpresa = new Map<string, Set<string>>();
+      const estudiantesDeUni = new Map<string, Set<string>>();
+
+      const registrarAlianza = (empId: string, uniId: string) => {
+        if (!empId || !uniId) return;
+        if (!aliadosDeEmpresa.has(empId)) aliadosDeEmpresa.set(empId, new Set());
+        aliadosDeEmpresa.get(empId)!.add(uniId);
+        if (!aliadosDeUni.has(uniId)) aliadosDeUni.set(uniId, new Set());
+        aliadosDeUni.get(uniId)!.add(empId);
+      };
+      const registrarEstudiante = (empId: string, uniId: string, estId: string) => {
+        if (!empId || !uniId || !estId) return;
+        if (!estudiantesDeEmpresa.has(empId)) estudiantesDeEmpresa.set(empId, new Set());
+        estudiantesDeEmpresa.get(empId)!.add(estId);
+        if (!estudiantesDeUni.has(uniId)) estudiantesDeUni.set(uniId, new Set());
+        estudiantesDeUni.get(uniId)!.add(estId);
+      };
+
+      // 1) Pasantías de GRUPO realmente confirmadas (aprobado/finalizado),
+      //    agrupadas por contraparte única + estudiantes vinculados.
+      const solSnap = await db.collection("solicitudes_practicas").get();
+      solSnap.docs.forEach((doc) => {
+        const s = doc.data() ?? {};
+        const estado = asString(s.estado);
+        if (estado !== "aprobado" && estado !== "finalizado") return;
+        const empId = asString(s.empresaId);
+        const uniId = asString(s.universidadId);
+        registrarAlianza(empId, uniId);
+        const ids: string[] = Array.isArray(s.estudianteIds) ? s.estudianteIds : [];
+        ids.forEach((id) => registrarEstudiante(empId, uniId, id));
+      });
+
+      // 2) Reparto de cupos: CUALQUIER reclamo (sin filtrar por estado) ya es
+      //    un gesto de confianza hacia esa empresa — pedir cupos compromete
+      //    plazas de inmediato, aunque la empresa termine rechazando o queden
+      //    cupos sin usar. La alianza no se retira después (mismo criterio
+      //    que el autoreporte en vivo de `reclamarCupos`).
+      const reclamosSnap = await db.collection("reclamos_cupos").get();
+      reclamosSnap.docs.forEach((doc) => {
+        const r = doc.data() ?? {};
+        registrarAlianza(asString(r.empresaId), asString(r.universidadId));
+      });
+
+      // 3) Estudiantes que efectivamente tomaron un cupo (asignaciones_cupo,
+      //    estado 'tomado') — se suman al mismo grupo de "estudiantes
+      //    vinculados" para el promedio de calificación, junto a los de
+      //    solicitudes_practicas.
+      const asigSnap = await db.collection("asignaciones_cupo").get();
+      asigSnap.docs.forEach((doc) => {
+        const a = doc.data() ?? {};
+        if (asString(a.estado) !== "tomado") return;
+        registrarEstudiante(asString(a.empresaId), asString(a.universidadId), asString(a.estudianteId));
+      });
+
+      // 2) Calificación de cada estudiante involucrado (una sola tanda de
+      //    lecturas por lote, sin restricción de dueño porque corre con Admin SDK).
+      const todosLosIds = new Set<string>();
+      estudiantesDeEmpresa.forEach((set) => set.forEach((id) => todosLosIds.add(id)));
+      estudiantesDeUni.forEach((set) => set.forEach((id) => todosLosIds.add(id)));
+
+      const calificacionPorEstudiante = new Map<string, number>();
+      const idsArr = [...todosLosIds];
+      for (let i = 0; i < idsArr.length; i += 300) {
+        const chunk = idsArr.slice(i, i + 300);
+        if (chunk.length === 0) continue;
+        const snaps = await db.getAll(
+          ...chunk.map((id) => db.collection("perfiles_estudiantes").doc(id)),
+        );
+        snaps.forEach((snap) => {
+          if (!snap.exists) return;
+          const data = snap.data() ?? {};
+          // Sin ninguna calificación recibida, el estudiante NO entra al
+          // promedio — no hay dato real que arrastrarlo a la baja.
+          if ((Number(data.calificaciones_recibidas) || 0) > 0) {
+            calificacionPorEstudiante.set(snap.id, Number(data.calificacion_promedio) || 0);
+          }
+        });
+      }
+
+      const promedioDe = (ids: Set<string> | undefined): number | null => {
+        if (!ids || ids.size === 0) return null;
+        const vals = [...ids]
+          .map((id) => calificacionPorEstudiante.get(id))
+          .filter((v): v is number => v !== undefined);
+        if (vals.length === 0) return null;
+        return vals.reduce((a, b) => a + b, 0) / vals.length;
+      };
+
+      // 3) Escribe el agregado completo (reemplaza, no suma) en lotes de
+      //    Firestore. `set({merge:true})` en vez de `update()`: si algún perfil
+      //    ya no existiera (cuenta borrada), no debe tumbar todo el backfill.
+      let batch = db.batch();
+      let pendientes = 0;
+      let empresasActualizadas = 0;
+      let universidadesActualizadas = 0;
+
+      const agregar = async (ref: FirebaseFirestore.DocumentReference, data: Record<string, unknown>) => {
+        batch.set(ref, data, { merge: true });
+        pendientes++;
+        if (pendientes >= 450) {
+          await batch.commit();
+          batch = db.batch();
+          pendientes = 0;
+        }
+      };
+
+      for (const [empId, unis] of aliadosDeEmpresa.entries()) {
+        await agregar(db.collection("perfiles_empresas").doc(empId), {
+          aliados_universidades_ids: [...unis],
+          calificacion_estudiantes_promedio: promedioDe(estudiantesDeEmpresa.get(empId)),
+        });
+        empresasActualizadas++;
+      }
+      for (const [uniId, emps] of aliadosDeUni.entries()) {
+        await agregar(db.collection("perfiles_universidades").doc(uniId), {
+          aliados_empresas_ids: [...emps],
+          calificacion_estudiantes_promedio: promedioDe(estudiantesDeUni.get(uniId)),
+        });
+        universidadesActualizadas++;
+      }
+      if (pendientes > 0) await batch.commit();
+
+      await safeWriteAuditLog({
+        actor,
+        action: "ranking.backfill",
+        entityType: "solicitudes_practicas",
+        entityId: "backfill",
+        payload: {
+          solicitudes_revisadas: solSnap.size,
+          reclamos_revisados: reclamosSnap.size,
+          asignaciones_revisadas: asigSnap.size,
+          empresas_actualizadas: empresasActualizadas,
+          universidades_actualizadas: universidadesActualizadas,
+        },
+      });
+
+      return {
+        ok: true,
+        empresasActualizadas,
+        universidadesActualizadas,
+        solicitudesRevisadas: solSnap.size,
+        reclamosRevisados: reclamosSnap.size,
+      };
+    } catch (error: any) {
+      console.error("backfillAlianzasCalificaciones failed:", error);
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError(
+        "internal",
+        `Error interno en backfillAlianzasCalificaciones: ${String(error?.message ?? error)}`,
+      );
+    }
+  },
+);
 
 export const deleteUserComplete = onCall({ region: REGION }, async (req) => {
   try {

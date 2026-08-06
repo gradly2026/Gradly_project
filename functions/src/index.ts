@@ -13,6 +13,11 @@
  *    resolveReport / deleteUserComplete → operaciones sensibles del panel
  *    admin (admin.ts). Solo un actor con rol 'admin' puede invocarlas; cada
  *    una audita en `audit_logs`. Ver ADMIN_IMPLEMENTACION_INICIAL.md.
+ *  · backfillAlianzasCalificaciones → recalcula "alianzas" y calificación
+ *    promedio de estudiantes de TODAS las empresas/universidades a partir del
+ *    historial completo de `solicitudes_practicas` (admin.ts). Backfill de una
+ *    sola vez para pasantías aprobadas antes de que existiera el autoreporte
+ *    en tiempo real; también sirve para reconciliar si hiciera falta.
  *  · eliminarEstudiante / eliminarGrupo → una universidad deshace su propia
  *    carga por Excel (estudiante o grupo completo) antes de que quede ligada
  *    a una pasantía real (universidad.ts). Borran también la cuenta de Auth.
@@ -26,6 +31,7 @@ export { traducirTexto } from "./traducir";
 export { notifNuevoMensaje } from "./chatNotif";
 export { barridoCuposVencidos } from "./barridoCupos";
 export {
+  backfillAlianzasCalificaciones,
   deleteUserComplete,
   resolveReport,
   setUserApproval,
