@@ -355,6 +355,19 @@ export default function AdminPreview() {
   const [approvalReason, setApprovalReason] = useState("");
   const [reportResolution, setReportResolution] = useState("");
 
+  // Modal de confirmación genérico para acciones sensibles (banear, inactivar,
+  // eliminar). NO usar Alert.alert aquí: react-native-web no implementa
+  // Alert.alert (es un no-op), así que en el panel web ni el diálogo aparecía
+  // ni el callback de confirmación llegaba a dispararse.
+  type ConfirmDialogState = {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    destructive?: boolean;
+    onConfirm: () => void;
+  };
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [meName, setMeName] = useState("Administrador");
   const [meEmail, setMeEmail] = useState<string | null>(null);
@@ -748,16 +761,17 @@ export default function AdminPreview() {
   const setProfileStatus = useCallback(
     async (u: AdminUser, nextStatus: Status) => {
       if (u.status === nextStatus) return;
+      setUserActionSaving(true);
       try {
         const res = await setUserStatusAction({
           targetUid: u.id,
           nextStatus,
         });
-        setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, status: nextStatus } : x)));
-        setSelected((prev) => (prev?.id === u.id ? { ...prev, status: nextStatus } : prev));
         if (!res.ok) {
           throw new Error("No se pudo actualizar el estado.");
         }
+        setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, status: nextStatus } : x)));
+        setSelected((prev) => (prev?.id === u.id ? { ...prev, status: nextStatus } : prev));
         const msg =
           nextStatus === "active"
             ? "Usuario activado correctamente."
@@ -773,6 +787,8 @@ export default function AdminPreview() {
             `${adminDetailedErrorMessage(error, "actualizar el estado del usuario")}\n\nCódigo: ${String((error as any)?.code ?? "desconocido")}`,
           ),
         );
+      } finally {
+        setUserActionSaving(false);
       }
     },
     [t],
@@ -1019,66 +1035,90 @@ export default function AdminPreview() {
 
   const confirmBanToggle = useCallback(
     (u: AdminUser, banned: boolean) => {
-      Alert.alert(
-        banned ? "Banear usuario" : "Reactivar usuario",
-        banned
+      setConfirmDialog({
+        title: banned ? "Banear usuario" : "Reactivar usuario",
+        message: banned
           ? "Esta acción deshabilitará el acceso del usuario y registrará el motivo."
           : "Esta acción volverá a habilitar el acceso del usuario.",
-        [
-          { text: "Cancelar", style: "cancel" },
-          {
-            text: banned ? "Banear" : "Reactivar",
-            style: banned ? "destructive" : "default",
-            onPress: () => {
-              void setProfileBan(u, banned);
-            },
-          },
-        ],
-      );
+        confirmLabel: banned ? "Banear" : "Reactivar",
+        destructive: banned,
+        onConfirm: () => {
+          void setProfileBan(u, banned);
+        },
+      });
     },
     [setProfileBan],
   );
 
+  const STATUS_CONFIRM_TITLES: Record<Status, string> = {
+    active: "Activar usuario",
+    pending: "Marcar usuario como pendiente",
+    inactive: "Inactivar usuario",
+  };
+  const STATUS_CONFIRM_MESSAGES: Record<Status, string> = {
+    active: "El usuario recuperará el acceso normal a la plataforma.",
+    pending: "El usuario quedará marcado como pendiente de revisión.",
+    inactive: "El usuario no podrá iniciar sesión mientras su cuenta esté inactiva.",
+  };
+  const STATUS_CONFIRM_LABELS: Record<Status, string> = {
+    active: "Activar",
+    pending: "Marcar pendiente",
+    inactive: "Inactivar",
+  };
+
+  const confirmStatusChange = useCallback(
+    (u: AdminUser, nextStatus: Status) => {
+      if (u.status === nextStatus) return;
+      setConfirmDialog({
+        title: STATUS_CONFIRM_TITLES[nextStatus],
+        message: STATUS_CONFIRM_MESSAGES[nextStatus],
+        confirmLabel: STATUS_CONFIRM_LABELS[nextStatus],
+        destructive: nextStatus === "inactive",
+        onConfirm: () => {
+          void setProfileStatus(u, nextStatus);
+        },
+      });
+    },
+    [setProfileStatus],
+  );
+
   const handleDeleteUser = useCallback(
     (u: AdminUser) => {
-      Alert.alert(
-        "Eliminar usuario",
-        "Se eliminará la cuenta de Auth y los documentos principales del usuario. Esta acción no se puede deshacer.",
-        [
-          { text: "Cancelar", style: "cancel" },
-          {
-            text: "Eliminar",
-            style: "destructive",
-            onPress: async () => {
-              setUserActionSaving(true);
-              try {
-                const res = await deleteUserCompleteAction({
-                  targetUid: u.id,
-                  reason: "Eliminado desde panel admin",
-                });
-                if (!res.ok) {
-                  throw new Error("No se pudo eliminar el usuario.");
-                }
-                setUsers((prev) => prev.filter((item) => item.id !== u.id));
-                setSelected(null);
-                setDetailOpen(false);
-                await refreshOverview();
-                showAdminAlert("Admin", "Usuario eliminado correctamente.");
-              } catch (error) {
-                console.error("Admin:deleteUserComplete error", error);
-                showAdminAlert(
-                  t("admin_error_titulo"),
-                  translateSync(
-                    `${adminDetailedErrorMessage(error, "eliminar el usuario")}\n\nCódigo: ${String((error as any)?.code ?? "desconocido")}`,
-                  ),
-                );
-              } finally {
-                setUserActionSaving(false);
+      setConfirmDialog({
+        title: "Eliminar usuario",
+        message: "Se eliminará la cuenta de Auth y los documentos principales del usuario. Esta acción no se puede deshacer.",
+        confirmLabel: "Eliminar",
+        destructive: true,
+        onConfirm: () => {
+          void (async () => {
+            setUserActionSaving(true);
+            try {
+              const res = await deleteUserCompleteAction({
+                targetUid: u.id,
+                reason: "Eliminado desde panel admin",
+              });
+              if (!res.ok) {
+                throw new Error("No se pudo eliminar el usuario.");
               }
-            },
-          },
-        ],
-      );
+              setUsers((prev) => prev.filter((item) => item.id !== u.id));
+              setSelected(null);
+              setDetailOpen(false);
+              await refreshOverview();
+              showAdminAlert("Admin", "Usuario eliminado correctamente.");
+            } catch (error) {
+              console.error("Admin:deleteUserComplete error", error);
+              showAdminAlert(
+                t("admin_error_titulo"),
+                translateSync(
+                  `${adminDetailedErrorMessage(error, "eliminar el usuario")}\n\nCódigo: ${String((error as any)?.code ?? "desconocido")}`,
+                ),
+              );
+            } finally {
+              setUserActionSaving(false);
+            }
+          })();
+        },
+      });
     },
     [refreshOverview, t],
   );
@@ -2420,7 +2460,7 @@ export default function AdminPreview() {
                     <>
                       <TouchableOpacity
                         style={[s.btnOutline, s.btnSm]}
-                        onPress={() => setProfileStatus(selected, "pending")}
+                        onPress={() => confirmStatusChange(selected, "pending")}
                         activeOpacity={0.8}
                         disabled={userActionSaving}
                       >
@@ -2428,7 +2468,7 @@ export default function AdminPreview() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[s.btnPrimary, s.btnSm, { backgroundColor: C.green }]}
-                        onPress={() => setProfileStatus(selected, "active")}
+                        onPress={() => confirmStatusChange(selected, "active")}
                         activeOpacity={0.8}
                         disabled={userActionSaving}
                       >
@@ -2436,7 +2476,7 @@ export default function AdminPreview() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[s.btnPrimary, s.btnSm, { backgroundColor: C.red }]}
-                        onPress={() => setProfileStatus(selected, "inactive")}
+                        onPress={() => confirmStatusChange(selected, "inactive")}
                         activeOpacity={0.8}
                         disabled={userActionSaving}
                       >
@@ -2533,6 +2573,7 @@ export default function AdminPreview() {
             </ScrollView>
           ) : null}
         </View>
+        {ConfirmOverlay()}
       </View>
     </Modal>
 
@@ -2586,6 +2627,70 @@ export default function AdminPreview() {
       </View>
     </Modal>
   );
+
+  // Overlay de confirmación — a propósito NO es un <Modal> propio: se monta
+  // DENTRO del <Modal> que ya esté abierto (DetailModal/ReportDetailModal),
+  // como una capa absoluta más. Dos <Modal> nativos presentados a la vez
+  // fallan silenciosamente en iOS si uno se abre mientras el otro sigue
+  // activo (mismo gotcha que abrirPerfilPublico, ver su comentario arriba) —
+  // como este overlay se dispara con el modal de detalle YA abierto y
+  // estable, un segundo <Modal> nativo sería exactamente ese escenario de
+  // riesgo. Un <View absolute> dentro del mismo Modal no lo tiene.
+  const ConfirmOverlay = () =>
+    confirmDialog ? (
+      <View
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(7,5,15,0.75)",
+          justifyContent: "flex-end",
+        }}
+      >
+        <View style={[s.modal, isPhone && s.modalCompact]}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>{confirmDialog.title}</Text>
+            <TouchableOpacity
+              style={[s.iconBtn, { width: 38, height: 38 }]}
+              onPress={() => setConfirmDialog(null)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={20} color={C.text} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[s.textMuted, { lineHeight: 20 }]}>{confirmDialog.message}</Text>
+          <View style={[s.row, { gap: 10, marginTop: 20 }]}>
+            <TouchableOpacity
+              style={[s.btnOutline, { flex: 1 }]}
+              onPress={() => setConfirmDialog(null)}
+              activeOpacity={0.85}
+              disabled={userActionSaving}
+            >
+              <Text style={s.btnOutlineText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                s.btnPrimary,
+                { flex: 1, backgroundColor: confirmDialog.destructive ? C.red : C.accent },
+              ]}
+              onPress={() => {
+                const accion = confirmDialog.onConfirm;
+                setConfirmDialog(null);
+                accion?.();
+              }}
+              activeOpacity={0.85}
+              disabled={userActionSaving}
+            >
+              <Text style={s.btnPrimaryText}>
+                {userActionSaving ? "Procesando..." : confirmDialog.confirmLabel}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    ) : null;
 
   const ReportDetailModal = () => {
     const reportedUser =
@@ -2752,6 +2857,7 @@ export default function AdminPreview() {
               </ScrollView>
             ) : null}
           </View>
+          {ConfirmOverlay()}
         </View>
       </Modal>
     );

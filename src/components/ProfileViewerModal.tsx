@@ -43,6 +43,7 @@ import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { useIniciarChat } from '../hooks/useIniciarChat';
 import { subscribeUserChats, type ChatListItem } from '../services/chatService';
 import StorageAvatar from './StorageAvatar';
+import ResenasFeedback, { PromedioSimple } from './ResenasFeedback';
 
 export type ProfileTipo = 'estudiante' | 'empresa' | 'universidad';
 
@@ -73,7 +74,7 @@ const COLECCION_POR_TIPO: Record<ProfileTipo, string> = {
 
 export default function ProfileViewerModal({ visible, onClose, tipo, profileId }: Props) {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { user, rol } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
@@ -325,6 +326,26 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                 ))}
               </View>
             )}
+
+            {/* Bandeja de reseñas del sistema OFICIAL (feedback_pasantias) —
+                deliberadamente aparte de la sección "Calificar al estudiante"
+                de más abajo, que sigue viva sin tocar (sistema viejo, ver
+                ResenasFeedback.tsx para el porqué de dejarlos separados). */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Reseñas</Text>
+              {tipo === 'universidad' ? (
+                <PromedioSimple
+                  promedio={Number(data.calificacion_estudiantes_promedio ?? 0)}
+                  theme={isDark ? 'dark' : 'light'}
+                />
+              ) : (
+                <ResenasFeedback
+                  entidadId={profileId}
+                  entidadRol={tipo === 'empresa' ? 'empresa' : 'estudiante'}
+                  theme={isDark ? 'dark' : 'light'}
+                />
+              )}
+            </View>
 
             {tipo === 'estudiante' && (
               <>

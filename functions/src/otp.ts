@@ -174,3 +174,46 @@ export const verificarOtp = onCall({ region: REGION }, async (req) => {
   const token = await admin.auth().createCustomToken(user.uid);
   return { token };
 });
+
+// ── 3) CONSULTAR MOTIVO DE BLOQUEO (baneo/inactivación) ────────────
+/**
+ * `signInWithEmailAndPassword`/`signInWithCustomToken` rechazan de entrada a
+ * una cuenta con `disabled:true` en Firebase Auth (código `auth/user-disabled`)
+ * — ANTES de que el cliente llegue a leer `usuarios/{uid}` para mostrar el
+ * motivo, porque en ese punto el login falló y no hay sesión autenticada
+ * (las reglas de Firestore exigen `request.auth != null`). Esta función
+ * pública (sin requerir sesión, igual que `solicitarOtp`) resuelve ESE hueco
+ * puntual: dado un correo, dice si la cuenta está bloqueada y por qué, sin
+ * exponer nada más del documento del usuario.
+ *
+ * No exige `EMAIL_RE` estricto sobre intentos maliciosos porque el peor caso
+ * es revelar si un correo puntual está baneado/inactivo — mismo nivel de
+ * exposición que ya tiene el propio error `auth/user-disabled` de Firebase.
+ */
+export const consultarEstadoAcceso = onCall({ region: REGION }, async (req) => {
+  const email = String(req.data?.email ?? "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) {
+    return { bloqueado: false, tipo: null, motivo: null };
+  }
+
+  try {
+    const user = await admin.auth().getUserByEmail(email);
+    if (!user.disabled) {
+      return { bloqueado: false, tipo: null, motivo: null };
+    }
+
+    const snap = await db.collection("usuarios").doc(user.uid).get();
+    const data = snap.exists ? snap.data() ?? {} : {};
+    const baneado = data.baneado === true;
+
+    return {
+      bloqueado: true,
+      tipo: baneado ? "baneado" : "inactivo",
+      motivo: baneado && data.motivo_baneo ? String(data.motivo_baneo) : null,
+    };
+  } catch {
+    // Cuenta inexistente u otro error: no revelar nada (mismo criterio que
+    // solicitarOtp, que tampoco delata si un correo está registrado).
+    return { bloqueado: false, tipo: null, motivo: null };
+  }
+});

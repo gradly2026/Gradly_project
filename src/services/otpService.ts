@@ -16,6 +16,10 @@ const _verificarOtp = httpsCallable<
   { email: string; codigo: string; nuevaPassword?: string },
   { token: string }
 >(functions, "verificarOtp");
+const _consultarEstadoAcceso = httpsCallable<
+  { email: string },
+  { bloqueado: boolean; tipo: "baneado" | "inactivo" | null; motivo: string | null }
+>(functions, "consultarEstadoAcceso");
 
 /**
  * Pide que se genere y envíe un código OTP al correo. Por seguridad la función
@@ -47,4 +51,28 @@ export async function verificarOtpYEntrar(
   });
   const cred = await signInWithCustomToken(auth, res.data.token);
   return cred.user.uid;
+}
+
+/**
+ * Dado un correo, dice si la cuenta está baneada/inactiva y por qué —
+ * SIN necesitar sesión (a diferencia de `verificarBloqueoCuenta` en
+ * `roleRouting.ts`, que lee Firestore directo y por eso solo sirve DESPUÉS
+ * de un login exitoso). Existe porque `signInWithEmailAndPassword`/
+ * `signInWithCustomToken` rechazan de entrada una cuenta con `disabled:true`
+ * (código `auth/user-disabled`) antes de que el cliente llegue a leer nada.
+ * Nunca lanza: si algo falla, devuelve "no bloqueado" (no bloquear al
+ * usuario por un error transitorio de red).
+ */
+export async function consultarEstadoAcceso(
+  email: string,
+): Promise<{ tipo: "baneado" | "inactivo"; motivo: string | null } | null> {
+  try {
+    const res = await _consultarEstadoAcceso({ email: email.trim().toLowerCase() });
+    if (res.data.bloqueado && res.data.tipo) {
+      return { tipo: res.data.tipo, motivo: res.data.motivo };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

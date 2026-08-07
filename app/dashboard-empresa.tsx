@@ -25,7 +25,7 @@ import {
   eliminarVacante,
 } from '../src/services/pasantiaService';
 import { abrirChatDirectoEmpresaEstudiante } from '../src/services/chatService';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import FloatingTopBar from '../src/components/FloatingTopBar';
 import { AutoText, AutoText as Text, AutoTextInput as TextInput } from '../src/components/AutoText';
@@ -52,6 +52,7 @@ import EmpresaHomeCards from '../src/components/EmpresaHomeCards';
 import HistorialPasantes from '../src/components/HistorialPasantes';
 import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import RangoCard from '../src/components/RangoCard';
+import ResenasFeedback from '../src/components/ResenasFeedback';
 import { SolicitudesEmpresa } from '../src/components/Matchmaking';
 import ProponerHorarioModal from '../src/components/ProponerHorarioModal';
 import type { AcuerdoData } from '../src/types/chat';
@@ -218,8 +219,9 @@ const MENU: { key: SeccionEmpresa; label: string; icon: keyof typeof Ionicons.gl
   { key: 'pagos',     label: 'Pagos',            icon: 'card-outline' },
 ];
 
-// ── Onboarding (guía por globos) ──────────────────────────────────
-const TOUR_CLAVES: SeccionEmpresa[] = ['inicio', 'vacantes', 'kanban', 'activas', 'pagos'];
+// ── Onboarding (guía por globos) — mismo orden que MENU, terminando en
+// 'perfil' (Mi Perfil es siempre la última parada del recorrido). ──
+const TOUR_CLAVES: SeccionEmpresa[] = ['inicio', 'vacantes', 'kanban', 'activas', 'historial', 'pagos', 'perfil'];
 const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
   inicio: {
     titulo: '¡Bienvenido a tu panel! 🏢',
@@ -1498,6 +1500,15 @@ export default function DashboardEmpresa() {
 
   // ── Onboarding ────────────────────────────────────────────────────
   const tour = useOnboarding(user?.uid, seccion, TOUR_CLAVES);
+  // "Continuar" marca el paso actual visto y avanza automáticamente a la
+  // siguiente sección del recorrido — el usuario ya no tiene que ir tocando
+  // pestañas por su cuenta para que reaparezca el globo de guía.
+  const handleTourContinuar = useCallback(async () => {
+    const idxActual = TOUR_CLAVES.indexOf(seccion);
+    const siguiente = !tour.esUltimo ? TOUR_CLAVES[idxActual + 1] : undefined;
+    await tour.marcar();
+    if (siguiente) setSeccion(siguiente);
+  }, [seccion, tour]);
 
   // ── Items del menú flotante (etiquetas cortas para la barra) ──────
   const NAV_LABELS: Record<SeccionEmpresa, string> = {
@@ -1628,6 +1639,16 @@ export default function DashboardEmpresa() {
                 rol="empresa"
                 theme="dark"
               />
+            ),
+          },
+          {
+            id: 'resenas',
+            title: 'Reseñas',
+            subtitle: 'Calificación y comentarios recibidos',
+            icon: 'chatbox-ellipses-outline',
+            tone: 'purple',
+            render: () => (
+              <ResenasFeedback entidadId={user?.uid ?? ''} entidadRol="empresa" theme="dark" />
             ),
           },
           {
@@ -2322,7 +2343,7 @@ export default function DashboardEmpresa() {
         paso={tour.paso}
         total={tour.total}
         esUltimo={tour.esUltimo}
-        onContinuar={tour.marcar}
+        onContinuar={handleTourContinuar}
         onSaltar={tour.saltar}
       />
 

@@ -153,12 +153,6 @@ export function OnboardingBubble({
             color="#fff"
           />
         </TouchableOpacity>
-
-        {!esUltimo && (
-          <Text style={styles.hint}>
-            Toca otra pestaña del menú para seguir conociendo tu panel.
-          </Text>
-        )}
       </View>
     </View>
   );
@@ -221,11 +215,4 @@ const styles = StyleSheet.create({
     backgroundColor: C.accent,
   },
   btnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-  hint: {
-    color: C.textMuted,
-    fontSize: 11,
-    textAlign: "center",
-    marginTop: 10,
-    lineHeight: 15,
-  },
 });

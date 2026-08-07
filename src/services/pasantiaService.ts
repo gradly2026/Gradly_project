@@ -24,6 +24,7 @@ import {
   MENSAJE_GRUPO_COMPROMETIDO,
 } from './solicitudPracticaService';
 import { cuposDisponibles } from '../utils/cupos';
+import { zonaDeCarrera } from '../data/carreras';
 
 // ─────────────────────────────────────────────
 // NIVEL GAMIFICADO
@@ -68,19 +69,21 @@ export function estudianteHabilitadoParaVacantes(perfil: {
 // ─────────────────────────────────────────────
 // 1. ESTUDIANTE APLICA A VACANTE
 // ─────────────────────────────────────────────
-export async function aplicarAVacante(
+type PerfilParaAplicar = { nombre_completo: string; foto_url?: string; universidad_id?: string };
+
+/**
+ * Cuerpo compartido de "crear una aplicación": lo usan tanto `aplicarAVacante`
+ * (vacante individual, exige graduación) como `aplicarAPasantiaIndependiente`
+ * (autoservicio a pasantías) — ambas terminan en el mismo documento de
+ * `aplicaciones` y el mismo incremento de `aplicantes_count`. Cada llamador
+ * hace su propia validación de elegibilidad ANTES de invocar esto.
+ */
+async function crearAplicacion(
   estudianteId: string,
   vacanteId: string,
   empresaId: string,
-  estudiantePerfil: { nombre_completo: string; foto_url?: string; universidad_id?: string },
+  estudiantePerfil: PerfilParaAplicar,
 ): Promise<string> {
-  // Solo estudiantes que ya culminaron su práctica/pasantía o están
-  // graduados pueden aplicar (ver `estudianteHabilitadoParaVacantes`).
-  const perfilSnap = await getDoc(doc(db, 'perfiles_estudiantes', estudianteId));
-  if (!estudianteHabilitadoParaVacantes(perfilSnap.exists() ? (perfilSnap.data() as any) : null)) {
-    throw new Error('Las vacantes están disponibles solo para estudiantes que ya culminaron su práctica o pasantía, o que ya están graduados.');
-  }
-
   // Verificar aplicación previa
   const existing = await getDocs(
     query(
@@ -131,6 +134,83 @@ export async function aplicarAVacante(
   }
 
   return appRef.id;
+}
+
+export async function aplicarAVacante(
+  estudianteId: string,
+  vacanteId: string,
+  empresaId: string,
+  estudiantePerfil: PerfilParaAplicar,
+): Promise<string> {
+  // Solo estudiantes que ya culminaron su práctica/pasantía o están
+  // graduados pueden aplicar (ver `estudianteHabilitadoParaVacantes`).
+  const perfilSnap = await getDoc(doc(db, 'perfiles_estudiantes', estudianteId));
+  if (!estudianteHabilitadoParaVacantes(perfilSnap.exists() ? (perfilSnap.data() as any) : null)) {
+    throw new Error('Las vacantes están disponibles solo para estudiantes que ya culminaron su práctica o pasantía, o que ya están graduados.');
+  }
+
+  return crearAplicacion(estudianteId, vacanteId, empresaId, estudiantePerfil);
+}
+
+// ─────────────────────────────────────────────
+// 1b. ESTUDIANTE APLICA A UNA PASANTÍA POR SU CUENTA (autoservicio)
+// ─────────────────────────────────────────────
+/**
+ * Camino alterno a `aplicarAVacante`: para estudiantes que TODAVÍA no
+ * culminan su práctica, pero tampoco tienen ninguna pasantía activa en
+ * curso. Antes, la ÚNICA forma de conseguir pasantía era que la universidad
+ * reservara cupos por lote (`reclamoCuposService.ts`) — esto abre un segundo
+ * camino de autoservicio (ej. si al estudiante se le venció el plazo de 48h
+ * para tomar un cupo ya asegurado, o su universidad no reservó nada afín a
+ * su carrera).
+ *
+ * Zona Roja (Salud/Educación/Derecho) queda excluida por completo: esos
+ * estudiantes siguen dependiendo 100% de su universidad, sin excepción
+ * (decisión de producto explícita).
+ *
+ * Re-verifica TODO del lado del cliente (mismo nivel de confianza que
+ * `aplicarAVacante` — no hay Cloud Function detrás de ninguna de las dos):
+ * no confía en lo que ya calculó la pantalla, vuelve a leer.
+ */
+export async function aplicarAPasantiaIndependiente(
+  estudianteId: string,
+  vacanteId: string,
+  empresaId: string,
+  estudiantePerfil: PerfilParaAplicar & { carrera?: string },
+): Promise<string> {
+  const vacSnap = await getDoc(doc(db, 'vacantes', vacanteId));
+  if (!vacSnap.exists()) throw new Error('Esta pasantía ya no está disponible.');
+  const vacData: any = vacSnap.data();
+  const esPasantia = vacData.categoria === 'pasantia' || (!vacData.categoria && vacData.tipo === 'Pasantía');
+  if (!esPasantia) throw new Error('Esta publicación no es una pasantía.');
+
+  if (estudiantePerfil.carrera && zonaDeCarrera(estudiantePerfil.carrera) === 'roja') {
+    throw new Error('Tu carrera requiere que la práctica la gestione tu universidad.');
+  }
+
+  // No debe tener ya una pasantía activa por ninguna de las 3 vías posibles.
+  const [contratadoSnap, acuerdoSnap, cupoSnap] = await Promise.all([
+    getDocs(query(
+      collection(db, 'aplicaciones'),
+      where('estudiante_id', '==', estudianteId),
+      where('estado', '==', 'contratado'),
+    )),
+    getDocs(query(
+      collection(db, 'solicitudes_practicas'),
+      where('estudianteIds', 'array-contains', estudianteId),
+      where('estado', '==', 'aprobado'),
+    )),
+    getDocs(query(
+      collection(db, 'asignaciones_cupo'),
+      where('estudianteId', '==', estudianteId),
+      where('estado', '==', 'tomado'),
+    )),
+  ]);
+  if (!contratadoSnap.empty || !acuerdoSnap.empty || !cupoSnap.empty) {
+    throw new Error('Ya tienes una pasantía activa.');
+  }
+
+  return crearAplicacion(estudianteId, vacanteId, empresaId, estudiantePerfil);
 }
 
 // ─────────────────────────────────────────────

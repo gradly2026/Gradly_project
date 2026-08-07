@@ -32,7 +32,7 @@ function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-function makeChartConfig(colors: GradlyColors, isDark: boolean) {
+export function makeChartConfig(colors: GradlyColors, isDark: boolean) {
   const [pr, pg, pb] = hexToRgb(colors.primary);
   const [tr, tg, tb] = hexToRgb(colors.textMuted);
   return {

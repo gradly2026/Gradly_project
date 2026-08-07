@@ -28,7 +28,11 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     match /admin_notifications/{notifId} {
-      allow read, create, update, delete: if esAdmin();
+      allow read, update, delete: if esAdmin();
+      // `crearReporte()` (reporteService.ts) genera una de estas al reportar
+      // usuario/contenido — el emisor nunca es admin, así que create no puede
+      // exigirlo o el reporte jamás notifica (bug real, detectado en auditoría).
+      allow create: if request.auth != null;
     }
     match /permissions/{permId} {
       allow read, write: if esAdmin();
@@ -184,12 +188,17 @@ service cloud.firestore {
       //    Ahora la empresa dueña puede todo; universidad y estudiante SOLO
       //    pueden mover ese contador. El `hasOnly` impide que de paso alteren
       //    título, cupos totales, horario o cualquier otro campo.
+      //    `aplicantes_count` se agregó aparte: `aplicarAVacante` (estudiante)
+      //    lo incrementa al postularse a una vacante individual y esa escritura
+      //    quedaba fuera de este `hasOnly`, así que fallaba con permission-denied
+      //    aunque la aplicación en sí ya se hubiera creado (bug real, detectado
+      //    al construir el flujo de autoservicio a pasantías).
       allow update: if request.auth != null && (
         resource.data.empresa_id == request.auth.uid
         || (
           (esRol('universidad') || esRol('estudiante'))
           && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['cupos_reclamados'])
+               .hasOnly(['cupos_reclamados', 'aplicantes_count'])
         )
       );
     }
@@ -433,11 +442,10 @@ service cloud.firestore {
     //    getFeedbackPendiente `where evaluadorId == uid`). Con los nombres viejos
     //    TODO read/create se denegaba → "Error detectando feedback pendiente".
     match /feedback_pasantias/{feedbackId} {
-      allow read: if request.auth != null && (
-        resource.data.evaluadorId == request.auth.uid ||
-        resource.data.evaluadoId == request.auth.uid ||
-        esAdmin()
-      );
+      // Reseñas públicas a propósito: la bandeja de calificación+comentarios
+      // de un perfil (ResenasFeedback.tsx) la puede ver cualquier usuario que
+      // visite ese perfil, no solo quien calificó o fue calificado.
+      allow read: if request.auth != null;
       // El emisor se registra a sí mismo como evaluador. Inmutable tras crearse.
       allow create: if request.auth != null
         && request.resource.data.evaluadorId == request.auth.uid;

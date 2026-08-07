@@ -7,6 +7,7 @@ import {
   isSignInWithEmailLink,
   signInWithEmailAndPassword,
   signInWithEmailLink,
+  signOut,
 } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -30,8 +31,13 @@ import { useTranslation } from "../../src/context/TranslationContext";
 import { auth } from "../../src/config/firebaseConfig";
 import { useTheme, type GradlyColors } from "../../src/context/ThemeContext";
 import { CORREO_TEMPORAL_KEY } from "../../src/services/authService";
-import { solicitarOtp, verificarOtpYEntrar } from "../../src/services/otpService";
-import { obtenerRolConReintento, rutaPorRol } from "../../src/utils/roleRouting";
+import { consultarEstadoAcceso, solicitarOtp, verificarOtpYEntrar } from "../../src/services/otpService";
+import {
+  obtenerRolConReintento,
+  rutaPorRol,
+  verificarBloqueoCuenta,
+  type BloqueoCuenta,
+} from "../../src/utils/roleRouting";
 
 // ══════════════════════════════════════════════════════════════════
 //  Design tokens — derivados del tema activo (claro / oscuro)
@@ -157,6 +163,23 @@ export default function InicioSesion() {
   // ── Estado mientras se completa el enlace entrante ──
   const [completingLink, setCompletingLink] = useState(false);
 
+  // ── Cuenta baneada/inactiva: bloquea el acceso tras un login exitoso ──
+  const [bloqueoCuenta, setBloqueoCuenta] = useState<BloqueoCuenta | null>(null);
+
+  // Firebase Auth rechaza de entrada una cuenta con disabled:true (código
+  // auth/user-disabled) — ANTES de que lleguemos a verificarBloqueoCuenta,
+  // porque en ese punto el login falló y no hay sesión para leer Firestore.
+  // Esto intercepta ESE caso puntual: si el error es por cuenta deshabilitada,
+  // consulta el motivo (vía Cloud Function, no requiere sesión) y muestra el
+  // modal enriquecido en vez del error genérico. Devuelve true si lo mostró.
+  const manejarPosibleBloqueo = useCallback(async (err: any, correo: string): Promise<boolean> => {
+    if (!String(err?.code ?? "").includes("user-disabled")) return false;
+    const bloqueo = await consultarEstadoAcceso(correo);
+    if (!bloqueo) return false;
+    setBloqueoCuenta(bloqueo);
+    return true;
+  }, []);
+
   // ── Fallback: pedir correo si no está en AsyncStorage ──
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [showEmailPrompt, setShowEmailPrompt] = useState(false);
@@ -203,6 +226,13 @@ export default function InicioSesion() {
           return;
         }
 
+        const bloqueo = await verificarBloqueoCuenta(result.user.uid);
+        if (bloqueo) {
+          await signOut(auth);
+          setBloqueoCuenta(bloqueo);
+          return;
+        }
+
         // Navegación principal…
         try {
           router.replace(ruta as any);
@@ -218,6 +248,7 @@ export default function InicioSesion() {
           }
         }, 500);
       } catch (err: any) {
+        if (await manejarPosibleBloqueo(err, correo)) return;
         Alert.alert(
           t('login_enlace_invalido_titulo'),
           t(mapFirebaseError(err?.code ?? "")) + "\n\n" + t('login_enlace_expirado'),
@@ -226,7 +257,7 @@ export default function InicioSesion() {
         setCompletingLink(false);
       }
     },
-    [router, t],
+    [router, t, manejarPosibleBloqueo],
   );
 
   // ══════════════════════════════════════════════════════════════
@@ -321,8 +352,16 @@ export default function InicioSesion() {
         return;
       }
 
+      const bloqueo = await verificarBloqueoCuenta(cred.user.uid);
+      if (bloqueo) {
+        await signOut(auth);
+        setBloqueoCuenta(bloqueo);
+        return;
+      }
+
       router.replace(ruta as any);
     } catch (err: any) {
+      if (await manejarPosibleBloqueo(err, email)) return;
       setGlobalError(t(mapFirebaseError(err?.code ?? "")));
     } finally {
       setLoading(false);
@@ -384,8 +423,17 @@ export default function InicioSesion() {
         setResetError(t('login_rol_error'));
         return;
       }
+
+      const bloqueo = await verificarBloqueoCuenta(uid);
+      if (bloqueo) {
+        await signOut(auth);
+        setBloqueoCuenta(bloqueo);
+        return;
+      }
+
       router.replace(ruta as any);
     } catch (err: any) {
+      if (await manejarPosibleBloqueo(err, resetEmail)) return;
       setResetError(t(mapOtpError(err?.code ?? "")));
     } finally {
       setResetVerifying(false);
@@ -442,8 +490,17 @@ export default function InicioSesion() {
         setOtpError(t('login_rol_error'));
         return;
       }
+
+      const bloqueo = await verificarBloqueoCuenta(uid);
+      if (bloqueo) {
+        await signOut(auth);
+        setBloqueoCuenta(bloqueo);
+        return;
+      }
+
       router.replace(ruta as any);
     } catch (err: any) {
+      if (await manejarPosibleBloqueo(err, otpEmail)) return;
       setOtpError(t(mapOtpError(err?.code ?? "")));
     } finally {
       setOtpVerifying(false);
@@ -1018,6 +1075,70 @@ export default function InicioSesion() {
           </View>
         </View>
       </Modal>
+
+      {/* ══ Modal: cuenta baneada/inactiva — bloquea el acceso ══ */}
+      <Modal
+        visible={!!bloqueoCuenta}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBloqueoCuenta(null)}
+      >
+        <View style={styles.promptOverlay}>
+          <View style={styles.promptCard}>
+            <TouchableOpacity
+              style={styles.blockCloseBtn}
+              onPress={() => setBloqueoCuenta(null)}
+              accessibilityRole="button"
+              accessibilityLabel={t('accion_cerrar')}
+              hitSlop={10}
+            >
+              <Ionicons name="close" size={20} color={C.textMuted} />
+            </TouchableOpacity>
+            <View style={[styles.magicIconWrap, styles.blockIconWrap]}>
+              <Ionicons name="lock-closed-outline" size={30} color={C.red} />
+            </View>
+            <Text style={styles.formTitle}>
+              {bloqueoCuenta?.tipo === "baneado"
+                ? t('login_bloqueo_titulo_baneado')
+                : t('login_bloqueo_titulo_inactivo')}
+            </Text>
+            <Text style={styles.formSub}>
+              {bloqueoCuenta?.tipo === "baneado"
+                ? t('login_bloqueo_msg_baneado')
+                : t('login_bloqueo_msg_inactivo')}
+            </Text>
+            {!!bloqueoCuenta?.motivo && (
+              <View style={styles.blockReasonBox}>
+                <Text style={styles.blockReasonText}>
+                  {t('login_bloqueo_motivo_prefijo')} {bloqueoCuenta.motivo}
+                </Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.blockContactRow}
+              onPress={() => {
+                // En Android/iOS sin cliente de correo configurado, openURL
+                // rechaza la promesa (no hay excepción sincrónica que atrapar
+                // con try/catch) — sin este .catch() queda como rejection sin
+                // manejar. En web el navegador siempre sabe qué hacer con mailto:.
+                Linking.openURL(`mailto:${t('help_screen_email_value')}`).catch(() => {});
+              }}
+              accessibilityRole="link"
+            >
+              <Ionicons name="mail-outline" size={16} color={C.accent70} />
+              <Text style={styles.blockContactText}>
+                {`${t('login_bloqueo_contacto')} ${t('help_screen_email_value')}`}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.btnPrimary, { marginTop: 18 }]}
+              onPress={() => setBloqueoCuenta(null)}
+            >
+              <Text style={styles.btnPrimaryText}>{t('login_bloqueo_boton')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1313,4 +1434,36 @@ const makeStyles = (C: Tokens) =>
       alignSelf: "center",
       marginBottom: 24,
     },
+
+    // Modal de cuenta baneada/inactiva
+    blockCloseBtn: {
+      position: "absolute",
+      top: 14,
+      right: 14,
+      zIndex: 1,
+      padding: 4,
+    },
+    blockIconWrap: {
+      backgroundColor: C.redBg,
+      borderColor: C.redBorder,
+    },
+    blockReasonBox: {
+      backgroundColor: C.redBg,
+      borderWidth: 1,
+      borderColor: C.redBorder,
+      borderRadius: 10,
+      padding: 12,
+      marginTop: -8,
+      marginBottom: 16,
+    },
+    blockReasonText: { color: C.text, fontSize: 13, lineHeight: 18 },
+    blockContactRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      marginTop: -4,
+      paddingVertical: 6,
+    },
+    blockContactText: { color: C.accent70, fontSize: 13, fontWeight: "600" },
   });

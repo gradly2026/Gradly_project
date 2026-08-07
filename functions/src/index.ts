@@ -2,6 +2,9 @@
  * Cloud Functions de Gradly.
  *
  *  · solicitarOtp / verificarOtp  → login sin contraseña por código (otp.ts)
+ *  · consultarEstadoAcceso        → dado un correo, dice si la cuenta está
+ *    baneada/inactiva y el motivo — sin sesión, para el modal de login de una
+ *    cuenta deshabilitada (otp.ts).
  *  · traducirTexto                → traducción al vuelo del contenido de la BD
  *                                   (traducir.ts). El cliente cachea el resultado.
  *  · notifNuevoMensaje            → notificación de campanita al recibir un
@@ -26,7 +29,7 @@
  * retiró — se reemplazó por la traducción al vuelo con caché, que cubre también
  * el contenido ya existente y cualquier campo, sin backfill.
  */
-export { solicitarOtp, verificarOtp } from "./otp";
+export { solicitarOtp, verificarOtp, consultarEstadoAcceso } from "./otp";
 export { traducirTexto } from "./traducir";
 export { notifNuevoMensaje } from "./chatNotif";
 export { barridoCuposVencidos } from "./barridoCupos";

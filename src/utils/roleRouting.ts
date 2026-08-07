@@ -70,3 +70,39 @@ export async function obtenerRolConReintento(
   }
   return null;
 }
+
+export type BloqueoCuenta = {
+  tipo: "baneado" | "inactivo";
+  motivo: string | null;
+};
+
+/**
+ * Lee `usuarios/{uid}` justo después de un login exitoso para detectar si un
+ * administrador baneó o inactivó la cuenta (panel admin: [[project_panel_admin_ruteo]]).
+ * El SDK de Auth ya rechaza `signInWithEmailAndPassword` para cuentas con
+ * `disabled: true`, pero el login sin contraseña (custom token) y una
+ * inactivación que no llegó a sincronizarse a Auth pueden dejarlo pasar —
+ * esta es la última barrera antes de navegar al dashboard.
+ */
+export async function verificarBloqueoCuenta(
+  uid: string,
+): Promise<BloqueoCuenta | null> {
+  try {
+    const snap = await getDoc(doc(db, "usuarios", uid));
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    if (data?.baneado === true) {
+      return {
+        tipo: "baneado",
+        motivo: data?.motivo_baneo ? String(data.motivo_baneo) : null,
+      };
+    }
+    if (data?.activo === false) {
+      return { tipo: "inactivo", motivo: null };
+    }
+    return null;
+  } catch {
+    // Error transitorio de red/reglas: no bloqueamos el acceso por esto.
+    return null;
+  }
+}

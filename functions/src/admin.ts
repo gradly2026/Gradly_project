@@ -116,6 +116,23 @@ async function safeWriteAuditLog(params: {
   }
 }
 
+/**
+ * Sincroniza el flag `disabled` de Firebase Auth con el estado en Firestore.
+ * Usado por setUserStatus/setUserApproval/setUserBan: sin esto, inactivar o
+ * rechazar una cuenta solo cambiaba Firestore y el usuario podía seguir
+ * iniciando sesión con contraseña con total normalidad (Auth no sabía nada
+ * del bloqueo).
+ */
+async function syncAuthDisabled(uid: string, disabled: boolean): Promise<void> {
+  try {
+    await admin.auth().updateUser(uid, { disabled });
+  } catch (error: any) {
+    if (String(error?.code ?? "") !== "auth/user-not-found") {
+      console.error("syncAuthDisabled failed:", error);
+    }
+  }
+}
+
 async function syncRoleClaim(uid: string, role: UserRole): Promise<boolean> {
   try {
     const user = await admin.auth().getUser(uid);
@@ -253,6 +270,14 @@ export const setUserStatus = onCall({ region: REGION }, async (req) => {
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // No reactivar Auth si la cuenta sigue baneada por separado (setUserBan
+    // es la fuente de verdad del baneo; este flujo no debe pisarlo).
+    if (nextStatus === "inactive") {
+      await syncAuthDisabled(targetUid, true);
+    } else if (!targetSnap.data()?.baneado) {
+      await syncAuthDisabled(targetUid, false);
+    }
+
     await safeWriteAuditLog({
       actor,
       action: "profile.status.update",
@@ -360,6 +385,13 @@ export const setUserApproval = onCall({ region: REGION }, async (req) => {
       }
     }
 
+    // Igual que setUserStatus: no reactivar Auth si la cuenta sigue baneada.
+    if (nextApprovalStatus === "inactive") {
+      await syncAuthDisabled(targetUid, true);
+    } else if (!targetData.baneado) {
+      await syncAuthDisabled(targetUid, false);
+    }
+
     await safeWriteAuditLog({
       actor,
       action: "profile.approval.update",
@@ -450,13 +482,7 @@ export const setUserBan = onCall({ region: REGION }, async (req) => {
       }
     }
 
-    try {
-      await admin.auth().updateUser(targetUid, { disabled: banned });
-    } catch (error: any) {
-      if (String(error?.code ?? "") !== "auth/user-not-found") {
-        console.error("setUserBan auth sync failed:", error);
-      }
-    }
+    await syncAuthDisabled(targetUid, banned);
 
     await safeWriteAuditLog({
       actor,

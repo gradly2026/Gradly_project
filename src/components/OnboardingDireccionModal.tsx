@@ -56,15 +56,16 @@ export default function OnboardingDireccionModal({ uid, onGuardado }: Props) {
       <View style={s.overlay}>
         <View style={s.sheet}>
           <View style={s.headerBadge}>
-            <Ionicons name="location" size={18} color={colors.primaryLight} />
-            <Text style={s.headerBadgeText}>Un último paso</Text>
+            <Ionicons name="sparkles" size={18} color={colors.primaryLight} />
+            <Text style={s.headerBadgeText}>¡Bienvenido/a a Gradly!</Text>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={s.titulo}>¿Dónde vivís?</Text>
             <Text style={s.subtitulo}>
-              Nos falta tu ubicación para mostrarte a empresas y universidades cercanas
-              a vos. Es obligatorio completarlo una sola vez.
+              Como sos usuario nuevo, antes de llevarte a tu nuevo perfil necesitamos
+              que completes este dato. Nos ayuda a mostrarte empresas y universidades
+              cercanas a vos, y solo se pide una vez.
             </Text>
 
             <UbicacionSelector value={valor} onChange={setValor} />

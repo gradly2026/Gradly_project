@@ -291,6 +291,44 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "¿Estás seguro de que deseas salir de tu cuenta?": "Are you sure you want to sign out of your account?",
   "¿Ya tienes cuenta?": "Already have an account?",
   "Área*": "Area*",
+
+  // ── Bandeja de reseñas de perfil (ResenasFeedback.tsx) ──
+  "Reseñas": "Reviews",
+  "Calificación": "Rating",
+  "Aún no hay reseñas.": "No reviews yet.",
+  "De una empresa": "From a company",
+  "De un estudiante": "From a student",
+  "Sin datos aún": "No data yet",
+  "Promedio de calificación de tus estudiantes en sus pasantías.":
+    "Average rating of your students in their internships.",
+  "Calificación y comentarios recibidos": "Rating and comments received",
+  "Promedio de tus estudiantes en sus pasantías": "Average of your students in their internships",
+  "Hace 1 día": "1 day ago",
+
+  // ── Guía de bienvenida (OnboardingTour) — recorrido automático del
+  // estudiante, sección por sección, hasta Mi Perfil. Empresa/universidad
+  // ya tenían sus propios pasos sembrados; estos son los que faltaban
+  // (estudiante es nuevo, y 'historial'/'perfil' de empresa y 'perfil' de
+  // universidad quedaban fuera del recorrido antes de este cambio). ──
+  "¡Bienvenido a Gradly! 🎓": "Welcome to Gradly! 🎓",
+  "Aquí verás vacantes o pasantías según el momento de tu práctica: cupos asegurados por tu universidad, pasantías afines a tu carrera, o vacantes cuando ya te gradúes.":
+    "Here you'll see job postings or internships depending on where you are in your internship: slots secured by your university, internships matching your major, or job postings once you graduate.",
+  "Mi Progreso": "My Progress",
+  "Sigue tus horas de práctica, tu pasantía activa, tus pagos y los cupos que tu universidad te asegure.":
+    "Track your internship hours, your active internship, your payments, and the slots your university secures for you.",
+  "Academia": "Academy",
+  "Cursos recomendados, guías rápidas y tips para tu desarrollo profesional.":
+    "Recommended courses, quick guides, and tips for your professional development.",
+  "Chatea con empresas y con tu universidad sobre tu práctica.":
+    "Chat with companies and your university about your internship.",
+  "Consulta tu certificación, tu CV, tus habilidades y ajusta tus preferencias.":
+    "Check your certification, your resume, your skills, and adjust your preferences.",
+  "Reencuentra a los estudiantes que finalizaron sus pasantías contigo y re-contáctalos para ofrecerles empleo.":
+    "Reconnect with students who finished their internships with you and reach out to offer them a job.",
+  "Consulta tu rango, tu plan, tu método de pago y tus estadísticas, y ajusta tus preferencias.":
+    "Check your rank, your plan, your payment method, and your stats, and adjust your preferences.",
+  "Consulta y edita los datos de tu institución, revisa tus estadísticas y ajusta tus preferencias.":
+    "Review and edit your institution's information, check your stats, and adjust your preferences.",
 };
 
 /**
@@ -430,6 +468,31 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "Pagos o transacciones completadas correctamente.": "Payments or transactions completed successfully.",
   "Vacantes activas disponibles en plataforma.": "Active job posts available on the platform.",
   "Volumen general de aplicaciones registradas.": "Overall volume of registered applications.",
+  // ── Modal de confirmación de acciones sensibles (banear/inactivar/eliminar) ──
+  "Banear usuario": "Ban user",
+  "Reactivar usuario": "Reactivate user",
+  "Desbanear usuario": "Unban user",
+  "Esta acción deshabilitará el acceso del usuario y registrará el motivo.":
+    "This will disable the user's access and record the reason.",
+  "Esta acción volverá a habilitar el acceso del usuario.":
+    "This will re-enable the user's access.",
+  "Banear": "Ban",
+  "Reactivar": "Reactivate",
+  "Desbanear": "Unban",
+  "Eliminar usuario": "Delete user",
+  "Se eliminará la cuenta de Auth y los documentos principales del usuario. Esta acción no se puede deshacer.":
+    "This will delete the Auth account and the user's main documents. This action cannot be undone.",
+  "Activar usuario": "Activate user",
+  "Marcar usuario como pendiente": "Mark user as pending",
+  "Inactivar usuario": "Deactivate user",
+  "El usuario recuperará el acceso normal a la plataforma.":
+    "The user will regain normal access to the platform.",
+  "El usuario quedará marcado como pendiente de revisión.":
+    "The user will be marked as pending review.",
+  "El usuario no podrá iniciar sesión mientras su cuenta esté inactiva.":
+    "The user won't be able to sign in while their account is inactive.",
+  "Activar": "Activate",
+  "Marcar pendiente": "Mark pending",
 };
 
 /**
@@ -613,6 +676,28 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Dirección no especificada": "Address not specified",
   "está escribiendo…": "is typing…",
   "están escribiendo…": "are typing…",
+
+  // ── Pestaña Jobs: 3 estados según situación de pasantía del estudiante ──
+  "Disponible al graduarte": "Available once you graduate",
+  "Otras pasantías para tu carrera": "Other internships for your major",
+  "Sin pasantías disponibles todavía": "No internships available yet",
+  "Aún no hay pasantías afines a tu carrera para autoservicio. Vuelve pronto, o espera a que tu universidad te asegure un cupo.":
+    "There are no self-serve internships matching your major yet. Check back soon, or wait for your university to secure a slot for you.",
+  "Gestionado por tu universidad": "Managed by your university",
+  "Tu carrera requiere que la práctica la gestione tu universidad.":
+    "Your major requires your internship to be managed by your university.",
+  "Pulso del mercado laboral": "Job market pulse",
+  "Vacantes activas por área, ahora mismo.": "Active job postings by area, right now.",
+  "Aún no hay vacantes activas para mostrar.": "There are no active job postings to show yet.",
+  "Esta pasantía ya no está disponible.": "This internship is no longer available.",
+  "Esta publicación no es una pasantía.": "This listing is not an internship.",
+  "Ya tienes una pasantía activa.": "You already have an active internship.",
+  "Ya culminaste tu práctica o pasantía: podés aplicar directamente a cualquier vacante disponible.":
+    "You've already completed your internship: you can apply directly to any available job posting.",
+  "Estás en tu pasantía activa. Podés ver el mercado de vacantes para ubicarte, pero solo podrás aplicar cuando la culmines o te gradúes.":
+    "You're in your active internship. You can browse the job market to get a sense of it, but you'll only be able to apply once you finish it or graduate.",
+  "Todavía no iniciás tu pasantía. Debajo verás los cupos que tu universidad ya te aseguró y pasantías de otras empresas a las que podés aplicar por tu cuenta.":
+    "You haven't started your internship yet. Below you'll see the slots your university already secured for you, plus internships from other companies you can apply to on your own.",
 };
 
 // ── Onboarding de dirección del estudiante (UbicacionSelector,
@@ -624,9 +709,12 @@ export const UBICACION_SEED_EN: Record<string, string> = {
   "Dirección específica (opcional)": "Specific address (optional)",
   "Colonia, calle, referencia…": "Neighborhood, street, landmark…",
   "Un último paso": "One last step",
+  "¡Bienvenido/a a Gradly!": "Welcome to Gradly!",
   "¿Dónde vivís?": "Where do you live?",
   "Nos falta tu ubicación para mostrarte a empresas y universidades cercanas a vos. Es obligatorio completarlo una sola vez.":
     "We're missing your location to show you nearby companies and universities. It's mandatory to complete this once.",
+  "Como sos usuario nuevo, antes de llevarte a tu nuevo perfil necesitamos que completes este dato. Nos ayuda a mostrarte empresas y universidades cercanas a vos, y solo se pide una vez.":
+    "Since you're a new user, before taking you to your new profile we need you to complete this. It helps us show you nearby companies and universities, and it's only asked once.",
   "Guardar y continuar": "Save and continue",
   "Elige tu departamento y municipio para continuar.": "Choose your department and municipality to continue.",
   "No se pudo guardar. Verifica tu conexión e intenta de nuevo.": "Couldn't save. Check your connection and try again.",

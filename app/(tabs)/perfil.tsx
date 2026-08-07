@@ -32,6 +32,7 @@ import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackgro
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import CertificadoGradly from '../../src/components/CertificadoGradly';
+import ResenasFeedback from '../../src/components/ResenasFeedback';
 import PerfilMasterDetail from '../../src/components/PerfilMasterDetail';
 import DisponibilidadSelector from '../../src/components/DisponibilidadSelector';
 import UbicacionSelector from '../../src/components/UbicacionSelector';
@@ -394,6 +395,20 @@ export default function PerfilTab() {
                 calificacion={Number(perfil?.calificacion_promedio ?? 0)}
                 pasantias={Number((perfil as any)?.pasantias_completadas ?? 0)}
                 nombre={perfil?.nombre_completo}
+                theme={isDark ? 'dark' : 'light'}
+              />
+            ),
+          },
+          {
+            id: 'resenas',
+            title: t('resenas_titulo'),
+            subtitle: t('resenas_subtitulo'),
+            icon: 'chatbox-ellipses-outline',
+            tone: 'purple',
+            render: () => (
+              <ResenasFeedback
+                entidadId={user?.uid ?? ''}
+                entidadRol="estudiante"
                 theme={isDark ? 'dark' : 'light'}
               />
             ),

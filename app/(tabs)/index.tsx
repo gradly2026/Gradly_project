@@ -11,10 +11,15 @@ import {
   where,
 } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { aplicarAVacante, calcularNivelEstudiante, estudianteHabilitadoParaVacantes } from '../../src/services/pasantiaService';
+import {
+  aplicarAPasantiaIndependiente,
+  aplicarAVacante,
+  estudianteHabilitadoParaVacantes,
+} from '../../src/services/pasantiaService';
 import { abrirChatDirectoEmpresaEstudiante } from '../../src/services/chatService';
 import { esVacanteAfin, puntuarVacante } from '../../src/data/areas';
-import { textoSalario } from '../../src/utils/cupos';
+import { hayCupos, textoSalario } from '../../src/utils/cupos';
+import { cargarOverridesCarreras, mensajeZonaRoja, zonaDeCarrera } from '../../src/data/carreras';
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +42,8 @@ import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import VacanteDetailModal from '../../src/components/VacanteDetailModal';
 import SelloEmpresa from '../../src/components/SelloEmpresa';
+import TableroCupos from '../../src/components/TableroCupos';
+import MercadoLaboralStats from '../../src/components/MercadoLaboralStats';
 import { AutoText, AutoText as Text, AutoTextInput as TextInput, useAutoText } from '../../src/components/AutoText';
 import { calcularRango, type RangoTier } from '../../src/services/feedbackService';
 
@@ -69,6 +76,10 @@ interface Vacante {
   premium?: boolean;
   /** 'pasantia' se maneja por matchmaking universidad↔empresa; el feed individual solo muestra 'vacante' (o legado sin categoría). */
   categoria?: 'pasantia' | 'vacante';
+  /** Cupos declarados por la empresa (ver `utils/cupos.ts`) — usados para no ofrecer en autoservicio una pasantía ya sin plazas libres. */
+  cupos?: number | null;
+  cupos_reclamados?: number | null;
+  contratados_count?: number | null;
 }
 
 // ─────────────────────────────────────────────
@@ -85,11 +96,6 @@ const FILTROS = [
   { key: 'Remoto',      label: 'Remoto' },
   { key: 'Presencial',  label: 'Presencial' },
   { key: 'Híbrido',     label: 'Híbrido' },
-  { key: 'Tecnología',  label: 'Tecnología' },
-  { key: 'Diseño',      label: 'Diseño' },
-  { key: 'Marketing',   label: 'Marketing' },
-  { key: 'Finanzas',    label: 'Finanzas' },
-  { key: 'Salud',       label: 'Salud' },
 ];
 
 const HOY = new Date();
@@ -116,25 +122,33 @@ function VacanteCard({
   onVerDetalle,
   applying,
   empresaTier,
+  readOnly,
 }: {
   vacante: Vacante;
   yaAplico: boolean;
   estadoAplicacion: string;
-  onAplicar: (v: Vacante) => void;
+  onAplicar?: (v: Vacante) => void;
   onVerDetalle: (v: Vacante) => void;
   applying: boolean;
   empresaTier?: RangoTier;
+  /** Solo lectura: puede navegar y ver el detalle, pero el botón Aplicar
+   * queda deshabilitado (estudiante en pasantía activa, aún no graduado). */
+  readOnly?: boolean;
 }) {
   const { styles } = useThemedStyles();
   const initial = vacante.nombre_empresa?.[0]?.toUpperCase() ?? '?';
 
-  const btnColor = yaAplico
+  const btnColor = readOnly
+    ? COLORS.backgroundSurface
+    : yaAplico
     ? estadoAplicacion === 'contratado' ? COLORS.success
     : estadoAplicacion === 'rechazado' ? COLORS.error
     : COLORS.warning
     : COLORS.primaryDark;
 
-  const btnLabel = yaAplico
+  const btnLabel = readOnly
+    ? 'Disponible al graduarte'
+    : yaAplico
     ? estadoAplicacion === 'pendiente'  ? 'Pendiente'
     : estadoAplicacion === 'en_revision'? 'En revisión'
     : estadoAplicacion === 'entrevista' ? 'Entrevista'
@@ -216,14 +230,19 @@ function VacanteCard({
       <View style={styles.cardFooter}>
         <Text style={styles.dateText}>{relativeTime(vacante.fecha_publicacion)}</Text>
         <JellyButton
-          style={[styles.aplicarBtn, { backgroundColor: btnColor }, applying && { opacity: 0.6 }]}
+          style={[
+            styles.aplicarBtn,
+            { backgroundColor: btnColor },
+            applying && { opacity: 0.6 },
+            readOnly && { opacity: 0.7 },
+          ]}
           contentStyle={{ paddingVertical: 8, paddingHorizontal: 18 }}
-          onPress={() => !yaAplico && onAplicar(vacante)}
-          disabled={yaAplico || applying}
+          onPress={() => !readOnly && !yaAplico && onAplicar?.(vacante)}
+          disabled={readOnly || yaAplico || applying}
         >
           {applying
             ? <ActivityIndicator size="small" color={COLORS.textPrimary} />
-            : <Text style={styles.aplicarBtnText}>{btnLabel}</Text>
+            : <Text style={[styles.aplicarBtnText, readOnly && { color: COLORS.textMuted }]}>{btnLabel}</Text>
           }
         </JellyButton>
       </View>
@@ -276,6 +295,17 @@ export default function FeedVacantes() {
   } | null>(null);
   const [perfilCargado, setPerfilCargado] = useState(false);
 
+  // ── ¿Tiene una pasantía activa en curso? (distinto de "graduado") ──
+  // No hay un solo campo booleano para esto: se deriva de las 2 vías que NO
+  // se enteran ya por `aplicaciones` (que este archivo ya escucha más abajo):
+  // acuerdo de grupo aprobado (`solicitudes_practicas`) y cupo tomado
+  // (`asignaciones_cupo`). Cada una con su propio flag de carga para no
+  // mostrar el estado equivocado un instante antes de que resuelvan.
+  const [tieneAcuerdoAprobado, setTieneAcuerdoAprobado] = useState(false);
+  const [acuerdoCargado, setAcuerdoCargado] = useState(false);
+  const [tieneCupoTomado, setTieneCupoTomado] = useState(false);
+  const [cupoCargado, setCupoCargado] = useState(false);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const phraseOpacity = useRef(new Animated.Value(1)).current;
   const toastOpacity  = useRef(new Animated.Value(0)).current;
@@ -327,6 +357,57 @@ export default function FeedVacantes() {
   const habilitadoParaVacantes = useMemo(
     () => estudianteHabilitadoParaVacantes(perfilEstudiante),
     [perfilEstudiante],
+  );
+
+  // ── Firebase: acuerdo de grupo aprobado (pasantía activa vía matchmaking) ──
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'solicitudes_practicas'),
+      where('estudianteIds', 'array-contains', user.uid),
+      where('estado', '==', 'aprobado'),
+    );
+    const unsub = onSnapshot(
+      q,
+      snap => { setTieneAcuerdoAprobado(!snap.empty); setAcuerdoCargado(true); },
+      () => { setTieneAcuerdoAprobado(false); setAcuerdoCargado(true); },
+    );
+    return unsub;
+  }, [user]);
+
+  // ── Firebase: cupo tomado (pasantía activa vía reparto de cupos) ──
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'asignaciones_cupo'),
+      where('estudianteId', '==', user.uid),
+      where('estado', '==', 'tomado'),
+    );
+    const unsub = onSnapshot(
+      q,
+      snap => { setTieneCupoTomado(!snap.empty); setCupoCargado(true); },
+      () => { setTieneCupoTomado(false); setCupoCargado(true); },
+    );
+    return unsub;
+  }, [user]);
+
+  // Overrides de Zona Roja (config/carreras) — sin esto el catálogo estático
+  // manda siempre, aunque un admin haya reclasificado una carrera en vivo.
+  useEffect(() => { void cargarOverridesCarreras(); }, []);
+
+  // ── ¿Tiene una pasantía activa ahora mismo? (distinto de "graduado") ──
+  const tienePasantiaActiva = useMemo(
+    () => Object.values(aplicaciones).includes('contratado') || tieneAcuerdoAprobado || tieneCupoTomado,
+    [aplicaciones, tieneAcuerdoAprobado, tieneCupoTomado],
+  );
+
+  // Carrera del estudiante + si cae en Zona Roja (Salud/Educación/Derecho):
+  // esos estudiantes NUNCA ven la sección de autoservicio a pasantías, sin
+  // excepción — siguen dependiendo 100% de lo que les asegure su universidad.
+  const miCarrera = perfilEstudiante?.carrera ?? (userProfile as any)?.carrera;
+  const zonaRoja = useMemo(
+    () => (miCarrera ? zonaDeCarrera(miCarrera) === 'roja' : false),
+    [miCarrera],
   );
 
   // ── Sello de prestigio de la empresa por vacante ────────────────
@@ -441,6 +522,39 @@ export default function FeedVacantes() {
     return res;
   }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, userProfile]);
 
+  // ── Autoservicio de pasantías: para quien AÚN no tiene pasantía activa,
+  // pasantías de OTRAS empresas afines a su carrera — camino aparte del que
+  // le aseguró su universidad (ver <TableroCupos/> en el render). Vacío por
+  // completo si es Zona Roja, o si ya está graduado/en pasantía (ese caso lo
+  // cubren las otras 2 ramas del render).
+  const pasantiasDisponibles = useMemo(() => {
+    if (habilitadoParaVacantes || tienePasantiaActiva || zonaRoja) return [];
+
+    let res = vacantes.filter(v =>
+      (v.categoria === 'pasantia' || (!v.categoria && v.tipo === 'Pasantía')) && hayCupos(v),
+    );
+
+    if (miCarrera) res = res.filter(v => esVacanteAfin(miCarrera, v));
+
+    const misSkills = perfilEstudiante?.skills ?? [];
+    res = [...res].sort(
+      (a, b) => puntuarVacante(miCarrera, misSkills, b) - puntuarVacante(miCarrera, misSkills, a),
+    );
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      res = res.filter(v =>
+        v.titulo.toLowerCase().includes(q) ||
+        v.nombre_empresa.toLowerCase().includes(q) ||
+        v.area?.toLowerCase().includes(q),
+      );
+    }
+    if (filtroActivo !== 'todas') {
+      res = res.filter(v => v.modalidad === filtroActivo || v.area === filtroActivo);
+    }
+    return res;
+  }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, miCarrera, habilitadoParaVacantes, tienePasantiaActiva, zonaRoja]);
+
   // ── Aplicar a vacante ────────────────────────────────────────────
   const handleAplicar = useCallback(async (vacante: Vacante) => {
     if (!user) { Alert.alert('Debes iniciar sesión.'); return; }
@@ -471,6 +585,33 @@ export default function FeedVacantes() {
     }
   }, [user, userProfile, showToast, habilitadoParaVacantes]);
 
+  // ── Aplicar a una pasantía por cuenta propia (autoservicio) ──────
+  const handleAplicarPasantia = useCallback(async (vacante: Vacante) => {
+    if (!user) { Alert.alert('Debes iniciar sesión.'); return; }
+
+    setApplying(vacante.id);
+    try {
+      await aplicarAPasantiaIndependiente(
+        user.uid,
+        vacante.id,
+        vacante.empresa_id,
+        {
+          nombre_completo: (userProfile as any)?.nombre_completo ?? '',
+          foto_url:        (userProfile as any)?.foto_url ?? '',
+          universidad_id:  (userProfile as any)?.universidad_id ?? '',
+          carrera:         miCarrera,
+        },
+      );
+      showToast();
+    } catch (err: any) {
+      if (!err.message?.includes('Ya aplicaste')) {
+        Alert.alert('Error', err.message ?? 'No se pudo enviar tu aplicación.');
+      }
+    } finally {
+      setApplying(null);
+    }
+  }, [user, userProfile, showToast, miCarrera]);
+
   // ── Contactar empresa (chat directo estudiante↔empresa) ──────────
   const handleContactarEmpresa = useCallback(async (vacante: Vacante) => {
     if (!user?.uid || !vacante.empresa_id) {
@@ -493,32 +634,30 @@ export default function FeedVacantes() {
     }
   }, [user, userProfile, router]);
 
-  // ── Empty state ───────────────────────────────────────────────────
-  const EmptyState = () => (
+  // ── Empty state (parametrizable: se reutiliza en los 3 estados del feed) ──
+  const EmptyState = ({
+    icon = 'briefcase-outline',
+    titulo = 'Sin resultados',
+    desc = 'Prueba cambiando el filtro o la búsqueda.',
+  }: { icon?: keyof typeof Ionicons.glyphMap; titulo?: string; desc?: string }) => (
     <View style={styles.empty}>
-      <Ionicons name="briefcase-outline" size={56} color={COLORS.border} />
-      <Text style={styles.emptyTitle}>Sin resultados</Text>
-      <Text style={styles.emptyDesc}>Prueba cambiando el filtro o la búsqueda.</Text>
+      <Ionicons name={icon} size={56} color={COLORS.border} />
+      <Text style={styles.emptyTitle}>{titulo}</Text>
+      <Text style={styles.emptyDesc}>{desc}</Text>
     </View>
   );
 
-  // ── Bloqueado: aún no culmina su práctica/pasantía ni está graduado ──
-  const nivelActual = calcularNivelEstudiante(
-    perfilEstudiante?.horas_aprobadas ?? 0,
-    perfilEstudiante?.horas_objetivo ?? 0,
-  );
-  const BloqueadoState = () => (
-    <View style={styles.empty}>
-      <GlassCard style={{ width: '100%', maxWidth: 420 }} contentStyle={{ padding: 20, alignItems: 'center', gap: 10 }}>
-        <Ionicons name="lock-closed-outline" size={40} color={colors.primaryLight} />
-        <Text style={[styles.emptyTitle, { textAlign: 'center' }]}>Vacantes bloqueadas</Text>
-        <Text style={[styles.emptyDesc, { textAlign: 'center' }]}>
-          Las vacantes se habilitan cuando culminas tu práctica o pasantía, o cuando ya estás graduado.
-          {perfilEstudiante?.horas_objetivo
-            ? ` Llevas ${nivelActual.porcentaje}% de tus horas requeridas.`
-            : ''}
-        </Text>
-      </GlassCard>
+  // Aviso legal de Zona Roja para la carrera del estudiante (si aplica) —
+  // reutiliza el mismo texto que ya se le muestra a la universidad, en vez
+  // de inventar copy nuevo para este caso.
+  const avisoZonaRoja = miCarrera ? mensajeZonaRoja(miCarrera) : null;
+
+  // ── Nota de contexto: explica QUÉ está viendo el estudiante y por qué,
+  // según su situación de pasantía. Va encima del feed en los 3 estados. ──
+  const EstadoBanner = ({ texto }: { texto: string }) => (
+    <View style={styles.estadoBanner}>
+      <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} />
+      <Text style={styles.estadoBannerText}>{texto}</Text>
     </View>
   );
 
@@ -543,8 +682,11 @@ export default function FeedVacantes() {
           <Text style={styles.fecha}>{fecha}</Text>
         </View>
 
-        {/* Búsqueda y filtros (solo si las vacantes están habilitadas) */}
-        {habilitadoParaVacantes && (
+        {/* Búsqueda y filtros: hay algo que buscar en los 3 estados del feed
+            (vacantes, vacantes en modo lectura, o pasantías de autoservicio) —
+            antes solo se mostraba si `habilitadoParaVacantes`. Se oculta solo
+            para Zona Roja, que nunca tiene nada que buscar en autoservicio. */}
+        {(habilitadoParaVacantes || tienePasantiaActiva || !zonaRoja) && (
           <>
         <View style={styles.searchWrap}>
           <Ionicons name="search-outline" size={18} color={COLORS.textMuted} style={{ marginRight: 8 }} />
@@ -621,13 +763,12 @@ export default function FeedVacantes() {
       </View>
 
       {/* ── FEED ── */}
-      {cargando || !perfilCargado ? (
+      {cargando || !perfilCargado || !acuerdoCargado || !cupoCargado ? (
         <View style={styles.loader}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
-      ) : !habilitadoParaVacantes ? (
-        <BloqueadoState />
-      ) : (
+      ) : habilitadoParaVacantes ? (
+        // ── Graduado: feed completo, aplicar habilitado (sin cambios) ──
         <FlatList
           data={filteredVacantes}
           renderItem={({ item }) => (
@@ -646,7 +787,94 @@ export default function FeedVacantes() {
           keyboardShouldPersistTaps="handled"
           style={[{ flex: 1 }, webScrollStyle]}
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100, maxWidth: 640, alignSelf: 'center', width: '100%', flexGrow: 1 }}
+          ListHeaderComponent={
+            <EstadoBanner texto="Ya culminaste tu práctica o pasantía: podés aplicar directamente a cualquier vacante disponible." />
+          }
           ListEmptyComponent={<EmptyState />}
+          keyExtractor={item => item.id}
+        />
+      ) : tienePasantiaActiva ? (
+        // ── En pasantía activa: mercado en modo lectura + pulso del mercado ──
+        <FlatList
+          data={filteredVacantes}
+          renderItem={({ item }) => (
+            <VacanteCard
+              vacante={item}
+              yaAplico={item.id in aplicaciones}
+              estadoAplicacion={aplicaciones[item.id] ?? ''}
+              onVerDetalle={setVacanteDetalle}
+              applying={false}
+              empresaTier={empresaTiers[item.empresa_id]}
+              readOnly
+            />
+          )}
+          showsVerticalScrollIndicator
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          style={[{ flex: 1 }, webScrollStyle]}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100, maxWidth: 640, alignSelf: 'center', width: '100%', flexGrow: 1 }}
+          ListHeaderComponent={
+            <>
+              <EstadoBanner texto="Estás en tu pasantía activa. Podés ver el mercado de vacantes para ubicarte, pero solo podrás aplicar cuando la culmines o te gradúes." />
+              <MercadoLaboralStats vacantes={vacantes} />
+            </>
+          }
+          ListEmptyComponent={<EmptyState />}
+          keyExtractor={item => item.id}
+        />
+      ) : (
+        // ── Sin pasantía todavía: cupos asegurados por su universidad +
+        // autoservicio a pasantías afines a su carrera ──
+        <FlatList
+          data={pasantiasDisponibles}
+          renderItem={({ item }) => (
+            <VacanteCard
+              vacante={item}
+              yaAplico={item.id in aplicaciones}
+              estadoAplicacion={aplicaciones[item.id] ?? ''}
+              onAplicar={handleAplicarPasantia}
+              onVerDetalle={setVacanteDetalle}
+              applying={applying === item.id}
+              empresaTier={empresaTiers[item.empresa_id]}
+            />
+          )}
+          showsVerticalScrollIndicator
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          style={[{ flex: 1 }, webScrollStyle]}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100, maxWidth: 640, alignSelf: 'center', width: '100%', flexGrow: 1 }}
+          ListHeaderComponent={
+            <>
+              {!zonaRoja && (
+                <EstadoBanner texto="Todavía no iniciás tu pasantía. Debajo verás los cupos que tu universidad ya te aseguró y pasantías de otras empresas a las que podés aplicar por tu cuenta." />
+              )}
+              {user?.uid && (
+                <TableroCupos
+                  estudianteId={user.uid}
+                  universidadId={perfilEstudiante?.universidad_id ?? (userProfile as any)?.universidad_id}
+                  grupoId={perfilEstudiante?.grupo_id}
+                  estudianteNombre={(userProfile as any)?.nombre_completo ?? ''}
+                />
+              )}
+              {!zonaRoja && (
+                <Text style={styles.pasantiasSectionLabel}>Otras pasantías para tu carrera</Text>
+              )}
+            </>
+          }
+          ListEmptyComponent={
+            zonaRoja ? (
+              <EmptyState
+                icon="shield-checkmark-outline"
+                titulo={avisoZonaRoja?.titulo ?? 'Gestionado por tu universidad'}
+                desc={avisoZonaRoja?.cuerpo ?? 'Tu carrera requiere que la práctica la gestione tu universidad.'}
+              />
+            ) : (
+              <EmptyState
+                titulo="Sin pasantías disponibles todavía"
+                desc="Aún no hay pasantías afines a tu carrera para autoservicio. Vuelve pronto, o espera a que tu universidad te asegure un cupo."
+              />
+            )
+          }
           keyExtractor={item => item.id}
         />
       )}
@@ -829,6 +1057,20 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   emptyDesc: {
     fontSize: 13, fontFamily: FONTS.interRegular,
     color: COLORS.textMuted, textAlign: 'center', lineHeight: 20,
+  },
+  pasantiasSectionLabel: {
+    fontSize: 13, fontFamily: FONTS.soraSemiBold, color: COLORS.textPrimary,
+    marginBottom: 8, marginTop: 4,
+  },
+  estadoBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: COLORS.primary12, borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.border,
+    padding: 12, marginBottom: 14,
+  },
+  estadoBannerText: {
+    flex: 1, fontSize: 12.5, fontFamily: FONTS.interRegular,
+    color: COLORS.textSecondary, lineHeight: 18,
   },
 
   // ── Toast

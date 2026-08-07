@@ -1710,6 +1710,20 @@ export default function ChatThread({
         <Ionicons name="trash-outline" size={20} color={C.textMuted} />
       </TouchableOpacity>
 
+      {/* Reportar a la contraparte — botón explícito (antes solo estaba
+          escondido en el menú de mantener presionado un mensaje). En grupos
+          el mismo flujo vive en "Detalles del grupo" → tocar un integrante,
+          porque ahí sí hay a quién reportar sin ambigüedad. */}
+      {!isGroup && peerUid ? (
+        <TouchableOpacity
+          onPress={() => setReportTarget({ id: peerUid, nombre: peerName || "Usuario" })}
+          style={styles.iconBtn}
+          accessibilityLabel="Reportar usuario"
+        >
+          <Ionicons name="flag-outline" size={20} color={C.textMuted} />
+        </TouchableOpacity>
+      ) : null}
+
       {/* El handshake de horario solo aplica al flujo de pasantía uni↔empresa,
           no a los grupos ni a los chats directos de recontratación. */}
       {isGroup ? (
@@ -2299,6 +2313,25 @@ export default function ChatThread({
                   setAccionMiembro(null);
                   setShowGroupInfo(false);
                   if (m) void iniciarChat({ uid: m.uid, nombre: m.nombre, rol: m.rol });
+                }}
+              />
+              <MenuOption
+                icon="flag-outline"
+                label="Reportar"
+                danger
+                onPress={() => {
+                  const m = accionMiembro;
+                  setAccionMiembro(null);
+                  // Mismo cuidado que "Ver perfil" arriba: cerrar el Modal de
+                  // "Detalles del grupo" y abrir otro Modal (ReportarUsuarioModal)
+                  // en el mismo tick falla silenciosamente en iOS.
+                  setShowGroupInfo(false);
+                  if (m) {
+                    setTimeout(
+                      () => setReportTarget({ id: m.uid, nombre: m.nombre }),
+                      Platform.OS === "ios" ? 350 : 0,
+                    );
+                  }
                 }}
               />
             </View>

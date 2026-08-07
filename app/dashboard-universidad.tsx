@@ -24,7 +24,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Clipboard from 'expo-clipboard';
 import { firebaseConfig } from '../src/config/firebaseConfig';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import FloatingTopBar from '../src/components/FloatingTopBar';
 import PeriodoPracticasField, {
@@ -54,6 +54,7 @@ import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import UniversidadHomeCards from '../src/components/UniversidadHomeCards';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
+import { PromedioSimple } from '../src/components/ResenasFeedback';
 import { VacantesDisponibles } from '../src/components/Matchmaking';
 import { PerfilStatsUniversidad, RedGradlyBanner } from '../src/components/NetworkStats';
 import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTour';
@@ -305,8 +306,9 @@ const MENU: { key: SeccionUni; label: string; icon: keyof typeof Ionicons.glyphM
   { key: 'aprobar',      label: 'Prácticas',         icon: 'ribbon-outline' },
 ];
 
-// ── Onboarding (guía por globos) ──────────────────────────────────
-const TOUR_CLAVES: SeccionUni[] = ['inicio', 'estudiantes', 'aprobar'];
+// ── Onboarding (guía por globos) — mismo orden que MENU, terminando en
+// 'perfil' (Mi Perfil es siempre la última parada del recorrido). ──
+const TOUR_CLAVES: SeccionUni[] = ['inicio', 'estudiantes', 'aprobar', 'perfil'];
 const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
   inicio: {
     titulo: '¡Bienvenido a tu panel! 🎓',
@@ -555,6 +557,15 @@ export default function DashboardUniversidad() {
 
   // ── Onboarding ────────────────────────────────────────────────────
   const tour = useOnboarding(user?.uid, seccion, TOUR_CLAVES);
+  // "Continuar" marca el paso actual visto y avanza automáticamente a la
+  // siguiente sección del recorrido — el usuario ya no tiene que ir tocando
+  // pestañas por su cuenta para que reaparezca el globo de guía.
+  const handleTourContinuar = useCallback(async () => {
+    const idxActual = TOUR_CLAVES.indexOf(seccion);
+    const siguiente = !tour.esUltimo ? TOUR_CLAVES[idxActual + 1] : undefined;
+    await tour.marcar();
+    if (siguiente) setSeccion(siguiente);
+  }, [seccion, tour]);
 
   // ── Items del menú flotante ("Mensajes" y "Mi Perfil" al final) ──
   type NavKey = SeccionUni | 'mensajes' | 'perfil';
@@ -701,6 +712,19 @@ export default function DashboardUniversidad() {
               tone: 'purple',
               render: () => <PerfilStatsUniversidad universidadId={user!.uid} />,
             },
+            {
+              id: 'resenas',
+              title: 'Calificación',
+              subtitle: 'Promedio de tus estudiantes en sus pasantías',
+              icon: 'star-outline',
+              tone: 'orange',
+              render: () => (
+                <PromedioSimple
+                  promedio={(perfil as any)?.calificacion_estudiantes_promedio ?? null}
+                  theme="dark"
+                />
+              ),
+            },
           ]}
         />
       );
@@ -780,7 +804,7 @@ export default function DashboardUniversidad() {
         paso={tour.paso}
         total={tour.total}
         esUltimo={tour.esUltimo}
-        onContinuar={tour.marcar}
+        onContinuar={handleTourContinuar}
         onSaltar={tour.saltar}
       />
 
@@ -1286,6 +1310,9 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
             activo:          true,
             grupo_id:        grupoId,
             universidad_id:  uid,
+            // Habilita la guía de bienvenida en su primer login (ver OnboardingTour.tsx).
+            esPrimerIngreso: true,
+            tourVisto:       {},
           });
 
           await setDoc(doc(db, 'perfiles_estudiantes', uidEst), {
