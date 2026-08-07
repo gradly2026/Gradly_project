@@ -13,6 +13,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { BarChart } from "react-native-chart-kit";
 import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
 import ProfileViewerModal, { type ProfileTipo } from "../../src/components/ProfileViewerModal";
 import { signOut } from "firebase/auth";
@@ -35,6 +36,8 @@ import { useAuth } from "../../src/context/AuthContext";
 import {
   backfillAlianzasCalificaciones,
   deleteUserComplete as deleteUserCompleteAction,
+  deshabilitarVacanteAdmin as deshabilitarVacanteAdminAction,
+  eliminarVacanteAdmin as eliminarVacanteAdminAction,
   resolveReport as resolveReportAction,
   setUserApproval as setUserApprovalAction,
   setUserBan as setUserBanAction,
@@ -45,6 +48,8 @@ import { useTranslation } from "../../src/context/TranslationContext";
 import { useAuthGuard } from "../../src/hooks/useAuthGuard";
 import { translateSync } from "../../src/services/translationService";
 import { useAdminTheme } from "../../src/styles/adminStyles";
+import { textoHorario } from "../../src/data/disponibilidad";
+import { textoCupos, textoSalario } from "../../src/utils/cupos";
 
 // Convierte un Timestamp de Firestore (o string) a ISO para los tipos del panel.
 const tsToIso = (v: any): string => {
@@ -54,7 +59,7 @@ const tsToIso = (v: any): string => {
   return "";
 };
 
-type AdminPage = "resumen" | "aprobaciones" | "usuarios" | "reportes" | "notificaciones" | "roles" | "logs" | "config";
+type AdminPage = "resumen" | "aprobaciones" | "usuarios" | "reportes" | "vacantes" | "suscripciones" | "notificaciones" | "roles" | "logs" | "config";
 type Role = "admin" | "universidad" | "empresa" | "estudiante";
 type PermissionRole = Exclude<Role, "estudiante">;
 type Status = "active" | "pending" | "inactive";
@@ -132,7 +137,49 @@ type ReportCase = {
   created_at: string;
 };
 
-type DataIssueKey = "usuarios" | "metricas" | "logs" | "notificaciones" | "permisos";
+// Vista de admin sobre un doc de `vacantes`: campos comunes ya normalizados
+// para listar/filtrar, más `raw` con el documento completo tal cual viene de
+// Firestore (así el detalle puede mostrar TODOS los campos sin que este tipo
+// tenga que enumerarlos uno por uno).
+type AdminVacante = {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  empresa_id: string;
+  nombre_empresa: string;
+  logo_empresa_url: string;
+  tipo: string;
+  categoria: string;
+  modalidad: string;
+  area: string;
+  activa: boolean;
+  cupos: number | null;
+  cupos_reclamados: number | null;
+  aplicantes_count: number | null;
+  contratados_count: number | null;
+  fecha_publicacion: string;
+  /** Presente solo si un admin ya actuó sobre esta publicación. */
+  estado_moderacion: "deshabilitada" | "eliminada" | null;
+  motivo_moderacion: string | null;
+  raw: Record<string, any>;
+};
+
+/** Un cobro de suscripción a un plan de Gradly (colección `transacciones`, tipo === 'suscripcion'). */
+type AdminSuscripcionPago = {
+  id: string;
+  empresaId: string;
+  empresaNombre: string;
+  plan: string;
+  cicloFacturacion: string;
+  monto: number;
+  concepto: string;
+  estado: string;
+  fecha: string;
+};
+
+type DataIssueKey = "usuarios" | "metricas" | "logs" | "notificaciones" | "permisos" | "suscripciones";
+
+const MESES_ADMIN = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 const ROLE_ORDER: Role[] = ["admin", "universidad", "empresa", "estudiante"];
 const PERMISSION_ROLES: PermissionRole[] = ["admin", "universidad", "empresa"];
@@ -209,6 +256,36 @@ function adminDetailedErrorMessage(error: any, subject: string): string {
     .join("\n");
 
   return extras ? `${base}\n\nDetalle: ${extras}` : base;
+}
+
+// Convierte cualquier valor crudo de Firestore (Timestamp, arreglo, objeto,
+// booleano...) a texto legible para la "ficha técnica completa" del detalle
+// de vacante — garantiza que TODO campo del documento se pueda mostrar, sin
+// importar su tipo.
+function formatRawValue(value: any): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value?.toDate === "function") {
+    try {
+      return value.toDate().toLocaleString();
+    } catch {
+      return String(value);
+    }
+  }
+  if (typeof value === "boolean") return value ? "Sí" : "No";
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "—";
+    return value
+      .map((item) => (item && typeof item === "object" ? JSON.stringify(item) : String(item)))
+      .join(", ");
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
 }
 
 function showAdminAlert(title: string, message: string) {
@@ -317,6 +394,10 @@ export default function AdminPreview() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsAttempted, setLogsAttempted] = useState(false);
 
+  const [suscripciones, setSuscripciones] = useState<AdminSuscripcionPago[]>([]);
+  const [suscripcionesLoading, setSuscripcionesLoading] = useState(false);
+  const [suscripcionesAttempted, setSuscripcionesAttempted] = useState(false);
+
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsAttempted, setNotificationsAttempted] = useState(false);
@@ -339,6 +420,7 @@ export default function AdminPreview() {
     if (role === "admin") return;
     setDetailOpen(false);
     setReportDetailOpen(false);
+    setVacanteDetailOpen(false);
     setTimeout(() => setVerPerfilPublico({ tipo: role, id }), Platform.OS === "ios" ? 350 : 0);
   };
   const [selectedReport, setSelectedReport] = useState<ReportCase | null>(null);
@@ -354,6 +436,24 @@ export default function AdminPreview() {
   const [banReason, setBanReason] = useState("");
   const [approvalReason, setApprovalReason] = useState("");
   const [reportResolution, setReportResolution] = useState("");
+
+  // Microsección "Vacantes publicadas" (drill-down desde Operación de
+  // plataforma). La lista completa se llena en `fetchPlatformMetrics` (misma
+  // lectura que ya se hacía para el conteo), igual que `reportCases`.
+  const [vacantesList, setVacantesList] = useState<AdminVacante[]>([]);
+  const [vacanteSearch, setVacanteSearch] = useState("");
+  const [vacanteTipoFilter, setVacanteTipoFilter] = useState<"todos" | "Pasantía" | "Vacante">("todos");
+  const [vacanteEstadoFilter, setVacanteEstadoFilter] = useState<"todos" | "activa" | "inactiva">("todos");
+  const [selectedVacante, setSelectedVacante] = useState<AdminVacante | null>(null);
+  const [vacanteDetailOpen, setVacanteDetailOpen] = useState(false);
+  const [vacanteActionSaving, setVacanteActionSaving] = useState(false);
+  // Confirmación de Deshabilitar/Eliminar con motivo obligatorio — modal
+  // propio dedicado (ver comentario en confirmDisableVacante).
+  const [vacanteConfirmAction, setVacanteConfirmAction] = useState<{
+    v: AdminVacante;
+    accion: "deshabilitar" | "eliminar";
+  } | null>(null);
+  const [vacanteConfirmReason, setVacanteConfirmReason] = useState("");
 
   // Modal de confirmación genérico para acciones sensibles (banear, inactivar,
   // eliminar). NO usar Alert.alert aquí: react-native-web no implementa
@@ -432,6 +532,11 @@ export default function AdminPreview() {
     setReportDetailOpen(true);
   };
 
+  const openVacanteDetail = (v: AdminVacante) => {
+    setSelectedVacante(v);
+    setVacanteDetailOpen(true);
+  };
+
   const navigateToUserList = useCallback(
     (options?: {
       role?: Role;
@@ -465,6 +570,18 @@ export default function AdminPreview() {
     },
     [],
   );
+
+  const navigateToVacanteList = useCallback(() => {
+    setPage("vacantes");
+    setVacanteSearch("");
+    setVacanteTipoFilter("todos");
+    setVacanteEstadoFilter("todos");
+    setVacanteDetailOpen(false);
+  }, []);
+
+  const navigateToSuscripciones = useCallback(() => {
+    setPage("suscripciones");
+  }, []);
 
   const logAction = useCallback(
     async (action: string, entityType: string, entityId: string | null, payload: any) => {
@@ -554,9 +671,42 @@ export default function AdminPreview() {
         (d) => !!(d.data() as any).activa,
       ).length;
 
+      const mappedVacantes: AdminVacante[] = (vacantesSnap?.docs ?? [])
+        .map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            titulo: String(data.titulo ?? "Sin título"),
+            descripcion: String(data.descripcion ?? ""),
+            empresa_id: data.empresa_id ? String(data.empresa_id) : "",
+            nombre_empresa: String(data.nombre_empresa ?? "Empresa"),
+            logo_empresa_url: data.logo_empresa_url ? String(data.logo_empresa_url) : "",
+            tipo: String(data.tipo ?? ""),
+            categoria: String(data.categoria ?? ""),
+            modalidad: String(data.modalidad ?? ""),
+            area: String(data.area ?? ""),
+            activa: data.activa !== false,
+            cupos: typeof data.cupos === "number" ? data.cupos : null,
+            cupos_reclamados: typeof data.cupos_reclamados === "number" ? data.cupos_reclamados : null,
+            aplicantes_count: typeof data.aplicantes_count === "number" ? data.aplicantes_count : null,
+            contratados_count: typeof data.contratados_count === "number" ? data.contratados_count : null,
+            fecha_publicacion: tsToIso(data.fecha_publicacion),
+            estado_moderacion:
+              data.estado_moderacion === "deshabilitada" || data.estado_moderacion === "eliminada"
+                ? data.estado_moderacion
+                : null,
+            motivo_moderacion: data.motivo_moderacion ? String(data.motivo_moderacion) : null,
+            raw: data,
+          };
+        })
+        .sort((a, b) => (b.fecha_publicacion || "").localeCompare(a.fecha_publicacion || ""));
+
+      // Solo suscripciones (pagos de planes de Gradly) — las transacciones de
+      // pasantías/pagos a estudiantes son otro flujo, ver renderSuscripciones().
       const txCompletadas = (transaccionesSnap?.docs ?? []).filter((d) => {
-        const estado = String((d.data() as any).estado ?? "").toLowerCase();
-        return estado === "completado";
+        const data = d.data() as any;
+        const estado = String(data.estado ?? "").toLowerCase();
+        return estado === "completado" && data.tipo === "suscripcion";
       }).length;
 
       const mappedReports: ReportCase[] = (reportesSnap?.docs ?? [])
@@ -599,6 +749,7 @@ export default function AdminPreview() {
       });
       setRecentOpenReports(latestOpenReports);
       setReportCases(mappedReports);
+      setVacantesList(mappedVacantes);
       setDataIssue(
         "metricas",
         issues.length
@@ -614,6 +765,7 @@ export default function AdminPreview() {
       });
       setRecentOpenReports([]);
       setReportCases([]);
+      setVacantesList([]);
       setDataIssue("metricas", adminDataErrorMessage(error, "las metricas operativas"));
     } finally {
       setPlatformLoading(false);
@@ -625,6 +777,40 @@ export default function AdminPreview() {
     await Promise.all([fetchUsers(), fetchPlatformMetrics()]);
     setUsersRefreshing(false);
   }, [fetchPlatformMetrics, fetchUsers]);
+
+  // ── Suscripciones: pagos de planes de Gradly (colección `transacciones`,
+  // tipo === 'suscripcion') — separado de las transacciones de pasantías. ──
+  const fetchSuscripciones = useCallback(async () => {
+    setSuscripcionesLoading(true);
+    setSuscripcionesAttempted(true);
+    try {
+      const snap = await getDocs(
+        query(collection(db, "transacciones"), where("tipo", "==", "suscripcion")),
+      );
+      const list: AdminSuscripcionPago[] = snap.docs.map((d) => {
+        const r: any = d.data();
+        return {
+          id: d.id,
+          empresaId: String(r.empresa_id ?? ""),
+          empresaNombre: String(r.empresa_nombre ?? "Empresa"),
+          plan: String(r.plan ?? ""),
+          cicloFacturacion: String(r.cicloFacturacion ?? "mensual"),
+          monto: typeof r.monto === "number" ? r.monto : Number(r.monto) || 0,
+          concepto: String(r.concepto ?? ""),
+          estado: String(r.estado ?? ""),
+          fecha: tsToIso(r.fecha),
+        };
+      });
+      list.sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+      setSuscripciones(list);
+      setDataIssue("suscripciones", null);
+    } catch (error) {
+      setSuscripciones([]);
+      setDataIssue("suscripciones", adminDataErrorMessage(error, "las suscripciones de la plataforma"));
+    } finally {
+      setSuscripcionesLoading(false);
+    }
+  }, [setDataIssue]);
 
   const fetchLogs = useCallback(async () => {
     setLogsLoading(true);
@@ -1123,6 +1309,69 @@ export default function AdminPreview() {
     [refreshOverview, t],
   );
 
+  const handleVacanteModeracion = useCallback(
+    async (v: AdminVacante, accion: "deshabilitar" | "eliminar", reason: string) => {
+      setVacanteActionSaving(true);
+      try {
+        const res =
+          accion === "deshabilitar"
+            ? await deshabilitarVacanteAdminAction({ vacanteId: v.id, reason })
+            : await eliminarVacanteAdminAction({ vacanteId: v.id, reason });
+        if (!res.ok) {
+          throw new Error("La acción no se pudo completar.");
+        }
+        if (accion === "eliminar") {
+          setVacantesList((prev) => prev.filter((item) => item.id !== v.id));
+        } else {
+          setVacantesList((prev) =>
+            prev.map((item) =>
+              item.id === v.id
+                ? { ...item, activa: false, estado_moderacion: "deshabilitada" as const, motivo_moderacion: reason }
+                : item,
+            ),
+          );
+        }
+        setVacanteDetailOpen(false);
+        setSelectedVacante(null);
+        showAdminAlert(
+          "Admin",
+          accion === "deshabilitar"
+            ? "Publicación deshabilitada correctamente."
+            : "Publicación eliminada correctamente.",
+        );
+      } catch (error) {
+        console.error("Admin:vacanteModeracion error", error);
+        showAdminAlert(
+          t("admin_error_titulo"),
+          translateSync(
+            adminDetailedErrorMessage(
+              error,
+              accion === "deshabilitar" ? "deshabilitar la publicación" : "eliminar la publicación",
+            ),
+          ),
+        );
+      } finally {
+        setVacanteActionSaving(false);
+      }
+    },
+    [t],
+  );
+
+  // Dedicado (no reutiliza `confirmDialog`/`ConfirmOverlay`): esos solo se
+  // renderizan DENTRO de DetailModal/ReportDetailModal (para no presentar 2
+  // <Modal> nativos a la vez — ver comentario de ConfirmOverlay). Los botones
+  // de moderación viven en la página de la lista, sin ningún Modal ya abierto
+  // debajo, así que este SÍ puede ser su propio <Modal> con seguridad.
+  const confirmDisableVacante = useCallback((v: AdminVacante) => {
+    setVacanteConfirmReason("");
+    setVacanteConfirmAction({ v, accion: "deshabilitar" });
+  }, []);
+
+  const confirmDeleteVacante = useCallback((v: AdminVacante) => {
+    setVacanteConfirmReason("");
+    setVacanteConfirmAction({ v, accion: "eliminar" });
+  }, []);
+
   const handleReportStatusChange = useCallback(
     async (report: ReportCase, nextStatus: ReportCaseStatus) => {
       if (nextStatus === "resuelto" && !reportResolution.trim()) {
@@ -1201,6 +1450,7 @@ export default function AdminPreview() {
   useEffect(() => {
     if (page === "logs" && !logsAttempted && !logsLoading) fetchLogs();
     if (page === "notificaciones" && !notificationsAttempted && !notificationsLoading) fetchNotifications();
+    if (page === "suscripciones" && !suscripcionesAttempted && !suscripcionesLoading) fetchSuscripciones();
     if (page === "roles" && !permissionsLoading) {
       if (roleTab === "estudiante") {
         setPermissions([]);
@@ -1214,6 +1464,7 @@ export default function AdminPreview() {
     fetchLogs,
     fetchNotifications,
     fetchPermissions,
+    fetchSuscripciones,
     logsAttempted,
     logsLoading,
     notificationsAttempted,
@@ -1222,6 +1473,8 @@ export default function AdminPreview() {
     permissionsLoadedRole,
     permissionsLoading,
     roleTab,
+    suscripcionesAttempted,
+    suscripcionesLoading,
   ]);
 
   const filtered = useMemo(() => {
@@ -1239,6 +1492,18 @@ export default function AdminPreview() {
     if (reportStatusFilter === "todos") return reportCases;
     return reportCases.filter((item) => item.estado === reportStatusFilter);
   }, [reportCases, reportStatusFilter]);
+
+  const filteredVacantes = useMemo(() => {
+    const q = vacanteSearch.trim().toLowerCase();
+    return vacantesList.filter((v) => {
+      if (vacanteTipoFilter !== "todos" && v.tipo !== vacanteTipoFilter) return false;
+      if (vacanteEstadoFilter === "activa" && !v.activa) return false;
+      if (vacanteEstadoFilter === "inactiva" && v.activa) return false;
+      if (!q) return true;
+      const haystack = `${v.titulo} ${v.nombre_empresa} ${v.area} ${v.modalidad}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [vacanteEstadoFilter, vacanteSearch, vacanteTipoFilter, vacantesList]);
 
   const approvalQueue = useMemo(() => {
     return users
@@ -1547,9 +1812,9 @@ export default function AdminPreview() {
               },
               {
                 key: "transacciones",
-                label: "Transacciones OK",
+                label: "Suscripciones pagadas",
                 value: platformMetrics.txCompletadas,
-                icon: "checkmark-circle-outline" as const,
+                icon: "card-outline" as const,
                 color: C.green,
               },
               {
@@ -1561,9 +1826,15 @@ export default function AdminPreview() {
                   platformMetrics.reportesAbiertos > 0 ? C.red : C.textMuted,
               },
             ].map((item) => (
-              <View
+              <TouchableOpacity
                 key={item.key}
                 style={[s.metricTile, { minWidth: cardMinWidth }]}
+                onPress={() => {
+                  if (item.key === "vacantes") navigateToVacanteList();
+                  if (item.key === "transacciones") navigateToSuscripciones();
+                }}
+                disabled={item.key !== "vacantes" && item.key !== "transacciones"}
+                activeOpacity={0.85}
               >
                 <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
                   <View style={s.statIconWrap}>
@@ -1571,6 +1842,8 @@ export default function AdminPreview() {
                   </View>
                   {item.key === "reportes" && item.value > 0 ? (
                     <Badge label={`${item.value} abiertos`} type="pending" />
+                  ) : item.key === "vacantes" || item.key === "transacciones" ? (
+                    <Ionicons name="chevron-forward-outline" size={18} color={C.textMuted} />
                   ) : null}
                 </View>
                 <Text style={s.metricTileLabel}>{item.label}</Text>
@@ -1585,10 +1858,10 @@ export default function AdminPreview() {
                     : item.key === "aplicaciones"
                       ? "Volumen general de aplicaciones registradas."
                       : item.key === "transacciones"
-                        ? "Pagos o transacciones completadas correctamente."
+                        ? "Toca para ver el historial e ingresos de suscripciones."
                         : "Casos de moderación que siguen abiertos."}
                 </Text>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         </Card>
@@ -2128,6 +2401,194 @@ export default function AdminPreview() {
     );
   };
 
+  const renderVacantes = () => {
+    const totalVacantes = vacantesList.length;
+    const activasCount = vacantesList.filter((v) => v.activa).length;
+    const inactivasCount = totalVacantes - activasCount;
+
+    const tipoIcon = (tipo: string) => (tipo === "Pasantía" ? "school-outline" : "briefcase-outline");
+
+    const metaLinea = (v: AdminVacante) => [v.tipo, v.area, v.modalidad].filter(Boolean).join(" · ") || "Sin categorizar";
+
+    const cuposLinea = (v: AdminVacante) => {
+      if (v.cupos === null) return `Aplicantes: ${v.aplicantes_count ?? 0}`;
+      const ocupados = (v.cupos_reclamados ?? 0) + (v.contratados_count ?? 0);
+      return `Cupos: ${Math.max(0, v.cupos - ocupados)} de ${v.cupos} libres`;
+    };
+
+    // Botones de moderación (o, si ya se actuó sobre ella, el estado
+    // resultante) — compartido por la tarjeta de escritorio y la fila de
+    // lista/tablet para no duplicar el JSX entre ambos layouts.
+    const moderacionRow = (v: AdminVacante) => {
+      if (v.estado_moderacion) {
+        return (
+          <View style={[s.row, { marginTop: 12, gap: 6, alignItems: "flex-start" }]}>
+            <Ionicons name="lock-closed-outline" size={14} color={C.red} style={{ marginTop: 2 }} />
+            <Text style={[s.itemSub, { color: C.red, flex: 1 }]} numberOfLines={2}>
+              {v.estado_moderacion === "eliminada" ? "Eliminada por admin" : "Deshabilitada por admin"}
+              {v.motivo_moderacion ? ` · ${v.motivo_moderacion}` : ""}
+            </Text>
+          </View>
+        );
+      }
+      return (
+        <View style={[s.row, { gap: 8, marginTop: 12 }]}>
+          <TouchableOpacity
+            style={[s.btnOutline, s.btnSm, { flex: 1 }]}
+            onPress={() => confirmDisableVacante(v)}
+            activeOpacity={0.8}
+            disabled={vacanteActionSaving}
+          >
+            <Text style={[s.btnOutlineText, s.btnSmText]}>Deshabilitar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.btnOutline, s.btnSm, { flex: 1, borderColor: C.red }]}
+            onPress={() => confirmDeleteVacante(v)}
+            activeOpacity={0.8}
+            disabled={vacanteActionSaving}
+          >
+            <Text style={[s.btnOutlineText, s.btnSmText, { color: C.red }]}>Eliminar</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    };
+
+    return (
+      <ScrollView
+        showsVerticalScrollIndicator
+        refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshOverview} tintColor={C.accent70} />}
+      >
+        <View style={s.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.kicker}>Publicaciones</Text>
+            <Text style={s.pageTitle}>Vacantes y pasantías</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>
+              Listado real de publicaciones desde la colección `vacantes`.
+            </Text>
+          </View>
+          <TouchableOpacity style={s.btnOutline} onPress={refreshOverview} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[s.grid2, { marginBottom: 14 }]}>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Total publicadas</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Vacantes y pasantías en la colección.</Text>
+            <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{totalVacantes}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Activas</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Visibles para estudiantes ahora mismo.</Text>
+            <Text style={[s.heroMetricValue, { color: C.green, marginTop: 12 }]}>{activasCount}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Inactivas</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Pausadas o cerradas por la empresa.</Text>
+            <Text style={[s.heroMetricValue, { color: C.textMuted, marginTop: 12 }]}>{inactivasCount}</Text>
+          </View>
+        </View>
+
+        <Card style={{ marginBottom: 14 }}>
+          <View style={s.searchWrap}>
+            <Ionicons name="search-outline" size={18} color={C.textMuted} />
+            <TextInput
+              style={s.searchInput}
+              placeholder="Buscar por título, empresa o área…"
+              placeholderTextColor={C.textMuted}
+              value={vacanteSearch}
+              onChangeText={setVacanteSearch}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8, marginTop: 14 }]}>TIPO</Text>
+          <View style={s.chipRow}>
+            {(["todos", "Pasantía", "Vacante"] as const).map((tp) => (
+              <Chip
+                key={tp}
+                label={tp === "todos" ? "Todos" : tp}
+                active={vacanteTipoFilter === tp}
+                onPress={() => setVacanteTipoFilter(tp)}
+              />
+            ))}
+          </View>
+
+          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8, marginTop: 14 }]}>ESTADO</Text>
+          <View style={s.chipRow}>
+            {(["todos", "activa", "inactiva"] as const).map((st) => (
+              <Chip
+                key={st}
+                label={st === "todos" ? "Todos" : st === "activa" ? "Activas" : "Inactivas"}
+                active={vacanteEstadoFilter === st}
+                onPress={() => setVacanteEstadoFilter(st)}
+              />
+            ))}
+          </View>
+        </Card>
+
+        <Card style={{ marginBottom: 24 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>Publicaciones</Text>
+            <Text style={s.textMuted}>{filteredVacantes.length}</Text>
+          </View>
+
+          {platformLoading ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : filteredVacantes.length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin vacantes para este filtro</Text>
+          ) : isDesktop ? (
+            <View style={s.grid2}>
+              {filteredVacantes.map((v) => (
+                <View key={v.id} style={[s.card, { minWidth: "32%", flexGrow: 1, padding: 16 }]}>
+                  <TouchableOpacity onPress={() => openVacanteDetail(v)} activeOpacity={0.85}>
+                    <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+                      <View style={s.statIconWrap}>
+                        <Ionicons name={tipoIcon(v.tipo)} size={18} color={C.accent70} />
+                      </View>
+                      <Badge label={v.activa ? "Activa" : "Inactiva"} type={v.activa ? "active" : "inactive"} />
+                    </View>
+                    <Text style={s.itemTitle} numberOfLines={2}>{v.titulo}</Text>
+                    <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={1}>{v.nombre_empresa}</Text>
+                    <Text style={[s.itemSub, { marginTop: 8 }]} numberOfLines={1}>{metaLinea(v)}</Text>
+                    <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={1}>{cuposLinea(v)}</Text>
+                  </TouchableOpacity>
+                  {moderacionRow(v)}
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={{ gap: 10 }}>
+              {filteredVacantes.map((v) => (
+                <View key={v.id} style={[s.listItem, isPhone && s.listItemStack]}>
+                  <View style={s.avatar}>
+                    <Ionicons name={tipoIcon(v.tipo)} size={18} color={C.accent70} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <TouchableOpacity onPress={() => openVacanteDetail(v)} activeOpacity={0.8}>
+                      <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.itemTitle}>{v.titulo}</Text>
+                          <Text style={[s.itemSub, { marginTop: 4 }]}>{v.nombre_empresa}</Text>
+                          <Text style={[s.itemSub, { marginTop: 4 }]}>{metaLinea(v)}</Text>
+                        </View>
+                        <Badge label={v.activa ? "Activa" : "Inactiva"} type={v.activa ? "active" : "inactive"} />
+                      </View>
+                      <Text style={[s.itemSub, { marginTop: 8 }]}>{cuposLinea(v)}</Text>
+                    </TouchableOpacity>
+                    {moderacionRow(v)}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </Card>
+      </ScrollView>
+    );
+  };
+
   const renderNotificaciones = () => (
     <ScrollView showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={notificationsLoading} onRefresh={fetchNotifications} />}>
       <View style={s.sectionHeader}>
@@ -2256,6 +2717,172 @@ export default function AdminPreview() {
         )}
 
         <View style={{ height: 10 }} />
+      </ScrollView>
+    );
+  };
+
+  // ── Suscripciones: historial de pagos de planes, plan elegido por cada
+  // empresa e ingresos totales a la plataforma (mes actual + últimos 12 meses),
+  // con gráfico. Microsección propia, separada de las transacciones de
+  // pasantías (pagos a estudiantes). ──
+  const renderSuscripciones = () => {
+    const now = new Date();
+    const mesActualKey = `${now.getFullYear()}-${now.getMonth()}`;
+    const haceUnAnio = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+
+    const completadas = suscripciones.filter((p) => p.estado === "completado");
+
+    const ingresosMes = completadas
+      .filter((p) => p.fecha && `${new Date(p.fecha).getFullYear()}-${new Date(p.fecha).getMonth()}` === mesActualKey)
+      .reduce((acc, p) => acc + p.monto, 0);
+
+    const ingresosUltimoAnio = completadas
+      .filter((p) => p.fecha && new Date(p.fecha) >= haceUnAnio)
+      .reduce((acc, p) => acc + p.monto, 0);
+
+    const labels: string[] = [];
+    const buckets: number[] = [];
+    const keyIdx = new Map<string, number>();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      keyIdx.set(`${d.getFullYear()}-${d.getMonth()}`, labels.length);
+      labels.push(MESES_ADMIN[d.getMonth()]);
+      buckets.push(0);
+    }
+    completadas.forEach((p) => {
+      if (!p.fecha) return;
+      const f = new Date(p.fecha);
+      const idx = keyIdx.get(`${f.getFullYear()}-${f.getMonth()}`);
+      if (idx !== undefined) buckets[idx] += p.monto;
+    });
+
+    const porPlan = completadas.reduce<Record<string, { count: number; total: number }>>((acc, p) => {
+      const key = p.plan || "otro";
+      if (!acc[key]) acc[key] = { count: 0, total: 0 };
+      acc[key].count += 1;
+      acc[key].total += p.monto;
+      return acc;
+    }, {});
+
+    const nombrePlan = (plan: string) =>
+      plan === "mensual" ? "Plan Básico" : plan === "premium" ? "Plan Premium" : plan || "Otro";
+
+    const chartWidth = Math.min(width - (isDesktop ? 64 : 48), 680);
+    const subsChartConfig = {
+      backgroundGradientFrom: C.surface,
+      backgroundGradientTo: C.surface,
+      backgroundGradientFromOpacity: 0,
+      backgroundGradientToOpacity: 0,
+      decimalPlaces: 0,
+      color: (opacity = 1) => `rgba(139,92,246,${opacity})`,
+      labelColor: (opacity = 1) => C.textMuted,
+      barPercentage: 0.6,
+      propsForBackgroundLines: { stroke: C.border },
+    };
+
+    return (
+      <ScrollView showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={suscripcionesLoading} onRefresh={fetchSuscripciones} tintColor={C.accent70} />}>
+        <View style={s.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.kicker}>Ingresos</Text>
+            <Text style={s.pageTitle}>Suscripciones</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>
+              Pagos de planes de Gradly: qué plan eligió cada empresa, cuánto pagó e ingresos totales a la plataforma.
+            </Text>
+          </View>
+          <TouchableOpacity style={s.btnOutline} onPress={fetchSuscripciones} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={s.grid2}>
+          <View style={[s.metricTile, { minWidth: "48%" }]}>
+            <Text style={s.metricTileLabel}>Ingresos de este mes</Text>
+            <Text style={[s.metricTileValue, { color: C.green }]}>${ingresosMes.toFixed(2)}</Text>
+            <Text style={s.metricTileSub}>Suscripciones completadas en el mes en curso.</Text>
+          </View>
+          <View style={[s.metricTile, { minWidth: "48%" }]}>
+            <Text style={s.metricTileLabel}>Ingresos del último año</Text>
+            <Text style={[s.metricTileValue, { color: C.accent70 }]}>${ingresosUltimoAnio.toFixed(2)}</Text>
+            <Text style={s.metricTileSub}>Suma de los últimos 12 meses.</Text>
+          </View>
+        </View>
+
+        <Card style={{ marginTop: 14 }}>
+          <Text style={s.cardTitle}>Ingresos mensuales (últimos 12 meses)</Text>
+          {suscripcionesLoading ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : buckets.some((v) => v > 0) ? (
+            <BarChart
+              data={{ labels, datasets: [{ data: buckets }] }}
+              width={chartWidth}
+              height={200}
+              yAxisLabel="$"
+              yAxisSuffix=""
+              chartConfig={subsChartConfig}
+              fromZero
+              showValuesOnTopOfBars
+              style={{ borderRadius: 12, marginTop: 12 }}
+            />
+          ) : (
+            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>
+              Aún no hay ingresos por suscripciones registrados.
+            </Text>
+          )}
+        </Card>
+
+        <Card style={{ marginTop: 14 }}>
+          <Text style={s.cardTitle}>Planes elegidos</Text>
+          {Object.keys(porPlan).length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin datos todavía.</Text>
+          ) : (
+            <View style={{ gap: 10, marginTop: 10 }}>
+              {Object.entries(porPlan).map(([plan, info]) => (
+                <View key={plan} style={[s.row, { justifyContent: "space-between" }]}>
+                  <Text style={s.itemTitle}>{nombrePlan(plan)}</Text>
+                  <Text style={s.textMuted}>{info.count} pago(s) · ${info.total.toFixed(2)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </Card>
+
+        <Card style={{ marginTop: 14, marginBottom: 24 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>Historial de pagos</Text>
+            <Text style={s.textMuted}>{suscripciones.length}</Text>
+          </View>
+          {suscripcionesLoading ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : suscripciones.length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>
+              Aún no se han registrado pagos de suscripción.
+            </Text>
+          ) : (
+            suscripciones.map((p) => (
+              <View key={p.id} style={s.listItem}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.itemTitle} numberOfLines={1}>{p.empresaNombre}</Text>
+                  <Text style={[s.itemSub, { marginTop: 4 }]}>
+                    {nombrePlan(p.plan)} · {p.cicloFacturacion === "anual" ? "Anual" : "Mensual"}
+                    {p.fecha ? ` · ${new Date(p.fecha).toLocaleDateString("es-SV")}` : ""}
+                  </Text>
+                </View>
+                <View style={{ alignItems: "flex-end", gap: 6 }}>
+                  <Text style={[s.itemTitle, { color: C.green }]}>${p.monto.toFixed(2)}</Text>
+                  <Badge
+                    label={p.estado || "—"}
+                    type={p.estado === "completado" ? "active" : p.estado === "fallido" ? "inactive" : "pending"}
+                  />
+                </View>
+              </View>
+            ))
+          )}
+        </Card>
       </ScrollView>
     );
   };
@@ -2863,6 +3490,248 @@ export default function AdminPreview() {
     );
   };
 
+  const VacanteDetailAdminModal = () => {
+    const v = selectedVacante;
+
+    const formatFecha = (raw: any): string => {
+      if (!raw) return "No disponible";
+      const iso = tsToIso(raw);
+      const d = new Date(iso || raw);
+      if (Number.isNaN(d.getTime())) return String(raw);
+      return d.toLocaleString();
+    };
+
+    const horarioTxt = v ? textoHorario(v.raw?.horario ?? null) : null;
+    const salarioTxt = v ? textoSalario(v.raw?.salario_min, v.raw?.salario_max) : null;
+    const cuposTxt = v ? textoCupos(v.raw ?? null) : null;
+    const etiquetas: string[] = v ? [...(v.raw?.tags ?? []), ...(v.raw?.skills_requeridas ?? [])].filter(Boolean) : [];
+    const ubicacionTexto =
+      v?.raw?.ubicacion_texto
+        ? [
+            v.raw.ubicacion_texto.direccion,
+            v.raw.ubicacion_texto.municipio,
+            v.raw.ubicacion_texto.departamento,
+            v.raw.ubicacion_texto.pais,
+          ]
+            .filter(Boolean)
+            .join(", ")
+        : "";
+
+    return (
+      <Modal
+        visible={vacanteDetailOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setVacanteDetailOpen(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={[s.modal, isPhone && s.modalCompact]}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Detalle de la publicación</Text>
+              <TouchableOpacity
+                style={[s.iconBtn, { width: 38, height: 38 }]}
+                onPress={() => setVacanteDetailOpen(false)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="close" size={20} color={C.text} />
+              </TouchableOpacity>
+            </View>
+            {v ? (
+              <ScrollView showsVerticalScrollIndicator>
+                <Card>
+                  <View style={[s.row, { justifyContent: "space-between", marginBottom: 10, gap: 10, flexWrap: "wrap" }]}>
+                    <Text style={[s.cardTitle, { flex: 1 }]}>{v.titulo}</Text>
+                    <Badge label={v.activa ? "Activa" : "Inactiva"} type={v.activa ? "active" : "inactive"} />
+                  </View>
+                  <View style={s.chipRow}>
+                    {[v.tipo, v.modalidad, v.area, v.raw?.modalidad_contrato]
+                      .filter(Boolean)
+                      .map((c: string, i: number) => (
+                        <View key={i} style={s.chip}>
+                          <Text style={s.chipText}>{c}</Text>
+                        </View>
+                      ))}
+                  </View>
+                  {v.descripcion ? (
+                    <Text style={[s.textMuted, { marginTop: 12, lineHeight: 20 }]}>{v.descripcion}</Text>
+                  ) : null}
+                </Card>
+
+                <Card style={{ marginTop: 12 }}>
+                  <Text style={s.cardTitle}>Empresa</Text>
+                  <View style={[s.row, { marginTop: 10, gap: 12 }]}>
+                    <View style={s.avatar}>
+                      {v.logo_empresa_url ? (
+                        <Image
+                          source={{ uri: v.logo_empresa_url }}
+                          style={{ width: 44, height: 44, borderRadius: 14 }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Ionicons name="business-outline" size={20} color={C.accent70} />
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.itemTitle}>{v.nombre_empresa}</Text>
+                      <Text style={[s.itemSub, { marginTop: 2 }]}>ID: {v.empresa_id || "No disponible"}</Text>
+                    </View>
+                  </View>
+                  {v.empresa_id ? (
+                    <TouchableOpacity
+                      style={[s.btnOutline, { marginTop: 12, alignSelf: "flex-start" }]}
+                      onPress={() => abrirPerfilPublico("empresa", v.empresa_id)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={s.btnOutlineText}>Ver perfil público</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </Card>
+
+                <Card style={{ marginTop: 12 }}>
+                  <Text style={s.cardTitle}>Cupos, horario y salario</Text>
+                  <Text style={[s.textMuted, { marginTop: 10 }]}>Cupos ofrecidos: {v.cupos ?? "No definido"}</Text>
+                  {cuposTxt ? <Text style={[s.textMuted, { marginTop: 6 }]}>Disponibilidad: {cuposTxt}</Text> : null}
+                  <Text style={[s.textMuted, { marginTop: 6 }]}>
+                    Reclamados: {v.cupos_reclamados ?? 0} · Contratados: {v.contratados_count ?? 0} · Aplicantes: {v.aplicantes_count ?? 0}
+                  </Text>
+                  {horarioTxt ? <Text style={[s.textMuted, { marginTop: 6 }]}>Horario: {horarioTxt}</Text> : null}
+                  {salarioTxt ? <Text style={[s.textMuted, { marginTop: 6 }]}>Salario: {salarioTxt}</Text> : null}
+                  {typeof v.raw?.reclamos_auto === "boolean" ? (
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Reclamos automáticos: {v.raw.reclamos_auto ? "Sí" : "No"}
+                    </Text>
+                  ) : null}
+                  {etiquetas.length ? (
+                    <View style={[s.chipRow, { marginTop: 10 }]}>
+                      {etiquetas.map((t: string, i: number) => (
+                        <View key={i} style={s.chip}>
+                          <Text style={s.chipText}>{t}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </Card>
+
+                {ubicacionTexto || v.raw?.ubicacion_coords ? (
+                  <Card style={{ marginTop: 12 }}>
+                    <Text style={s.cardTitle}>Ubicación</Text>
+                    {ubicacionTexto ? <Text style={[s.textMuted, { marginTop: 10 }]}>{ubicacionTexto}</Text> : null}
+                    {v.raw?.ubicacion_coords ? (
+                      <Text style={[s.textMuted, { marginTop: 6 }]}>
+                        Coordenadas: {v.raw.ubicacion_coords.latitude}, {v.raw.ubicacion_coords.longitude}
+                      </Text>
+                    ) : null}
+                  </Card>
+                ) : null}
+
+                <Card style={{ marginTop: 12 }}>
+                  <Text style={s.cardTitle}>Fechas</Text>
+                  <Text style={[s.textMuted, { marginTop: 10 }]}>Publicación: {formatFecha(v.raw?.fecha_publicacion)}</Text>
+                  <Text style={[s.textMuted, { marginTop: 6 }]}>Creación: {formatFecha(v.raw?.fecha_creacion)}</Text>
+                  {v.raw?.fecha_limite ? (
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>Fecha límite: {formatFecha(v.raw.fecha_limite)}</Text>
+                  ) : null}
+                  {v.raw?.fechaInicio ? (
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>Inicio de pasantía: {formatFecha(v.raw.fechaInicio)}</Text>
+                  ) : null}
+                  {v.raw?.fechaFin ? (
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>Fin de pasantía: {formatFecha(v.raw.fechaFin)}</Text>
+                  ) : null}
+                </Card>
+
+                <Card style={{ marginTop: 12, marginBottom: 20 }}>
+                  <Text style={s.cardTitle}>Ficha técnica completa</Text>
+                  <Text style={[s.textMuted, { marginTop: 10 }]}>ID del documento: {v.id}</Text>
+                  {Object.keys(v.raw ?? {})
+                    .sort()
+                    .map((key) => (
+                      <View key={key} style={{ marginTop: 10 }}>
+                        <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.4 }]}>{key}</Text>
+                        <Text style={[s.itemTitle, { marginTop: 2 }]}>{formatRawValue(v.raw[key])}</Text>
+                      </View>
+                    ))}
+                </Card>
+              </ScrollView>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
+  const VacanteModeracionModal = () => {
+    if (!vacanteConfirmAction) return null;
+    const { v, accion } = vacanteConfirmAction;
+    const esEliminar = accion === "eliminar";
+    return (
+      <Modal
+        visible
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!vacanteActionSaving) setVacanteConfirmAction(null);
+        }}
+      >
+        <View style={s.modalOverlay}>
+          <View style={[s.modal, isPhone && s.modalCompact]}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>{esEliminar ? "Eliminar publicación" : "Deshabilitar publicación"}</Text>
+              <TouchableOpacity
+                style={[s.iconBtn, { width: 38, height: 38 }]}
+                onPress={() => setVacanteConfirmAction(null)}
+                activeOpacity={0.8}
+                disabled={vacanteActionSaving}
+              >
+                <Ionicons name="close" size={20} color={C.text} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[s.textMuted, { lineHeight: 20 }]}>
+              {esEliminar
+                ? "La empresa dueña verá el motivo. La publicación dejará de existir para todos, incluida la propia empresa."
+                : "La empresa dueña verá el motivo y no podrá reactivarla ella misma; el resto de usuarios dejará de verla."}
+            </Text>
+            <Text style={[s.itemTitle, { marginTop: 14 }]} numberOfLines={1}>
+              {v.titulo}
+            </Text>
+            <TextInput
+              style={[s.input, { marginTop: 10, minHeight: 76, textAlignVertical: "top" }]}
+              value={vacanteConfirmReason}
+              onChangeText={setVacanteConfirmReason}
+              placeholder={esEliminar ? "Motivo de la eliminación" : "Motivo de la deshabilitación"}
+              placeholderTextColor={C.textMuted}
+              multiline
+              editable={!vacanteActionSaving}
+            />
+            <View style={[s.row, { gap: 10, marginTop: 20 }]}>
+              <TouchableOpacity
+                style={[s.btnOutline, { flex: 1 }]}
+                onPress={() => setVacanteConfirmAction(null)}
+                activeOpacity={0.85}
+                disabled={vacanteActionSaving}
+              >
+                <Text style={s.btnOutlineText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.btnPrimary, { flex: 1, backgroundColor: C.red }]}
+                onPress={() => {
+                  const reason = vacanteConfirmReason.trim();
+                  setVacanteConfirmAction(null);
+                  void handleVacanteModeracion(v, accion, reason);
+                }}
+                activeOpacity={0.85}
+                disabled={vacanteActionSaving || !vacanteConfirmReason.trim()}
+              >
+                <Text style={s.btnPrimaryText}>
+                  {vacanteActionSaving ? "Procesando..." : esEliminar ? "Eliminar" : "Deshabilitar"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   const renderBody = () => {
     switch (page) {
       case "resumen":
@@ -2873,6 +3742,10 @@ export default function AdminPreview() {
         return renderUsuarios();
       case "reportes":
         return renderReportes();
+      case "vacantes":
+        return renderVacantes();
+      case "suscripciones":
+        return renderSuscripciones();
       case "notificaciones":
         return renderNotificaciones();
       case "roles":
@@ -3027,6 +3900,8 @@ export default function AdminPreview() {
       {DetailModal()}
       {EditModal()}
       {ReportDetailModal()}
+      {VacanteDetailAdminModal()}
+      {VacanteModeracionModal()}
       {!isDesktop ? Drawer() : null}
     </View>
   );

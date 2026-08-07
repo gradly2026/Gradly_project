@@ -764,6 +764,131 @@ export const backfillAlianzasCalificaciones = onCall(
   },
 );
 
+/**
+ * Deshabilita una vacante/pasantía por decisión administrativa (motivo
+ * obligatorio). NO es un `toggleVacante` común: además de `activa:false`,
+ * marca `estado_moderacion:'deshabilitada'` para que la empresa dueña (a
+ * diferencia de una pausa propia) no pueda reactivarla ella misma, y para que
+ * el resto de la plataforma (que ya filtra `activa==true` en sus listados) la
+ * pierda de vista automáticamente. `moderacion_notificada:false` hace que
+ * `ModeracionVacanteGate` (cliente, dashboard de empresa) le muestre el aviso
+ * obligatorio con el motivo la próxima vez que abra su panel.
+ */
+export const deshabilitarVacanteAdmin = onCall({ region: REGION }, async (req) => {
+  try {
+    const actor = await requireAdmin(req.auth);
+    const vacanteId = asString(req.data?.vacanteId);
+    const reason = asNullableString(req.data?.reason);
+
+    if (!vacanteId) {
+      throw new HttpsError("invalid-argument", "Parámetros inválidos.");
+    }
+    if (!reason) {
+      throw new HttpsError("invalid-argument", "Debes indicar el motivo.");
+    }
+
+    const vacanteRef = db.collection("vacantes").doc(vacanteId);
+    const vacanteSnap = await vacanteRef.get();
+    if (!vacanteSnap.exists) {
+      throw new HttpsError("not-found", "Publicación no encontrada.");
+    }
+    const vacanteData = vacanteSnap.data() ?? {};
+
+    await vacanteRef.update({
+      activa: false,
+      estado_moderacion: "deshabilitada",
+      motivo_moderacion: reason,
+      moderado_por: actor.uid,
+      moderado_por_email: actor.email,
+      moderado_en: admin.firestore.FieldValue.serverTimestamp(),
+      moderacion_notificada: false,
+    });
+
+    await safeWriteAuditLog({
+      actor,
+      action: "vacante.moderacion.deshabilitar",
+      entityType: "vacantes",
+      entityId: vacanteId,
+      payload: {
+        reason,
+        titulo: asNullableString(vacanteData.titulo),
+        empresa_id: asNullableString(vacanteData.empresa_id),
+      },
+    });
+
+    return { ok: true, id: vacanteId };
+  } catch (error: any) {
+    console.error("deshabilitarVacanteAdmin failed:", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError(
+      "internal",
+      `Error interno en deshabilitarVacanteAdmin: ${String(error?.message ?? error)}`,
+    );
+  }
+});
+
+/**
+ * Elimina (lógicamente) una vacante/pasantía por decisión administrativa.
+ * Deliberadamente NO es un `deleteDoc`: otras colecciones (aplicaciones,
+ * aplicaciones_grupos, reclamos_cupos, chats, evaluaciones) referencian su id,
+ * y borrar el documento real las dejaría huérfanas. En vez de eso, el
+ * documento queda marcado `estado_moderacion:'eliminada'` + `activa:false` —
+ * invisible para TODOS (incluida la propia empresa, a diferencia de
+ * 'deshabilitada') pero sin romper referencias existentes.
+ */
+export const eliminarVacanteAdmin = onCall({ region: REGION }, async (req) => {
+  try {
+    const actor = await requireAdmin(req.auth);
+    const vacanteId = asString(req.data?.vacanteId);
+    const reason = asNullableString(req.data?.reason);
+
+    if (!vacanteId) {
+      throw new HttpsError("invalid-argument", "Parámetros inválidos.");
+    }
+    if (!reason) {
+      throw new HttpsError("invalid-argument", "Debes indicar el motivo.");
+    }
+
+    const vacanteRef = db.collection("vacantes").doc(vacanteId);
+    const vacanteSnap = await vacanteRef.get();
+    if (!vacanteSnap.exists) {
+      throw new HttpsError("not-found", "Publicación no encontrada.");
+    }
+    const vacanteData = vacanteSnap.data() ?? {};
+
+    await vacanteRef.update({
+      activa: false,
+      estado_moderacion: "eliminada",
+      motivo_moderacion: reason,
+      moderado_por: actor.uid,
+      moderado_por_email: actor.email,
+      moderado_en: admin.firestore.FieldValue.serverTimestamp(),
+      moderacion_notificada: false,
+    });
+
+    await safeWriteAuditLog({
+      actor,
+      action: "vacante.moderacion.eliminar",
+      entityType: "vacantes",
+      entityId: vacanteId,
+      payload: {
+        reason,
+        titulo: asNullableString(vacanteData.titulo),
+        empresa_id: asNullableString(vacanteData.empresa_id),
+      },
+    });
+
+    return { ok: true, id: vacanteId };
+  } catch (error: any) {
+    console.error("eliminarVacanteAdmin failed:", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError(
+      "internal",
+      `Error interno en eliminarVacanteAdmin: ${String(error?.message ?? error)}`,
+    );
+  }
+});
+
 export const deleteUserComplete = onCall({ region: REGION }, async (req) => {
   try {
     const actor = await requireAdmin(req.auth);

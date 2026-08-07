@@ -251,6 +251,7 @@ export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
     }
     trans.forEach(t => {
       if (t.estado !== 'completado') return;
+      if (t.tipo === 'suscripcion') return; // pago del plan de Gradly, no pago a un grupo
       const f = t.fecha?.toDate?.();
       if (!f) return;
       const key = `${f.getFullYear()}-${f.getMonth()}`;

@@ -45,7 +45,7 @@ const TOUR_PASOS: Record<TabKey, { titulo: string; texto: string }> = {
   progreso: {
     titulo: 'Mi Progreso',
     texto:
-      'Sigue tus horas de práctica, tu pasantía activa, tus pagos y los cupos que tu universidad te asegure.',
+      'Sigue tus horas de práctica, tu pasantía activa y los cupos que tu universidad te asegure.',
   },
   academia: {
     titulo: 'Academia',

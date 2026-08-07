@@ -7,7 +7,6 @@ import {
   Alert,
   Platform,
   ScrollView,
-  Share,
   StyleSheet,
 
   TouchableOpacity,
@@ -17,7 +16,6 @@ import { AutoText as Text } from "../../src/components/AutoText";
 import { useAuth } from '../../src/context/AuthContext';
 import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
-import { generarReciboTexto } from '../../src/services/pagoService';
 import { estudianteFinalizaProyecto } from '../../src/services/pasantiaService';
 import { progresoPorFechas } from '../../src/utils/progresoPasantia';
 import CalendarioEventos from '../../src/components/CalendarioEventos';
@@ -323,7 +321,6 @@ export default function ProgresoTab() {
 
   const [perfil,        setPerfil]        = useState<EstudiantePerfil | null>(null);
   const [apps,          setApps]          = useState<Aplicacion[]>([]);
-  const [transacciones, setTransacciones] = useState<any[]>([]);
   const [acuerdo,       setAcuerdo]       = useState<AcuerdoEstudiante | null>(null);
   const [pasantiaEstado, setPasantiaEstado] = useState<string | null>(null);
   const [cargando,      setCargando]      = useState(true);
@@ -352,16 +349,6 @@ export default function ProgresoTab() {
     const q = query(collection(db, 'aplicaciones'), where('estudiante_id', '==', user.uid));
     const unsub = onSnapshot(q, snap => {
       setApps(snap.docs.map(d => ({ id: d.id, ...d.data() } as Aplicacion)));
-    });
-    return unsub;
-  }, [user]);
-
-  // ── Firestore: transacciones (ingresos) ──────────────────────────
-  useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, 'transacciones'), where('estudiante_id', '==', user.uid));
-    const unsub = onSnapshot(q, snap => {
-      setTransacciones(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return unsub;
   }, [user]);
@@ -429,26 +416,6 @@ export default function ProgresoTab() {
     );
     return unsub;
   }, [user]);
-
-  const totalIngresos = useMemo(() =>
-    transacciones
-      .filter(t => t.estado === 'completado')
-      .reduce((acc, t) => acc + (t.monto ?? 0), 0),
-  [transacciones]);
-
-  const handleCompartirRecibo = async (tx: any) => {
-    const texto = generarReciboTexto({
-      referencia: tx.referencia ?? 'N/A',
-      monto:      tx.monto ?? 0,
-      empresa:    tx.empresa_id ?? 'Empresa',
-      estudiante: user?.email ?? 'Estudiante',
-      fecha:      tx.fecha?.toDate?.()?.toLocaleDateString('es-SV') ?? '—',
-      concepto:   tx.concepto ?? 'Pasantía',
-    });
-    try {
-      await Share.share({ message: texto, title: 'Recibo Gradly' });
-    } catch { /* usuario canceló el share */ }
-  };
 
   const handleFinalizar = async (appId: string) => {
     const app = apps.find(a => a.id === appId);
@@ -592,50 +559,6 @@ export default function ProgresoTab() {
               )}
             </GlassCard>
           ))
-        )}
-
-        {/* ── Mis Ingresos ── */}
-        <Text style={styles.sectionTitle}>Mis Ingresos</Text>
-
-        {/* Resumen total */}
-        <GlassCard style={[{ marginBottom: 12 }, { borderColor: 'rgba(16,185,129,0.25)' }]} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
-          <Ionicons name="wallet-outline" size={22} color={COLORS.success} />
-          <View>
-            <Text style={styles.ingresosLabel}>Total recibido</Text>
-            <Text style={styles.ingresosTotal}>${totalIngresos.toFixed(2)}</Text>
-          </View>
-        </GlassCard>
-
-        {transacciones.length === 0 ? (
-          <View style={styles.emptySection}>
-            <Text style={styles.emptyText}>Sin transacciones registradas aún.</Text>
-          </View>
-        ) : (
-          transacciones.map(tx => {
-            const color = tx.estado === 'completado' ? COLORS.success : tx.estado === 'fallido' ? COLORS.error : COLORS.warning;
-            return (
-              <GlassCard key={tx.id} style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.txConcepto} numberOfLines={1}>{tx.concepto}</Text>
-                  <Text style={styles.txMeta}>
-                    ${(tx.monto ?? 0).toFixed(2)} · {tx.fecha?.toDate?.()?.toLocaleDateString('es-SV') ?? '—'}
-                  </Text>
-                  {tx.referencia ? <Text style={styles.txRef}>Ref: {tx.referencia}</Text> : null}
-                </View>
-                <View style={{ gap: 6, alignItems: 'flex-end' }}>
-                  <View style={[styles.txEstadoBadge, { borderColor: color + '44', backgroundColor: color + '11' }]}>
-                    <Text style={[styles.txEstadoText, { color }]}>{tx.estado}</Text>
-                  </View>
-                  {tx.estado === 'completado' && (
-                    <JellyButton style={styles.reciboBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 10 }} onPress={() => handleCompartirRecibo(tx)}>
-                      <Ionicons name="share-outline" size={14} color={COLORS.primaryLight} />
-                      <Text style={styles.reciboBtnText}>Recibo</Text>
-                    </JellyButton>
-                  )}
-                </View>
-              </GlassCard>
-            );
-          })
         )}
 
       </ScrollView>
@@ -782,32 +705,4 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     fontSize: 13, fontFamily: FONTS.interRegular,
     color: COLORS.textMuted, textAlign: 'center',
   },
-
-  // ── Ingresos
-  ingresosResumen: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: 'rgba(16,185,129,0.08)',
-    borderRadius: 14, padding: 16,
-    borderWidth: 1, borderColor: 'rgba(16,185,129,0.25)', marginBottom: 12,
-  },
-  ingresosLabel: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
-  ingresosTotal: { fontSize: 24, fontFamily: FONTS.rajdhaniBold, color: COLORS.success },
-  txCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: COLORS.backgroundCard,
-    borderRadius: 12, padding: 14,
-    borderWidth: 1, borderColor: COLORS.border, marginBottom: 8,
-  },
-  txConcepto: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
-  txMeta: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
-  txRef: { fontSize: 10, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 2 },
-  txEstadoBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
-  txEstadoText: { fontSize: 10, fontFamily: FONTS.interSemiBold },
-  reciboBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: COLORS.primary12, borderRadius: 8,
-    paddingHorizontal: 8, paddingVertical: 4,
-    borderWidth: 1, borderColor: COLORS.primary35,
-  },
-  reciboBtnText: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
 });

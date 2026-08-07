@@ -40,12 +40,13 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-
+  Switch,
 
   TouchableOpacity,
   View,
 } from 'react-native';
 import FeedbackGate from '../src/components/FeedbackGate';
+import ModeracionVacanteGate from '../src/components/ModeracionVacanteGate';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import EmpresaHomeCards from '../src/components/EmpresaHomeCards';
@@ -105,6 +106,14 @@ const PLAN_DISPLAY: Record<'gratuito' | 'mensual' | 'premium', { nombre: string;
   },
 };
 
+// Montos reales por plan/ciclo — mismos valores que se muestran en
+// obtenerPlanesVisibles() al comprar, reutilizados aquí para registrar el
+// monto correcto en `transacciones` al renovar.
+const PRECIOS_PLAN: Record<'mensual' | 'premium', Record<'mensual' | 'anual', number>> = {
+  mensual: { mensual: 9.99, anual: 49.99 },
+  premium: { mensual: 24.99, anual: 149.99 },
+};
+
 // Hook que recrea los estilos según el tema activo (claro/oscuro)
 function useThemedStyles() {
   const { colors } = useTheme();
@@ -120,7 +129,7 @@ const IS_WIDE = SCREEN_W >= 768;
 // ─────────────────────────────────────────────
 // TIPOS
 // ─────────────────────────────────────────────
-type SeccionEmpresa = 'inicio' | 'vacantes' | 'kanban' | 'activas' | 'pagos' | 'historial' | 'perfil';
+type SeccionEmpresa = 'inicio' | 'vacantes' | 'kanban' | 'activas' | 'historial' | 'perfil';
 
 interface Vacante {
   id: string;
@@ -155,6 +164,9 @@ interface Vacante {
   aplicantes_count: number;
   ubicacion_coords?: { latitude: number; longitude: number } | null;
   ubicacion_texto?: { direccion: string; municipio: string; departamento: string; pais: string } | null;
+  /** Presente solo si un admin deshabilitó/eliminó esta publicación (ver ModeracionVacanteGate). */
+  estado_moderacion?: 'deshabilitada' | 'eliminada' | null;
+  motivo_moderacion?: string | null;
 }
 
 interface Aplicacion {
@@ -208,6 +220,11 @@ interface PerfilEmpresa {
   limiteVacantes?: number;
   limiteAlianzas?: number;
   verificado?: boolean;
+  /** Ciclo de facturación contratado (mensual/anual) — determina el monto de la renovación. */
+  cicloFacturacion?: 'mensual' | 'anual';
+  /** true = la empresa quiere que Gradly renueve su plan solo, sin acción manual. */
+  renovacionAutomatica?: boolean;
+  fechaUltimoPago?: any;
 }
 
 const MENU: { key: SeccionEmpresa; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -216,12 +233,11 @@ const MENU: { key: SeccionEmpresa; label: string; icon: keyof typeof Ionicons.gl
   { key: 'kanban',    label: 'Reclutamiento',    icon: 'people-outline' },
   { key: 'activas',   label: 'Pasantías Activas',icon: 'checkmark-circle-outline' },
   { key: 'historial', label: 'Historial de Pasantes', icon: 'time-outline' },
-  { key: 'pagos',     label: 'Pagos',            icon: 'card-outline' },
 ];
 
 // ── Onboarding (guía por globos) — mismo orden que MENU, terminando en
 // 'perfil' (Mi Perfil es siempre la última parada del recorrido). ──
-const TOUR_CLAVES: SeccionEmpresa[] = ['inicio', 'vacantes', 'kanban', 'activas', 'historial', 'pagos', 'perfil'];
+const TOUR_CLAVES: SeccionEmpresa[] = ['inicio', 'vacantes', 'kanban', 'activas', 'historial', 'perfil'];
 const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
   inicio: {
     titulo: '¡Bienvenido a tu panel! 🏢',
@@ -242,11 +258,6 @@ const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
     titulo: 'Pasantías Activas',
     texto:
       'Da seguimiento a las pasantías en curso y firma las constancias de horas de tus estudiantes.',
-  },
-  pagos: {
-    titulo: 'Pagos',
-    texto:
-      'Gestiona los pagos a estudiantes y administra tu método de pago de forma segura.',
   },
   historial: {
     titulo: 'Historial de Pasantes',
@@ -519,7 +530,7 @@ export default function DashboardEmpresa() {
       // Determinamos si es un "upgrade" (mejora) para mostrar el modal de bienvenida
       const isUpgrade = (perfil?.plan === 'gratuito') || (perfil?.plan === 'mensual' && planToUpgrade === 'premium');
 
-      const dataUpdates: any = { plan: planToUpgrade };
+      const dataUpdates: any = { plan: planToUpgrade, cicloFacturacion: periodoPlanes, fechaUltimoPago: serverTimestamp() };
       if (planToUpgrade === 'mensual') {
         dataUpdates.limiteVacantes = 10;
         dataUpdates.limiteAlianzas = 5;
@@ -533,6 +544,20 @@ export default function DashboardEmpresa() {
 
       // Actualizamos la BD
       await updateDoc(doc(db, 'perfiles_empresas', user.uid), dataUpdates);
+
+      // Registramos el cobro para el historial de suscripciones del admin.
+      await addDoc(collection(db, 'transacciones'), {
+        tipo: 'suscripcion',
+        creado_por: user.uid,
+        empresa_id: user.uid,
+        empresa_nombre: perfil?.nombre_empresa ?? '',
+        plan: planToUpgrade,
+        cicloFacturacion: periodoPlanes,
+        monto: PRECIOS_PLAN[planToUpgrade][periodoPlanes],
+        concepto: `Suscripción a Plan ${PLAN_DISPLAY[planToUpgrade].nombre} (${periodoPlanes})`,
+        estado: 'completado',
+        fecha: serverTimestamp(),
+      });
 
       setShowConfirmUpgradeModal(false);
       setShowUpgradeSuccessModal(true);
@@ -553,6 +578,48 @@ export default function DashboardEmpresa() {
       Alert.alert('Error', 'No se pudo procesar el pago o actualizar el plan.');
     } finally {
       setUpgradeProcessing(false);
+    }
+  };
+
+  // ── Renovación automática: switch que se guarda solo, sin botón de confirmar ──
+  const handleToggleRenovacionAutomatica = async (value: boolean) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'perfiles_empresas', user.uid), { renovacionAutomatica: value });
+    } catch {
+      Alert.alert('Error', 'No se pudo actualizar la renovación automática.');
+    }
+  };
+
+  // ── Renovar el pago del ciclo actual ahora mismo (manual, no automático) ──
+  const handleRenovarPago = async () => {
+    if (!user || !perfil?.plan || perfil.plan === 'gratuito') return;
+    const plan = perfil.plan as 'mensual' | 'premium';
+    const ciclo = perfil.cicloFacturacion ?? 'mensual';
+    const monto = PRECIOS_PLAN[plan][ciclo];
+    setRenovandoPago(true);
+    try {
+      await addDoc(collection(db, 'transacciones'), {
+        tipo: 'suscripcion',
+        creado_por: user.uid,
+        empresa_id: user.uid,
+        empresa_nombre: perfil?.nombre_empresa ?? '',
+        plan,
+        cicloFacturacion: ciclo,
+        monto,
+        concepto: `Renovación de Plan ${PLAN_DISPLAY[plan].nombre} (${ciclo})`,
+        estado: 'completado',
+        fecha: serverTimestamp(),
+      });
+      await updateDoc(doc(db, 'perfiles_empresas', user.uid), { fechaUltimoPago: serverTimestamp() });
+      Alert.alert(
+        'Pago renovado ✓',
+        `Se procesó tu renovación ${ciclo === 'mensual' ? 'de este mes' : 'de este año'} por $${monto.toFixed(2)}.`,
+      );
+    } catch {
+      Alert.alert('Error', 'No se pudo procesar la renovación.');
+    } finally {
+      setRenovandoPago(false);
     }
   };
 
@@ -577,9 +644,6 @@ export default function DashboardEmpresa() {
   const [vacanteEditando, setVacanteEditando] = useState<Vacante | null>(null);
   const [showCardModal,     setShowCardModal]      = useState(false);
   const [showFirmaModal,    setShowFirmaModal]     = useState<Aplicacion | null>(null);
-  const [showPagoModal,     setPagoModal]          = useState<Aplicacion | null>(null);
-  const [pagoProcesando,    setPagoProcesando]     = useState(false);
-  const [pagoMonto,         setPagoMonto]          = useState('');
   const [firmaConfirmada,   setFirmaConfirmada]    = useState(false);
   // Horario de contratación (individual): se pide antes de mover a 'contratado'.
   const [horarioContratoApp, setHorarioContratoApp] = useState<Aplicacion | null>(null);
@@ -630,6 +694,13 @@ export default function DashboardEmpresa() {
   const [cardTitular, setCardTitular] = useState('');
   const [cardErrs,    setCardErrs]    = useState<Record<string, string>>({});
   const [cardSaving,  setCardSaving]  = useState(false);
+  // true = formulario para agregar/editar; false = vista de solo lectura de la
+  // tarjeta ya registrada (con botón para pasar a edición). Ver abrirCardModal.
+  const [cardEditing, setCardEditing] = useState(false);
+  // Se activa cuando el modal de tarjeta se abrió porque la empresa intentó
+  // mejorar su plan sin tener un método de pago registrado: al guardar la
+  // tarjeta con éxito, retoma el flujo de mejora automáticamente.
+  const [pendingUpgradeAfterCard, setPendingUpgradeAfterCard] = useState(false);
 
   // Detalle de plan
   const [showPlanDetail, setShowPlanDetail] = useState(false);
@@ -643,6 +714,7 @@ export default function DashboardEmpresa() {
   const [showWelcomePlanModal, setShowWelcomePlanModal] = useState(false);
   const [newPlanInfo, setNewPlanInfo] = useState<'mensual' | 'premium' | null>(null);
   const [periodoPlanes, setPeriodoPlanes] = useState<'mensual' | 'anual'>('mensual');
+  const [renovandoPago, setRenovandoPago] = useState(false);
 
   // ── Vista detallada de un candidato (sección Reclutar / Kanban) ──
   const [candidatoSeleccionado, setCandidatoSeleccionado] = useState<any | null>(null);
@@ -1436,33 +1508,13 @@ export default function DashboardEmpresa() {
     } catch { Alert.alert('Error', 'No se pudo firmar la constancia.'); }
   };
 
-  // ── Pago simulado ─────────────────────────────────────────────────
-  const handlePagar = async (app: Aplicacion) => {
-    if (!pagoMonto || isNaN(Number(pagoMonto))) { Alert.alert('Monto inválido'); return; }
-    setPagoProcesando(true);
-    await new Promise(r => setTimeout(r, 2000)); // simulación
-    try {
-      const ref_ = `GRL-${Date.now().toString(36).toUpperCase()}`;
-      const transQ = await getDocs(
-        query(collection(db, 'transacciones'), where('aplicacion_id', '==', app.id))
-      );
-      if (!transQ.empty) {
-        await updateDoc(transQ.docs[0].ref, {
-          estado: 'completado', monto: Number(pagoMonto),
-          referencia: ref_, fecha: serverTimestamp(),
-        });
-      }
-      await updateDoc(doc(db, 'aplicaciones', app.id), { pago_confirmado: true });
-      Alert.alert('Pago simulado exitoso ✓', `Referencia: ${ref_}`);
-      setPagoModal(null); setPagoMonto('');
-    } catch { Alert.alert('Error', 'No se pudo procesar el pago.'); }
-    finally { setPagoProcesando(false); }
-  };
-
   // ── Abrir/cerrar modal de tarjeta ─────────────────────────────────
+  // Con tarjeta registrada abre en modo "vista" (credenciales enmascaradas +
+  // botón editar); sin tarjeta abre directo en el formulario de alta.
   const abrirCardModal = () => {
     setCardNumero(''); setCardExp(''); setCardCvv(''); setCardTitular('');
     setCardErrs({});
+    setCardEditing(!perfil?.tarjeta_numero);
     setShowCardModal(true);
   };
 
@@ -1490,7 +1542,15 @@ export default function DashboardEmpresa() {
       });
       setShowCardModal(false);
       setCardNumero(''); setCardExp(''); setCardCvv(''); setCardTitular('');
-      Alert.alert('Tarjeta actualizada', 'Tu método de pago se guardó correctamente.');
+      setCardEditing(false);
+      if (pendingUpgradeAfterCard) {
+        // Ya tiene método de pago: retoma la mejora de plan que había quedado
+        // pendiente por no tener tarjeta registrada.
+        setPendingUpgradeAfterCard(false);
+        setShowConfirmUpgradeModal(true);
+      } else {
+        Alert.alert('Tarjeta actualizada', 'Tu método de pago se guardó correctamente.');
+      }
     } catch {
       Alert.alert('Error', 'No se pudo guardar la tarjeta.');
     } finally {
@@ -1513,7 +1573,7 @@ export default function DashboardEmpresa() {
   // ── Items del menú flotante (etiquetas cortas para la barra) ──────
   const NAV_LABELS: Record<SeccionEmpresa, string> = {
     inicio: 'Inicio', vacantes: 'Vacantes', kanban: 'Reclutar',
-    activas: 'Activas', historial: 'Historial', pagos: 'Pagos', perfil: 'Mi Perfil',
+    activas: 'Activas', historial: 'Historial', perfil: 'Mi Perfil',
   };
   // "Mensajes" y "Mi Perfil" se añaden SIEMPRE como últimas opciones.
   type NavKey = SeccionEmpresa | 'mensajes' | 'perfil';
@@ -1536,7 +1596,6 @@ export default function DashboardEmpresa() {
       case 'kanban':   return <SeccionKanban apps={apps} onMover={moverEstado} onSeleccionar={(a) => { setRatingEstudiante(0); setCandidatoSeleccionado(a); }} />;
       case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} />;
       case 'historial': return <HistorialPasantes empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
-      case 'pagos':    return <SeccionPagos apps={apps} perfil={perfil} onPagar={setPagoModal} onCardChange={abrirCardModal} onVerPerfil={setPerfilCandidatoId} />;
       case 'perfil':   return renderPerfilSeccion();
       default:         return null;
     }
@@ -1693,6 +1752,41 @@ export default function DashboardEmpresa() {
                     <Ionicons name="chevron-forward" size={14} color={colors.primaryLight} />
                   </TouchableOpacity>
                 </View>
+
+                {planKey !== 'gratuito' && (
+                  <View style={styles.planRenewBox}>
+                    <View style={styles.planRenewRow}>
+                      <View style={{ flex: 1, paddingRight: 10 }}>
+                        <Text style={styles.planRenewTitle}>Renovación automática</Text>
+                        <Text style={styles.planRenewDesc}>
+                          Gradly renueva tu plan {(perfil?.cicloFacturacion ?? 'mensual') === 'mensual' ? 'cada mes' : 'cada año'} sin que tengas que hacer nada.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={!!perfil?.renovacionAutomatica}
+                        onValueChange={handleToggleRenovacionAutomatica}
+                        trackColor={{ false: colors.border, true: colors.primary }}
+                        thumbColor="#fff"
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.planBoxBtn, { marginTop: 10, opacity: renovandoPago ? 0.6 : 1 }]}
+                      disabled={renovandoPago}
+                      onPress={handleRenovarPago}
+                    >
+                      {renovandoPago ? (
+                        <ActivityIndicator size="small" color={colors.primaryLight} />
+                      ) : (
+                        <>
+                          <Ionicons name="refresh-outline" size={14} color={colors.primaryLight} />
+                          <Text style={styles.planBoxBtnText}>
+                            Renovar pago de {(perfil?.cicloFacturacion ?? 'mensual') === 'mensual' ? 'este mes' : 'este año'}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
               </BlurView>
             ),
           },
@@ -1807,6 +1901,9 @@ export default function DashboardEmpresa() {
 
       {/* ── FORMULARIO OBLIGATORIO DE EXPERIENCIA (pasantías finalizadas) ── */}
       <FeedbackGate />
+
+      {/* ── AVISO DE MODERACIÓN (vacantes deshabilitadas/eliminadas por admin) ── */}
+      <ModeracionVacanteGate />
 
       {/* ── MENÚ FLOTANTE (Glassmorphism) ── */}
       <FloatingNavBar
@@ -2209,96 +2306,105 @@ export default function DashboardEmpresa() {
         </View>
       </Modal>
 
-      {/* ── MODAL: Pago simulado ── */}
-      <Modal visible={!!showPagoModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Procesar pago</Text>
-            <Text style={styles.modalDesc}>Estudiante: {showPagoModal?.estudiante_nombre}</Text>
-            <Text style={styles.fieldLabel}>Monto a pagar ($)</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={pagoMonto}
-              onChangeText={setPagoMonto}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
-              placeholderTextColor={COLORS.textMuted}
-              selectionColor={COLORS.primary}
-            />
-            <Text style={styles.modalDesc}>
-              Tarjeta registrada: •••• {perfil?.tarjeta_numero ?? '????'}
-            </Text>
-            {pagoProcesando ? (
-              <View style={{ alignItems: 'center', padding: 16 }}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
-                <Text style={{ color: COLORS.textMuted, marginTop: 8, fontFamily: FONTS.interRegular }}>Procesando...</Text>
-              </View>
-            ) : (
-              <View style={styles.modalActions}>
-                <TouchableOpacity style={styles.modalCancel} onPress={() => { setPagoModal(null); setPagoMonto(''); }}>
-                  <Text style={styles.modalCancelText}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.modalSave} onPress={() => showPagoModal && handlePagar(showPagoModal)}>
-                  <Text style={styles.modalSaveText}>Pagar ahora</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── MODAL: Actualizar tarjeta (validación estricta) ── */}
+      {/* ── MODAL: Método de pago (ver la registrada, o agregar/actualizar) ── */}
       <Modal visible={showCardModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Actualizar método de pago</Text>
+            {!cardEditing && !!perfil?.tarjeta_numero ? (
+              // ── Vista: credenciales ya registradas (enmascaradas) ──
+              <>
+                <Text style={styles.modalTitle}>Método de pago</Text>
 
-            <Text style={styles.fieldLabel}>Número de tarjeta</Text>
-            <TextInput style={[styles.modalInput, cardErrs.numero && styles.inputErr]} value={cardNumero}
-              onChangeText={t => { const v = maskTarjeta(t); setCardNumero(v); setCardErr('numero', valTarjetaNum(v)); }}
-              placeholder="1234 5678 9012 3456" placeholderTextColor={COLORS.textMuted}
-              keyboardType="number-pad" maxLength={19} selectionColor={COLORS.primary} />
-            {!!cardErrs.numero && <Text style={styles.inputErrText}>{cardErrs.numero}</Text>}
+                <View style={styles.payCard}>
+                  <Text style={styles.payCardNumber}>**** **** **** {perfil.tarjeta_numero}</Text>
+                  {!!perfil.tarjeta_alias && (
+                    <Text style={styles.payCardAlias}>{perfil.tarjeta_alias}</Text>
+                  )}
+                </View>
 
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Vencimiento (MM/AA)</Text>
-                <TextInput style={[styles.modalInput, cardErrs.exp && styles.inputErr]} value={cardExp}
-                  onChangeText={t => { const v = maskExp(t); setCardExp(v); setCardErr('exp', valExp(v)); }}
-                  placeholder="MM/AA" placeholderTextColor={COLORS.textMuted}
-                  keyboardType="number-pad" maxLength={5} selectionColor={COLORS.primary} />
-                {!!cardErrs.exp && <Text style={styles.inputErrText}>{cardErrs.exp}</Text>}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>CVV</Text>
-                <TextInput style={[styles.modalInput, cardErrs.cvv && styles.inputErr]} value={cardCvv}
-                  onChangeText={t => { const v = t.replace(/\D/g, '').slice(0, 4); setCardCvv(v); setCardErr('cvv', valCvv(v)); }}
-                  placeholder="123" placeholderTextColor={COLORS.textMuted}
-                  keyboardType="number-pad" maxLength={4} selectionColor={COLORS.primary} />
-                {!!cardErrs.cvv && <Text style={styles.inputErrText}>{cardErrs.cvv}</Text>}
-              </View>
-            </View>
+                <View style={styles.payNote}>
+                  <Ionicons name="lock-closed" size={12} color={COLORS.textMuted} />
+                  <Text style={styles.payNoteText}>Por seguridad solo guardamos los últimos 4 dígitos.</Text>
+                </View>
 
-            <Text style={styles.fieldLabel}>Nombre del titular</Text>
-            <TextInput style={[styles.modalInput, cardErrs.titular && styles.inputErr]} value={cardTitular}
-              onChangeText={t => { const v = t.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, ''); setCardTitular(v); setCardErr('titular', valTitular(v)); }}
-              placeholder="Como aparece en la tarjeta" placeholderTextColor={COLORS.textMuted}
-              autoCapitalize="words" selectionColor={COLORS.primary} />
-            {!!cardErrs.titular && <Text style={styles.inputErrText}>{cardErrs.titular}</Text>}
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.modalCancel}
+                    onPress={() => { setShowCardModal(false); setPendingUpgradeAfterCard(false); }}
+                  >
+                    <Text style={styles.modalCancelText}>Cerrar</Text>
+                  </TouchableOpacity>
+                  <JellyButton style={styles.modalSave} contentStyle={{ paddingVertical: 0 }} onPress={() => setCardEditing(true)}>
+                    <Text style={styles.modalSaveText}>Actualizar método de pago</Text>
+                  </JellyButton>
+                </View>
+              </>
+            ) : (
+              // ── Formulario: alta (sin tarjeta) o edición (reemplaza la actual) ──
+              <>
+                <Text style={styles.modalTitle}>
+                  {perfil?.tarjeta_numero ? 'Actualizar método de pago' : 'Registrar método de pago'}
+                </Text>
 
-            <View style={styles.payNote}>
-              <Ionicons name="lock-closed" size={12} color={COLORS.textMuted} />
-              <Text style={styles.payNoteText}>Pago simulado. No se realiza ningún cargo real.</Text>
-            </View>
+                {pendingUpgradeAfterCard && (
+                  <View style={styles.payNote}>
+                    <Ionicons name="information-circle-outline" size={14} color={colors.primaryLight} />
+                    <Text style={styles.payNoteText}>Necesitas registrar un método de pago para mejorar tu plan.</Text>
+                  </View>
+                )}
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowCardModal(false)} disabled={cardSaving}>
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <JellyButton style={[styles.modalSave, cardSaving && { opacity: 0.6 }]} contentStyle={{ paddingVertical: 0 }} onPress={cardSaving ? undefined : handleGuardarTarjeta}>
-                {cardSaving ? <ActivityIndicator color={COLORS.textPrimary} /> : <Text style={styles.modalSaveText}>Guardar tarjeta</Text>}
-              </JellyButton>
-            </View>
+                <Text style={styles.fieldLabel}>Número de tarjeta</Text>
+                <TextInput style={[styles.modalInput, cardErrs.numero && styles.inputErr]} value={cardNumero}
+                  onChangeText={t => { const v = maskTarjeta(t); setCardNumero(v); setCardErr('numero', valTarjetaNum(v)); }}
+                  placeholder="1234 5678 9012 3456" placeholderTextColor={COLORS.textMuted}
+                  keyboardType="number-pad" maxLength={19} selectionColor={COLORS.primary} />
+                {!!cardErrs.numero && <Text style={styles.inputErrText}>{cardErrs.numero}</Text>}
+
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.fieldLabel}>Vencimiento (MM/AA)</Text>
+                    <TextInput style={[styles.modalInput, cardErrs.exp && styles.inputErr]} value={cardExp}
+                      onChangeText={t => { const v = maskExp(t); setCardExp(v); setCardErr('exp', valExp(v)); }}
+                      placeholder="MM/AA" placeholderTextColor={COLORS.textMuted}
+                      keyboardType="number-pad" maxLength={5} selectionColor={COLORS.primary} />
+                    {!!cardErrs.exp && <Text style={styles.inputErrText}>{cardErrs.exp}</Text>}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.fieldLabel}>CVV</Text>
+                    <TextInput style={[styles.modalInput, cardErrs.cvv && styles.inputErr]} value={cardCvv}
+                      onChangeText={t => { const v = t.replace(/\D/g, '').slice(0, 4); setCardCvv(v); setCardErr('cvv', valCvv(v)); }}
+                      placeholder="123" placeholderTextColor={COLORS.textMuted}
+                      keyboardType="number-pad" maxLength={4} selectionColor={COLORS.primary} />
+                    {!!cardErrs.cvv && <Text style={styles.inputErrText}>{cardErrs.cvv}</Text>}
+                  </View>
+                </View>
+
+                <Text style={styles.fieldLabel}>Nombre del titular</Text>
+                <TextInput style={[styles.modalInput, cardErrs.titular && styles.inputErr]} value={cardTitular}
+                  onChangeText={t => { const v = t.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, ''); setCardTitular(v); setCardErr('titular', valTitular(v)); }}
+                  placeholder="Como aparece en la tarjeta" placeholderTextColor={COLORS.textMuted}
+                  autoCapitalize="words" selectionColor={COLORS.primary} />
+                {!!cardErrs.titular && <Text style={styles.inputErrText}>{cardErrs.titular}</Text>}
+
+                <View style={styles.payNote}>
+                  <Ionicons name="lock-closed" size={12} color={COLORS.textMuted} />
+                  <Text style={styles.payNoteText}>Pago simulado. No se realiza ningún cargo real.</Text>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.modalCancel}
+                    onPress={() => { setShowCardModal(false); setPendingUpgradeAfterCard(false); }}
+                    disabled={cardSaving}
+                  >
+                    <Text style={styles.modalCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <JellyButton style={[styles.modalSave, cardSaving && { opacity: 0.6 }]} contentStyle={{ paddingVertical: 0 }} onPress={cardSaving ? undefined : handleGuardarTarjeta}>
+                    {cardSaving ? <ActivityIndicator color={COLORS.textPrimary} /> : <Text style={styles.modalSaveText}>Guardar tarjeta</Text>}
+                  </JellyButton>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -2460,7 +2566,14 @@ export default function DashboardEmpresa() {
                   onPress={() => {
                     if (perfil?.plan === p.id) return;
                     setPlanToUpgrade(p.id as any);
-                    setShowConfirmUpgradeModal(true);
+                    if (!perfil?.tarjeta_numero) {
+                      // Sin método de pago registrado: pide la tarjeta primero
+                      // y, al guardarla, retoma esta mejora automáticamente.
+                      setPendingUpgradeAfterCard(true);
+                      abrirCardModal();
+                    } else {
+                      setShowConfirmUpgradeModal(true);
+                    }
                   }}
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2807,52 +2920,75 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
         )}
       </View>
       <FlatList
-        data={vacantes}
+        data={vacantes.filter(v => v.estado_moderacion !== 'eliminada')}
         keyExtractor={item => item.id}
         contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
-        renderItem={({ item }) => (
-          <GlassCard style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
-            <TouchableOpacity style={{ flex: 1 }} onPress={() => onVerDetalles(item)} activeOpacity={0.7}>
-              <AutoText style={s.vacanteTitle} numberOfLines={1}>{item.titulo}</AutoText>
-              <Text style={s.vacanteMeta}>
-                {item.categoria === 'vacante' ? 'Vacante' : 'Pasantía'} · {item.area} · {item.modalidad} · {item.aplicantes_count ?? 0} aplicantes
-              </Text>
-              {/* Cupos y horario: se omiten en vacantes legadas (sin el campo). */}
-              {textoCupos(item) && (
-                <Text style={s.vacanteCupos}>{textoCupos(item)}</Text>
-              )}
-              {textoHorario(item.horario) && (
-                <Text style={s.vacanteMeta}>{textoHorario(item.horario)}</Text>
-              )}
-            </TouchableOpacity>
-            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+        renderItem={({ item }) => {
+          // Deshabilitada por un admin (no una pausa propia vía `onToggle`):
+          // la empresa la sigue viendo, pero opaca y sin poder interactuar —
+          // solo el admin puede revertir esto. Ver ModeracionVacanteGate.
+          const deshabilitadaPorAdmin = item.estado_moderacion === 'deshabilitada';
+          return (
+            <GlassCard
+              style={{ marginBottom: 8, opacity: deshabilitadaPorAdmin ? 0.5 : 1 }}
+              contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}
+            >
               <TouchableOpacity
-                style={s.editarBtn}
-                onPress={() => onEditar(item)}
-                hitSlop={8}
-                accessibilityLabel="Editar publicación"
+                style={{ flex: 1 }}
+                onPress={deshabilitadaPorAdmin ? undefined : () => onVerDetalles(item)}
+                activeOpacity={deshabilitadaPorAdmin ? 1 : 0.7}
+                disabled={deshabilitadaPorAdmin}
               >
-                <Ionicons name="create-outline" size={17} color={COLORS.primaryLight} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={s.editarBtn}
-                onPress={() => onEliminar(item)}
-                hitSlop={8}
-                accessibilityLabel="Eliminar publicación"
-              >
-                <Ionicons name="trash-outline" size={17} color={COLORS.error} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.toggleBtn, item.activa ? s.toggleBtnOn : s.toggleBtnOff]}
-                onPress={() => onToggle(item)}
-              >
-                <Text style={{ fontSize: 11, fontFamily: FONTS.interSemiBold, color: item.activa ? COLORS.success : COLORS.textMuted }}>
-                  {item.activa ? 'Activa' : 'Inactiva'}
+                <AutoText style={s.vacanteTitle} numberOfLines={1}>{item.titulo}</AutoText>
+                <Text style={s.vacanteMeta}>
+                  {item.categoria === 'vacante' ? 'Vacante' : 'Pasantía'} · {item.area} · {item.modalidad} · {item.aplicantes_count ?? 0} aplicantes
                 </Text>
+                {/* Cupos y horario: se omiten en vacantes legadas (sin el campo). */}
+                {textoCupos(item) && (
+                  <Text style={s.vacanteCupos}>{textoCupos(item)}</Text>
+                )}
+                {textoHorario(item.horario) && (
+                  <Text style={s.vacanteMeta}>{textoHorario(item.horario)}</Text>
+                )}
               </TouchableOpacity>
-            </View>
-          </GlassCard>
-        )}
+              {deshabilitadaPorAdmin ? (
+                <View style={{ alignItems: 'flex-end', maxWidth: 110, gap: 3 }}>
+                  <Ionicons name="lock-closed-outline" size={16} color={COLORS.error} />
+                  <Text style={{ fontSize: 10, fontFamily: FONTS.interSemiBold, color: COLORS.error, textAlign: 'right' }}>
+                    Deshabilitada por admin
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                  <TouchableOpacity
+                    style={s.editarBtn}
+                    onPress={() => onEditar(item)}
+                    hitSlop={8}
+                    accessibilityLabel="Editar publicación"
+                  >
+                    <Ionicons name="create-outline" size={17} color={COLORS.primaryLight} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={s.editarBtn}
+                    onPress={() => onEliminar(item)}
+                    hitSlop={8}
+                    accessibilityLabel="Eliminar publicación"
+                  >
+                    <Ionicons name="trash-outline" size={17} color={COLORS.error} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.toggleBtn, item.activa ? s.toggleBtnOn : s.toggleBtnOff]}
+                    onPress={() => onToggle(item)}
+                  >
+                    <Text style={{ fontSize: 11, fontFamily: FONTS.interSemiBold, color: item.activa ? COLORS.success : COLORS.textMuted }}>
+                      {item.activa ? 'Activa' : 'Inactiva'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </GlassCard>
+          );
+        }}
         ListEmptyComponent={<Text style={s.emptyText}>Sin vacantes publicadas.</Text>}
       />
     </View>
@@ -3033,7 +3169,6 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
                   </Text>
                 )}
                 <Text style={s.activaMeta}>Horas: {item.horas_completadas ?? 0}</Text>
-                <Text style={s.activaMeta}>Pago: {item.pago_confirmado ? '✓ Pagado' : '⏳ Pendiente'}</Text>
               </View>
               {necesitaFirma && (
                 <JellyButton style={s.firmarBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 }} onPress={() => onFirmar(item)}>
@@ -3047,75 +3182,6 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
       }}
       ListEmptyComponent={<Text style={s.emptyText}>Sin pasantes activos.</Text>}
     />
-  );
-}
-
-// ─────────────────────────────────────────────
-// SECCIÓN: PAGOS
-// ─────────────────────────────────────────────
-function SeccionPagos({ apps, perfil, onPagar, onCardChange, onVerPerfil }: {
-  apps: Aplicacion[]; perfil: PerfilEmpresa | null;
-  onPagar: (a: Aplicacion) => void; onCardChange: () => void;
-  onVerPerfil: (estudianteId: string) => void;
-}) {
-  const { s } = useThemedStyles();
-  const pendientes  = apps.filter(a => a.estado === 'finalizado' && !a.pago_confirmado);
-  const completados = apps.filter(a => a.pago_confirmado);
-
-  return (
-    <ScrollView contentContainerStyle={s.scroll}>
-      {/* Tarjeta visual */}
-      <GlassCard contentStyle={{ padding: 20, gap: 12 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={s.bankBrand}>GRADLY PAY — EMPRESA</Text>
-          <Ionicons name="card" size={22} color={COLORS.primaryLight} />
-        </View>
-        <Text style={s.bankNumber}>•••• •••• •••• {perfil?.tarjeta_numero ?? '????'}</Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={s.bankAlias}>{perfil?.tarjeta_alias ?? 'Sin tarjeta'}</Text>
-          <TouchableOpacity onPress={onCardChange} style={s.changeTarjetaBtn}>
-            <Text style={s.changeTarjetaText}>Cambiar</Text>
-          </TouchableOpacity>
-        </View>
-      </GlassCard>
-
-      {/* Pagos pendientes */}
-      <Text style={s.sectionTitle}>Pagos pendientes ({pendientes.length})</Text>
-      {pendientes.map(a => (
-        <GlassCard key={a.id} style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
-          <TouchableOpacity
-            style={{ flex: 1 }}
-            activeOpacity={0.7}
-            disabled={!a.estudiante_id}
-            onPress={() => a.estudiante_id && onVerPerfil(a.estudiante_id)}
-          >
-            <Text style={s.pagoNombre}>{a.estudiante_nombre}</Text>
-            <Text style={s.pagoMeta}>Pasantía finalizada</Text>
-          </TouchableOpacity>
-          <JellyButton style={s.pagarBtn} contentStyle={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={() => onPagar(a)}>
-            <Text style={s.pagarText}>Pagar ahora</Text>
-          </JellyButton>
-        </GlassCard>
-      ))}
-      {pendientes.length === 0 && <Text style={s.emptyText}>Sin pagos pendientes.</Text>}
-
-      {/* Historial */}
-      <Text style={s.sectionTitle}>Historial de pagos</Text>
-      {completados.map(a => (
-        <TouchableOpacity
-          key={a.id}
-          style={s.historialRow}
-          activeOpacity={0.7}
-          disabled={!a.estudiante_id}
-          onPress={() => a.estudiante_id && onVerPerfil(a.estudiante_id)}
-        >
-          <Ionicons name="checkmark-circle" size={18} color={COLORS.success} />
-          <Text style={[s.pagoNombre, { flex: 1 }]} numberOfLines={1}>{a.estudiante_nombre}</Text>
-          <Text style={s.pagoMeta}>Pagado</Text>
-        </TouchableOpacity>
-      ))}
-      {completados.length === 0 && <Text style={s.emptyText}>Sin historial.</Text>}
-    </ScrollView>
   );
 }
 
@@ -3286,6 +3352,13 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     backgroundColor: COLORS.primary12, borderWidth: 1, borderColor: COLORS.primary35,
   },
   planBoxBtnText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+  planRenewBox: {
+    marginTop: 10, paddingTop: 12,
+    borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+  planRenewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  planRenewTitle: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  planRenewDesc: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 2 },
 
   // ── Método de pago (Mi Perfil) ──
   payCard: {
@@ -3551,36 +3624,10 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
   },
   firmarText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
 
-  // Pagos
-  bankCard: {
-    backgroundColor: COLORS.backgroundSurface,
-    borderRadius: 16, padding: 20, gap: 12,
-    borderWidth: 1, borderColor: COLORS.primary35,
-    marginBottom: 16,
-  },
-  bankBrand: { fontSize: 10, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, letterSpacing: 2 },
-  bankNumber: { fontSize: 22, fontFamily: FONTS.rajdhaniBold, color: COLORS.textPrimary, letterSpacing: 4 },
-  bankAlias: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  // Método de pago (Mi Perfil / modal de plan)
   changeTarjetaBtn: {
     backgroundColor: COLORS.primary12, borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 4,
   },
   changeTarjetaText: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
-  pagoRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: COLORS.backgroundCard,
-    borderRadius: 12, padding: 14,
-    borderWidth: 1, borderColor: COLORS.warning + '33', marginBottom: 8,
-  },
-  pagoNombre: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
-  pagoMeta: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
-  pagarBtn: {
-    backgroundColor: COLORS.primaryDark,
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8,
-  },
-  pagarText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
-  historialRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
 });

@@ -107,6 +107,8 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Firmar constancia": "Sign certificate",
   "Gestiona los pagos a estudiantes y administra tu método de pago de forma segura.": "Manage student payments and your payment method securely.",
   "Gestiona tu empresa desde aquí": "Manage your company from here",
+  "Gradly renueva tu plan cada año sin que tengas que hacer nada.": "Gradly renews your plan every year without you having to do anything.",
+  "Gradly renueva tu plan cada mes sin que tengas que hacer nada.": "Gradly renews your plan every month without you having to do anything.",
   "Gestiona y valida el progreso de horas de práctica de tus estudiantes.": "Manage and validate your students' practice-hours progress.",
   "Guardar tarjeta": "Save card",
   "Guías rápidas": "Quick guides",
@@ -207,6 +209,9 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Redirigiendo a tu panel…": "Redirecting to your dashboard…",
   "Registrando ubicación y datos en la base de datos.": "Registering location and data in the database.",
   "Remoto": "Remote",
+  "Renovación automática": "Automatic renewal",
+  "Renovar pago de este año": "Renew this year's payment",
+  "Renovar pago de este mes": "Renew this month's payment",
   "Representante": "Representative",
   "Requisitos y Horas": "Requirements and hours",
   "Responsable": "Manager",
@@ -220,6 +225,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Seleccionar Carreras Universitarias": "Select university majors",
   "Siglas (máx. 10)": "Acronym (max. 10)",
   "Sin actividad reciente.": "No recent activity.",
+  "Sin datos todavía.": "No data yet.",
   "Sin historial.": "No history.",
   "Sin pagos pendientes.": "No pending payments.",
   "Sin pasantes activos.": "No active interns.",
@@ -227,6 +233,22 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Sin resultados": "No results",
   "Sin transacciones registradas aún.": "No transactions recorded yet.",
   "Sin vacantes publicadas.": "No job posts published.",
+  "Suscripciones": "Subscriptions",
+  "Suscripciones pagadas": "Subscriptions paid",
+  "Suscripciones completadas en el mes en curso.": "Subscriptions completed in the current month.",
+  "Suma de los últimos 12 meses.": "Sum of the last 12 months.",
+  "Aún no hay ingresos por suscripciones registrados.": "No subscription revenue recorded yet.",
+  "Aún no se han registrado pagos de suscripción.": "No subscription payments recorded yet.",
+  "Toca para ver el historial e ingresos de suscripciones.": "Tap to see subscription history and revenue.",
+  "Ingresos": "Revenue",
+  "Ingresos de este mes": "This month's revenue",
+  "Ingresos del último año": "Last year's revenue",
+  "Ingresos mensuales (últimos 12 meses)": "Monthly revenue (last 12 months)",
+  "Planes elegidos": "Plans chosen",
+  "Plan Básico": "Basic Plan",
+  "Plan Premium": "Premium Plan",
+  "Pagos de planes de Gradly: qué plan eligió cada empresa, cuánto pagó e ingresos totales a la plataforma.":
+    "Gradly plan payments: which plan each company chose, how much they paid, and total platform revenue.",
   "Sitio web": "Website",
   "Sitio web (opcional)": "Website (optional)",
   "Skills (separadas por coma)*": "Skills (comma-separated)*",
@@ -329,6 +351,14 @@ export const AUTO_SEED_EN: Record<string, string> = {
     "Check your rank, your plan, your payment method, and your stats, and adjust your preferences.",
   "Consulta y edita los datos de tu institución, revisa tus estadísticas y ajusta tus preferencias.":
     "Review and edit your institution's information, check your stats, and adjust your preferences.",
+
+  // ── Modal de método de pago (dashboard-empresa): vista de la tarjeta ya
+  // registrada + gate de mejora de plan sin tarjeta ──
+  "Registrar método de pago": "Register payment method",
+  "Por seguridad solo guardamos los últimos 4 dígitos.":
+    "For security, we only store the last 4 digits.",
+  "Necesitas registrar un método de pago para mejorar tu plan.":
+    "You need to register a payment method to upgrade your plan.",
 };
 
 /**
@@ -493,6 +523,36 @@ export const ADMIN_SEED_EN: Record<string, string> = {
     "The user won't be able to sign in while their account is inactive.",
   "Activar": "Activate",
   "Marcar pendiente": "Mark pending",
+  // ── Microsección "Vacantes publicadas" (drill-down desde Operación de
+  // plataforma), lista + detalle con todos los datos del documento ──
+  "Publicaciones": "Listings",
+  "Vacantes y pasantías": "Job posts and internships",
+  "Listado real de publicaciones desde la colección `vacantes`.":
+    "Real list of postings from the `vacantes` collection.",
+  "Total publicadas": "Total published",
+  "Vacantes y pasantías en la colección.": "Job posts and internships in the collection.",
+  "Activas": "Active",
+  "Visibles para estudiantes ahora mismo.": "Visible to students right now.",
+  "Inactivas": "Inactive",
+  "Pausadas o cerradas por la empresa.": "Paused or closed by the company.",
+  "Buscar por título, empresa o área…": "Search by title, company or area…",
+  "TIPO": "TYPE",
+  "ESTADO": "STATUS",
+  "Sin vacantes para este filtro": "No job posts for this filter",
+  "Detalle de la publicación": "Posting detail",
+  "Cupos, horario y salario": "Spots, schedule and salary",
+  "Fechas": "Dates",
+  "Ficha técnica completa": "Complete technical record",
+  // ── Moderación de vacantes (botones Deshabilitar/Eliminar en la lista) ──
+  "Deshabilitar": "Disable",
+  "Deshabilitar publicación": "Disable posting",
+  "Eliminar publicación": "Delete posting",
+  "La empresa dueña verá el motivo y no podrá reactivarla ella misma; el resto de usuarios dejará de verla.":
+    "The owning company will see the reason and won't be able to reactivate it themselves; every other user will stop seeing it.",
+  "La empresa dueña verá el motivo. La publicación dejará de existir para todos, incluida la propia empresa.":
+    "The owning company will see the reason. The posting will stop existing for everyone, including the company itself.",
+  "Motivo de la deshabilitación": "Reason for disabling",
+  "Motivo de la eliminación": "Reason for deleting",
 };
 
 /**
@@ -732,6 +792,13 @@ export const GESTION_SEED_EN: Record<string, string> = {
   "Eliminar": "Delete",
   "Listo": "Done",
   "Grupo ya cubierto": "Group already covered",
+  // ── Aviso a la empresa cuando un admin modera una de sus publicaciones
+  // (ModeracionVacanteModal/Gate) ──
+  "Tu publicación fue eliminada": "Your posting was deleted",
+  "Tu publicación fue deshabilitada": "Your posting was disabled",
+  "Para más información, ponte en contacto con el administrador que tomó esta decisión.":
+    "For more information, contact the administrator who made this decision.",
+  "Deshabilitada por admin": "Disabled by admin",
 };
 
 // ── Barra de progreso funcional (Grupos Creados/Estudiantes Registrados/

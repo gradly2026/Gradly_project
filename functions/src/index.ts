@@ -16,6 +16,10 @@
  *    resolveReport / deleteUserComplete → operaciones sensibles del panel
  *    admin (admin.ts). Solo un actor con rol 'admin' puede invocarlas; cada
  *    una audita en `audit_logs`. Ver ADMIN_IMPLEMENTACION_INICIAL.md.
+ *  · deshabilitarVacanteAdmin / eliminarVacanteAdmin → moderación de
+ *    vacantes/pasantías desde el panel admin (admin.ts), con motivo
+ *    obligatorio. `eliminarVacanteAdmin` es eliminación LÓGICA (no borra el
+ *    doc, evita huérfanos en aplicaciones/reclamos_cupos/chats).
  *  · backfillAlianzasCalificaciones → recalcula "alianzas" y calificación
  *    promedio de estudiantes de TODAS las empresas/universidades a partir del
  *    historial completo de `solicitudes_practicas` (admin.ts). Backfill de una
@@ -36,6 +40,8 @@ export { barridoCuposVencidos } from "./barridoCupos";
 export {
   backfillAlianzasCalificaciones,
   deleteUserComplete,
+  deshabilitarVacanteAdmin,
+  eliminarVacanteAdmin,
   resolveReport,
   setUserApproval,
   setUserBan,

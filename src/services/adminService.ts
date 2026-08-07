@@ -84,6 +84,16 @@ type DeleteUserCompleteOutput = {
   uid: string;
 };
 
+type ModerarVacanteInput = {
+  vacanteId: string;
+  reason: string;
+};
+
+type ModerarVacanteOutput = {
+  ok: boolean;
+  id: string;
+};
+
 type BackfillAlianzasOutput = {
   ok: boolean;
   empresasActualizadas: number;
@@ -122,6 +132,14 @@ const _deleteUserComplete = httpsCallable<
 const _backfillAlianzasCalificaciones = httpsCallable<void, BackfillAlianzasOutput>(
   functions,
   "backfillAlianzasCalificaciones",
+);
+const _deshabilitarVacanteAdmin = httpsCallable<ModerarVacanteInput, ModerarVacanteOutput>(
+  functions,
+  "deshabilitarVacanteAdmin",
+);
+const _eliminarVacanteAdmin = httpsCallable<ModerarVacanteInput, ModerarVacanteOutput>(
+  functions,
+  "eliminarVacanteAdmin",
 );
 
 export async function setUserRole(input: SetUserRoleInput): Promise<SetUserRoleOutput> {
@@ -167,5 +185,23 @@ export async function deleteUserComplete(
  * `functions/src/admin.ts` — solo admin puede invocarlo. */
 export async function backfillAlianzasCalificaciones(): Promise<BackfillAlianzasOutput> {
   const res = await _backfillAlianzasCalificaciones();
+  return res.data;
+}
+
+/** Deshabilita una vacante/pasantía (motivo obligatorio); la empresa dueña no
+ * puede reactivarla. Ver `functions/src/admin.ts`. */
+export async function deshabilitarVacanteAdmin(
+  input: ModerarVacanteInput,
+): Promise<ModerarVacanteOutput> {
+  const res = await _deshabilitarVacanteAdmin(input);
+  return res.data;
+}
+
+/** Elimina lógicamente una vacante/pasantía (motivo obligatorio): deja de
+ * verse para todos, incluida la empresa dueña. Ver `functions/src/admin.ts`. */
+export async function eliminarVacanteAdmin(
+  input: ModerarVacanteInput,
+): Promise<ModerarVacanteOutput> {
+  const res = await _eliminarVacanteAdmin(input);
   return res.data;
 }
