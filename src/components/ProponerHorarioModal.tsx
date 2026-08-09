@@ -195,7 +195,15 @@ export default function ProponerHorarioModal({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      // "none" (antes "slide"): la animación de entrada de react-native-web
+      // anima un `transform: translateY()` en dos pasos de render; si el
+      // segundo paso no llega a pintarse a tiempo, el modal queda con el
+      // `translateY` inicial (una pantalla completa hacia abajo) — invisible
+      // y sin forma de hacerle scroll para alcanzarlo. Reproducido de forma
+      // consistente al aceptar un grupo desde Matchmaking (el selector de
+      // horario nunca llegaba a aparecer). Sin animación, el modal usa un
+      // `position: fixed` estático y siempre aparece en su lugar.
+      animationType="none"
       onRequestClose={onClose}
     >
       <View style={styles.backdrop}>

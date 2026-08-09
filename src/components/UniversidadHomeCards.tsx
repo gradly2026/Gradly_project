@@ -29,7 +29,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { AutoText as Text } from "./AutoText";
+import { AutoText as Text, useAutoText } from "./AutoText";
 import { PieChart } from 'react-native-chart-kit';
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
@@ -57,6 +57,17 @@ interface Props {
 export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitudesGrupo, metricas }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  // Leyendas del gráfico de pastel y fragmentos de la línea de progreso: se
+  // traducen aquí (react-native-chart-kit dibuja su leyenda con
+  // react-native-svg, fuera del árbol de AutoText, y la línea de progreso
+  // trae fechas/números que no se pueden sembrar como string fijo).
+  const lblEnCurso = useAutoText('En curso');
+  const lblPorIniciar = useAutoText('Por iniciar');
+  const lblCompletadas = useAutoText('Completadas');
+  const txtInicia = useAutoText('Inicia');
+  const txtDia = useAutoText('Día');
+  const txtDe = useAutoText('de');
 
   // Ancho de página responsivo: reacciona al ancho real de la ventana (móvil y
   // escritorio/web) y se limita en pantallas anchas para no estirarse. El Inicio
@@ -153,9 +164,9 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
     decimalPlaces: 0,
   };
   const pieData = [
-    { name: 'En curso', population: estadosPasantia.enCurso, color: colors.success, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: 'Por iniciar', population: estadosPasantia.porIniciar, color: colors.primaryLight, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: 'Completadas', population: estadosPasantia.completadas, color: colors.gold, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: lblEnCurso, population: estadosPasantia.enCurso, color: colors.success, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: lblPorIniciar, population: estadosPasantia.porIniciar, color: colors.primaryLight, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: lblCompletadas, population: estadosPasantia.completadas, color: colors.gold, legendFontColor: colors.textMuted, legendFontSize: 12 },
   ].filter(d => d.population > 0);
 
   const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -259,16 +270,18 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
                 return (
                   <View key={sg.id} style={{ marginBottom: 14 }}>
                     <View style={styles.progHeader}>
-                      <Text style={styles.barLabel} numberOfLines={1}>{sg.grupoNombre ?? 'Grupo'}</Text>
+                      {sg.grupoNombre
+                        ? <Text style={styles.barLabel} numberOfLines={1} noTranslate>{sg.grupoNombre}</Text>
+                        : <Text style={styles.barLabel} numberOfLines={1}>Grupo</Text>}
                       <Text style={[styles.barValue, { color, width: 40 }]}>{prog.pct}%</Text>
                     </View>
                     <View style={styles.barTrack}>
                       <View style={[styles.barFill, { width: `${prog.pct}%` as any, backgroundColor: color }]} />
                     </View>
-                    <Text style={styles.progSub}>
+                    <Text style={styles.progSub} noTranslate>
                       {prog.estado === 'por_iniciar'
-                        ? `Inicia ${sg.fechaInicio}`
-                        : `Día ${prog.diasTranscurridos} de ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
+                        ? `${txtInicia} ${sg.fechaInicio}`
+                        : `${txtDia} ${prog.diasTranscurridos} ${txtDe} ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
                     </Text>
                   </View>
                 );

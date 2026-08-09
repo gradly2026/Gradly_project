@@ -58,6 +58,7 @@ import { PromedioSimple } from '../src/components/ResenasFeedback';
 import { VacantesDisponibles } from '../src/components/Matchmaking';
 import { PerfilStatsUniversidad, RedGradlyBanner } from '../src/components/NetworkStats';
 import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTour';
+import SeccionMensajes from '../src/components/SeccionMensajes';
 import { useAuth } from '../src/context/AuthContext';
 import { crearChatGrupoOficial, subscribeUnreadTotal } from '../src/services/chatService';
 import { enviarNotificacion } from '../src/services/notificationService';
@@ -92,7 +93,7 @@ const IS_WIDE = SCREEN_W >= 768;
 // ─────────────────────────────────────────────
 // TIPOS
 // ─────────────────────────────────────────────
-type SeccionUni = 'inicio' | 'estudiantes' | 'aprobar' | 'estadisticas' | 'perfil';
+type SeccionUni = 'inicio' | 'estudiantes' | 'aprobar' | 'estadisticas' | 'perfil' | 'mensajes';
 
 interface EstudianteRow {
   id: string;
@@ -336,6 +337,10 @@ const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
     texto:
       'Consulta y edita los datos de tu institución, revisa tus estadísticas y ajusta tus preferencias.',
   },
+  mensajes: {
+    titulo: 'Mensajes',
+    texto: 'Chatea con tus estudiantes y con las empresas aliadas para coordinar las prácticas.',
+  },
 };
 
 // ─────────────────────────────────────────────
@@ -350,6 +355,9 @@ export default function DashboardUniversidad() {
 
   const [seccion,      setSeccion]      = useState<SeccionUni>('inicio');
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
+  // Chat a abrir de inmediato dentro de la sección "Mensajes" embebida (p. ej.
+  // al pulsar "Abrir chat del grupo"), en vez de navegar a otra pantalla.
+  const [chatAAbrir, setChatAAbrir] = useState<{ id: string; peerName: string } | null>(null);
   const [perfil,       setPerfil]       = useState<PerfilUni | null>(null);
   const [estudiantes,  setEstudiantes]  = useState<EstudianteRow[]>([]);
   const [apps,         setApps]         = useState<Aplicacion[]>([]);
@@ -585,9 +593,10 @@ export default function DashboardUniversidad() {
   const renderSeccion = () => {
     switch (seccion) {
       case 'inicio':       return <SeccionInicio metricas={metricas} perfil={perfil} nombreUni={nombreUni} uid={user!.uid} estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
-      case 'estudiantes':  return <SeccionEstudiantes estudiantes={estudiantes} uid={user!.uid} solicitudesGrupo={solicitudesGrupo} />;
+      case 'estudiantes':  return <SeccionEstudiantes estudiantes={estudiantes} uid={user!.uid} solicitudesGrupo={solicitudesGrupo} onAbrirChatEnMensajes={(id, peerName) => { setChatAAbrir({ id, peerName }); setSeccion('mensajes'); }} />;
       case 'aprobar':      return <SeccionPracticas solicitudes={solicitudesGrupo} />;
       case 'estadisticas': return <SeccionEstadisticas estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
+      case 'mensajes':     return <SeccionMensajes openChat={chatAAbrir} onOpenChatConsumed={() => setChatAAbrir(null)} />;
       case 'perfil':       return (
         <PerfilMasterDetail
           name={nombreUni}
@@ -784,18 +793,14 @@ export default function DashboardUniversidad() {
       {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ── */}
       <FloatingTopBar userId={user?.uid} />
 
-      {/* ── BÚSQUEDA FLOTANTE (oculta en "Mis Estudiantes", que tiene su propia barra) ── */}
-      {seccion !== 'estudiantes' && seccion !== 'perfil' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
+      {/* ── BÚSQUEDA FLOTANTE (oculta en "Mis Estudiantes", "Mi Perfil" y "Mensajes") ── */}
+      {seccion !== 'estudiantes' && seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
 
       {/* ── MENÚ FLOTANTE (Glassmorphism) ── */}
       <FloatingNavBar
         items={navItems}
         activeKey={seccion}
-        onChange={(k) =>
-          k === 'mensajes'
-            ? router.push('/mensajes' as any)
-            : setSeccion(k)
-        }
+        onChange={(k) => setSeccion(k as SeccionUni)}
       />
 
       {/* ── Onboarding (guía por globos) ── */}
@@ -810,8 +815,12 @@ export default function DashboardUniversidad() {
         onSaltar={tour.saltar}
       />
 
+      {/* Todos los <Modal> de este archivo usan animationType="none" — ver el
+          comentario equivalente en dashboard-empresa.tsx (el modal queda
+          atascado fuera de pantalla si la animación de entrada de
+          react-native-web no llega a completarse a tiempo). */}
       {/* ── MODAL: Confirmar cierre de sesión (Liquid Glass) ── */}
-      <Modal transparent visible={logoutModalVisible} animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
+      <Modal transparent visible={logoutModalVisible} animationType="none" onRequestClose={() => setLogoutModalVisible(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: colors.backgroundCard, borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: colors.primary35 }}>
             <Text style={{ fontSize: 18, color: colors.textPrimary, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>Cerrar Sesión</Text>
@@ -896,9 +905,8 @@ function MetricCard({ icon, label, value, color }: any) {
 // ─────────────────────────────────────────────
 // SECCIÓN: ESTUDIANTES + IMPORTAR EXCEL
 // ─────────────────────────────────────────────
-function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiantes: EstudianteRow[]; uid: string; solicitudesGrupo: SolicitudGrupo[] }) {
+function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnMensajes }: { estudiantes: EstudianteRow[]; uid: string; solicitudesGrupo: SolicitudGrupo[]; onAbrirChatEnMensajes: (chatId: string, peerName: string) => void }) {
   const { styles, s, colors, isDark } = useThemedStyles();
-  const router = useRouter();
 
   // ── Búsqueda ──
   const [busqueda, setBusqueda] = useState('');
@@ -1054,10 +1062,9 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
         grupoId: grupo.id,
         grupoNombre: grupo.nombre,
       });
-      router.push({
-        pathname: '/ChatScreen',
-        params: { chatId, peerName: grupo.nombre },
-      } as any);
+      // Se abre dentro de la sección "Mensajes" del propio dashboard (no una
+      // pantalla aparte) — mismo modelo que usa el estudiante.
+      onAbrirChatEnMensajes(chatId, grupo.nombre);
     } catch (error) {
       console.warn('Error creando chat grupal:', error);
       Alert.alert('Error', 'No se pudo crear el chat del grupo. Intenta de nuevo.');
@@ -1616,7 +1623,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
       ) : null}
 
       {/* ── MODAL · PASO 1: Crear grupo (validación en tiempo real) ── */}
-      <Modal visible={showModalGrupo} transparent animationType="slide" onRequestClose={() => setShowModalGrupo(false)}>
+      <Modal visible={showModalGrupo} transparent animationType="none" onRequestClose={() => setShowModalGrupo(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.sheetCard, { maxHeight: '88%' }]}>
             <Text style={styles.modalTitle}>Paso 1 · Datos del grupo</Text>
@@ -1752,7 +1759,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
       </Modal>
 
       {/* ── MODAL · PASO 2: Reglas del Excel ── */}
-      <Modal visible={showModalExcel} transparent animationType="slide" onRequestClose={() => setShowModalExcel(false)}>
+      <Modal visible={showModalExcel} transparent animationType="none" onRequestClose={() => setShowModalExcel(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.sheetCard}>
             <Text style={styles.modalTitle}>Paso 2 · Carga el Excel</Text>
@@ -1789,7 +1796,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
       </Modal>
 
       {/* ── MODAL · Progreso de creación ── */}
-      <Modal visible={showProgreso} transparent animationType="fade">
+      <Modal visible={showProgreso} transparent animationType="none">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { alignItems: 'center', gap: 14 }]}>
             <ActivityIndicator size="large" color={colors.primary} />
@@ -1805,7 +1812,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
       </Modal>
 
       {/* ── MODAL · Credenciales generadas ── */}
-      <Modal visible={showCredenciales} transparent animationType="slide" onRequestClose={cerrarCredenciales}>
+      <Modal visible={showCredenciales} transparent animationType="none" onRequestClose={cerrarCredenciales}>
         <View style={styles.modalOverlay}>
           <View style={[styles.sheetCard, { flex: 1, maxHeight: '88%' }]}>
             <View style={{ alignItems: 'center', gap: 6, paddingTop: 4 }}>

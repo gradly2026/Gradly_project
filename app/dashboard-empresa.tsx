@@ -28,7 +28,7 @@ import { abrirChatDirectoEmpresaEstudiante } from '../src/services/chatService';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import FloatingTopBar from '../src/components/FloatingTopBar';
-import { AutoText, AutoText as Text, AutoTextInput as TextInput } from '../src/components/AutoText';
+import { AutoText, AutoText as Text, AutoTextInput as TextInput, useAutoText } from '../src/components/AutoText';
 import StorageAvatar from '../src/components/StorageAvatar';
 import {
   ActivityIndicator,
@@ -54,6 +54,7 @@ import HistorialPasantes from '../src/components/HistorialPasantes';
 import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import RangoCard from '../src/components/RangoCard';
 import ResenasFeedback from '../src/components/ResenasFeedback';
+import SeccionMensajes from '../src/components/SeccionMensajes';
 import { SolicitudesEmpresa } from '../src/components/Matchmaking';
 import ProponerHorarioModal from '../src/components/ProponerHorarioModal';
 import type { AcuerdoData } from '../src/types/chat';
@@ -130,7 +131,7 @@ const IS_WIDE = SCREEN_W >= 768;
 // ─────────────────────────────────────────────
 // TIPOS
 // ─────────────────────────────────────────────
-type SeccionEmpresa = 'inicio' | 'vacantes' | 'kanban' | 'activas' | 'historial' | 'perfil';
+type SeccionEmpresa = 'inicio' | 'vacantes' | 'kanban' | 'activas' | 'historial' | 'perfil' | 'mensajes';
 
 interface Vacante {
   id: string;
@@ -269,6 +270,10 @@ const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
     titulo: 'Mi Perfil',
     texto:
       'Consulta tu rango, tu plan, tu método de pago y tus estadísticas, y ajusta tus preferencias.',
+  },
+  mensajes: {
+    titulo: 'Mensajes',
+    texto: 'Chatea con tus candidatos y con las universidades aliadas sobre las pasantías.',
   },
 };
 
@@ -627,6 +632,9 @@ export default function DashboardEmpresa() {
 
   const [seccion,     setSeccion]     = useState<SeccionEmpresa>('inicio');
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
+  // Chat a abrir de inmediato dentro de la sección "Mensajes" embebida (p. ej.
+  // al pulsar "Chatear con Candidato"), en vez de navegar a otra pantalla.
+  const [chatAAbrir, setChatAAbrir] = useState<{ id: string; peerName: string } | null>(null);
   const [perfil,      setPerfil]      = useState<PerfilEmpresa | null>(null);
   const [vacantes,    setVacantes]    = useState<Vacante[]>([]);
   const [apps,        setApps]        = useState<Aplicacion[]>([]);
@@ -1495,7 +1503,10 @@ export default function DashboardEmpresa() {
         contexto: 'candidatura',
       });
       setCandidatoSeleccionado(null);
-      router.push({ pathname: '/ChatScreen', params: { chatId, peerName: estudianteNombre } } as any);
+      // Se abre dentro de la sección "Mensajes" del propio dashboard (no una
+      // pantalla aparte) — mismo modelo que usa el estudiante.
+      setChatAAbrir({ id: chatId, peerName: estudianteNombre });
+      setSeccion('mensajes');
     } catch (error) {
       Alert.alert('Error', 'No se pudo abrir el chat con el candidato.');
     }
@@ -1575,7 +1586,7 @@ export default function DashboardEmpresa() {
   // ── Items del menú flotante (etiquetas cortas para la barra) ──────
   const NAV_LABELS: Record<SeccionEmpresa, string> = {
     inicio: 'Inicio', vacantes: 'Vacantes', kanban: 'Reclutar',
-    activas: 'Activas', historial: 'Historial', perfil: 'Mi Perfil',
+    activas: 'Activas', historial: 'Historial', perfil: 'Mi Perfil', mensajes: 'Mensajes',
   };
   // "Mensajes" y "Mi Perfil" se añaden SIEMPRE como últimas opciones.
   type NavKey = SeccionEmpresa | 'mensajes' | 'perfil';
@@ -1599,6 +1610,7 @@ export default function DashboardEmpresa() {
       case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} />;
       case 'historial': return <HistorialPasantes empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
       case 'perfil':   return renderPerfilSeccion();
+      case 'mensajes': return <SeccionMensajes openChat={chatAAbrir} onOpenChatConsumed={() => setChatAAbrir(null)} />;
       default:         return null;
     }
   };
@@ -1613,7 +1625,7 @@ export default function DashboardEmpresa() {
     return (
       <PerfilMasterDetail
         name={nombreEmpresa}
-        subtitle={`${perfil?.industria ?? 'Empresa'} · ${perfil?.premium ? '⭐ Premium' : 'Plan Básico'}`}
+        subtitle={`${perfil?.industria ?? 'Empresa'} · ${planBadgeLabel}`}
         avatarUrl={perfil?.logo_url}
         avatarStoragePath={`logos_empresas/${user!.uid}/logo.jpg`}
         fallbackIcon="business"
@@ -1836,6 +1848,11 @@ export default function DashboardEmpresa() {
 
   // ─────────────────────────────────────────────
   const nombreEmpresa = perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa';
+  // Traducido aquí (hook, siempre se ejecuta) en vez de dejar que AutoText
+  // traduzca el string ya compuesto (`subtitle`, "Plan Básico · Nombre"): ese
+  // string combinado es distinto para cada empresa y nunca podría sembrarse
+  // en autoSeed.ts, quedando a merced de la traducción async.
+  const planBadgeLabel = useAutoText(perfil?.premium ? '⭐ Premium' : 'Plan Básico');
 
   // ── Guard de ciclo de vida: evita render/crasheos con UID null ──
   // (todos los hooks ya se ejecutaron arriba, así que es seguro retornar aquí)
@@ -1879,14 +1896,14 @@ export default function DashboardEmpresa() {
               </Text>
             )}
             {seccion === 'inicio' ? (
-              <Text style={styles.mainGreeting} numberOfLines={1}>
-                {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
+              <Text style={styles.mainGreeting} numberOfLines={1} noTranslate>
+                {planBadgeLabel}
               </Text>
             ) : (
-              <Text style={styles.mainGreeting} numberOfLines={1}>
-                {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
+              <Text style={styles.mainGreeting} numberOfLines={1} noTranslate>
+                {planBadgeLabel}
                 {' · '}
-                <Text noTranslate>{nombreEmpresa}</Text>
+                {nombreEmpresa}
               </Text>
             )}
           </View>
@@ -1898,8 +1915,8 @@ export default function DashboardEmpresa() {
       {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ── */}
       <FloatingTopBar userId={user?.uid} />
 
-      {/* ── BÚSQUEDA FLOTANTE (oculta en "Mi Perfil") ── */}
-      {seccion !== 'perfil' && <FloatingSearchButton placeholder="Buscar candidatos o vacantes..." />}
+      {/* ── BÚSQUEDA FLOTANTE (oculta en "Mi Perfil" y "Mensajes") ── */}
+      {seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar candidatos o vacantes..." />}
 
       {/* ── FORMULARIO OBLIGATORIO DE EXPERIENCIA (pasantías finalizadas) ── */}
       <FeedbackGate />
@@ -1911,15 +1928,20 @@ export default function DashboardEmpresa() {
       <FloatingNavBar
         items={navItems}
         activeKey={seccion}
-        onChange={(k) =>
-          k === 'mensajes'
-            ? router.push('/mensajes' as any)
-            : setSeccion(k)
-        }
+        onChange={(k) => setSeccion(k as SeccionEmpresa)}
       />
 
+      {/* Todos los <Modal> de este archivo usan animationType="none": con
+          "slide"/"fade", react-native-web anima con un `transform`/`opacity`
+          en dos pasos de render — si el segundo paso no llega a pintarse a
+          tiempo (frecuente aquí porque el dashboard mantiene MUCHOS <Modal>
+          montados a la vez), el modal queda atascado en su estado inicial
+          (fuera de pantalla o invisible), sin forma de alcanzarlo ni con
+          scroll. Reproducido en "Planes y Facturación" (el selector de plan
+          Premium no reaccionaba a los toques) y en el modal de "Evaluar
+          grupo" de Matchmaking.tsx (ver ahí el mismo comentario). */}
       {/* ── MODAL: Detalles de Vacante (incluye mapa solo lectura) ── */}
-      <Modal visible={!!vacanteSeleccionada} transparent animationType="slide">
+      <Modal visible={!!vacanteSeleccionada} transparent animationType="none">
         <View style={styles.modalOverlay}>
           <View style={styles.sheetCard}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -2050,7 +2072,7 @@ export default function DashboardEmpresa() {
       {/* ── MODAL: Nueva Vacante ──
           FIXED: se oculta mientras estadoGuardado !== 'idle' para que el Modal
           dinámico de guardado no quede tapado por este en Android / web. */}
-      <Modal visible={showNuevaVacante && estadoGuardado === 'idle'} transparent animationType="slide">
+      <Modal visible={showNuevaVacante && estadoGuardado === 'idle'} transparent animationType="none">
         <View style={styles.modalOverlay}>
           <View style={styles.sheetCard}>
             <Text style={styles.modalTitle}>
@@ -2274,7 +2296,7 @@ export default function DashboardEmpresa() {
       </Modal>
 
       {/* ── MODAL: Firma constancia ── */}
-      <Modal visible={!!showFirmaModal} transparent animationType="fade">
+      <Modal visible={!!showFirmaModal} transparent animationType="none">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             {firmaConfirmada ? (
@@ -2309,7 +2331,7 @@ export default function DashboardEmpresa() {
       </Modal>
 
       {/* ── MODAL: Método de pago (ver la registrada, o agregar/actualizar) ── */}
-      <Modal visible={showCardModal} transparent animationType="slide">
+      <Modal visible={showCardModal} transparent animationType="none">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             {!cardEditing && !!perfil?.tarjeta_numero ? (
@@ -2412,7 +2434,7 @@ export default function DashboardEmpresa() {
       </Modal>
 
       {/* ── MODAL: Detalle del plan ── */}
-      <Modal visible={showPlanDetail} transparent animationType="fade" onRequestClose={() => setShowPlanDetail(false)}>
+      <Modal visible={showPlanDetail} transparent animationType="none" onRequestClose={() => setShowPlanDetail(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             {(() => {
@@ -2456,7 +2478,7 @@ export default function DashboardEmpresa() {
       />
 
       {/* ── MODAL: Confirmar cierre de sesión (Liquid Glass) ── */}
-      <Modal transparent visible={logoutModalVisible} animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
+      <Modal transparent visible={logoutModalVisible} animationType="none" onRequestClose={() => setLogoutModalVisible(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: '#1a162b', borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
             <Text style={{ fontSize: 18, color: '#fff', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>Cerrar Sesión</Text>
@@ -2474,7 +2496,7 @@ export default function DashboardEmpresa() {
       </Modal>
 
       {/* MODAL DINÁMICO DE ESTADO DE GUARDADO */}
-      <Modal transparent visible={estadoGuardado !== 'idle'} animationType="fade">
+      <Modal transparent visible={estadoGuardado !== 'idle'} animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)', shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 15 }}>
 
@@ -2528,7 +2550,7 @@ export default function DashboardEmpresa() {
       </Modal>
 
       {/* ── MODAL 1: SELECCIÓN DE PLAN (Mejorar) ── */}
-      <Modal visible={showPlanUpgradeModal} transparent animationType="slide">
+      <Modal visible={showPlanUpgradeModal} transparent animationType="none">
         <View style={styles.modalOverlay}>
           <View style={[styles.sheetCard, { padding: 24, flex: 0.9 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
@@ -2598,7 +2620,7 @@ export default function DashboardEmpresa() {
       </Modal>
 
       {/* ── MODAL 2: CONFIRMAR COMPRA ── */}
-      <Modal visible={showConfirmUpgradeModal} transparent animationType="fade">
+      <Modal visible={showConfirmUpgradeModal} transparent animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
             {upgradeProcessing ? (
@@ -2632,7 +2654,7 @@ export default function DashboardEmpresa() {
       </Modal>
 
       {/* ── MODAL 3: COMPRA EXITOSA ── */}
-      <Modal visible={showUpgradeSuccessModal} transparent animationType="fade">
+      <Modal visible={showUpgradeSuccessModal} transparent animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)' }}>
             <Ionicons name="checkmark-circle" size={80} color="#10b981" style={{ marginBottom: 16 }} />
@@ -2643,7 +2665,7 @@ export default function DashboardEmpresa() {
       </Modal>
 
       {/* ── MODAL 4: BIENVENIDA NUEVO PLAN ── */}
-      <Modal visible={showWelcomePlanModal} transparent animationType="slide">
+      <Modal visible={showWelcomePlanModal} transparent animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.9)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 360, alignItems: 'center', borderWidth: 1, borderColor: COLORS.gold + '55' }}>
             <Ionicons name="star" size={60} color={COLORS.gold || '#eab308'} style={{ marginBottom: 16 }} />
@@ -2671,7 +2693,7 @@ export default function DashboardEmpresa() {
       </Modal>
 
       {/* ── MODAL: VISTA DETALLADA DEL CANDIDATO (Reclutar) ── */}
-      <Modal visible={!!candidatoSeleccionado && !showRechazoModal} transparent animationType="slide">
+      <Modal visible={!!candidatoSeleccionado && !showRechazoModal} transparent animationType="none">
         <View style={styles.modalOverlay}>
           <View style={[styles.sheetCard, { padding: 0, overflow: 'hidden' }]}>
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -2756,7 +2778,7 @@ export default function DashboardEmpresa() {
       </Modal>
 
       {/* ── SUB-MODAL: MOTIVO DE RECHAZO ── */}
-      <Modal visible={showRechazoModal} transparent animationType="fade">
+      <Modal visible={showRechazoModal} transparent animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 20 }}>
           <View style={{ backgroundColor: '#1a162b', padding: 24, borderRadius: 16 }}>
             <Text style={{ color: '#fff', fontSize: 18, fontFamily: 'Sora-Bold', marginBottom: 10 }}>Motivo del rechazo</Text>
@@ -2805,6 +2827,7 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
   vacantes: Vacante[]; solicitudesGrupo: SolicitudGrupo[]; onVerPerfil: (estudianteId: string) => void;
 }) {
   const { s } = useThemedStyles();
+  const planBadgeLabel = useAutoText(perfil?.premium ? '⭐ Premium' : 'Plan Básico');
   const recientes = [...apps].sort((a, b) => {
     const ta = a.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
     const tb = b.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
@@ -2823,8 +2846,8 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
           <Text style={s.bannerSub}>Gestiona tu empresa desde aquí</Text>
         </View>
         <View style={[s.planBadge, perfil?.premium && { borderColor: COLORS.gold + '44', backgroundColor: COLORS.gold + '11' }]}>
-          <Text style={[s.planText, perfil?.premium && { color: COLORS.gold }]}>
-            {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
+          <Text style={[s.planText, perfil?.premium && { color: COLORS.gold }]} noTranslate>
+            {planBadgeLabel}
           </Text>
         </View>
       </GlassCard>

@@ -159,6 +159,10 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
   // Respuesta final
   const [rechazoApp, setRechazoApp] = useState<AplicacionGrupo | null>(null);
   const [justif, setJustif] = useState('');
+  // Error de la última acción (Aceptar/Rechazar oferta), mostrado en línea
+  // porque Alert.alert no muestra nada en web.
+  const [errorAccion, setErrorAccion] = useState<{ id: string; mensaje: string } | null>(null);
+  const [motivoVacioErr, setMotivoVacioErr] = useState(false);
 
   useEffect(() => {
     if (!universidadId) return;
@@ -354,13 +358,20 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
   };
 
   const responderFinal = async (app: AplicacionGrupo, decision: 'aceptar' | 'rechazar', motivo?: string) => {
+    setErrorAccion(null);
     try {
       await respuestaFinalUniversidad(app.id, decision, motivo);
       setRechazoApp(null);
       setJustif('');
       Alert.alert(decision === 'aceptar' ? '¡Pasantía confirmada!' : 'Oferta rechazada');
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'No se pudo procesar.');
+      // Alert.alert es un no-op en web (no muestra nada): sin este aviso en
+      // línea, un rechazo por regla de negocio (p. ej. grupo ya comprometido
+      // con otra pasantía) queda completamente silencioso — el botón
+      // "Aceptar oferta" parece no hacer nada.
+      const mensaje = e?.message ?? 'No se pudo procesar.';
+      setErrorAccion({ id: app.id, mensaje });
+      Alert.alert('Error', mensaje);
     }
   };
 
@@ -538,8 +549,11 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                       <OfertaDetalle icon="calendar-outline" label="Días" value={(p.diasTrabajo ?? []).join(', ') || '—'} colors={colors} styles={styles} />
                       <OfertaDetalle icon="hourglass-outline" label="Periodo" value={p.fechaInicio && p.fechaFin ? `${p.fechaInicio} → ${p.fechaFin}` : '—'} colors={colors} styles={styles} />
                       <OfertaDetalle icon="cash-outline" label="Pago" value={typeof p.pagoTotal === 'number' ? `$${p.pagoTotal} por estudiante` : 'Sin pago'} colors={colors} styles={styles} />
+                      {errorAccion?.id === p.id && (
+                        <Text style={[styles.note, { color: colors.error }]}>{errorAccion.mensaje}</Text>
+                      )}
                       <View style={styles.actionsRow}>
-                        <TouchableOpacity style={styles.rejectBtn} onPress={() => { setJustif(''); setRechazoApp(p); }}>
+                        <TouchableOpacity style={styles.rejectBtn} onPress={() => { setJustif(''); setErrorAccion(null); setMotivoVacioErr(false); setRechazoApp(p); }}>
                           <Text style={styles.rejectText}>Rechazar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.acceptBtn} onPress={() => responderFinal(p, 'aceptar')}>
@@ -574,7 +588,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
       <Modal
         visible={!!vacanteSel}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => {
           if (enviando) return;
           if (grupoConfirmar) { setGrupoConfirmar(null); setGrupoSel(null); return; }
@@ -719,7 +733,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
       <Modal
         visible={!!reclamoVac}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => { if (!reclamando) setReclamoVac(null); }}
       >
         <View style={styles.overlay}>
@@ -876,8 +890,12 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
         </View>
       </Modal>
 
-      {/* ── Modal: rechazar oferta (justificación) ── */}
-      <Modal visible={!!rechazoApp} transparent animationType="fade" onRequestClose={() => setRechazoApp(null)}>
+      {/* ── Modal: rechazar oferta (justificación) ──
+          `animationType="none"` (antes "fade"): mismo riesgo que el modal de
+          "Evaluar grupo" (ver comentario ahí) pero con `opacity` en vez de
+          `translateY" — si la animación de entrada no llega a pintarse, el
+          modal queda con `opacity: 0`, invisible pero técnicamente montado. */}
+      <Modal visible={!!rechazoApp} transparent animationType="none" onRequestClose={() => setRechazoApp(null)}>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>Rechazar oferta</Text>
@@ -885,12 +903,18 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
             <TextInput
               style={styles.textArea}
               value={justif}
-              onChangeText={setJustif}
+              onChangeText={(t) => { setJustif(t); setMotivoVacioErr(false); }}
               placeholder="Escribe el motivo…"
               placeholderTextColor={colors.textMuted}
               multiline
               selectionColor={colors.primary}
             />
+            {motivoVacioErr && (
+              <Text style={[styles.note, { color: colors.error }]}>Escribe un motivo antes de rechazar.</Text>
+            )}
+            {errorAccion?.id === rechazoApp?.id && (
+              <Text style={[styles.note, { color: colors.error }]}>{errorAccion?.mensaje}</Text>
+            )}
             <View style={styles.actionsRow}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setRechazoApp(null)}>
                 <Text style={styles.cancelText}>Cancelar</Text>
@@ -898,7 +922,11 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
               <TouchableOpacity
                 style={styles.rejectBtnSolid}
                 onPress={() => {
-                  if (!justif.trim()) { Alert.alert('Motivo requerido'); return; }
+                  if (!justif.trim()) {
+                    setMotivoVacioErr(true);
+                    Alert.alert('Motivo requerido');
+                    return;
+                  }
                   if (rechazoApp) responderFinal(rechazoApp, 'rechazar', justif);
                 }}
               >
@@ -933,6 +961,9 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
   const [modo, setModo] = useState<'aceptar' | 'rechazar'>('aceptar');
   const [motivo, setMotivo] = useState('');
   const [enviando, setEnviando] = useState(false);
+  // Error de la evaluación en curso, mostrado en línea porque Alert.alert no
+  // muestra nada en web (el botón parecería no hacer nada si solo se usara).
+  const [errorSel, setErrorSel] = useState<string | null>(null);
   // Horario/fechas/pago acordado (modal reutilizado del chat, para que el
   // formato sea idéntico al que ya calcula las horas de la pasantía).
   const [showHorarioModal, setShowHorarioModal] = useState(false);
@@ -995,6 +1026,7 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
     setSel(s);
     setModo('aceptar');
     setMotivo('');
+    setErrorSel(null);
     setShowHorarioModal(false);
   };
 
@@ -1007,11 +1039,11 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
 
   const abrirSelectorHorario = () => {
     if (!sel) return;
+    setErrorSel(null);
     if (!puedeAceptar(sel)) {
-      Alert.alert(
-        'Límite de alianzas alcanzado',
-        `Tu plan permite ${limiteAlianzas} alianza${limiteAlianzas === 1 ? '' : 's'} con universidades. Mejora tu plan para aliarte con más instituciones.`,
-      );
+      const mensaje = `Tu plan permite ${limiteAlianzas} alianza${limiteAlianzas === 1 ? '' : 's'} con universidades. Mejora tu plan para aliarte con más instituciones.`;
+      setErrorSel(mensaje);
+      Alert.alert('Límite de alianzas alcanzado', mensaje);
       return;
     }
     setShowHorarioModal(true);
@@ -1028,7 +1060,11 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
       Alert.alert('Listo', 'Oferta enviada a la universidad.');
       setSel(null);
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'No se pudo procesar.');
+      // Alert.alert es un no-op en web: sin este aviso en línea, un rechazo
+      // por regla de negocio queda completamente silencioso.
+      const mensaje = e?.message ?? 'No se pudo procesar.';
+      setErrorSel(mensaje);
+      Alert.alert('Error', mensaje);
     } finally {
       setEnviando(false);
     }
@@ -1036,14 +1072,21 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
 
   const confirmarRechazo = async () => {
     if (!sel) return;
-    if (!motivo.trim()) { Alert.alert('Motivo requerido'); return; }
+    if (!motivo.trim()) {
+      setErrorSel('Escribe un motivo antes de rechazar.');
+      Alert.alert('Motivo requerido');
+      return;
+    }
+    setErrorSel(null);
     setEnviando(true);
     try {
       await evaluarGrupoPorEmpresa(sel.id, 'rechazar', { justificacionRechazo: motivo });
       Alert.alert('Listo', 'Grupo rechazado.');
       setSel(null);
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'No se pudo procesar.');
+      const mensaje = e?.message ?? 'No se pudo procesar.';
+      setErrorSel(mensaje);
+      Alert.alert('Error', mensaje);
     } finally {
       setEnviando(false);
     }
@@ -1093,7 +1136,7 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
       <Modal
         visible={!!rechazoReclamo}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setRechazoReclamo(null)}
       >
         <View style={styles.overlay}>
@@ -1188,8 +1231,15 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
       {/* ── Modal de evaluación ──
           `visible` se apaga mientras `showHorarioModal` está abierto: apilar
           dos <Modal> nativos deja un overlay fantasma que bloquea los toques
-          (mismo problema ya resuelto en ChatThread.tsx). */}
-      <Modal visible={!!sel && !showHorarioModal} transparent animationType="slide" onRequestClose={() => setSel(null)}>
+          (mismo problema ya resuelto en ChatThread.tsx).
+          `animationType="none"` (antes "slide"): la animación de entrada de
+          react-native-web anima un `transform: translateY()` en dos pasos de
+          render; si el segundo paso no llega a pintarse a tiempo, el modal
+          queda con el `translateY` inicial (una pantalla completa hacia abajo)
+          — visualmente inexistente y sin forma de hacerle scroll para
+          alcanzarlo. Sin animación, el modal usa un `position: fixed` estático
+          y siempre aparece en su lugar. */}
+      <Modal visible={!!sel && !showHorarioModal} transparent animationType="none" onRequestClose={() => setSel(null)}>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.rowBetween}>
@@ -1221,7 +1271,7 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.segmentBtn, modo === 'rechazar' && styles.segmentBtnActive]}
-                onPress={() => setModo('rechazar')}
+                onPress={() => { setModo('rechazar'); setErrorSel(null); }}
               >
                 <Text style={[styles.segmentText, modo === 'rechazar' && styles.segmentTextActive]}>Rechazar</Text>
               </TouchableOpacity>
@@ -1250,6 +1300,10 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
                 </>
               )}
             </ScrollView>
+
+            {!!errorSel && (
+              <Text style={[styles.note, { color: colors.error }]}>{errorSel}</Text>
+            )}
 
             {modo === 'rechazar' && (
               <TouchableOpacity

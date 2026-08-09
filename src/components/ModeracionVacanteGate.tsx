@@ -51,7 +51,13 @@ export default function ModeracionVacanteGate() {
       pendiente={actual}
       onCerrar={() => {
         void marcarModeracionNotificada(actual.vacanteId).catch(() => {});
-        setIndice((i) => i + 1);
+        // Se difiere al siguiente tick: `setIndice` desmonta este `<Modal>`
+        // por completo (no solo cambia su prop `visible`). Si eso ocurre en
+        // el mismo evento de clic que originó el cierre, react-native-web
+        // todavía está limpiando el portal de ese Modal en el DOM y truena
+        // con "removeChild: el nodo... no es hijo de este nodo". Diferirlo
+        // le da tiempo a terminar antes de que React lo quite del árbol.
+        setTimeout(() => setIndice((i) => i + 1), 0);
       }}
     />
   );

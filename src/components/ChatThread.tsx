@@ -187,6 +187,15 @@ export interface ChatThreadProps {
    * (web): rellena el contenedor padre sin SafeAreaView ni insets propios.
    */
   embedded?: boolean;
+  /**
+   * Se invoca en vez de navegar a `/ChatScreen` cuando este hilo necesita
+   * abrir OTRO chat (p. ej. la sala nueva creada al aceptar un grupo
+   * compartido). Lo usan los orquestadores embebidos (como la sección
+   * "Mensajes" de los dashboards de empresa/universidad) para quedarse
+   * dentro de su propia sección en vez de empujar una pantalla nueva del
+   * stack. Si no se pasa, cae al comportamiento por defecto (navegar).
+   */
+  onOpenChat?: (chatId: string, peerName: string) => void;
 }
 
 /**
@@ -210,6 +219,7 @@ export default function ChatThread({
   peerName,
   onBack,
   embedded = false,
+  onOpenChat,
 }: ChatThreadProps) {
   const { user, userProfile, rol } = useAuth();
   const router = useRouter();
@@ -1322,10 +1332,16 @@ export default function ChatThread({
         });
 
         // Abre la sala de pasantía recién creada para coordinar el horario.
-        router.push({
-          pathname: "/ChatScreen",
-          params: { chatId: res.chatId, peerName: g.universidadNombre },
-        } as any);
+        // Si hay un orquestador embebido (sección "Mensajes" del dashboard),
+        // se queda dentro de esa misma sección; si no, navega como antes.
+        if (onOpenChat) {
+          onOpenChat(res.chatId, g.universidadNombre);
+        } else {
+          router.push({
+            pathname: "/ChatScreen",
+            params: { chatId: res.chatId, peerName: g.universidadNombre },
+          } as any);
+        }
       } catch (error) {
         console.warn("Error aceptando grupo compartido:", error);
         Alert.alert("Error", "No se pudo aceptar el grupo. Intenta de nuevo.");
@@ -1333,7 +1349,7 @@ export default function ChatThread({
         setAceptandoGrupo(null);
       }
     },
-    [chatId, ctx, isEmpresa, aceptandoGrupo, router],
+    [chatId, ctx, isEmpresa, aceptandoGrupo, router, onOpenChat],
   );
 
   // ── Firma del acuerdo: la acepta la CONTRAPARTE (la que no la envió) ──

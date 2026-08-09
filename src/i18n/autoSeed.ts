@@ -814,4 +814,64 @@ export const PROGRESO_SEED_EN: Record<string, string> = {
   "Aún ningún estudiante ha elegido este cupo": "No student has picked this spot yet",
 };
 
+// ── Tarjeta "Resumen general" del Inicio (EmpresaHomeCards.tsx /
+// UniversidadHomeCards.tsx): etiquetas de las 6 estadísticas de cada
+// dashboard. Sin sembrar, dependían por completo de la traducción asíncrona
+// (Google Translate) — cuando esa llamada fallaba quedaban "pegadas" en
+// español para siempre (el fallo se cachea, ver translationService.ts). ──
+export const RESUMEN_HOME_SEED_EN: Record<string, string> = {
+  // Insignia de plan (dashboard-empresa): rama "premium" del mismo ternario
+  // cuya rama "Plan Básico" ya vivía en AUTO_SEED_EN.
+  "⭐ Premium": "⭐ Premium",
+  // EmpresaHomeCards
+  "Vacantes activas": "Active job posts",
+  "Aplic. pendientes": "Pending applications",
+  "Pasantes activos": "Active interns",
+  "Horas validadas": "Validated hours",
+  "Universidades aliadas": "Partner universities",
+  // UniversidadHomeCards
+  "Estudiantes activos": "Active students",
+  "Egresados": "Graduates",
+  "Instituciones afiliadas": "Affiliated companies",
+  "Grupos": "Groups",
+  "En pasantía": "In internship",
+  "Horas aprobadas": "Approved hours",
+
+  // ── Pestaña "Análisis" de las mismas dos tarjetas: títulos de sección y
+  // estados vacíos. Igual que arriba, sin sembrar dependían de la
+  // traducción asíncrona y podían quedar "pegados" en español. ──
+  "Análisis": "Analysis",
+  // EmpresaHomeCards
+  "Estado de las aplicaciones": "Application status",
+  "Aún no hay aplicaciones.": "No applications yet.",
+  "Vacantes por área": "Job posts by area",
+  "Aún no has publicado vacantes.": "You haven't posted any job openings yet.",
+  "Pasantías de grupo activas": "Active group internships",
+  "No hay pasantías de grupo en curso.": "No group internships in progress.",
+  // UniversidadHomeCards
+  "Estado de las pasantías de grupo": "Group internship status",
+  "Aún no hay pasantías de grupo.": "No group internships yet.",
+  "Carreras con más pasantías": "Majors with the most internships",
+  "Sin datos suficientes.": "Not enough data yet.",
+  "Pasantías activas": "Active internships",
+  "No hay pasantías en curso.": "No internships in progress.",
+  // Nombre de grupo (fallback cuando no hay grupoNombre) y línea de progreso
+  // con fecha, compuesta a mano en el componente (ver useAutoText ahí) porque
+  // trae valores dinámicos (fechas/números) que no se pueden sembrar enteros.
+  "Grupo": "Group",
+  "Inicia": "Starts",
+  "Día": "Day",
+  "de": "of",
+  // Leyendas de los gráficos de pastel (react-native-chart-kit): las dibuja
+  // react-native-svg directamente, fuera del árbol de AutoText, así que el
+  // componente las traduce a mano con useAutoText antes de pasarlas a
+  // `pieData` — igual necesitan vivir aquí para resolver al instante.
+  "Contratados": "Hired",
+  "En revisión": "Under review",
+  "Rechazados": "Rejected",
+  "En curso": "In progress",
+  "Por iniciar": "Not started",
+  "Completadas": "Completed",
+};
+
 export default AUTO_SEED_EN;

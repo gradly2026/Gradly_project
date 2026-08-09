@@ -1,3 +1,4 @@
+import { useIsFocused } from '@react-navigation/native';
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 
@@ -47,6 +48,19 @@ export function useBackNavigationGuard({
     messageRef.current = message;
   });
 
+  // La pantalla protegida (dashboard) NUNCA se desmonta cuando se empuja una
+  // pantalla hija encima (chat, mensajes, etc.) — sigue viva debajo, en el
+  // mismo Stack de navegación raíz. Sin esto, el listener de `popstate` de
+  // abajo interceptaría también el "atrás" de esas pantallas hijas (p. ej. la
+  // flecha del chat) y preguntaría por cerrar sesión en vez de dejarlas
+  // regresar al dashboard con normalidad. Solo se debe interceptar cuando
+  // ESTA pantalla es la que está realmente activa.
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
+
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
 
@@ -55,6 +69,11 @@ export function useBackNavigationGuard({
     window.history.pushState(null, '', window.location.href);
 
     const handlePopState = () => {
+      // Si esta pantalla no está activa (hay una pantalla hija encima que
+      // absorbió el "atrás"), se deja navegar con normalidad — no es un
+      // intento de salir de la pantalla protegida.
+      if (!isFocusedRef.current) return;
+
       // Re-apila de inmediato para neutralizar el "atrás" que el navegador
       // ya ejecutó — el usuario permanece visualmente en la misma pantalla.
       window.history.pushState(null, '', window.location.href);

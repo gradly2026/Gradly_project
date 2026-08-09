@@ -46,6 +46,10 @@ import {
   type AvisoZonaRoja,
 } from "../../src/data/carreras";
 import {
+  DEPARTAMENTOS_EL_SALVADOR,
+  MUNICIPIOS_POR_DEPARTAMENTO,
+} from "../../src/data/ubicacionElSalvador";
+import {
   maskExp,
   maskTarjeta,
   valCvv,
@@ -299,38 +303,12 @@ const INDUSTRIAS = [
   "Otro",
 ];
 
-// Geo El Salvador (departamento → ciudades)
-const GEO_DATA: Record<string, string[]> = {
-  Ahuachapán: ["Ahuachapán", "Atiquizaya", "Tacuba", "El Refugio", "Turín"],
-  Cabañas: ["Sensuntepeque", "Ilobasco", "Victoria", "San Isidro"],
-  Chalatenango: ["Chalatenango", "La Palma", "Tejutla", "San Francisco Morazán"],
-  Cuscatlán: ["Cojutepeque", "Suchitoto", "San Pedro Perulapán"],
-  "La Libertad": [
-    "Santa Tecla",
-    "Antiguo Cuscatlán",
-    "Zaragoza",
-    "San Juan Opico",
-    "Colón",
-  ],
-  "La Paz": ["Zacatecoluca", "San Luis Talpa", "San Juan Nonualco"],
-  "La Unión": ["La Unión", "Santa Rosa de Lima"],
-  Morazán: ["San Francisco Gotera", "Jocoaitique", "Cacaopera"],
-  "San Miguel": ["San Miguel", "Moncagua", "San Rafael Oriente"],
-  "San Salvador": [
-    "San Salvador",
-    "Soyapango",
-    "Mejicanos",
-    "Apopa",
-    "Ciudad Delgado",
-    "Ilopango",
-    "San Marcos",
-    "Panchimalco",
-  ],
-  "San Vicente": ["San Vicente", "Apastepeque"],
-  "Santa Ana": ["Santa Ana", "Chalchuapa", "Metapán"],
-  Sonsonate: ["Sonsonate", "Izalco", "Nahuizalco", "Acajutla"],
-  Usulután: ["Usulután", "Jiquilisco", "Santiago de María"],
-};
+// Geo El Salvador (departamento → municipio): catálogo real y completo de los
+// 14 departamentos y sus 262 municipios — mismo catálogo que usa el modal de
+// bienvenida del estudiante (ver src/data/ubicacionElSalvador.ts), en vez del
+// listado parcial de "ciudades" que había antes aquí (dejaba fuera la mayoría
+// de municipios de cada departamento).
+const GEO_DATA: Record<string, string[]> = MUNICIPIOS_POR_DEPARTAMENTO;
 
 const FLOW_LABELS: Record<Exclude<Flow, null>, string[]> = {
   empresa: ["Datos", "Logo", "Representante", "Plan", "Seguridad"],
@@ -1010,10 +988,16 @@ function TarjetaModal({
   };
 
   return (
+    // animationType="none" (antes "fade"): con animación, react-native-web
+    // anima con `opacity`/`transform` en dos pasos de render — si el segundo
+    // paso no llega a pintarse a tiempo (frecuente aquí porque el flujo de
+    // registro mantiene varios <Modal> montados a la vez), este modal queda
+    // atascado invisible/fuera de pantalla: no responde a los toques aunque
+    // el formulario esté técnicamente montado.
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
     >
       <View style={s.modalOverlay}>
@@ -1187,7 +1171,7 @@ function CarrerasModal({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="none"
       onRequestClose={onClose}
     >
       <View style={s.modalOverlay}>
@@ -1600,7 +1584,7 @@ export default function Registro() {
     put(errs, "eDesc", valDesc(eDesc));
 
     if (!eDepto) errs.eDepto = "Selecciona un departamento";
-    if (!eCiudad) errs.eCiudad = "Selecciona una ciudad";
+    if (!eCiudad) errs.eCiudad = "Selecciona un municipio";
 
     put(errs, "eDireccion", valDireccion(eDireccion));
     put(errs, "eTel", valPhone(eTel));
@@ -1646,7 +1630,7 @@ export default function Registro() {
     put(errs, "uDesc", valDesc(uDesc));
 
     if (!uDepto) errs.uDepto = "Selecciona un departamento";
-    if (!uCiudad) errs.uCiudad = "Selecciona una ciudad";
+    if (!uCiudad) errs.uCiudad = "Selecciona un municipio";
 
     put(errs, "uDireccion", valDireccion(uDireccion));
     put(errs, "uTel", valPhone(uTel));
@@ -1989,7 +1973,7 @@ export default function Registro() {
               error={errors.eDepto}
             />
             <SelectInput
-              label="Ciudad (sede)"
+              label="Municipio (sede)"
               value={eCiudad}
               options={eCiudadOptions}
               onChange={(v) => {
@@ -2309,7 +2293,7 @@ export default function Registro() {
               error={errors.uDepto}
             />
             <SelectInput
-              label="Ciudad (sede)"
+              label="Municipio (sede)"
               value={uCiudad}
               options={uCiudadOptions}
               onChange={(v) => {
@@ -2694,7 +2678,7 @@ export default function Registro() {
           <Modal
             visible={!!avisosRoja}
             transparent
-            animationType="fade"
+            animationType="none"
             onRequestClose={() => setAvisosRoja(null)}
           >
             <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>

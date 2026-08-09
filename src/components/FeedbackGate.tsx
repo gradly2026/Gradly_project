@@ -52,7 +52,11 @@ export default function FeedbackGate() {
       // key fuerza un remount limpio del formulario entre evaluaciones.
       key={actual.feedbackId}
       pendiente={actual}
-      onSubmitted={() => setIndice((i) => i + 1)}
+      // Se difiere al siguiente tick por la misma razón que en
+      // ModeracionVacanteGate: `setIndice` desmonta este `<Modal>` por
+      // completo, y hacerlo en el mismo clic que lo originó choca con la
+      // limpieza del portal de react-native-web ("removeChild" en consola).
+      onSubmitted={() => setTimeout(() => setIndice((i) => i + 1), 0)}
     />
   );
 }
