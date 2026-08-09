@@ -65,6 +65,7 @@ import { enviarNotificacion } from '../src/services/notificationService';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
+import { useAuthBackGuard } from '../src/hooks/useSessionBackGuard';
 import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
 import { progresoDeGrupo } from '../src/utils/horasPasantia';
@@ -436,6 +437,7 @@ const KANBAN_COLS: { key: string; label: string; color: string }[] = [
 // ─────────────────────────────────────────────
 export default function DashboardEmpresa() {
   useAuthGuard('empresa');
+  useAuthBackGuard();
   const { user, userProfile } = useAuth();
   const router = useRouter();
   const { styles, colors, s } = useThemedStyles();

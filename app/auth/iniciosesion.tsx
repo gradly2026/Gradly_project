@@ -38,6 +38,7 @@ import {
   verificarBloqueoCuenta,
   type BloqueoCuenta,
 } from "../../src/utils/roleRouting";
+import { useLoginBackGuard } from "../../src/hooks/useSessionBackGuard";
 
 // ══════════════════════════════════════════════════════════════════
 //  Design tokens — derivados del tema activo (claro / oscuro)
@@ -119,6 +120,7 @@ function mapOtpError(code: string): string {
 // ══════════════════════════════════════════════════════════════════
 export default function InicioSesion() {
   const router = useRouter();
+  useLoginBackGuard();
 
   // Tema dinámico: tokens + estilos memorizados que reaccionan a claro/oscuro.
   const { colors, isDark } = useTheme();

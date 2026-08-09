@@ -14,6 +14,7 @@ import {
   View,
   ViewStyle,
 } from "react-native";
+import { ThemeToggleIcon } from "../src/components/ThemeToggleButton";
 import { useThemeContext } from "../src/context/ThemeContext";
 import { useTranslationContext } from "../src/context/TranslationContext";
 
@@ -66,11 +67,7 @@ export default function AppHeader({ hideLogo = false, style }: AppHeaderProps) {
           onPress={toggleTheme}
           accessibilityLabel={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
         >
-          <Ionicons
-            name={isDark ? "sunny-outline" : "moon-outline"}
-            size={18}
-            color={C.icon}
-          />
+          <ThemeToggleIcon size={18} />
         </TouchableOpacity>
       </View>
     </View>

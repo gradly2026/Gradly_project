@@ -10,6 +10,7 @@ import OnboardingDireccionGate from '../../src/components/OnboardingDireccionGat
 import { OnboardingBubble, useOnboarding } from '../../src/components/OnboardingTour';
 import { useAuth } from '../../src/context/AuthContext';
 import { useTranslation } from '../../src/context/TranslationContext';
+import { useAuthBackGuard } from '../../src/hooks/useSessionBackGuard';
 import { db } from '../../src/config/firebaseConfig';
 import { subscribeUnreadTotal } from '../../src/services/chatService';
 
@@ -108,6 +109,7 @@ function GlassTabBar({
 export default function TabLayout() {
   const { user } = useAuth();
   const router = useRouter();
+  useAuthBackGuard();
   const [nuevasVacantes, setNuevasVacantes] = useState(0);
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
   const [activeKey, setActiveKey] = useState<TabKey>('index');

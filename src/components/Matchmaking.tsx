@@ -462,47 +462,51 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
       {vacantesOrdenadas.length === 0 ? (
         <Text style={styles.empty}>No hay vacantes disponibles por ahora.</Text>
       ) : (
-        vacantesOrdenadas.map(v => (
-          <GlassCard key={v.id} colors={colors} isDark={isDark} column>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => setDetalleVac(v as VacanteDetalle)}>
-              <Text style={styles.cardTitle} numberOfLines={1}>{v.titulo ?? 'Vacante'}</Text>
-              <Text style={styles.cardMeta} numberOfLines={2}>
-                {v.nombre_empresa ?? 'Empresa'}{v.area ? ` · ${v.area}` : ''}{v.modalidad ? ` · ${v.modalidad}` : ''}
-              </Text>
-              {!!v.horas_requeridas && (
-                <Text style={styles.cardMeta}>{v.horas_requeridas} horas requeridas</Text>
-              )}
-              {/* Horario declarado por la empresa (ausente en vacantes legadas). */}
-              {textoHorario(v.horario) && (
-                <Text style={styles.cardMeta}>{textoHorario(v.horario)}</Text>
-              )}
-              {/* Cupos libres: ausente en vacantes legadas (sin el campo). */}
-              {textoCupos(v) && (
-                <Text style={[styles.cardCupos, !hayCupos(v) && styles.cardCuposAgotado]}>
-                  {textoCupos(v)}
-                </Text>
-              )}
-            </TouchableOpacity>
-            {/* Botones siempre al pie de la tarjeta, repartidos en todo el ancho. */}
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-              <TouchableOpacity
-                style={[styles.cta, !hayCupos(v) && styles.ctaDisabled, styles.ctaFull]}
-                onPress={() => abrirPostular(v)}
-                disabled={!hayCupos(v)}
-              >
-                <Ionicons name="people-outline" size={15} color="#fff" />
-                <Text style={styles.ctaText}>{hayCupos(v) ? 'Postular grupo' : 'Sin cupos'}</Text>
-              </TouchableOpacity>
-              {/* Reclamar por lote: solo en vacantes que declaran cupos. */}
-              {cuposDisponibles(v) !== null && hayCupos(v) && (
-                <TouchableOpacity style={[styles.ctaAlt, styles.ctaFull]} onPress={() => abrirReclamo(v)}>
-                  <Ionicons name="bookmark-outline" size={15} color={colors.primaryLight} />
-                  <Text style={styles.ctaAltText}>Reservar cupos</Text>
+        <View style={styles.vacantesGrid}>
+          {vacantesOrdenadas.map(v => (
+            <View key={v.id} style={styles.vacanteCardWrap}>
+              <GlassCard colors={colors} isDark={isDark} column>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => setDetalleVac(v as VacanteDetalle)}>
+                  <Text style={styles.cardTitle} numberOfLines={1}>{v.titulo ?? 'Vacante'}</Text>
+                  <Text style={styles.cardMeta} numberOfLines={2}>
+                    {v.nombre_empresa ?? 'Empresa'}{v.area ? ` · ${v.area}` : ''}{v.modalidad ? ` · ${v.modalidad}` : ''}
+                  </Text>
+                  {!!v.horas_requeridas && (
+                    <Text style={styles.cardMeta}>{v.horas_requeridas} horas requeridas</Text>
+                  )}
+                  {/* Horario declarado por la empresa (ausente en vacantes legadas). */}
+                  {textoHorario(v.horario) && (
+                    <Text style={styles.cardMeta}>{textoHorario(v.horario)}</Text>
+                  )}
+                  {/* Cupos libres: ausente en vacantes legadas (sin el campo). */}
+                  {textoCupos(v) && (
+                    <Text style={[styles.cardCupos, !hayCupos(v) && styles.cardCuposAgotado]}>
+                      {textoCupos(v)}
+                    </Text>
+                  )}
                 </TouchableOpacity>
-              )}
+                {/* Botones siempre al pie de la tarjeta, repartidos en todo el ancho. */}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                  <TouchableOpacity
+                    style={[styles.cta, !hayCupos(v) && styles.ctaDisabled, styles.ctaFull]}
+                    onPress={() => abrirPostular(v)}
+                    disabled={!hayCupos(v)}
+                  >
+                    <Ionicons name="people-outline" size={15} color="#fff" />
+                    <Text style={styles.ctaText}>{hayCupos(v) ? 'Postular grupo' : 'Sin cupos'}</Text>
+                  </TouchableOpacity>
+                  {/* Reclamar por lote: solo en vacantes que declaran cupos. */}
+                  {cuposDisponibles(v) !== null && hayCupos(v) && (
+                    <TouchableOpacity style={[styles.ctaAlt, styles.ctaFull]} onPress={() => abrirReclamo(v)}>
+                      <Ionicons name="bookmark-outline" size={15} color={colors.primaryLight} />
+                      <Text style={styles.ctaAltText}>Reservar cupos</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </GlassCard>
             </View>
-          </GlassCard>
-        ))
+          ))}
+        </View>
       )}
 
       {/* ── Mis postulaciones ── */}
@@ -1342,6 +1346,12 @@ const makeStyles = (C: GradlyColors, _isDark: boolean) => {
   const sheet = StyleSheet.create({
     heading: { fontSize: 15, fontFamily: FONTS.soraSemiBold, color: C.textPrimary, marginBottom: 2 },
     empty: { fontSize: 13, fontFamily: FONTS.interRegular, color: C.textMuted, paddingVertical: 12 },
+
+    // Lista de tarjetas de "Vacantes disponibles": una sola columna (una
+    // tarjeta por fila) en todos los tamaños de pantalla, centrada, con un
+    // ancho máximo para que no toque los bordes de la pantalla.
+    vacantesGrid: { flexDirection: 'column', gap: 14, alignItems: 'center' },
+    vacanteCardWrap: { width: '100%', maxWidth: 560 },
 
     cardTitle: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: C.textPrimary },
     cardMeta: { fontSize: 12, fontFamily: FONTS.interRegular, color: C.textMuted, marginTop: 2 },

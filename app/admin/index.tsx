@@ -46,6 +46,8 @@ import {
 } from "../../src/services/adminService";
 import { useTranslation } from "../../src/context/TranslationContext";
 import { useAuthGuard } from "../../src/hooks/useAuthGuard";
+import { useAuthBackGuard } from "../../src/hooks/useSessionBackGuard";
+import { ThemeToggleIcon } from "../../src/components/ThemeToggleButton";
 import { translateSync } from "../../src/services/translationService";
 import { useAdminTheme } from "../../src/styles/adminStyles";
 import { textoHorario } from "../../src/data/disponibilidad";
@@ -352,7 +354,8 @@ function Card({ children, style }: { children: React.ReactNode; style?: any }) {
 
 export default function AdminPreview() {
   useAuthGuard("admin");
-  const { C, s, isDark, toggleTheme } = useAdminTheme();
+  useAuthBackGuard();
+  const { C, s, toggleTheme } = useAdminTheme();
   const { t, language, toggleLanguage } = useTranslation();
   const { rol, isLoading, refreshProfile, logout } = useAuth();
   const { width } = useWindowDimensions();
@@ -3847,7 +3850,7 @@ export default function AdminPreview() {
             accessibilityRole="button"
             accessibilityLabel={t('cambiar_tema')}
           >
-            <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={20} color={C.text} />
+            <ThemeToggleIcon size={20} />
           </TouchableOpacity>
           <TouchableOpacity
             style={s.iconBtn}

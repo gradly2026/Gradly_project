@@ -62,8 +62,9 @@ import { useAuth } from '../src/context/AuthContext';
 import { crearChatGrupoOficial, subscribeUnreadTotal } from '../src/services/chatService';
 import { enviarNotificacion } from '../src/services/notificationService';
 import { auth, db, storage } from '../src/config/firebaseConfig';
-import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
+import { FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
+import { useAuthBackGuard } from '../src/hooks/useSessionBackGuard';
 import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
 import { calcularHorasAcuerdo, progresoDeGrupo } from '../src/utils/horasPasantia';
@@ -78,10 +79,10 @@ import { JellyButton } from '../components/ui/liquid-glass/JellyButton';
 
 // Hook que recrea los estilos según el tema activo (claro/oscuro)
 function useThemedStyles() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   return useMemo(
-    () => ({ colors, styles: makeStyles(colors), s: makeS(colors) }),
-    [colors],
+    () => ({ colors, isDark, styles: makeStyles(colors), s: makeS(colors) }),
+    [colors, isDark],
   );
 }
 
@@ -342,6 +343,7 @@ const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
 // ─────────────────────────────────────────────
 export default function DashboardUniversidad() {
   useAuthGuard('universidad');
+  useAuthBackGuard();
   const { user, userProfile } = useAuth();
   const router = useRouter();
   const { styles, colors } = useThemedStyles();
@@ -737,7 +739,7 @@ export default function DashboardUniversidad() {
   if (!user || !user.uid) {
     return (
       <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -811,14 +813,14 @@ export default function DashboardUniversidad() {
       {/* ── MODAL: Confirmar cierre de sesión (Liquid Glass) ── */}
       <Modal transparent visible={logoutModalVisible} animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1a162b', borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
-            <Text style={{ fontSize: 18, color: '#fff', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>Cerrar Sesión</Text>
-            <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: 24 }}>¿Estás seguro de que deseas salir de tu cuenta?</Text>
+          <View style={{ backgroundColor: colors.backgroundCard, borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: colors.primary35 }}>
+            <Text style={{ fontSize: 18, color: colors.textPrimary, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>Cerrar Sesión</Text>
+            <Text style={{ fontSize: 14, color: colors.white60, textAlign: 'center', marginBottom: 24 }}>¿Estás seguro de que deseas salir de tu cuenta?</Text>
             <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }} onPress={() => setLogoutModalVisible(false)}>
-                <Text style={{ color: '#fff', fontWeight: '600' }}>Cancelar</Text>
+              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: colors.white8, alignItems: 'center' }} onPress={() => setLogoutModalVisible(false)}>
+                <Text style={{ color: colors.textPrimary, fontWeight: '600' }}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: '#ef4444', alignItems: 'center' }} onPress={confirmarCierreSesion}>
+              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: colors.error, alignItems: 'center' }} onPress={confirmarCierreSesion}>
                 <Text style={{ color: '#fff', fontWeight: '600' }}>Salir</Text>
               </TouchableOpacity>
             </View>
@@ -841,7 +843,7 @@ export default function DashboardUniversidad() {
 // SECCIÓN: INICIO
 // ─────────────────────────────────────────────
 function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, solicitudesGrupo }: any) {
-  const { s } = useThemedStyles();
+  const { s, colors } = useThemedStyles();
   return (
     <ScrollView contentContainerStyle={s.scroll}>
       {/* ── Estadísticas de la Red Gradly ── */}
@@ -854,7 +856,7 @@ function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, so
         </View>
         {perfil?.logo_url && (
           <View style={s.logoWrap}>
-            <Ionicons name="school" size={28} color={COLORS.primaryLight} />
+            <Ionicons name="school" size={28} color={colors.primaryLight} />
           </View>
         )}
       </GlassCard>
@@ -895,7 +897,7 @@ function MetricCard({ icon, label, value, color }: any) {
 // SECCIÓN: ESTUDIANTES + IMPORTAR EXCEL
 // ─────────────────────────────────────────────
 function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiantes: EstudianteRow[]; uid: string; solicitudesGrupo: SolicitudGrupo[] }) {
-  const { styles, s, colors } = useThemedStyles();
+  const { styles, s, colors, isDark } = useThemedStyles();
   const router = useRouter();
 
   // ── Búsqueda ──
@@ -1399,11 +1401,11 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
   const aplicarBusqueda = () => setBusquedaAplicada(busqueda);
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, width: '100%', maxWidth: 760, alignSelf: 'center' }}>
       {/* ── Barra de búsqueda + botón Buscar ── */}
       <View style={s.searchArea}>
         <View style={s.searchWrap}>
-          <Ionicons name="search-outline" size={16} color={COLORS.textMuted} />
+          <Ionicons name="search-outline" size={16} color={colors.textMuted} />
           <TextInput
             style={s.searchInput}
             value={busqueda}
@@ -1411,8 +1413,8 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
             onSubmitEditing={aplicarBusqueda}
             returnKeyType="search"
             placeholder="Buscar grupos o estudiantes..."
-            placeholderTextColor={COLORS.textMuted}
-            selectionColor={COLORS.primary}
+            placeholderTextColor={colors.textMuted}
+            selectionColor={colors.primary}
           />
         </View>
         <JellyButton
@@ -1439,7 +1441,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
           contentStyle={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 11 }}
           onPress={abrirFlujo}
         >
-          <Ionicons name="add-circle-outline" size={18} color={COLORS.textPrimary} />
+          <Ionicons name="add-circle-outline" size={18} color={colors.textPrimary} />
           <Text style={s.gestionMainBtnText}>Crear Grupo y Cargar Estudiantes</Text>
         </JellyButton>
       </GlassCard>
@@ -1523,9 +1525,9 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                   accessibilityLabel="Eliminar grupo"
                 >
                   {eliminandoGrupo === item.id ? (
-                    <ActivityIndicator size="small" color={COLORS.error} />
+                    <ActivityIndicator size="small" color={colors.error} />
                   ) : (
-                    <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                    <Ionicons name="trash-outline" size={18} color={colors.error} />
                   )}
                 </TouchableOpacity>
               </View>
@@ -1567,7 +1569,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                       <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera || 'Sin carrera'}</Text>
                     </View>
                     <View style={[s.estadoBadge, !item.activo && s.estadoBadgeOff]}>
-                      <Text style={[s.estadoText, !item.activo && { color: COLORS.textMuted }]}>
+                      <Text style={[s.estadoText, !item.activo && { color: colors.textMuted }]}>
                         {item.activo ? 'Activo' : 'Pendiente'}
                       </Text>
                     </View>
@@ -1579,9 +1581,9 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                       style={{ paddingLeft: 4 }}
                     >
                       {eliminandoEstudiante === item.id ? (
-                        <ActivityIndicator size="small" color={COLORS.error} />
+                        <ActivityIndicator size="small" color={colors.error} />
                       ) : (
-                        <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                        <Ionicons name="trash-outline" size={18} color={colors.error} />
                       )}
                     </TouchableOpacity>
                   </View>
@@ -1625,19 +1627,25 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
             {/* Aviso: un grupo = un horario. Disponibilidad incompatible → grupos separados. */}
             <View style={{
               flexDirection: 'row', gap: 10, alignItems: 'flex-start',
-              backgroundColor: COLORS.primary + '12',
-              borderWidth: 1, borderColor: COLORS.primary + '30',
+              backgroundColor: colors.primary + '12',
+              borderWidth: 1, borderColor: colors.primary + '30',
               borderRadius: 12, padding: 12, marginBottom: 12,
             }}>
-              <Ionicons name="information-circle-outline" size={18} color={COLORS.primaryLight} style={{ marginTop: 1 }} />
-              <Text style={{ flex: 1, color: COLORS.textMuted, fontSize: 12, lineHeight: 17 }}>
-                Cada grupo acuerda <Text style={{ color: COLORS.textPrimary, fontFamily: FONTS.interSemiBold }}>un solo horario</Text> con la empresa.
+              <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} style={{ marginTop: 1 }} />
+              <Text style={{ flex: 1, color: colors.textMuted, fontSize: 12, lineHeight: 17 }}>
+                Cada grupo acuerda <Text style={{ color: colors.textPrimary, fontFamily: FONTS.interSemiBold }}>un solo horario</Text> con la empresa.
                 Si tienes estudiantes con disponibilidad incompatible (por ejemplo, unos trabajan de mañana y otros de tarde),
-                crea <Text style={{ color: COLORS.textPrimary, fontFamily: FONTS.interSemiBold }}>grupos separados</Text> para que cada uno pueda cumplir sus prácticas.
+                crea <Text style={{ color: colors.textPrimary, fontFamily: FONTS.interSemiBold }}>grupos separados</Text> para que cada uno pueda cumplir sus prácticas.
               </Text>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 4, paddingVertical: 6 }}>
+            {/* Cuerpo con scroll interno: flex:1 + minHeight:0 es lo que permite
+                que este ScrollView se encoja dentro del maxHeight de la
+                tarjeta y active el scroll (sin minHeight:0, en web el
+                contenido empuja la tarjeta en vez de hacer scroll). El
+                encabezado y los botones de acción quedan FUERA de este
+                ScrollView, siempre visibles. */}
+            <ScrollView style={{ flex: 1, minHeight: 0 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 4, paddingVertical: 6 }}>
               {(() => {
                 const tiene = gNombre.trim().length > 0; const malo = tiene && !!errNombre;
                 return (
@@ -1647,7 +1655,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                       style={[styles.modalInput, malo ? s.campoErr : (tiene ? s.campoOk : null)]}
                       value={gNombre} onChangeText={setGNombre}
                       placeholder='Ej. "Sistemas G1"'
-                      placeholderTextColor={COLORS.textMuted} selectionColor={COLORS.primary}
+                      placeholderTextColor={colors.textMuted} selectionColor={colors.primary}
                     />
                     {malo && <Text style={s.campoErrText}>{errNombre}</Text>}
                   </View>
@@ -1668,13 +1676,13 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                       onPress={() => setShowCarreraPicker(v => !v)}
                       activeOpacity={0.85}
                     >
-                      <Text style={{ color: gCarrera ? COLORS.textPrimary : COLORS.textMuted, flex: 1 }}>
+                      <Text style={{ color: gCarrera ? colors.textPrimary : colors.textMuted, flex: 1 }}>
                         {gCarrera || (carrerasUni.length ? 'Selecciona una carrera' : 'No hay carreras registradas')}
                       </Text>
                       <Ionicons
                         name={showCarreraPicker ? 'chevron-up-outline' : 'chevron-down-outline'}
                         size={18}
-                        color={COLORS.textMuted}
+                        color={colors.textMuted}
                       />
                     </TouchableOpacity>
                     {showCarreraPicker && (
@@ -1684,13 +1692,13 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                           maxHeight: 200,
                           marginTop: 6,
                           borderWidth: 1,
-                          borderColor: COLORS.border,
+                          borderColor: colors.border,
                           borderRadius: 10,
-                          backgroundColor: COLORS.white4,
+                          backgroundColor: colors.white4,
                         }}
                       >
                         {carrerasUni.length === 0 ? (
-                          <Text style={{ color: COLORS.textMuted, fontSize: 13, padding: 14 }}>
+                          <Text style={{ color: colors.textMuted, fontSize: 13, padding: 14 }}>
                             Registra carreras en el perfil de la universidad para poder elegirlas aquí.
                           </Text>
                         ) : (
@@ -1704,13 +1712,13 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                                 paddingVertical: 12,
                                 paddingHorizontal: 14,
                                 borderTopWidth: i === 0 ? 0 : 1,
-                                borderTopColor: COLORS.border,
+                                borderTopColor: colors.border,
                               }}
                               activeOpacity={0.85}
                               onPress={() => { setGCarrera(c); setShowCarreraPicker(false); }}
                             >
-                              <Text style={{ color: COLORS.textPrimary, fontSize: 13, flex: 1 }}>{c}</Text>
-                              {gCarrera === c && <Ionicons name="checkmark" size={16} color={COLORS.primary} />}
+                              <Text style={{ color: colors.textPrimary, fontSize: 13, flex: 1 }}>{c}</Text>
+                              {gCarrera === c && <Ionicons name="checkmark" size={16} color={colors.primary} />}
                             </TouchableOpacity>
                           ))
                         )}
@@ -1753,7 +1761,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
               sin importar mayúsculas/minúsculas.
             </Text>
 
-            <BlurView intensity={20} tint="dark" style={s.excelInfoBox}>
+            <BlurView intensity={20} tint={isDark ? 'dark' : 'light'} style={s.excelInfoBox}>
               <View style={s.excelInfoRow}>
                 <Ionicons name="checkmark-circle" size={14} color={colors.success} />
                 <Text style={s.excelInfoText}>Nombres completos  · obligatoria</Text>
@@ -1784,7 +1792,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
       <Modal visible={showProgreso} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { alignItems: 'center', gap: 14 }]}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
+            <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.modalTitle}>Creando cuentas…</Text>
             <Text style={[styles.modalDesc, { textAlign: 'center' }]}>
               {progreso.done} de {progreso.total} estudiantes
@@ -1801,11 +1809,11 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
         <View style={styles.modalOverlay}>
           <View style={[styles.sheetCard, { flex: 1, maxHeight: '88%' }]}>
             <View style={{ alignItems: 'center', gap: 6, paddingTop: 4 }}>
-              <Ionicons name="checkmark-circle" size={44} color={COLORS.success} />
+              <Ionicons name="checkmark-circle" size={44} color={colors.success} />
               <Text style={s.importSuccessTitle}>¡Cuentas creadas!</Text>
               <Text style={[styles.modalDesc, { textAlign: 'center' }]}>
                 {credenciales.length} estudiante{credenciales.length === 1 ? '' : 's'} en el grupo{' '}
-                <Text style={{ color: COLORS.primaryLight }}>{grupoCreadoNombre}</Text>.
+                <Text style={{ color: colors.primaryLight }}>{grupoCreadoNombre}</Text>.
               </Text>
             </View>
 
@@ -1831,7 +1839,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalCancel} onPress={handleCopiar}>
-                <Ionicons name="copy-outline" size={16} color={COLORS.textMuted} />
+                <Ionicons name="copy-outline" size={16} color={colors.textMuted} />
                 <Text style={[styles.modalCancelText, { marginLeft: 6 }]}>Copiar</Text>
               </TouchableOpacity>
               <JellyButton style={styles.modalSave} contentStyle={{ paddingVertical: 0 }} onPress={cerrarCredenciales}>
@@ -1890,9 +1898,9 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
     const progreso = progresoDeGrupo({}, sol.acuerdo);
     const cert = (sol as any).certificacion;
     const badge =
-      cert === 'certificada' ? { txt: 'Certificada', col: COLORS.gold }
-      : sol.estado === 'finalizado' ? { txt: 'Por certificar', col: COLORS.warning }
-      : { txt: 'En curso', col: COLORS.success };
+      cert === 'certificada' ? { txt: 'Certificada', col: colors.gold }
+      : sol.estado === 'finalizado' ? { txt: 'Por certificar', col: colors.warning }
+      : { txt: 'En curso', col: colors.success };
     return (
       <GlassCard style={{ marginBottom: 10 }} contentStyle={{ padding: 14, gap: 6 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -1919,7 +1927,7 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
           </View>
         )}
         {cert === 'certificada' && (
-          <Text style={{ color: COLORS.gold, fontSize: 12, fontWeight: '600' }}>
+          <Text style={{ color: colors.gold, fontSize: 12, fontWeight: '600' }}>
             ✓ {(sol as any).horasCertificadas ?? h.total} horas acreditadas
           </Text>
         )}
@@ -1942,7 +1950,7 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
               </View>
             )}
             <JellyButton
-              style={{ backgroundColor: COLORS.primary, borderRadius: 12 }}
+              style={{ backgroundColor: colors.primary, borderRadius: 12 }}
               contentStyle={{ paddingVertical: 10 }}
               onPress={() => handleCertificar(sol)}
             >
@@ -1957,7 +1965,7 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110 }}>
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
       <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginBottom: 8 }}>
         Por certificar ({porCertificar.length})
       </Text>
@@ -1985,7 +1993,7 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
 }
 
 function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudiantes: EstudianteRow[]; apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[] }) {
-  const { s } = useThemedStyles();
+  const { s, colors } = useThemedStyles();
 
   // "Carreras con más pasantías": combina pasantías individuales (aplicaciones)
   // y de grupo (solicitudes_practicas), cada grupo cuenta por su nº de alumnos.
@@ -2038,7 +2046,7 @@ function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudian
         ? <Text style={s.emptyText}>No hay pasantías en curso.</Text>
         : activas.map(sg => {
             const prog = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
-            const color = prog.estado === 'completado' ? COLORS.gold : prog.estado === 'en_curso' ? COLORS.success : COLORS.primaryLight;
+            const color = prog.estado === 'completado' ? colors.gold : prog.estado === 'en_curso' ? colors.success : colors.primaryLight;
             return (
               <View key={sg.id} style={{ marginBottom: 16 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -2060,9 +2068,9 @@ function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudian
 
       <Text style={[s.statTitle, { marginTop: 24 }]}>Resumen general</Text>
       <View style={s.metricasGrid}>
-        <MetricCard icon="people-outline"   label="Total estudiantes"  value={estudiantes.length}                                   color={COLORS.primaryLight} />
-        <MetricCard icon="checkmark-circle-outline" label="Pasantías aprobadas" value={aprobadasCount} color={COLORS.success} />
-        <MetricCard icon="time-outline"     label="Horas totales"      value={estudiantes.reduce((acc,e)=>acc+(e.horas_aprobadas??0),0)} color={COLORS.accent} />
+        <MetricCard icon="people-outline"   label="Total estudiantes"  value={estudiantes.length}                                   color={colors.primaryLight} />
+        <MetricCard icon="checkmark-circle-outline" label="Pasantías aprobadas" value={aprobadasCount} color={colors.success} />
+        <MetricCard icon="time-outline"     label="Horas totales"      value={estudiantes.reduce((acc,e)=>acc+(e.horas_aprobadas??0),0)} color={colors.accent} />
       </View>
     </ScrollView>
   );
@@ -2137,13 +2145,14 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center', padding: 20,
+    justifyContent: 'center', alignItems: 'center', padding: 20,
   },
   sheetCard: {
     backgroundColor: COLORS.backgroundCard,
     borderRadius: 20, padding: 20,
     borderWidth: 1, borderColor: COLORS.border,
-    maxHeight: '85%', gap: 8,
+    width: '100%', maxWidth: 480, alignSelf: 'center',
+    maxHeight: '85%', overflow: 'hidden', gap: 8,
   },
   // ── Modal "Mi Perfil" (master-detail) ──
   perfilModalOverlay: {
@@ -2166,6 +2175,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     backgroundColor: COLORS.backgroundCard,
     borderRadius: 20, padding: 24,
     borderWidth: 1, borderColor: COLORS.border, gap: 10,
+    width: '100%', maxWidth: 420, alignSelf: 'center',
   },
   modalTitle: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
   modalDesc: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 18 },

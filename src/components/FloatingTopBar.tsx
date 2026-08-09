@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '../config/firebaseConfig';
 import { resolverRutaNotif } from '../utils/notifRoute';
 import { AutoText, AutoText as Text } from './AutoText';
+import { ThemeToggleIcon } from './ThemeToggleButton';
 import { FONTS, useTheme } from '../context/ThemeContext';
 import { useTranslationContext } from '../context/TranslationContext';
 import { shadow } from '../utils/shadow';
@@ -169,13 +170,10 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-          {/* Tema claro/oscuro */}
+          {/* Tema claro/oscuro — ícono compartido (ver ThemeToggleButton.tsx),
+              el mismo que usan login, registro y el resto de dashboards. */}
           <Pressable style={styles.iconBtn} onPress={tap(toggleTheme)} hitSlop={6}>
-            <Ionicons
-              name={isDark ? 'sunny-outline' : 'moon-outline'}
-              size={22}
-              color={colors.textPrimary}
-            />
+            <ThemeToggleIcon size={22} />
           </Pressable>
         </BlurView>
 

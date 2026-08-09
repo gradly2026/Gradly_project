@@ -7,7 +7,7 @@ import {
   type FC,
   type ReactNode,
 } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { shadow } from '../utils/shadow';
 
 // ═══════════════════════════════════════════
@@ -245,11 +245,32 @@ const ThemeContext = createContext<ThemeContextValue>({
   setTheme: () => {},
 });
 
-export const ThemeProvider: FC<{ children: ReactNode }> = ({ children }) => {
-  const [isDark, setIsDark] = useState(true);
+/**
+ * Estado inicial del tema. En web, `AsyncStorage` es un envoltorio síncrono
+ * sobre `window.localStorage` (misma clave, sin prefijo) — leerlo aquí de
+ * forma síncrona evita el parpadeo "arranca oscuro y luego cambia a claro"
+ * que dejaba una ventana breve donde el ícono/tema no coincidían con la
+ * preferencia real ya guardada. En nativo no hay lectura síncrona posible,
+ * así que se resuelve con el efecto de abajo.
+ */
+function getInitialIsDark(): boolean {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
+    try {
+      return window.localStorage.getItem(THEME_KEY) !== 'light';
+    } catch {
+      // localStorage inaccesible (modo privado estricto, etc.) → default oscuro.
+    }
+  }
+  return true;
+}
 
-  // Carga la preferencia persistida al iniciar
+export const ThemeProvider: FC<{ children: ReactNode }> = ({ children }) => {
+  const [isDark, setIsDark] = useState(getInitialIsDark);
+
+  // Carga la preferencia persistida al iniciar (solo nativo: en web ya se
+  // resolvió de forma síncrona arriba, sin esperar a este efecto).
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     AsyncStorage.getItem(THEME_KEY)
       .then(v => { if (v === 'light') setIsDark(false); })
       .catch(() => {});

@@ -36,6 +36,7 @@ import { AutoText as Text, AutoTextInput as TextInput } from "../../src/componen
 import AppHeader from "../../components/AppHeader";
 import { auth, db, storage } from "../../src/config/firebaseConfig";
 import { useTheme, type GradlyColors } from "../../src/context/ThemeContext";
+import { useLoginBackGuard } from "../../src/hooks/useSessionBackGuard";
 import {
   CARRERAS_EL_SALVADOR,
   type Carrera,
@@ -1361,6 +1362,7 @@ function CarrerasModal({
 // ══════════════════════════════════════════════════════════════════
 export default function Registro() {
   const router = useRouter();
+  useLoginBackGuard();
   const { C, s, isDark } = useRegistroTheme();
   const scrollRef = React.useRef<React.ElementRef<typeof ScrollView>>(null);
   const scrollTop = () => scrollRef.current?.scrollTo({ y: 0, animated: true });
