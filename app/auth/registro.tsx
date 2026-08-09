@@ -1078,7 +1078,7 @@ function TarjetaModal({
             </Text>
           </View>
 
-          <TouchableOpacity style={s.btnPrimary} onPress={confirmar}>
+          <TouchableOpacity style={[s.btnPrimary, s.modalPrimaryBtn]} onPress={confirmar}>
             <Text style={s.btnPrimaryText}>Confirmar plan</Text>
           </TouchableOpacity>
         </View>
@@ -2902,7 +2902,20 @@ const makeStyles = (C: Tokens) =>
   inputFocused: { borderColor: C.accent },
   inputErr: { borderColor: C.red },
   inputSuccess: { borderColor: C.green },
-  textInput: { flex: 1, color: C.text, fontSize: 14, paddingVertical: 14 },
+  textInput: {
+    flex: 1,
+    color: C.text,
+    fontSize: 14,
+    paddingVertical: 14,
+    ...(Platform.OS === "web"
+      ? ({
+          outlineWidth: 0,
+          outlineStyle: "none",
+          outlineColor: "transparent",
+          boxShadow: "none",
+        } as any)
+      : {}),
+  },
 
   // Select
   selectRow: { paddingVertical: 16, justifyContent: "space-between" },
@@ -3041,6 +3054,14 @@ const makeStyles = (C: Tokens) =>
     backgroundColor: C.accent,
     alignItems: "center",
     justifyContent: "center",
+  },
+  modalPrimaryBtn: {
+    flex: 0,
+    width: "100%",
+    minHeight: 56,
+    paddingVertical: 14,
+    marginTop: 10,
+    alignSelf: "stretch",
   },
   btnPrimaryText: { color: "#fff", fontSize: 14, fontWeight: "600" },
 
@@ -3327,7 +3348,20 @@ const makeStyles = (C: Tokens) =>
     minHeight: 48,
     marginBottom: 10,
   },
-  carrerasSearchInput: { flex: 1, color: C.text, fontSize: 14, paddingVertical: 10 },
+  carrerasSearchInput: {
+    flex: 1,
+    color: C.text,
+    fontSize: 14,
+    paddingVertical: 10,
+    ...(Platform.OS === "web"
+      ? ({
+          outlineWidth: 0,
+          outlineStyle: "none",
+          outlineColor: "transparent",
+          boxShadow: "none",
+        } as any)
+      : {}),
+  },
   carrerasLimitNote: {
     color: C.red,
     fontSize: 12,

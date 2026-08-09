@@ -24,6 +24,7 @@ import {
 import { AutoText as Text } from "./AutoText";
 import { PieChart } from 'react-native-chart-kit';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { useTranslation } from '../context/TranslationContext';
 import { progresoPorFechas } from '../utils/progresoPasantia';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 
@@ -44,6 +45,7 @@ interface Props {
 
 export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudesGrupo }: Props) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const { width: winW } = useWindowDimensions();
@@ -111,11 +113,11 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
     decimalPlaces: 0,
   };
   const pieData = [
-    { name: 'Contratados', population: estados.contratado, color: colors.success, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: 'Entrevista', population: estados.entrevista, color: colors.accent, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: 'En revisión', population: estados.revision, color: colors.primaryLight, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: 'Pendientes', population: estados.pendiente, color: colors.warning, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: 'Rechazados', population: estados.rechazado, color: colors.error, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: t('estado_contratado'), population: estados.contratado, color: colors.success, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: t('estado_entrevista'), population: estados.entrevista, color: colors.accent, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: t('estado_en_revision'), population: estados.revision, color: colors.primaryLight, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: t('home_company_pending_plural'), population: estados.pendiente, color: colors.warning, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: t('home_company_rejected_plural'), population: estados.rechazado, color: colors.error, legendFontColor: colors.textMuted, legendFontSize: 12 },
   ].filter(d => d.population > 0);
 
   const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -129,12 +131,12 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
   };
 
   const stats: { icon: keyof typeof Ionicons.glyphMap; label: string; value: number; color: string }[] = [
-    { icon: 'briefcase-outline',   label: 'Vacantes activas',     value: metricas.vacantesActivas, color: colors.primaryLight },
-    { icon: 'person-add-outline',  label: 'Aplic. pendientes',    value: metricas.pendientes,      color: colors.warning },
-    { icon: 'people-outline',      label: 'Pasantes activos',     value: metricas.activos,         color: colors.success },
-    { icon: 'time-outline',        label: 'Horas validadas',      value: metricas.horasValidadas,  color: colors.accent },
-    { icon: 'school-outline',      label: 'Universidades aliadas', value: universidadesAliadas,    color: colors.primaryLight },
-    { icon: 'albums-outline',      label: 'Pasantías de grupo',   value: pasantiasGrupo,           color: colors.gold },
+    { icon: 'briefcase-outline',   label: t('home_company_active_jobs'),          value: metricas.vacantesActivas, color: colors.primaryLight },
+    { icon: 'person-add-outline',  label: t('home_company_pending_apps_short'),   value: metricas.pendientes,      color: colors.warning },
+    { icon: 'people-outline',      label: t('home_company_active_interns'),       value: metricas.activos,         color: colors.success },
+    { icon: 'time-outline',        label: t('home_company_validated_hours'),      value: metricas.horasValidadas,  color: colors.accent },
+    { icon: 'school-outline',      label: t('home_company_partner_universities'), value: universidadesAliadas,     color: colors.primaryLight },
+    { icon: 'albums-outline',      label: t('home_company_group_internships'),    value: pasantiasGrupo,           color: colors.gold },
   ];
 
   return (
@@ -153,7 +155,7 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
           <GlassCard contentStyle={{ padding: 18 }}>
             <View style={styles.cardHeader}>
               <Ionicons name="stats-chart-outline" size={18} color={colors.primaryLight} />
-              <Text style={styles.cardTitle}>Resumen general</Text>
+              <Text style={styles.cardTitle}>{t('home_summary_general')}</Text>
             </View>
             <View style={styles.statGrid}>
               {stats.map(st => (
@@ -172,13 +174,13 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
           <GlassCard contentStyle={{ padding: 18 }}>
             <View style={styles.cardHeader}>
               <Ionicons name="pie-chart-outline" size={18} color={colors.primaryLight} />
-              <Text style={styles.cardTitle}>Análisis</Text>
+              <Text style={styles.cardTitle}>{t('home_analysis')}</Text>
             </View>
 
             {/* Estado de las aplicaciones */}
-            <Text style={styles.blockTitle}>Estado de las aplicaciones</Text>
+            <Text style={styles.blockTitle}>{t('home_company_app_status')}</Text>
             {totalEstados === 0 ? (
-              <Text style={styles.empty}>Aún no hay aplicaciones.</Text>
+              <Text style={styles.empty}>{t('home_company_no_apps')}</Text>
             ) : (
               <PieChart
                 data={pieData}
@@ -193,9 +195,9 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
             )}
 
             {/* Vacantes por área */}
-            <Text style={[styles.blockTitle, { marginTop: 16 }]}>Vacantes por área</Text>
+            <Text style={[styles.blockTitle, { marginTop: 16 }]}>{t('home_company_jobs_by_area')}</Text>
             {areas.length === 0 ? (
-              <Text style={styles.empty}>Aún no has publicado vacantes.</Text>
+              <Text style={styles.empty}>{t('home_company_no_jobs')}</Text>
             ) : (
               areas.map(([area, count]) => (
                 <View key={area} style={styles.barRow}>
@@ -209,9 +211,9 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
             )}
 
             {/* Pasantías de grupo activas (progreso) */}
-            <Text style={[styles.blockTitle, { marginTop: 16 }]}>Pasantías de grupo activas</Text>
+            <Text style={[styles.blockTitle, { marginTop: 16 }]}>{t('home_company_active_group_internships')}</Text>
             {activas.length === 0 ? (
-              <Text style={styles.empty}>No hay pasantías de grupo en curso.</Text>
+              <Text style={styles.empty}>{t('home_company_no_group_internships')}</Text>
             ) : (
               activas.map(sg => {
                 const prog = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
@@ -219,7 +221,7 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
                 return (
                   <View key={sg.id} style={{ marginBottom: 14 }}>
                     <View style={styles.progHeader}>
-                      <Text style={styles.barLabel} numberOfLines={1}>{sg.grupoNombre ?? 'Grupo'}</Text>
+                      <Text style={styles.barLabel} numberOfLines={1}>{sg.grupoNombre ?? t('home_group_fallback')}</Text>
                       <Text style={[styles.barValue, { color, width: 40 }]}>{prog.pct}%</Text>
                     </View>
                     <View style={styles.barTrack}>
@@ -227,8 +229,13 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
                     </View>
                     <Text style={styles.progSub}>
                       {prog.estado === 'por_iniciar'
-                        ? `Inicia ${sg.fechaInicio}`
-                        : `Día ${prog.diasTranscurridos} de ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
+                        ? t('home_progress_starts', { fecha: sg.fechaInicio })
+                        : t('home_progress_day', {
+                            actual: prog.diasTranscurridos,
+                            total: prog.diasTotales,
+                            inicio: sg.fechaInicio,
+                            fin: sg.fechaFin,
+                          })}
                     </Text>
                   </View>
                 );

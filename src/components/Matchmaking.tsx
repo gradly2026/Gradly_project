@@ -26,6 +26,7 @@ import {
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { useTranslation } from '../context/TranslationContext';
 import type { AcuerdoData } from '../types/chat';
 import ProponerHorarioModal from './ProponerHorarioModal';
 import VacanteDetailModal, { type VacanteDetalle } from './VacanteDetailModal';
@@ -834,7 +835,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                     Grupo ya cubierto
                   </Text>
                   <Text style={[styles.cardMeta, { textAlign: 'center', marginTop: 4 }]}>
-                    El grupo "{grupoCubierto.nombre ?? 'Grupo'}" ya tiene cupo asegurado para sus{' '}
+                    El grupo &quot;{grupoCubierto.nombre ?? 'Grupo'}&quot; ya tiene cupo asegurado para sus{' '}
                     {grupoCubierto.estudiantes_count ?? 0} estudiante(s). No hace falta reservar más para él.
                   </Text>
                   <TouchableOpacity
@@ -898,6 +899,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
 // ═════════════════════════════════════════════
 export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empresaId: string; limiteAlianzas?: number }) {
   const { colors, isDark } = useTheme();
+  const { t } = useTranslation();
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   const [solicitudes, setSolicitudes] = useState<AplicacionGrupo[]>([]);
@@ -1028,7 +1030,7 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
       {/* ── Solicitudes de cupos pendientes de confirmar ── */}
       {reclamosPendientes.length > 0 && (
         <>
-          <Text style={styles.heading}>Solicitudes de cupos</Text>
+          <Text style={styles.heading}>{t('matchmaking_company_slot_requests')}</Text>
           {reclamosPendientes.map(r => (
             <GlassCard key={r.id} colors={colors} isDark={isDark} column>
               <Text style={styles.cardTitle} numberOfLines={1}>
@@ -1072,22 +1074,22 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
       >
         <View style={styles.overlay}>
           <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>Rechazar solicitud de cupos</Text>
+            <Text style={styles.sheetTitle}>{t('matchmaking_company_reject_slot_request')}</Text>
             <Text style={styles.cardMeta}>
-              Explica por qué no puedes recibir a estos estudiantes.
+              {t('matchmaking_company_reject_slot_reason')}
             </Text>
             <TextInput
               style={styles.textArea}
               value={motivoReclamo}
               onChangeText={setMotivoReclamo}
-              placeholder="Escribe el motivo…"
+              placeholder={t('matchmaking_company_write_reason')}
               placeholderTextColor={colors.textMuted}
               multiline
               selectionColor={colors.primary}
             />
             <View style={styles.actionsRow}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setRechazoReclamo(null)}>
-                <Text style={styles.cancelText}>Cancelar</Text>
+                <Text style={styles.cancelText}>{t('accion_cancelar')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.rejectBtn}
@@ -1101,15 +1103,15 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
       </Modal>
 
       <View style={styles.rowBetween}>
-        <Text style={styles.heading}>Solicitudes de universidades</Text>
+        <Text style={styles.heading}>{t('matchmaking_company_university_requests')}</Text>
         <Text style={styles.note}>
           {ilimitadas
-            ? 'Alianzas ∞'
-            : `Alianzas ${universidadesAliadas.size}/${limiteAlianzas}`}
+            ? t('matchmaking_company_unlimited_partnerships')
+            : t('matchmaking_company_partnerships_count', { actual: universidadesAliadas.size, limite: limiteAlianzas })}
         </Text>
       </View>
       {pendientes.length === 0 ? (
-        <Text style={styles.empty}>No tienes solicitudes pendientes.</Text>
+        <Text style={styles.empty}>{t('matchmaking_company_no_requests')}</Text>
       ) : (
         pendientes.map(s => (
           <GlassCard key={s.id} colors={colors} isDark={isDark} column>
@@ -1127,7 +1129,7 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
             </View>
             <TouchableOpacity style={styles.cta} onPress={() => abrir(s)}>
               <Ionicons name="create-outline" size={15} color="#fff" />
-              <Text style={styles.ctaText}>Evaluar grupo</Text>
+              <Text style={styles.ctaText}>{t('matchmaking_company_evaluate_group')}</Text>
             </TouchableOpacity>
           </GlassCard>
         ))
@@ -1135,7 +1137,7 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
 
       {enProceso.length > 0 && (
         <>
-          <Text style={[styles.heading, { marginTop: 8 }]}>En proceso</Text>
+          <Text style={[styles.heading, { marginTop: 8 }]}>{t('estado_en_proceso')}</Text>
           {enProceso.map(s => (
             <GlassCard key={s.id} colors={colors} isDark={isDark} column>
               <View style={styles.rowBetween}>
@@ -1146,13 +1148,13 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
                 <EstadoBadge estado={s.estado} colors={colors} />
               </View>
               {s.estado === 'revisando' && (
-                <Text style={styles.note}>Oferta enviada · esperando respuesta de la universidad.</Text>
+                <Text style={styles.note}>{t('matchmaking_company_offer_sent_waiting')}</Text>
               )}
               {s.estado === 'rechazada' && !!s.justificacionRechazo && (
-                <Text style={styles.note}>Motivo: {s.justificacionRechazo}</Text>
+                <Text style={styles.note}>{t('matchmaking_company_reason')}: {s.justificacionRechazo}</Text>
               )}
               {s.estado === 'aprobada' && (
-                <Text style={[styles.note, { color: colors.success }]}>Pasantía confirmada con la universidad.</Text>
+                <Text style={[styles.note, { color: colors.success }]}>{t('matchmaking_company_internship_confirmed')}</Text>
               )}
             </GlassCard>
           ))}
@@ -1167,7 +1169,7 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.rowBetween}>
-              <Text style={styles.sheetTitle}>Evaluar grupo</Text>
+              <Text style={styles.sheetTitle}>{t('matchmaking_company_evaluate_group')}</Text>
               <TouchableOpacity onPress={() => setSel(null)} hitSlop={10}>
                 <Ionicons name="close" size={22} color={colors.textMuted} />
               </TouchableOpacity>
@@ -1216,7 +1218,7 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
                     style={styles.textArea}
                     value={motivo}
                     onChangeText={setMotivo}
-                    placeholder="Explica por qué rechazas a este grupo…"
+                    placeholder={t('matchmaking_company_reject_group_placeholder')}
                     placeholderTextColor={colors.textMuted}
                     multiline
                     selectionColor={colors.primary}
@@ -1233,7 +1235,7 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
               >
                 {enviando
                   ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.rejectSolidText}>Rechazar grupo</Text>}
+                  : <Text style={styles.rejectSolidText}>{t('matchmaking_company_reject_group')}</Text>}
               </TouchableOpacity>
             )}
           </View>

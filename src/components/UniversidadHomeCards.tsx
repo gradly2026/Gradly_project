@@ -33,6 +33,7 @@ import { AutoText as Text } from "./AutoText";
 import { PieChart } from 'react-native-chart-kit';
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { useTranslation } from '../context/TranslationContext';
 import { progresoPorFechas } from '../utils/progresoPasantia';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 
@@ -56,6 +57,7 @@ interface Props {
 
 export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitudesGrupo, metricas }: Props) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   // Ancho de página responsivo: reacciona al ancho real de la ventana (móvil y
@@ -153,9 +155,9 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
     decimalPlaces: 0,
   };
   const pieData = [
-    { name: 'En curso', population: estadosPasantia.enCurso, color: colors.success, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: 'Por iniciar', population: estadosPasantia.porIniciar, color: colors.primaryLight, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: 'Completadas', population: estadosPasantia.completadas, color: colors.gold, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: t('home_university_in_progress_plural'), population: estadosPasantia.enCurso, color: colors.success, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: t('home_university_upcoming_plural'), population: estadosPasantia.porIniciar, color: colors.primaryLight, legendFontColor: colors.textMuted, legendFontSize: 12 },
+    { name: t('home_university_completed_plural'), population: estadosPasantia.completadas, color: colors.gold, legendFontColor: colors.textMuted, legendFontSize: 12 },
   ].filter(d => d.population > 0);
 
   const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -169,12 +171,12 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
   };
 
   const stats: { icon: keyof typeof Ionicons.glyphMap; label: string; value: number; color: string }[] = [
-    { icon: 'people-outline',            label: 'Estudiantes activos',  value: estudiantesActivos,      color: colors.primaryLight },
-    { icon: 'school-outline',            label: 'Egresados',            value: egresados,               color: colors.gold },
-    { icon: 'business-outline',          label: 'Instituciones afiliadas', value: institucionesAfiliadas, color: colors.accent },
-    { icon: 'albums-outline',            label: 'Grupos',               value: gruposCount,             color: colors.primaryLight },
-    { icon: 'briefcase-outline',         label: 'En pasantía',          value: metricas.enPasantia,     color: colors.success },
-    { icon: 'time-outline',              label: 'Horas aprobadas',      value: metricas.horasAprobadas, color: colors.accent },
+    { icon: 'people-outline',            label: t('home_university_active_students'),      value: estudiantesActivos,      color: colors.primaryLight },
+    { icon: 'school-outline',            label: t('home_university_graduates'),            value: egresados,               color: colors.gold },
+    { icon: 'business-outline',          label: t('home_university_partner_institutions'), value: institucionesAfiliadas,  color: colors.accent },
+    { icon: 'albums-outline',            label: t('home_university_groups'),               value: gruposCount,             color: colors.primaryLight },
+    { icon: 'briefcase-outline',         label: t('home_university_internship'),           value: metricas.enPasantia,     color: colors.success },
+    { icon: 'time-outline',              label: t('home_university_approved_hours'),       value: metricas.horasAprobadas, color: colors.accent },
   ];
 
   return (
@@ -193,7 +195,7 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
           <GlassCard contentStyle={{ padding: 18 }}>
             <View style={styles.cardHeader}>
               <Ionicons name="stats-chart-outline" size={18} color={colors.primaryLight} />
-              <Text style={styles.cardTitle}>Resumen general</Text>
+              <Text style={styles.cardTitle}>{t('home_summary_general')}</Text>
             </View>
             <View style={styles.statGrid}>
               {stats.map(st => (
@@ -212,13 +214,13 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
           <GlassCard contentStyle={{ padding: 18 }}>
             <View style={styles.cardHeader}>
               <Ionicons name="pie-chart-outline" size={18} color={colors.primaryLight} />
-              <Text style={styles.cardTitle}>Análisis</Text>
+              <Text style={styles.cardTitle}>{t('home_analysis')}</Text>
             </View>
 
             {/* Estado de pasantías de grupo */}
-            <Text style={styles.blockTitle}>Estado de las pasantías de grupo</Text>
+            <Text style={styles.blockTitle}>{t('home_university_group_internship_status')}</Text>
             {totalEstados === 0 ? (
-              <Text style={styles.empty}>Aún no hay pasantías de grupo.</Text>
+              <Text style={styles.empty}>{t('home_university_no_group_internships')}</Text>
             ) : (
               <PieChart
                 data={pieData}
@@ -233,9 +235,9 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
             )}
 
             {/* Carreras con más pasantías */}
-            <Text style={[styles.blockTitle, { marginTop: 16 }]}>Carreras con más pasantías</Text>
+            <Text style={[styles.blockTitle, { marginTop: 16 }]}>{t('home_university_top_majors')}</Text>
             {carreras.length === 0 ? (
-              <Text style={styles.empty}>Sin datos suficientes.</Text>
+              <Text style={styles.empty}>{t('home_university_no_data')}</Text>
             ) : (
               carreras.map(([carrera, count]) => (
                 <View key={carrera} style={styles.barRow}>
@@ -249,9 +251,9 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
             )}
 
             {/* Pasantías activas (progreso) */}
-            <Text style={[styles.blockTitle, { marginTop: 16 }]}>Pasantías activas</Text>
+            <Text style={[styles.blockTitle, { marginTop: 16 }]}>{t('home_university_active_internships')}</Text>
             {activas.length === 0 ? (
-              <Text style={styles.empty}>No hay pasantías en curso.</Text>
+              <Text style={styles.empty}>{t('home_university_no_active_internships')}</Text>
             ) : (
               activas.map(sg => {
                 const prog = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
@@ -259,7 +261,7 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
                 return (
                   <View key={sg.id} style={{ marginBottom: 14 }}>
                     <View style={styles.progHeader}>
-                      <Text style={styles.barLabel} numberOfLines={1}>{sg.grupoNombre ?? 'Grupo'}</Text>
+                      <Text style={styles.barLabel} numberOfLines={1}>{sg.grupoNombre ?? t('home_group_fallback')}</Text>
                       <Text style={[styles.barValue, { color, width: 40 }]}>{prog.pct}%</Text>
                     </View>
                     <View style={styles.barTrack}>
@@ -267,8 +269,13 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
                     </View>
                     <Text style={styles.progSub}>
                       {prog.estado === 'por_iniciar'
-                        ? `Inicia ${sg.fechaInicio}`
-                        : `Día ${prog.diasTranscurridos} de ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
+                        ? t('home_progress_starts', { fecha: sg.fechaInicio })
+                        : t('home_progress_day', {
+                            actual: prog.diasTranscurridos,
+                            total: prog.diasTotales,
+                            inicio: sg.fechaInicio,
+                            fin: sg.fechaFin,
+                          })}
                     </Text>
                   </View>
                 );

@@ -61,6 +61,7 @@ import { subscribeUnreadTotal } from '../src/services/chatService';
 import { enviarNotificacion } from '../src/services/notificationService';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
+import { useTranslation } from '../src/context/TranslationContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
 import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
@@ -214,41 +215,34 @@ const MENU: { key: SeccionEmpresa; label: string; icon: keyof typeof Ionicons.gl
 
 // ── Onboarding (guía por globos) ──────────────────────────────────
 const TOUR_CLAVES: SeccionEmpresa[] = ['inicio', 'vacantes', 'kanban', 'activas', 'pagos'];
-const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
+const TOUR_PASOS: Record<SeccionEmpresa, { tituloKey: string; textoKey: string }> = {
   inicio: {
-    titulo: '¡Bienvenido a tu panel! 🏢',
-    texto:
-      'Este es tu panel general. Aquí ves un resumen de tu actividad: vacantes publicadas, aplicaciones recibidas y pasantías en curso.',
+    tituloKey: 'tour_company_welcome_title',
+    textoKey: 'tour_company_welcome_text',
   },
   vacantes: {
-    titulo: 'Mis Vacantes',
-    texto:
-      'Crea y gestiona tus ofertas de pasantía o proyecto. Puedes activarlas o pausarlas cuando quieras.',
+    tituloKey: 'tour_company_jobs_title',
+    textoKey: 'tour_company_jobs_text',
   },
   kanban: {
-    titulo: 'Reclutamiento',
-    texto:
-      'Mueve a los candidatos entre etapas: pendiente, en revisión, entrevista y contratado. Todo desde un tablero visual.',
+    tituloKey: 'tour_company_recruitment_title',
+    textoKey: 'tour_company_recruitment_text',
   },
   activas: {
-    titulo: 'Pasantías Activas',
-    texto:
-      'Da seguimiento a las pasantías en curso y firma las constancias de horas de tus estudiantes.',
+    tituloKey: 'tour_company_active_title',
+    textoKey: 'tour_company_active_text',
   },
   pagos: {
-    titulo: 'Pagos',
-    texto:
-      'Gestiona los pagos a estudiantes y administra tu método de pago de forma segura.',
+    tituloKey: 'tour_company_payments_title',
+    textoKey: 'tour_company_payments_text',
   },
   historial: {
-    titulo: 'Historial de Pasantes',
-    texto:
-      'Reencuentra a los estudiantes que finalizaron sus pasantías contigo y re-contáctalos para ofrecerles empleo.',
+    tituloKey: 'tour_company_history_title',
+    textoKey: 'tour_company_history_text',
   },
   perfil: {
-    titulo: 'Mi Perfil',
-    texto:
-      'Consulta tu rango, tu plan, tu método de pago y tus estadísticas, y ajusta tus preferencias.',
+    tituloKey: 'tour_company_profile_title',
+    textoKey: 'tour_company_profile_text',
   },
 };
 
@@ -420,6 +414,7 @@ export default function DashboardEmpresa() {
   const { user, userProfile } = useAuth();
   const router = useRouter();
   const { styles, colors, s } = useThemedStyles();
+  const { t } = useTranslation();
   const [showPerfil, setShowPerfil] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -1450,8 +1445,13 @@ export default function DashboardEmpresa() {
 
   // ── Items del menú flotante (etiquetas cortas para la barra) ──────
   const NAV_LABELS: Record<SeccionEmpresa, string> = {
-    inicio: 'Inicio', vacantes: 'Vacantes', kanban: 'Reclutar',
-    activas: 'Activas', historial: 'Historial', pagos: 'Pagos', perfil: 'Mi Perfil',
+    inicio: t('nav_inicio'),
+    vacantes: t('seccion_vacantes'),
+    kanban: t('dashboard_company_recruit_short'),
+    activas: t('dashboard_company_active_short'),
+    historial: t('historial'),
+    pagos: t('pagos'),
+    perfil: t('seccion_perfil'),
   };
   // "Mensajes" y "Mi Perfil" se añaden SIEMPRE como últimas opciones.
   type NavKey = SeccionEmpresa | 'mensajes' | 'perfil';
@@ -1462,8 +1462,8 @@ export default function DashboardEmpresa() {
       icon: m.icon,
       badge: m.key === 'kanban' ? metricas.pendientes : undefined,
     })),
-    { key: 'mensajes', label: 'Mensajes', icon: 'chatbubble-ellipses-outline', badge: mensajesNoLeidos },
-    { key: 'perfil', label: 'Mi Perfil', icon: 'person-circle-outline' },
+    { key: 'mensajes', label: t('mensajes'), icon: 'chatbubble-ellipses-outline', badge: mensajesNoLeidos },
+    { key: 'perfil', label: t('seccion_perfil'), icon: 'person-circle-outline' },
   ];
 
   // ── RENDER SECCIONES ─────────────────────────────────────────────
@@ -1490,7 +1490,7 @@ export default function DashboardEmpresa() {
     return (
       <PerfilMasterDetail
         name={nombreEmpresa}
-        subtitle={`${perfil?.industria ?? 'Empresa'} · ${perfil?.premium ? '⭐ Premium' : 'Plan Básico'}`}
+        subtitle={`${perfil?.industria ?? t('rol_empresa')} · ${perfil?.premium ? `⭐ ${t('plan_premium')}` : t('dashboard_company_basic_plan')}`}
         avatarUrl={perfil?.logo_url}
         avatarStoragePath={`logos_empresas/${user!.uid}/logo.jpg`}
         fallbackIcon="business"
@@ -1703,20 +1703,20 @@ export default function DashboardEmpresa() {
                 es un nombre propio y no debe pasar por el traductor. */}
             {seccion === 'inicio' ? (
               <Text style={styles.mainTitle} numberOfLines={1} noTranslate>
-                {nombreEmpresa || 'Inicio'}
+                {nombreEmpresa || t('nav_inicio')}
               </Text>
             ) : (
               <Text style={styles.mainTitle} numberOfLines={1}>
-                {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
+                {seccion === 'perfil' ? t('seccion_perfil') : (NAV_LABELS[seccion] ?? t('nav_inicio'))}
               </Text>
             )}
             {seccion === 'inicio' ? (
               <Text style={styles.mainGreeting} numberOfLines={1}>
-                {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
+                {perfil?.premium ? `⭐ ${t('plan_premium')}` : t('dashboard_company_basic_plan')}
               </Text>
             ) : (
               <Text style={styles.mainGreeting} numberOfLines={1}>
-                {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
+                {perfil?.premium ? `⭐ ${t('plan_premium')}` : t('dashboard_company_basic_plan')}
                 {' · '}
                 <Text noTranslate>{nombreEmpresa}</Text>
               </Text>
@@ -1731,7 +1731,7 @@ export default function DashboardEmpresa() {
       <FloatingTopBar userId={user?.uid} />
 
       {/* ── BÚSQUEDA FLOTANTE (oculta en "Mi Perfil") ── */}
-      {seccion !== 'perfil' && <FloatingSearchButton placeholder="Buscar candidatos o vacantes..." />}
+      {seccion !== 'perfil' && <FloatingSearchButton placeholder={t('dashboard_company_search_placeholder')} />}
 
       {/* ── FORMULARIO OBLIGATORIO DE EXPERIENCIA (pasantías finalizadas) ── */}
       <FeedbackGate />
@@ -1956,7 +1956,7 @@ export default function DashboardEmpresa() {
                 <View style={{ marginBottom: 14 }}>
                   <Text style={s.tagsLabel}>Rol o especialidad (opcional)</Text>
                   <Text style={s.tagsHint}>
-                    Ayuda a que te lleguen los estudiantes correctos: "Tecnología" abarca desde
+                    Ayuda a que te lleguen los estudiantes correctos: &quot;Tecnología&quot; abarca desde
                     programar hasta soporte técnico.
                   </Text>
                   <View style={s.tagsWrap}>
@@ -2266,8 +2266,8 @@ export default function DashboardEmpresa() {
       {/* ── Onboarding (guía por globos) ── */}
       <OnboardingBubble
         visible={tour.visible}
-        titulo={TOUR_PASOS[seccion].titulo}
-        texto={TOUR_PASOS[seccion].texto}
+        titulo={t(TOUR_PASOS[seccion].tituloKey)}
+        texto={t(TOUR_PASOS[seccion].textoKey)}
         paso={tour.paso}
         total={tour.total}
         esUltimo={tour.esUltimo}
@@ -2618,6 +2618,7 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
   vacantes: Vacante[]; solicitudesGrupo: SolicitudGrupo[]; onVerPerfil: (estudianteId: string) => void;
 }) {
   const { s } = useThemedStyles();
+  const { t } = useTranslation();
   const recientes = [...apps].sort((a, b) => {
     const ta = a.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
     const tb = b.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
@@ -2632,12 +2633,12 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
       {/* Banner */}
       <GlassCard style={{ marginBottom: 16 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', padding: 20 }}>
         <View style={{ flex: 1 }}>
-          <Text style={s.bannerTitle}>Panel de control</Text>
-          <Text style={s.bannerSub}>Gestiona tu empresa desde aquí</Text>
+          <Text style={s.bannerTitle}>{t('dashboard_company_control_panel')}</Text>
+          <Text style={s.bannerSub}>{t('dashboard_company_manage_from_here')}</Text>
         </View>
         <View style={[s.planBadge, perfil?.premium && { borderColor: COLORS.gold + '44', backgroundColor: COLORS.gold + '11' }]}>
           <Text style={[s.planText, perfil?.premium && { color: COLORS.gold }]}>
-            {perfil?.premium ? '⭐ Premium' : 'Plan Básico'}
+            {perfil?.premium ? `⭐ ${t('plan_premium')}` : t('dashboard_company_basic_plan')}
           </Text>
         </View>
       </GlassCard>
@@ -2659,9 +2660,9 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
       </View>
 
       {/* Actividad reciente */}
-      <Text style={s.sectionTitle}>Actividad reciente</Text>
+      <Text style={s.sectionTitle}>{t('dashboard_company_recent_activity')}</Text>
       {recientes.length === 0
-        ? <Text style={s.emptyText}>Sin actividad reciente.</Text>
+        ? <Text style={s.emptyText}>{t('dashboard_company_no_recent_activity')}</Text>
         : recientes.map(a => (
             <TouchableOpacity
               key={a.id}
@@ -2705,6 +2706,7 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
   onMejorarPlan: () => void;
 }) {
   const { s } = useThemedStyles();
+  const { t } = useTranslation();
   const ilimitado = limiteVacantes >= 9999;
   return (
     <View style={{ flex: 1 }}>
@@ -2715,7 +2717,7 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
           onPress={puedeCrear ? onNueva : undefined}
         >
           <Ionicons name={puedeCrear ? 'add-circle-outline' : 'lock-closed-outline'} size={18} color={COLORS.textPrimary} />
-          <Text style={s.nuevaBtnText}>Publicar nueva pasantía</Text>
+          <Text style={s.nuevaBtnText}>{t('dashboard_company_publish_internship')}</Text>
         </JellyButton>
       </View>
 
@@ -2724,12 +2726,14 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
         <Ionicons name={puedeCrear ? 'information-circle-outline' : 'alert-circle-outline'} size={14} color={puedeCrear ? COLORS.textMuted : COLORS.warning} />
         {puedeCrear || ilimitado ? (
            <Text style={s.cupoText}>
-             {ilimitado ? 'Plan Premium · vacantes ilimitadas' : `Te quedan ${vacantesRestantes} de ${limiteVacantes} vacantes activas en tu plan`}
+             {ilimitado
+               ? t('dashboard_company_plan_unlimited_jobs')
+               : t('dashboard_company_remaining_jobs', { restantes: vacantesRestantes, limite: limiteVacantes })}
            </Text>
         ) : (
            <TouchableOpacity onPress={onMejorarPlan} activeOpacity={0.7} style={{ flex: 1 }}>
              <Text style={[s.cupoText, { color: COLORS.warning, textDecorationLine: 'underline' }]}>
-               Límite alcanzado ({limiteVacantes} activas). Pausa una o mejora tu plan.
+               {t('dashboard_company_limit_reached', { limite: limiteVacantes })}
              </Text>
            </TouchableOpacity>
         )}
@@ -2781,7 +2785,7 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
             </View>
           </GlassCard>
         )}
-        ListEmptyComponent={<Text style={s.emptyText}>Sin vacantes publicadas.</Text>}
+        ListEmptyComponent={<Text style={s.emptyText}>{t('dashboard_company_no_jobs_published')}</Text>}
       />
     </View>
   );
@@ -2792,6 +2796,7 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
 // ─────────────────────────────────────────────
 function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; onMover: (a: Aplicacion, s: string) => void; onSeleccionar: (a: Aplicacion) => void }) {
   const { s } = useThemedStyles();
+  const { t } = useTranslation();
   // ORDEN: secuencia real de estados en Firestore (se conserva para mover ←/→)
   const ORDEN = ['pendiente', 'en_revision', 'entrevista', 'contratado'];
 
@@ -2800,7 +2805,18 @@ function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; o
   const [estadoTab, setEstadoTab] = useState<'pendiente' | 'en_revision' | 'entrevista' | 'contratado'>('pendiente');
 
   // Pestañas reutilizando las etiquetas/orden de KANBAN_COLS.
-  const TABS = KANBAN_COLS.map(col => ({ id: col.key, label: col.label, color: col.color }));
+  const TABS = KANBAN_COLS.map(col => ({
+    id: col.key,
+    color: col.color,
+    label:
+      col.key === 'pendiente'
+        ? t('home_company_pending_plural')
+        : col.key === 'en_revision'
+          ? t('estado_en_revision')
+          : col.key === 'entrevista'
+            ? t('estado_entrevista')
+            : t('estado_contratado'),
+  }));
 
   // Lista filtrada al estado activo y posición en la secuencia.
   const filtered = apps.filter(a => a.estado === estadoTab);
@@ -2808,10 +2824,10 @@ function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; o
 
   // Mensaje amable de lista vacía por pestaña.
   const VACIO: Record<string, string> = {
-    pendiente:   'No hay postulantes pendientes por revisar.',
-    en_revision: 'No hay postulantes en revisión.',
-    entrevista:  'No hay postulantes en entrevista.',
-    contratado:  'Aún no has contratado a ningún postulante.',
+    pendiente: t('dashboard_company_no_pending_review'),
+    en_revision: t('dashboard_company_no_in_review'),
+    entrevista: t('dashboard_company_no_interview'),
+    contratado: t('dashboard_company_no_hired_yet'),
   };
 
   return (
@@ -2866,7 +2882,7 @@ function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; o
                       onPress={() => onMover(app, ORDEN[idx + 1])}
                     >
                       <Text style={{ fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight }}>
-                        Avanzar →
+                        {t('dashboard_company_advance')}
                       </Text>
                     </JellyButton>
                   )}
@@ -2888,6 +2904,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
   onVerPerfil: (estudianteId: string) => void;
 }) {
   const { s } = useThemedStyles();
+  const { t } = useTranslation();
   const activos    = apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado');
   const pendFirma  = apps.filter(a => a.estado === 'finalizado');
   const grupoActivas = solicitudesGrupo.filter(sg => sg.estado === 'aprobado' && sg.fechaInicio);
@@ -2895,7 +2912,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
   // Encabezado con las pasantías de grupo y su línea de tiempo porcentual.
   const Header = grupoActivas.length === 0 ? null : (
     <View style={{ marginBottom: 16 }}>
-      <Text style={[s.activaNombre, { marginBottom: 10 }]}>Pasantías de grupo</Text>
+      <Text style={[s.activaNombre, { marginBottom: 10 }]}>{t('home_company_group_internships')}</Text>
       {grupoActivas.map(sg => {
         const prog = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
         const color = prog.estado === 'completado' ? COLORS.gold : prog.estado === 'en_curso' ? COLORS.success : COLORS.primaryLight;
@@ -2904,9 +2921,9 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
           <GlassCard key={sg.id} style={{ marginBottom: 8 }} contentStyle={{ padding: 16, gap: 8 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <View style={{ flex: 1 }}>
-                <Text style={s.activaNombre} numberOfLines={1}>{sg.grupoNombre ?? 'Grupo'}</Text>
+                <Text style={s.activaNombre} numberOfLines={1}>{sg.grupoNombre ?? t('home_group_fallback')}</Text>
                 <Text style={s.activaMeta} numberOfLines={1}>
-                  {sg.carrera ?? ''}{sg.alumnos?.length ? ` · ${sg.alumnos.length} estudiante(s)` : ''}
+                  {sg.carrera ?? ''}{sg.alumnos?.length ? ` · ${sg.alumnos.length} ${t('dashboard_company_students_suffix')}` : ''}
                 </Text>
               </View>
               <Text style={[s.activaNombre, { color }]}>{prog.pct}%</Text>
@@ -2916,16 +2933,23 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
             </View>
             <Text style={s.activaMeta}>
               {prog.estado === 'por_iniciar'
-                ? `Inicia ${sg.fechaInicio}`
-                : `Día ${prog.diasTranscurridos} de ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
+                ? t('home_progress_starts', { fecha: sg.fechaInicio })
+                : t('home_progress_day', {
+                    actual: prog.diasTranscurridos,
+                    total: prog.diasTotales,
+                    inicio: sg.fechaInicio,
+                    fin: sg.fechaFin,
+                  })}
             </Text>
             <Text style={[s.activaMeta, conPago && { color: COLORS.success }]}>
-              {conPago ? `Pago: $${Number(sg.pago?.monto ?? 0).toFixed(2)} / estudiante` : 'Sin pago'}
+              {conPago
+                ? t('dashboard_company_payment_per_student', { monto: Number(sg.pago?.monto ?? 0).toFixed(2) })
+                : t('dashboard_company_without_payment')}
             </Text>
           </GlassCard>
         );
       })}
-      <Text style={[s.activaNombre, { marginTop: 14, marginBottom: 4 }]}>Pasantes individuales</Text>
+      <Text style={[s.activaNombre, { marginTop: 14, marginBottom: 4 }]}>{t('dashboard_company_individual_interns')}</Text>
     </View>
   );
 
@@ -2948,23 +2972,25 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
                 <Text style={s.activaNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
                 {!!item.acuerdo && (
                   <Text style={s.activaMeta} numberOfLines={1}>
-                    Horario: {item.acuerdo.dias.join(', ')} · {item.acuerdo.horaInicio} - {item.acuerdo.horaFin}
+                    {t('dashboard_company_schedule')}: {item.acuerdo.dias.join(', ')} · {item.acuerdo.horaInicio} - {item.acuerdo.horaFin}
                   </Text>
                 )}
-                <Text style={s.activaMeta}>Horas: {item.horas_completadas ?? 0}</Text>
-                <Text style={s.activaMeta}>Pago: {item.pago_confirmado ? '✓ Pagado' : '⏳ Pendiente'}</Text>
+                <Text style={s.activaMeta}>{t('dashboard_company_hours')}: {item.horas_completadas ?? 0}</Text>
+                <Text style={s.activaMeta}>
+                  {t('pagos')}: {item.pago_confirmado ? `✓ ${t('dashboard_company_paid')}` : `⏳ ${t('home_company_pending_plural')}`}
+                </Text>
               </View>
               {necesitaFirma && (
                 <JellyButton style={s.firmarBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 }} onPress={() => onFirmar(item)}>
                   <Ionicons name="pencil-outline" size={14} color={COLORS.textPrimary} />
-                  <Text style={s.firmarText}>Firmar constancia</Text>
+                  <Text style={s.firmarText}>{t('dashboard_company_sign_certificate')}</Text>
                 </JellyButton>
               )}
             </GlassCard>
           </TouchableOpacity>
         );
       }}
-      ListEmptyComponent={<Text style={s.emptyText}>Sin pasantes activos.</Text>}
+      ListEmptyComponent={<Text style={s.emptyText}>{t('dashboard_company_no_active_interns')}</Text>}
     />
   );
 }
@@ -2978,6 +3004,7 @@ function SeccionPagos({ apps, perfil, onPagar, onCardChange, onVerPerfil }: {
   onVerPerfil: (estudianteId: string) => void;
 }) {
   const { s } = useThemedStyles();
+  const { t } = useTranslation();
   const pendientes  = apps.filter(a => a.estado === 'finalizado' && !a.pago_confirmado);
   const completados = apps.filter(a => a.pago_confirmado);
 
@@ -2986,20 +3013,20 @@ function SeccionPagos({ apps, perfil, onPagar, onCardChange, onVerPerfil }: {
       {/* Tarjeta visual */}
       <GlassCard contentStyle={{ padding: 20, gap: 12 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={s.bankBrand}>GRADLY PAY — EMPRESA</Text>
+          <Text style={s.bankBrand}>{t('dashboard_company_pay_brand')}</Text>
           <Ionicons name="card" size={22} color={COLORS.primaryLight} />
         </View>
         <Text style={s.bankNumber}>•••• •••• •••• {perfil?.tarjeta_numero ?? '????'}</Text>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={s.bankAlias}>{perfil?.tarjeta_alias ?? 'Sin tarjeta'}</Text>
+          <Text style={s.bankAlias}>{perfil?.tarjeta_alias ?? t('dashboard_company_no_card')}</Text>
           <TouchableOpacity onPress={onCardChange} style={s.changeTarjetaBtn}>
-            <Text style={s.changeTarjetaText}>Cambiar</Text>
+            <Text style={s.changeTarjetaText}>{t('cambiar')}</Text>
           </TouchableOpacity>
         </View>
       </GlassCard>
 
       {/* Pagos pendientes */}
-      <Text style={s.sectionTitle}>Pagos pendientes ({pendientes.length})</Text>
+      <Text style={s.sectionTitle}>{t('dashboard_company_pending_payments', { count: pendientes.length })}</Text>
       {pendientes.map(a => (
         <GlassCard key={a.id} style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
           <TouchableOpacity
@@ -3009,17 +3036,17 @@ function SeccionPagos({ apps, perfil, onPagar, onCardChange, onVerPerfil }: {
             onPress={() => a.estudiante_id && onVerPerfil(a.estudiante_id)}
           >
             <Text style={s.pagoNombre}>{a.estudiante_nombre}</Text>
-            <Text style={s.pagoMeta}>Pasantía finalizada</Text>
+            <Text style={s.pagoMeta}>{t('dashboard_company_completed_internship')}</Text>
           </TouchableOpacity>
           <JellyButton style={s.pagarBtn} contentStyle={{ paddingVertical: 8, paddingHorizontal: 14 }} onPress={() => onPagar(a)}>
-            <Text style={s.pagarText}>Pagar ahora</Text>
+            <Text style={s.pagarText}>{t('pagar_ahora')}</Text>
           </JellyButton>
         </GlassCard>
       ))}
-      {pendientes.length === 0 && <Text style={s.emptyText}>Sin pagos pendientes.</Text>}
+      {pendientes.length === 0 && <Text style={s.emptyText}>{t('dashboard_company_no_pending_payments')}</Text>}
 
       {/* Historial */}
-      <Text style={s.sectionTitle}>Historial de pagos</Text>
+      <Text style={s.sectionTitle}>{t('historial_pagos')}</Text>
       {completados.map(a => (
         <TouchableOpacity
           key={a.id}
@@ -3030,10 +3057,10 @@ function SeccionPagos({ apps, perfil, onPagar, onCardChange, onVerPerfil }: {
         >
           <Ionicons name="checkmark-circle" size={18} color={COLORS.success} />
           <Text style={[s.pagoNombre, { flex: 1 }]} numberOfLines={1}>{a.estudiante_nombre}</Text>
-          <Text style={s.pagoMeta}>Pagado</Text>
+          <Text style={s.pagoMeta}>{t('dashboard_company_paid')}</Text>
         </TouchableOpacity>
       ))}
-      {completados.length === 0 && <Text style={s.emptyText}>Sin historial.</Text>}
+      {completados.length === 0 && <Text style={s.emptyText}>{t('dashboard_company_no_history')}</Text>}
     </ScrollView>
   );
 }

@@ -21,24 +21,32 @@ import {
 import { AutoText as Text } from "./AutoText";
 import PerfilPublicoModal from "../../components/PerfilPublicoModal";
 import { db } from "../config/firebaseConfig";
+import { useTheme } from "../context/ThemeContext";
+import { useTranslation } from "../context/TranslationContext";
 import { abrirChatDirectoRecontratacion } from "../services/chatService";
 import {
   calcularNivelEstudiante,
   type NivelEstudiante,
 } from "../services/pasantiaService";
 
-const C = {
-  surface: "#0d0b1e",
-  card: "rgba(255,255,255,0.04)",
-  border: "rgba(139,92,246,0.22)",
-  text: "#f4f1ff",
-  textSub: "rgba(255,255,255,0.65)",
-  muted: "rgba(255,255,255,0.40)",
-  accent: "#8b5cf6",
-  accentSoft: "rgba(139,92,246,0.15)",
-  green: "#34d399",
-  amber: "#f59e0b",
-};
+function useHistorialStyles() {
+  const { colors, isDark } = useTheme();
+  return useMemo(() => {
+    const C = {
+      card: isDark ? "rgba(255,255,255,0.04)" : colors.backgroundCard,
+      border: isDark ? "rgba(139,92,246,0.22)" : colors.border,
+      text: colors.textPrimary,
+      textSub: isDark ? "rgba(255,255,255,0.65)" : colors.white60,
+      muted: colors.textMuted,
+      accent: colors.primary,
+      accentSoft: isDark ? "rgba(139,92,246,0.15)" : colors.primary12,
+      amber: colors.warning,
+      badgeBg: isDark ? "rgba(255,255,255,0.03)" : colors.white4,
+      pillBg: isDark ? "rgba(255,255,255,0.04)" : colors.white4,
+    };
+    return { C, styles: makeStyles(C) };
+  }, [colors, isDark]);
+}
 
 /** Normaliza un nombre para emparejar alumno↔perfil (sin acentos ni caso). */
 const normaliza = (s: string) =>
@@ -76,6 +84,8 @@ interface Props {
  */
 export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
   const router = useRouter();
+  const { t } = useTranslation();
+  const { C, styles } = useHistorialStyles();
 
   const [solicitudes, setSolicitudes] = useState<any[]>([]);
   const [items, setItems] = useState<PasanteItem[]>([]);
@@ -280,7 +290,7 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
             <View style={styles.statPill}>
               <Ionicons name="alert-circle-outline" size={13} color={C.muted} />
               <Text style={[styles.statText, { color: C.muted }]}>
-                Cuenta no localizada
+                {t('history_company_account_not_found')}
               </Text>
             </View>
           ) : null}
@@ -299,7 +309,7 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
             <>
               <Ionicons name="briefcase" size={16} color="#fff" />
               <Text style={styles.recontactarText}>
-                Ofertar Empleo / Re-contactar
+                {t('history_company_recontact')}
               </Text>
             </>
           )}
@@ -324,8 +334,8 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
             <Ionicons name="people-outline" size={42} color={C.muted} />
             <Text style={styles.emptyText}>
               {loading
-                ? "Cargando historial..."
-                : "Aún no tienes pasantes finalizados.\nAquí verás a quienes completaron sus pasantías contigo."}
+                ? t('history_company_loading')
+                : t('history_company_empty')}
             </Text>
           </View>
         }
@@ -343,7 +353,18 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: {
+  card: string;
+  border: string;
+  text: string;
+  textSub: string;
+  muted: string;
+  accent: string;
+  accentSoft: string;
+  amber: string;
+  badgeBg: string;
+  pillBg: string;
+}) => StyleSheet.create({
   card: {
     backgroundColor: C.card,
     borderRadius: 18,
@@ -400,7 +421,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 12,
     borderWidth: 1,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: C.badgeBg,
   },
   nivelText: {
     fontSize: 12,
@@ -418,7 +439,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: C.pillBg,
     borderWidth: 1,
     borderColor: C.border,
   },

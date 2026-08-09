@@ -74,7 +74,7 @@ const mismoDia = (a: Date, b: Date) => claveDia(a) === claveDia(b);
 export default function CalendarioEventos({ uid, rol = 'universidad' }: { uid: string; rol?: 'universidad' | 'empresa' | 'estudiante' }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
 
   const { width: winW } = useWindowDimensions();
   const boxWidth = Math.min(winW - 32, MAX_W);
@@ -179,35 +179,35 @@ export default function CalendarioEventos({ uid, rol = 'universidad' }: { uid: s
   // ── Ensamblado de eventos ──
   const eventos = useMemo(() => {
     const out: Evento[] = [];
-    if (registro) out.push({ fecha: registro, tipo: 'registro', titulo: 'Te uniste a Gradly' });
+    if (registro) out.push({ fecha: registro, tipo: 'registro', titulo: t('calendar_joined_gradly') });
 
     if (esEmpresa) {
       vacantes.forEach(v => {
         const f = aFecha(v.fecha_creacion ?? v.fecha_publicacion);
-        if (f) out.push({ fecha: f, tipo: 'vacante', titulo: 'Vacante publicada', detalle: v.titulo });
+        if (f) out.push({ fecha: f, tipo: 'vacante', titulo: t('calendar_job_posted'), detalle: v.titulo });
       });
       postulaciones.forEach(p => {
         const f = aFecha(p.fechaPostulacion);
-        if (f) out.push({ fecha: f, tipo: 'postulacion', titulo: 'Postulación recibida', detalle: p.grupoNombre || p.vacanteTitulo });
+        if (f) out.push({ fecha: f, tipo: 'postulacion', titulo: t('calendar_application_received'), detalle: p.grupoNombre || p.vacanteTitulo });
       });
     } else if (!esEstudiante) {
       grupos.forEach(g => {
         const fc = aFecha(g.fecha_creacion);
-        if (fc) out.push({ fecha: fc, tipo: 'grupo_creado', titulo: 'Grupo creado', detalle: g.nombre });
+        if (fc) out.push({ fecha: fc, tipo: 'grupo_creado', titulo: t('calendar_group_created'), detalle: g.nombre });
         const fe = aFecha(g.fecha_egreso);
-        if (fe) out.push({ fecha: fe, tipo: 'egreso', titulo: 'Grupo egresado', detalle: g.nombre });
+        if (fe) out.push({ fecha: fe, tipo: 'egreso', titulo: t('calendar_group_graduated'), detalle: g.nombre });
       });
       postulaciones.forEach(p => {
         const f = aFecha(p.fechaPostulacion);
-        if (f) out.push({ fecha: f, tipo: 'postulacion', titulo: 'Postulación enviada', detalle: p.empresaNombre || p.grupoNombre });
+        if (f) out.push({ fecha: f, tipo: 'postulacion', titulo: t('calendar_application_sent'), detalle: p.empresaNombre || p.grupoNombre });
       });
     }
 
     solicitudes.forEach(sg => {
       const fi = aFecha(sg.fechaInicio);
-      if (fi) out.push({ fecha: fi, tipo: 'pasantia_inicio', titulo: 'Inicio de pasantía', detalle: sg.grupoNombre });
+      if (fi) out.push({ fecha: fi, tipo: 'pasantia_inicio', titulo: t('calendar_internship_start'), detalle: sg.grupoNombre });
       const ff = aFecha(sg.fechaFin);
-      if (ff) out.push({ fecha: ff, tipo: 'pasantia_fin', titulo: 'Fin de pasantía', detalle: sg.grupoNombre });
+      if (ff) out.push({ fecha: ff, tipo: 'pasantia_fin', titulo: t('calendar_internship_end'), detalle: sg.grupoNombre });
 
       // Días de asistencia acordados: se marca cada día laborable del acuerdo
       // (Lunes..Viernes elegidos) desde el inicio hasta el fin del periodo.
@@ -221,7 +221,7 @@ export default function CalendarioEventos({ uid, rol = 'universidad' }: { uid: s
         const finDia = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate());
         while (cursor.getTime() <= finDia.getTime()) {
           if (set.has(cursor.getDay())) {
-            out.push({ fecha: new Date(cursor), tipo: 'practica_dia', titulo: 'Día de práctica', detalle: sg.grupoNombre });
+            out.push({ fecha: new Date(cursor), tipo: 'practica_dia', titulo: t('calendar_practice_day'), detalle: sg.grupoNombre });
           }
           cursor.setDate(cursor.getDate() + 1);
         }
@@ -229,7 +229,7 @@ export default function CalendarioEventos({ uid, rol = 'universidad' }: { uid: s
     });
 
     return out;
-  }, [esEmpresa, esEstudiante, registro, grupos, vacantes, postulaciones, solicitudes]);
+  }, [esEmpresa, esEstudiante, registro, grupos, vacantes, postulaciones, solicitudes, t]);
 
   // Índice día → eventos.
   const porDia = useMemo(() => {

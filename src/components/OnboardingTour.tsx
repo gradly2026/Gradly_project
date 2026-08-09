@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { AutoText as Text } from "./AutoText";
 import { db } from "../config/firebaseConfig";
+import { useTranslation } from "../context/TranslationContext";
 import { shadow } from "../utils/shadow";
 
 // ══════════════════════════════════════════════════════════════════
@@ -116,6 +117,7 @@ export function OnboardingBubble({
   onContinuar: () => void;
   onSaltar: () => void;
 }) {
+  const { t } = useTranslation();
   if (!visible) return null;
   return (
     <View style={[styles.layer, { pointerEvents: 'box-none' }]}>
@@ -125,10 +127,10 @@ export function OnboardingBubble({
             <Ionicons name="sparkles" size={14} color={C.accent70} />
           </View>
           <Text style={styles.paso}>
-            Paso {paso} de {total}
+            {t('tour_step_of', { paso, total })}
           </Text>
           <TouchableOpacity onPress={onSaltar} hitSlop={8}>
-            <Text style={styles.saltar}>Saltar guía</Text>
+            <Text style={styles.saltar}>{t('tour_skip_guide')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -146,7 +148,7 @@ export function OnboardingBubble({
         </View>
 
         <TouchableOpacity style={styles.btn} onPress={onContinuar} activeOpacity={0.85}>
-          <Text style={styles.btnText}>{esUltimo ? "Entendido" : "Siguiente"}</Text>
+          <Text style={styles.btnText}>{esUltimo ? t('tour_understood') : t('tour_next')}</Text>
           <Ionicons
             name={esUltimo ? "checkmark" : "arrow-forward"}
             size={16}
@@ -156,7 +158,7 @@ export function OnboardingBubble({
 
         {!esUltimo && (
           <Text style={styles.hint}>
-            Toca otra pestaña del menú para seguir conociendo tu panel.
+            {t('tour_tap_other_tab')}
           </Text>
         )}
       </View>

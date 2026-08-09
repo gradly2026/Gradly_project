@@ -1542,15 +1542,15 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
             {/* Aviso: un grupo = un horario. Disponibilidad incompatible → grupos separados. */}
             <View style={{
               flexDirection: 'row', gap: 10, alignItems: 'flex-start',
-              backgroundColor: COLORS.primary + '12',
-              borderWidth: 1, borderColor: COLORS.primary + '30',
+              backgroundColor: colors.primary12,
+              borderWidth: 1, borderColor: colors.primary35,
               borderRadius: 12, padding: 12, marginBottom: 12,
             }}>
-              <Ionicons name="information-circle-outline" size={18} color={COLORS.primaryLight} style={{ marginTop: 1 }} />
-              <Text style={{ flex: 1, color: COLORS.textMuted, fontSize: 12, lineHeight: 17 }}>
-                Cada grupo acuerda <Text style={{ color: COLORS.textPrimary, fontFamily: FONTS.interSemiBold }}>un solo horario</Text> con la empresa.
+              <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} style={{ marginTop: 1 }} />
+              <Text style={{ flex: 1, color: colors.textMuted, fontSize: 12, lineHeight: 17 }}>
+                Cada grupo acuerda <Text style={{ color: colors.textPrimary, fontFamily: FONTS.interSemiBold }}>un solo horario</Text> con la empresa.
                 Si tienes estudiantes con disponibilidad incompatible (por ejemplo, unos trabajan de mañana y otros de tarde),
-                crea <Text style={{ color: COLORS.textPrimary, fontFamily: FONTS.interSemiBold }}>grupos separados</Text> para que cada uno pueda cumplir sus prácticas.
+                crea <Text style={{ color: colors.textPrimary, fontFamily: FONTS.interSemiBold }}>grupos separados</Text> para que cada uno pueda cumplir sus prácticas.
               </Text>
             </View>
 
@@ -1564,7 +1564,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                       style={[styles.modalInput, malo ? s.campoErr : (tiene ? s.campoOk : null)]}
                       value={gNombre} onChangeText={setGNombre}
                       placeholder='Ej. "Sistemas G1"'
-                      placeholderTextColor={COLORS.textMuted} selectionColor={COLORS.primary}
+                      placeholderTextColor={colors.textMuted} selectionColor={colors.primary}
                     />
                     {malo && <Text style={s.campoErrText}>{errNombre}</Text>}
                   </View>
@@ -1585,13 +1585,13 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                       onPress={() => setShowCarreraPicker(v => !v)}
                       activeOpacity={0.85}
                     >
-                      <Text style={{ color: gCarrera ? COLORS.textPrimary : COLORS.textMuted, flex: 1 }}>
+                      <Text style={{ color: gCarrera ? colors.textPrimary : colors.textMuted, flex: 1 }}>
                         {gCarrera || (carrerasUni.length ? 'Selecciona una carrera' : 'No hay carreras registradas')}
                       </Text>
                       <Ionicons
                         name={showCarreraPicker ? 'chevron-up-outline' : 'chevron-down-outline'}
                         size={18}
-                        color={COLORS.textMuted}
+                        color={colors.textMuted}
                       />
                     </TouchableOpacity>
                     {showCarreraPicker && (
@@ -1601,13 +1601,13 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                           maxHeight: 200,
                           marginTop: 6,
                           borderWidth: 1,
-                          borderColor: COLORS.border,
+                          borderColor: colors.border,
                           borderRadius: 10,
-                          backgroundColor: COLORS.white4,
+                          backgroundColor: colors.backgroundCard,
                         }}
                       >
                         {carrerasUni.length === 0 ? (
-                          <Text style={{ color: COLORS.textMuted, fontSize: 13, padding: 14 }}>
+                          <Text style={{ color: colors.textMuted, fontSize: 13, padding: 14 }}>
                             Registra carreras en el perfil de la universidad para poder elegirlas aquí.
                           </Text>
                         ) : (
@@ -1621,13 +1621,13 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo }: { estudiante
                                 paddingVertical: 12,
                                 paddingHorizontal: 14,
                                 borderTopWidth: i === 0 ? 0 : 1,
-                                borderTopColor: COLORS.border,
+                                borderTopColor: colors.border,
                               }}
                               activeOpacity={0.85}
                               onPress={() => { setGCarrera(c); setShowCarreraPicker(false); }}
                             >
-                              <Text style={{ color: COLORS.textPrimary, fontSize: 13, flex: 1 }}>{c}</Text>
-                              {gCarrera === c && <Ionicons name="checkmark" size={16} color={COLORS.primary} />}
+                              <Text style={{ color: colors.textPrimary, fontSize: 13, flex: 1 }}>{c}</Text>
+                              {gCarrera === c && <Ionicons name="checkmark" size={16} color={colors.primary} />}
                             </TouchableOpacity>
                           ))
                         )}
