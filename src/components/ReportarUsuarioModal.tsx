@@ -85,7 +85,7 @@ export default function ReportarUsuarioModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={cerrar}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={cerrar}>
       <View style={s.overlay}>
         <View style={s.card}>
           <View style={s.header}>

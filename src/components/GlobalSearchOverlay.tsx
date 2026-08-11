@@ -10,7 +10,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import { collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -28,6 +28,7 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
+import { areasDeCarrera } from '../data/areas';
 import { useIniciarChat } from '../hooks/useIniciarChat';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { calcularRango, type RangoTier } from '../services/feedbackService';
@@ -70,6 +71,36 @@ const TIPO_META: Record<ResultTipo, { icon: keyof typeof Ionicons.glyphMap; labe
 
 const PERFIL_TIPOS: ResultTipo[] = ['estudiante', 'empresa', 'universidad'];
 
+/**
+ * Palabras "de tipo" (sin tildes, minúsculas): si el usuario escribe UNA de
+ * estas, en vez de filtrar por texto libre se interpreta como "quiero ver
+ * todos los resultados de este tipo" (p. ej. una empresa escribe
+ * "estudiantes" y ve TODOS los estudiantes cargados, no solo los que tengan
+ * la palabra "estudiantes" en el nombre/carrera).
+ */
+const TIPO_KEYWORDS: Record<ResultTipo, string[]> = {
+  estudiante: ['estudiante', 'estudiantes', 'alumno', 'alumnos'],
+  empresa: ['empresa', 'empresas'],
+  universidad: ['universidad', 'universidades'],
+  vacante: ['vacante', 'vacantes', 'pasantia', 'pasantias', 'empleo', 'empleos'],
+  grupo: ['grupo', 'grupos'],
+};
+
+// Marcas diacríticas combinantes (U+0300–U+036F) que deja `normalize("NFD")`.
+// Se construye con `fromCharCode` (no como literal en el código fuente) para
+// que el rango no quede como caracteres invisibles que un cambio de
+// codificación o copiar/pegar podría romper en silencio — mismo patrón que
+// `src/data/areas.ts`.
+const DIACRITICOS = new RegExp(
+  `[${String.fromCharCode(0x300)}-${String.fromCharCode(0x36f)}]`,
+  'g',
+);
+
+/** minúsculas + sin tildes, para comparar texto escrito de cualquier forma. */
+function norm(s: string): string {
+  return s.trim().toLowerCase().normalize('NFD').replace(DIACRITICOS, '');
+}
+
 export default function GlobalSearchOverlay({ visible, onClose, onResultPress }: Props) {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
@@ -82,9 +113,20 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
   const [cargando, setCargando] = useState(false);
   const [perfil, setPerfil] = useState<{ tipo: ProfileTipo; id: string } | null>(null);
 
+  // ── Datos para ordenar por afinidad (carrera ↔ área de vacante) ──
+  // Empresa buscando estudiantes: áreas de MIS vacantes activas.
+  const [misAreasEmpresa, setMisAreasEmpresa] = useState<Set<string>>(new Set());
+  // Estudiante buscando empresas: mi propia carrera + áreas activas de cada empresa.
+  const [miCarreraEstudiante, setMiCarreraEstudiante] = useState<string | null>(null);
+  const [empresaAreasMap, setEmpresaAreasMap] = useState<Map<string, Set<string>>>(new Map());
+
   // ── Cargar datos según rol al abrir ──────────────────────────────
   useEffect(() => {
-    if (!visible) { setTexto(''); setRaw([]); return; }
+    if (!visible) {
+      setTexto(''); setRaw([]);
+      setMisAreasEmpresa(new Set()); setMiCarreraEstudiante(null); setEmpresaAreasMap(new Map());
+      return;
+    }
     // No ejecutar consultas a Firestore sin sesión activa.
     if (!user?.uid) { setRaw([]); setCargando(false); return; }
     let cancel = false;
@@ -105,24 +147,45 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
           emp.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'empresa', titulo: x.nombre_empresa ?? 'Empresa', subtitulo: x.industria ?? '', foto: x.logo_url, verificado: x.verificado ?? false, empresaTier: tierEmpresa(x) }); });
           est.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'estudiante', titulo: x.nombre_completo ?? 'Estudiante', subtitulo: x.carrera ?? '', carrera: x.carrera, foto: x.foto_url }); });
         } else if (rol === 'empresa') {
-          const [uni, est, gru] = await Promise.all([
+          const [uni, est, gru, vacPropias] = await Promise.all([
             getDocs(query(collection(db, 'perfiles_universidades'), limit(50))),
             getDocs(query(collection(db, 'perfiles_estudiantes'), limit(100))),
             getDocs(query(collection(db, 'grupos'), limit(80))),
+            getDocs(query(collection(db, 'vacantes'), where('empresa_id', '==', user.uid), where('activa', '==', true), limit(50))),
           ]);
           uni.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'universidad', titulo: x.nombre_universidad ?? 'Universidad', subtitulo: x.dominio_correo ?? '', foto: x.logo_url }); });
           est.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'estudiante', titulo: x.nombre_completo ?? 'Estudiante', subtitulo: x.carrera ?? '', carrera: x.carrera, foto: x.foto_url }); });
           gru.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'grupo', titulo: x.nombre ?? 'Grupo', subtitulo: x.carrera ?? '', carrera: x.carrera }); });
+          // Áreas de mis propias vacantes activas: sirven para priorizar, en la
+          // lista de estudiantes, a quienes tienen una carrera afín a lo que
+          // esta empresa está publicando ahora mismo.
+          const areas = new Set<string>();
+          vacPropias.docs.forEach((d: any) => { const a = d.data()?.area; if (a) areas.add(a); });
+          if (!cancel) setMisAreasEmpresa(areas);
         } else {
           // Estudiante (y otros roles): empresas · universidades · grupos
-          const [emp, uni, gru] = await Promise.all([
+          const [emp, uni, gru, miPerfil, vacActivas] = await Promise.all([
             getDocs(query(collection(db, 'perfiles_empresas'), limit(50))),
             getDocs(query(collection(db, 'perfiles_universidades'), limit(50))),
             getDocs(query(collection(db, 'grupos'), limit(80))),
+            getDoc(doc(db, 'perfiles_estudiantes', user.uid)),
+            getDocs(query(collection(db, 'vacantes'), where('activa', '==', true), limit(300))),
           ]);
           emp.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'empresa', titulo: x.nombre_empresa ?? 'Empresa', subtitulo: x.industria ?? '', foto: x.logo_url, verificado: x.verificado ?? false, empresaTier: tierEmpresa(x) }); });
           uni.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'universidad', titulo: x.nombre_universidad ?? 'Universidad', subtitulo: x.dominio_correo ?? '', foto: x.logo_url }); });
           gru.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'grupo', titulo: x.nombre ?? 'Grupo', subtitulo: x.carrera ?? '', carrera: x.carrera }); });
+          // Mi carrera + el área de las vacantes activas de cada empresa: sirve
+          // para priorizar, en la lista de empresas, a las que tienen una
+          // vacante afín a mi propia carrera.
+          if (!cancel) setMiCarreraEstudiante(miPerfil.exists() ? String((miPerfil.data() as any)?.carrera ?? '') || null : null);
+          const mapa = new Map<string, Set<string>>();
+          vacActivas.docs.forEach((d: any) => {
+            const x = d.data();
+            if (!x.empresa_id || !x.area) return;
+            if (!mapa.has(x.empresa_id)) mapa.set(x.empresa_id, new Set());
+            mapa.get(x.empresa_id)!.add(x.area);
+          });
+          if (!cancel) setEmpresaAreasMap(mapa);
         }
       } catch (e) {
         console.error('[GlobalSearch] load', e);
@@ -134,16 +197,53 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
     return () => { cancel = true; };
   }, [visible, rol, user?.uid]);
 
-  // ── Filtrado en cliente por nombre o carrera ─────────────────────
+  /** Áreas afines a mi propia carrera (solo relevante para rol estudiante). */
+  const misAreasEstudianteSet = useMemo(
+    () => new Set(areasDeCarrera(miCarreraEstudiante)),
+    [miCarreraEstudiante],
+  );
+
+  /** Puntúa un resultado por afinidad de carrera/área, para ordenar (no filtra). */
+  const puntuarAfinidad = (item: SearchItem): number => {
+    if (rol === 'empresa' && item.tipo === 'estudiante') {
+      if (misAreasEmpresa.size === 0) return 0;
+      return areasDeCarrera(item.carrera).some((a) => misAreasEmpresa.has(a)) ? 1 : 0;
+    }
+    if (rol !== 'empresa' && rol !== 'universidad' && item.tipo === 'empresa') {
+      if (misAreasEstudianteSet.size === 0) return 0;
+      const areasEmpresa = empresaAreasMap.get(item.id);
+      if (!areasEmpresa) return 0;
+      for (const a of areasEmpresa) if (misAreasEstudianteSet.has(a as any)) return 1;
+      return 0;
+    }
+    return 0;
+  };
+
+  // ── Filtrado en cliente: por "tipo" (p. ej. "estudiantes"), por texto
+  // libre, o sin filtro — y siempre ordenado por afinidad de carrera/área.
   const resultados = useMemo(() => {
-    const q = texto.trim().toLowerCase();
-    if (!q) return raw;
-    return raw.filter(it =>
-      it.titulo.toLowerCase().includes(q) ||
-      it.subtitulo.toLowerCase().includes(q) ||
-      (it.carrera ?? '').toLowerCase().includes(q),
-    );
-  }, [raw, texto]);
+    const q = norm(texto);
+    const tipoDetectado = q
+      ? (Object.keys(TIPO_KEYWORDS) as ResultTipo[]).find((t) => TIPO_KEYWORDS[t].includes(q))
+      : undefined;
+
+    let lista: SearchItem[];
+    if (tipoDetectado) {
+      lista = raw.filter((it) => it.tipo === tipoDetectado);
+    } else if (q) {
+      lista = raw.filter((it) =>
+        norm(it.titulo).includes(q) ||
+        norm(it.subtitulo).includes(q) ||
+        norm(it.carrera ?? '').includes(q),
+      );
+    } else {
+      lista = raw;
+    }
+
+    // Sort estable: primero los afines a mi carrera/rubro, luego el resto,
+    // cada grupo conservando su orden relativo original.
+    return [...lista].sort((a, b) => puntuarAfinidad(b) - puntuarAfinidad(a));
+  }, [raw, texto, rol, misAreasEmpresa, misAreasEstudianteSet, empresaAreasMap]);
 
   const handlePress = (item: SearchItem) => {
     if (PERFIL_TIPOS.includes(item.tipo)) {
@@ -223,6 +323,7 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
                 renderItem={({ item }) => {
                   const meta = TIPO_META[item.tipo];
                   const esPerfil = PERFIL_TIPOS.includes(item.tipo);
+                  const esAfin = puntuarAfinidad(item) === 1;
                   return (
                     <TouchableOpacity style={styles.resultRow} onPress={() => handlePress(item)} activeOpacity={0.8}>
                       {esPerfil ? (
@@ -242,6 +343,14 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
                         <Text style={styles.resultSub} numberOfLines={1}>
                           {meta.label}{item.subtitulo ? ` · ${item.subtitulo}` : ''}
                         </Text>
+                        {esAfin && (
+                          <View style={styles.afinBadge}>
+                            <Ionicons name="sparkles" size={11} color={colors.success} />
+                            <Text style={styles.afinBadgeText}>
+                              {item.tipo === 'estudiante' ? 'Afín a tus vacantes' : 'Afín a tu carrera'}
+                            </Text>
+                          </View>
+                        )}
                         {item.tipo === 'empresa' && item.empresaTier && item.empresaTier !== 'bronce' && (
                           <View style={{ marginTop: 6 }}>
                             <SelloEmpresa tier={item.empresaTier} />
@@ -310,6 +419,13 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   },
   resultTitle: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
   resultSub: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 2 },
+  afinBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    marginTop: 6, alignSelf: 'flex-start',
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+    backgroundColor: COLORS.primary12,
+  },
+  afinBadgeText: { fontSize: 10, fontFamily: FONTS.interSemiBold, color: COLORS.success },
 
   chatBtn: {
     width: 38, height: 38, borderRadius: 19,

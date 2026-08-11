@@ -234,7 +234,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     tipo === 'empresa' ? 'business' : tipo === 'universidad' ? 'school' : 'person';
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={[styles.root, { paddingTop: insets.top }]}>
         {/* Header */}
         <View style={styles.header}>

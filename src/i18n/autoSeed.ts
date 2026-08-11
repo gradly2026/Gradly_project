@@ -16,6 +16,8 @@
 export const AUTO_SEED_EN: Record<string, string> = {
   "Academia Gradly": "Gradly Academy",
   "Aceptar": "Accept",
+  "Afín a tu carrera": "Matches your major",
+  "Afín a tus vacantes": "Matches your job posts",
   "Aceptar y Cerrar": "Accept and close",
   "Activa": "Active",
   "Actividad reciente": "Recent activity",
@@ -276,6 +278,10 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Ubicación registrada": "Location registered",
   "Universidad": "University",
   "Vacantes": "Job posts",
+  "Vaciar": "Clear",
+  "Vaciar chat": "Clear chat",
+  "Se ocultarán todos los mensajes solo en tu vista. Los demás participantes seguirán viéndolos.":
+    "All messages will be hidden only in your view. The other participants will still see them.",
   "Vencimiento (MM/AA)": "Expiry (MM/YY)",
   "Ver credenciales de pago": "View payment credentials",
   "Ver detalles del plan": "View plan details",

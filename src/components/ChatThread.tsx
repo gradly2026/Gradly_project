@@ -261,6 +261,9 @@ export default function ChatThread({
   // "Vaciar chat" por usuario: oculta los mensajes anteriores a esta marca SOLO
   // para mí (no borra nada para los demás).
   const [clearedAtMe, setClearedAtMe] = useState<Date | null>(null);
+  // Confirmación de "Vaciar chat" vía modal propio (Alert.alert con botones
+  // es un no-op total en react-native-web: la acción real jamás se disparaba).
+  const [showVaciarConfirm, setShowVaciarConfirm] = useState(false);
   // Acción al tocar un integrante del grupo (ver perfil / chatear).
   const [accionMiembro, setAccionMiembro] = useState<{
     uid: string;
@@ -1628,26 +1631,16 @@ export default function ChatThread({
   }, []);
 
   // ── Vaciar el chat SOLO para mí (no borra para los demás) ──
-  const vaciarChatParaMi = useCallback(() => {
+  // Confirmación vía modal propio (Alert.alert con botones es un no-op total
+  // en react-native-web: la acción real de "Vaciar" jamás se disparaba ahí).
+  const confirmarVaciarChat = useCallback(() => {
     if (!chatId || !user?.uid) return;
-    Alert.alert(
-      "Vaciar chat",
-      "Se ocultarán todos los mensajes solo en tu vista. Los demás participantes seguirán viéndolos.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Vaciar",
-          style: "destructive",
-          onPress: () => {
-            void updateDoc(doc(db, "chats", chatId), {
-              [`clearedAt.${user.uid}`]: serverTimestamp(),
-            }).catch(() => {});
-            setClearedAtMe(new Date());
-            setShowGroupInfo(false);
-          },
-        },
-      ],
-    );
+    void updateDoc(doc(db, "chats", chatId), {
+      [`clearedAt.${user.uid}`]: serverTimestamp(),
+    }).catch(() => {});
+    setClearedAtMe(new Date());
+    setShowGroupInfo(false);
+    setShowVaciarConfirm(false);
   }, [chatId, user?.uid]);
 
   // Mensajes visibles tras aplicar el "vaciado" propio.
@@ -1719,7 +1712,7 @@ export default function ChatThread({
 
       {/* Vaciar chat (solo para mi vista). */}
       <TouchableOpacity
-        onPress={vaciarChatParaMi}
+        onPress={() => setShowVaciarConfirm(true)}
         style={styles.iconBtn}
         accessibilityLabel="Vaciar chat"
       >
@@ -1916,7 +1909,7 @@ export default function ChatThread({
       <Modal
         visible={!!acuerdoFirmado}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setAcuerdoFirmado(null)}
       >
         <View style={styles.successBackdrop}>
@@ -1977,7 +1970,7 @@ export default function ChatThread({
       <Modal
         visible={showCompartirGrupo}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setShowCompartirGrupo(false)}
       >
         <View style={styles.menuBackdrop}>
@@ -2037,7 +2030,7 @@ export default function ChatThread({
       <Modal
         visible={!!actionMsg}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setActionMsg(null)}
       >
         <TouchableOpacity
@@ -2104,7 +2097,7 @@ export default function ChatThread({
       <Modal
         visible={!!forwardMsg}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setForwardMsg(null)}
       >
         <View style={styles.fwdBackdrop}>
@@ -2150,7 +2143,7 @@ export default function ChatThread({
       <Modal
         visible={showGroupInfo}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => {
           // Cierra primero el overlay superior (evita saltarse un nivel al
           // pulsar "atrás" en Android).
@@ -2418,6 +2411,43 @@ export default function ChatThread({
           onClose={() => setReportTarget(null)}
         />
       ) : null}
+
+      {/* ── Confirmación: Vaciar chat (solo para mi vista) ── */}
+      <Modal
+        visible={showVaciarConfirm}
+        transparent
+        animationType="none"
+        onRequestClose={() => setShowVaciarConfirm(false)}
+      >
+        <View style={styles.successBackdrop}>
+          <View style={styles.successCard}>
+            <View style={[styles.successIcon, { backgroundColor: "rgba(248,113,113,0.12)", borderColor: "rgba(248,113,113,0.35)" }]}>
+              <Ionicons name="trash-outline" size={30} color="#f87171" />
+            </View>
+            <Text style={styles.successTitle}>Vaciar chat</Text>
+            <Text style={styles.successSubtitle}>
+              Se ocultarán todos los mensajes solo en tu vista. Los demás
+              participantes seguirán viéndolos.
+            </Text>
+            <View style={styles.confirmBtnRow}>
+              <TouchableOpacity
+                style={styles.confirmBtnGhost}
+                onPress={() => setShowVaciarConfirm(false)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.confirmBtnGhostText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmBtnDanger}
+                onPress={confirmarVaciarChat}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.confirmBtnDangerText}>Vaciar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 
@@ -2716,6 +2746,37 @@ const makeStyles = (C: ChatColors) => StyleSheet.create({
     marginTop: 18,
   },
   successBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  confirmBtnRow: {
+    flexDirection: "row",
+    alignSelf: "stretch",
+    gap: 10,
+    marginTop: 18,
+  },
+  confirmBtnGhost: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  confirmBtnGhostText: {
+    color: C.textMuted,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  confirmBtnDanger: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    backgroundColor: "#f87171",
+  },
+  confirmBtnDangerText: {
     color: "#fff",
     fontSize: 15,
     fontWeight: "700",
