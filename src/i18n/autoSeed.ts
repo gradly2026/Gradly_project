@@ -515,6 +515,8 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "Banear": "Ban",
   "Reactivar": "Reactivate",
   "Desbanear": "Unban",
+  "Motivo del baneo": "Ban reason",
+  "Describe el motivo": "Describe the reason",
   "Eliminar usuario": "Delete user",
   "Se eliminará la cuenta de Auth y los documentos principales del usuario. Esta acción no se puede deshacer.":
     "This will delete the Auth account and the user's main documents. This action cannot be undone.",

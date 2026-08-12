@@ -406,6 +406,7 @@ export default function AdminPreview() {
   const [notificationsAttempted, setNotificationsAttempted] = useState(false);
 
   const [backfillLoading, setBackfillLoading] = useState(false);
+  const [recalcularConfirmOpen, setRecalcularConfirmOpen] = useState(false);
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [rolePermissions, setRolePermissions] = useState<Set<string>>(new Set());
@@ -532,6 +533,8 @@ export default function AdminPreview() {
   const openReportDetail = (report: ReportCase) => {
     setSelectedReport(report);
     setReportResolution(report.resolucion ?? "");
+    const reportedUser = report.reportado_id ? users.find((u) => u.id === report.reportado_id) : null;
+    setBanReason(reportedUser?.ban_reason ?? "");
     setReportDetailOpen(true);
   };
 
@@ -555,6 +558,8 @@ export default function AdminPreview() {
       setEditOpen(false);
       if (options?.user) {
         setSelected(options.user);
+        setBanReason(options.user.ban_reason ?? "");
+        setApprovalReason("");
         setDetailOpen(true);
       }
     },
@@ -986,7 +991,7 @@ export default function AdminPreview() {
   const setProfileApproval = useCallback(
     async (u: AdminUser, nextApprovalStatus: ApprovalStatus) => {
       if (!roleRequiresApproval(u.role)) {
-        Alert.alert(t('admin_error_titulo'), "Solo empresa y universidad usan este flujo de aprobación.");
+        showAdminAlert(t('admin_error_titulo'), "Solo empresa y universidad usan este flujo de aprobación.");
         return;
       }
       if (u.approval_status === nextApprovalStatus) return;
@@ -1060,7 +1065,7 @@ export default function AdminPreview() {
           throw new Error("No se pudo actualizar el rol.");
         }
       } catch (error) {
-        Alert.alert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "actualizar el rol del usuario")));
+        showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "actualizar el rol del usuario")));
       }
     },
     [t],
@@ -1095,7 +1100,7 @@ export default function AdminPreview() {
           await logAction("role_permissions.insert", "role_permissions", null, { role, permission_key: permissionKey });
         }
       } catch (error) {
-        Alert.alert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "actualizar el permiso")));
+        showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "actualizar el permiso")));
       }
     },
     [logAction, rolePermissions],
@@ -1113,7 +1118,7 @@ export default function AdminPreview() {
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       await logAction("admin_notifications.read_all", "admin_notifications", null, { count: ids.length });
     } catch (error) {
-      Alert.alert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "marcar las notificaciones como leidas")));
+      showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "marcar las notificaciones como leidas")));
     }
   }, [logAction, notifications]);
 
@@ -1160,7 +1165,7 @@ export default function AdminPreview() {
       setEditOpen(false);
       await logAction("profile.update", "usuarios", selected.id, patch);
     } catch (error) {
-      Alert.alert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "guardar el perfil")));
+      showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "guardar el perfil")));
     } finally {
       setEditSaving(false);
     }
@@ -1169,7 +1174,7 @@ export default function AdminPreview() {
   const setProfileBan = useCallback(
     async (u: AdminUser, banned: boolean) => {
       if (banned && !banReason.trim()) {
-        Alert.alert(t('admin_error_titulo'), "Indica el motivo del baneo.");
+        showAdminAlert(t('admin_error_titulo'), "Indica el motivo del baneo.");
         return;
       }
       setUserActionSaving(true);
@@ -1360,6 +1365,24 @@ export default function AdminPreview() {
     [t],
   );
 
+  const runBackfillAlianzas = useCallback(async () => {
+    setBackfillLoading(true);
+    try {
+      const r = await backfillAlianzasCalificaciones();
+      showAdminAlert(
+        "Listo",
+        `Se revisaron ${r.solicitudesRevisadas} pasantía(s) de grupo y ${r.reclamosRevisados} reclamo(s) de cupos. Se actualizaron ${r.empresasActualizadas} empresa(s) y ${r.universidadesActualizadas} universidad(es).`,
+      );
+    } catch (error) {
+      showAdminAlert(
+        t("admin_error_titulo"),
+        translateSync(adminDataErrorMessage(error, "recalcular alianzas y calificaciones")),
+      );
+    } finally {
+      setBackfillLoading(false);
+    }
+  }, [t]);
+
   // Dedicado (no reutiliza `confirmDialog`/`ConfirmOverlay`): esos solo se
   // renderizan DENTRO de DetailModal/ReportDetailModal (para no presentar 2
   // <Modal> nativos a la vez — ver comentario de ConfirmOverlay). Los botones
@@ -1378,7 +1401,7 @@ export default function AdminPreview() {
   const handleReportStatusChange = useCallback(
     async (report: ReportCase, nextStatus: ReportCaseStatus) => {
       if (nextStatus === "resuelto" && !reportResolution.trim()) {
-        Alert.alert(t('admin_error_titulo'), "Debes escribir la resolución para cerrar el reporte.");
+        showAdminAlert(t('admin_error_titulo'), "Debes escribir la resolución para cerrar el reporte.");
         return;
       }
       setReportActionSaving(true);
@@ -1412,9 +1435,9 @@ export default function AdminPreview() {
             : prev,
         );
         await refreshOverview();
-        Alert.alert("Admin", nextStatus === "resuelto" ? "Reporte resuelto correctamente." : "Reporte actualizado correctamente.");
+        showAdminAlert("Admin", nextStatus === "resuelto" ? "Reporte resuelto correctamente." : "Reporte actualizado correctamente.");
       } catch (error) {
-        Alert.alert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "gestionar el reporte")));
+        showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "gestionar el reporte")));
       } finally {
         setReportActionSaving(false);
       }
@@ -1643,7 +1666,7 @@ export default function AdminPreview() {
   );
 
   const Drawer = () => (
-    <Modal visible={drawerOpen} transparent animationType="fade" onRequestClose={() => setDrawerOpen(false)}>
+    <Modal visible={drawerOpen} transparent animationType="none" onRequestClose={() => setDrawerOpen(false)}>
       <View style={s.drawerOverlay}>
         <View
           style={[
@@ -2970,35 +2993,7 @@ export default function AdminPreview() {
         <TouchableOpacity
           style={[s.btnOutline, { marginTop: 14, opacity: backfillLoading ? 0.6 : 1 }]}
           disabled={backfillLoading}
-          onPress={() => {
-            Alert.alert(
-              "Recalcular alianzas y calificaciones",
-              "Va a revisar TODAS las pasantías de la plataforma y actualizar los perfiles de empresa/universidad. Puede tardar unos minutos. ¿Continuar?",
-              [
-                { text: "Cancelar", style: "cancel" },
-                {
-                  text: "Recalcular",
-                  onPress: async () => {
-                    setBackfillLoading(true);
-                    try {
-                      const r = await backfillAlianzasCalificaciones();
-                      Alert.alert(
-                        "Listo",
-                        `Se revisaron ${r.solicitudesRevisadas} pasantía(s) de grupo y ${r.reclamosRevisados} reclamo(s) de cupos. Se actualizaron ${r.empresasActualizadas} empresa(s) y ${r.universidadesActualizadas} universidad(es).`,
-                      );
-                    } catch (error) {
-                      Alert.alert(
-                        t('admin_error_titulo'),
-                        translateSync(adminDataErrorMessage(error, "recalcular alianzas y calificaciones")),
-                      );
-                    } finally {
-                      setBackfillLoading(false);
-                    }
-                  },
-                },
-              ],
-            );
-          }}
+          onPress={() => setRecalcularConfirmOpen(true)}
           activeOpacity={0.8}
         >
           <Text style={s.btnOutlineText}>
@@ -3014,9 +3009,9 @@ export default function AdminPreview() {
           onPress={async () => {
             try {
               await logout();
-              Alert.alert(t('admin_sesion_cerrada_titulo'), t('admin_sesion_cerrada_msg'));
+              showAdminAlert(t('admin_sesion_cerrada_titulo'), t('admin_sesion_cerrada_msg'));
             } catch (error) {
-              Alert.alert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "cerrar la sesion")));
+              showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "cerrar la sesion")));
             }
           }}
           activeOpacity={0.85}
@@ -3029,7 +3024,7 @@ export default function AdminPreview() {
 
   const DetailModal = () => (
     <>
-    <Modal visible={detailOpen} transparent animationType="slide" onRequestClose={() => setDetailOpen(false)}>
+    <Modal visible={detailOpen} transparent animationType="none" onRequestClose={() => setDetailOpen(false)}>
       <View style={s.modalOverlay}>
         <View style={[s.modal, isPhone && s.modalCompact]}>
           <View style={s.modalHeader}>
@@ -3219,7 +3214,7 @@ export default function AdminPreview() {
   );
 
   const EditModal = () => (
-    <Modal visible={editOpen} transparent animationType="slide" onRequestClose={() => setEditOpen(false)}>
+    <Modal visible={editOpen} transparent animationType="none" onRequestClose={() => setEditOpen(false)}>
       <View style={s.modalOverlay}>
         <View style={[s.modal, isPhone && s.modalCompact]}>
           <View style={s.modalHeader}>
@@ -3336,7 +3331,7 @@ export default function AdminPreview() {
       <Modal
         visible={reportDetailOpen}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setReportDetailOpen(false)}
       >
         <View style={s.modalOverlay}>
@@ -3468,6 +3463,15 @@ export default function AdminPreview() {
                         </TouchableOpacity>
                       ) : null}
                     </View>
+                    <Text style={[s.textMuted, { marginTop: 14 }]}>Motivo del baneo</Text>
+                    <TextInput
+                      style={[s.input, { marginTop: 10 }]}
+                      value={banReason}
+                      onChangeText={setBanReason}
+                      placeholder="Describe el motivo"
+                      placeholderTextColor={C.textMuted}
+                      editable={!userActionSaving}
+                    />
                     <TouchableOpacity
                       style={[s.btnPrimary, { marginTop: 10, alignSelf: "flex-start", backgroundColor: reportedUser.banned ? C.green : C.red }]}
                       onPress={() => confirmBanToggle(reportedUser, !reportedUser.banned)}
@@ -3524,7 +3528,7 @@ export default function AdminPreview() {
       <Modal
         visible={vacanteDetailOpen}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setVacanteDetailOpen(false)}
       >
         <View style={s.modalOverlay}>
@@ -3670,7 +3674,7 @@ export default function AdminPreview() {
       <Modal
         visible
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => {
           if (!vacanteActionSaving) setVacanteConfirmAction(null);
         }}
@@ -3734,6 +3738,58 @@ export default function AdminPreview() {
       </Modal>
     );
   };
+
+  const RecalcularConfirmModal = () => (
+    <Modal
+      visible={recalcularConfirmOpen}
+      transparent
+      animationType="none"
+      onRequestClose={() => {
+        if (!backfillLoading) setRecalcularConfirmOpen(false);
+      }}
+    >
+      <View style={s.modalOverlay}>
+        <View style={[s.modal, isPhone && s.modalCompact]}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>Recalcular alianzas y calificaciones</Text>
+            <TouchableOpacity
+              style={[s.iconBtn, { width: 38, height: 38 }]}
+              onPress={() => setRecalcularConfirmOpen(false)}
+              activeOpacity={0.8}
+              disabled={backfillLoading}
+            >
+              <Ionicons name="close" size={20} color={C.text} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[s.textMuted, { lineHeight: 20 }]}>
+            Va a revisar TODAS las pasantías de la plataforma y actualizar los perfiles de
+            empresa/universidad. Puede tardar unos minutos. ¿Continuar?
+          </Text>
+          <View style={[s.row, { gap: 10, marginTop: 20 }]}>
+            <TouchableOpacity
+              style={[s.btnOutline, { flex: 1 }]}
+              onPress={() => setRecalcularConfirmOpen(false)}
+              activeOpacity={0.85}
+              disabled={backfillLoading}
+            >
+              <Text style={s.btnOutlineText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.btnPrimary, { flex: 1 }]}
+              onPress={() => {
+                setRecalcularConfirmOpen(false);
+                void runBackfillAlianzas();
+              }}
+              activeOpacity={0.85}
+              disabled={backfillLoading}
+            >
+              <Text style={s.btnPrimaryText}>{backfillLoading ? "Procesando..." : "Recalcular"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 
   const renderBody = () => {
     switch (page) {
@@ -3905,6 +3961,7 @@ export default function AdminPreview() {
       {ReportDetailModal()}
       {VacanteDetailAdminModal()}
       {VacanteModeracionModal()}
+      {RecalcularConfirmModal()}
       {!isDesktop ? Drawer() : null}
     </View>
   );
