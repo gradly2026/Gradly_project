@@ -101,7 +101,7 @@ service cloud.firestore {
                               .hasOnly([
                                 'puntos_experiencia', 'pasantias_completadas',
                                 'calificaciones_recibidas', 'calificacion_promedio',
-                                'rango_nivel', 'rango_tier',
+                                'rango_nivel', 'rango_tier', 'estado_pasantia',
                               ]));
       allow delete: if esAdmin();
 

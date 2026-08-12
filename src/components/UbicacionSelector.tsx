@@ -4,12 +4,12 @@ import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import { useTheme, type GradlyColors } from "../context/ThemeContext";
 import {
   DEPARTAMENTOS_EL_SALVADOR,
-  municipiosDeDepartamento,
+  distritosDeDepartamento,
   type UbicacionEstudiante,
 } from "../data/ubicacionElSalvador";
 
 /**
- * Departamento → municipio (dependiente) → dirección específica (libre).
+ * Departamento → distrito (dependiente) → dirección específica (libre).
  * Controlado por objeto, mismo patrón que HorarioVacanteSelector: el padre
  * es dueño del estado y decide cuándo guardar.
  */
@@ -24,28 +24,28 @@ export default function UbicacionSelector({
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
-  const [buscarMunicipio, setBuscarMunicipio] = useState("");
+  const [buscarDistrito, setBuscarDistrito] = useState("");
 
-  const municipios = useMemo(
-    () => municipiosDeDepartamento(value.departamento),
+  const distritos = useMemo(
+    () => distritosDeDepartamento(value.departamento),
     [value.departamento],
   );
 
-  const municipiosFiltrados = useMemo(() => {
-    const q = buscarMunicipio.trim().toLowerCase();
-    if (!q) return municipios;
-    return municipios.filter((m) => m.toLowerCase().includes(q));
-  }, [municipios, buscarMunicipio]);
+  const distritosFiltrados = useMemo(() => {
+    const q = buscarDistrito.trim().toLowerCase();
+    if (!q) return distritos;
+    return distritos.filter((m) => m.toLowerCase().includes(q));
+  }, [distritos, buscarDistrito]);
 
   const elegirDepartamento = (d: string) => {
     if (d === value.departamento) return;
-    // Cambiar de departamento invalida el municipio ya elegido (era de otro).
-    onChange({ ...value, departamento: d, municipio: undefined });
-    setBuscarMunicipio("");
+    // Cambiar de departamento invalida el distrito ya elegido (era de otro).
+    onChange({ ...value, departamento: d, distrito: undefined });
+    setBuscarDistrito("");
   };
 
-  const elegirMunicipio = (m: string) => {
-    onChange({ ...value, municipio: m });
+  const elegirDistrito = (m: string) => {
+    onChange({ ...value, distrito: m });
   };
 
   return (
@@ -71,24 +71,24 @@ export default function UbicacionSelector({
 
       {value.departamento ? (
         <>
-          <Text style={[s.label, { marginTop: 14 }]}>Municipio*</Text>
-          {municipios.length > 10 && (
+          <Text style={[s.label, { marginTop: 14 }]}>Distrito*</Text>
+          {distritos.length > 10 && (
             <TextInput
               style={s.buscador}
-              value={buscarMunicipio}
-              onChangeText={setBuscarMunicipio}
-              placeholder="Buscar municipio…"
+              value={buscarDistrito}
+              onChangeText={setBuscarDistrito}
+              placeholder="Buscar distrito…"
               placeholderTextColor={colors.textMuted}
             />
           )}
           <View style={s.chipsWrap}>
-            {municipiosFiltrados.map((m) => {
-              const activo = value.municipio === m;
+            {distritosFiltrados.map((m) => {
+              const activo = value.distrito === m;
               return (
                 <TouchableOpacity
                   key={m}
                   style={[s.chip, activo && s.chipActivo]}
-                  onPress={() => elegirMunicipio(m)}
+                  onPress={() => elegirDistrito(m)}
                   activeOpacity={0.75}
                 >
                   <Text style={[s.chipTxt, activo && s.chipTxtActivo]} noTranslate>
@@ -97,8 +97,8 @@ export default function UbicacionSelector({
                 </TouchableOpacity>
               );
             })}
-            {municipiosFiltrados.length === 0 && (
-              <Text style={s.sinResultados}>Ningún municipio coincide con "{buscarMunicipio}".</Text>
+            {distritosFiltrados.length === 0 && (
+              <Text style={s.sinResultados}>Ningún distrito coincide con "{buscarDistrito}".</Text>
             )}
           </View>
         </>

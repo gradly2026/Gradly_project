@@ -427,6 +427,9 @@ export async function firmarAcuerdo(
 
   // 2) y 3) Notificación + (opcional) transacción por estudiante real.
   alumnos.forEach((al) => {
+    // Estado de pasantía autoreportado (perfil público) — ver [[project_reparto_cupos]].
+    batch.update(doc(db, "perfiles_estudiantes", al.id), { estado_pasantia: "en_proceso" });
+
     const notiRef = doc(collection(db, "notificaciones_estudiantes"));
     batch.set(notiRef, {
       estudianteId: al.id,
@@ -664,6 +667,20 @@ export async function finalizarPasantia(
       ? { tipo: "pdf", url: constanciaUrl, emitidaPor: emisor, fecha: Timestamp.now() }
       : { tipo: "auto", emitidaPor: emisor, fecha: Timestamp.now() },
   });
+
+  // Estado de pasantía autoreportado (perfil público) — cada alumno real de
+  // la solicitud pasa a "finalizada". `estudianteIds` ya está denormalizado
+  // en la solicitud desde que se aprobó (firmarAcuerdo/respuestaFinalUniversidad).
+  const estudianteIds: string[] = Array.isArray(data?.estudianteIds) ? data.estudianteIds : [];
+  await Promise.all(
+    estudianteIds.map((id) =>
+      updateDoc(doc(db, "perfiles_estudiantes", id), { estado_pasantia: "finalizada" }).catch(
+        () => {
+          /* no crítico: no debe bloquear la finalización/certificación */
+        },
+      ),
+    ),
+  );
 
   // Libera el grupo: ya puede comprometerse con una pasantía nueva. Solo si
   // el flag sigue apuntando a ESTA solicitud (defensivo — evita pisar un

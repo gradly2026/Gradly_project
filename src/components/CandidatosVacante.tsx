@@ -88,7 +88,9 @@ export default function CandidatosVacante({
               // (OnboardingDireccionGate) — se muestra "Dirección no
               // especificada" hasta que el estudiante lo complete.
               departamento: d.departamento || "",
-              municipio: d.municipio || "",
+              // Fallback al campo legado para no perder la ubicación de
+              // perfiles guardados antes del cambio de nombre municipio→distrito.
+              distrito: d.distrito || d.municipio || "",
               universidadNombre: await resolverUniversidad(d.universidad_id),
             };
           } catch {
@@ -185,8 +187,8 @@ export default function CandidatosVacante({
                   <Text style={s.detalle} numberOfLines={1}>{c.correo}</Text>
                 )}
                 <Text style={s.detalle} numberOfLines={1}>
-                  {c.departamento || c.municipio
-                    ? [c.departamento, c.municipio].filter(Boolean).join(", ")
+                  {c.departamento || c.distrito
+                    ? [c.departamento, c.distrito].filter(Boolean).join(", ")
                     : "Dirección no especificada"}
                 </Text>
                 {!!c.universidadNombre && (
@@ -209,7 +211,7 @@ interface Candidato {
   nombre: string;
   correo: string;
   departamento: string;
-  municipio: string;
+  distrito: string;
   universidadNombre: string;
 }
 

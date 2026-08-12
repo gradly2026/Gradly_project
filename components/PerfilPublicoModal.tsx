@@ -11,7 +11,7 @@ import {
 } from "react-native";
 // Drop-in de traducción automática (mismo patrón que el resto del proyecto).
 import { AutoText as Text } from "../src/components/AutoText";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "../src/config/firebaseConfig";
 import CertificadoGradly from "../src/components/CertificadoGradly";
 import RangoCard from "../src/components/RangoCard";
@@ -65,6 +65,33 @@ const LIGHT = {
   red: "#dc2626",
 };
 
+/** Resuelve una lista de ids a sus nombres, en lotes de 30 (límite de `in`
+ * en Firestore) — mismo patrón ya usado en dashboard-empresa.tsx para
+ * calificaciones por lote. */
+async function resolverNombres(
+  coleccion: string,
+  ids: string[],
+  campoNombre: string,
+): Promise<string[]> {
+  const unicos = [...new Set(ids)].filter(Boolean);
+  if (unicos.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < unicos.length; i += 30) chunks.push(unicos.slice(i, i + 30));
+  const snaps = await Promise.all(
+    chunks.map((chunk) =>
+      getDocs(query(collection(db, coleccion), where(documentId(), "in", chunk))),
+    ),
+  );
+  const nombres: string[] = [];
+  snaps.forEach((snap) =>
+    snap.docs.forEach((d) => {
+      const nombre = (d.data() as any)?.[campoNombre];
+      if (nombre) nombres.push(nombre);
+    }),
+  );
+  return nombres.sort((a, b) => a.localeCompare(b));
+}
+
 // Colecciones de perfil en Firestore por rol.
 const COLLECTION_MAP: Record<PerfilRol, string> = {
   empresa: "perfiles_empresas",
@@ -80,6 +107,23 @@ const ROL_LABEL: Record<PerfilRol, string> = {
   universidad: "Universidad",
 };
 
+/** `perfiles_estudiantes.estado_pasantia` — autoreportado en los servicios
+ * que confirman/finalizan una pasantía (grupo o cupos). Ausente = "sin_iniciar"
+ * de facto para cuentas creadas antes de este campo, sin backfill retroactivo. */
+type EstadoPasantia = "sin_iniciar" | "en_proceso" | "finalizada";
+
+const ESTADO_PASANTIA_LABEL: Record<EstadoPasantia, string> = {
+  sin_iniciar: "Sin iniciar",
+  en_proceso: "En proceso",
+  finalizada: "Finalizada",
+};
+
+function estadoPasantiaTokens(valor: string, C: typeof DARK): { bg: string; fg: string } {
+  if (valor === "en_proceso") return { bg: C.greenBg, fg: C.green };
+  if (valor === "finalizada") return { bg: C.purpleDim, fg: C.purple };
+  return { bg: "rgba(148,163,184,0.14)", fg: C.muted };
+}
+
 export default function PerfilPublicoModal({
   visible,
   onClose,
@@ -93,6 +137,8 @@ export default function PerfilPublicoModal({
   const [perfil, setPerfil] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
   const [showReportar, setShowReportar] = useState(false);
+  const [universidadNombre, setUniversidadNombre] = useState<string | null>(null);
+  const [aliados, setAliados] = useState<string[]>([]);
 
   useEffect(() => {
     if (visible && userId) loadPerfil();
@@ -101,9 +147,34 @@ export default function PerfilPublicoModal({
   const loadPerfil = async () => {
     setLoading(true);
     setPerfil(null);
+    setUniversidadNombre(null);
+    setAliados([]);
     try {
       const snap = await getDoc(doc(db, COLLECTION_MAP[rol], userId));
-      setPerfil(snap.exists() ? (snap.data() as Record<string, any>) : null);
+      const data = snap.exists() ? (snap.data() as Record<string, any>) : null;
+      setPerfil(data);
+      // Universidad donde estudia — solo aplica a estudiantes, y solo si el
+      // perfil trae universidad_id (lo escribe dashboard-universidad.tsx al crearlo).
+      if ((rol === "alumno" || rol === "talento") && data?.universidad_id) {
+        try {
+          const uniSnap = await getDoc(doc(db, "perfiles_universidades", data.universidad_id));
+          setUniversidadNombre(uniSnap.exists() ? ((uniSnap.data() as any)?.nombre_universidad ?? null) : null);
+        } catch {
+          setUniversidadNombre(null);
+        }
+      }
+      // Aliados (convenio con pasantías reales) — `aliados_*_ids` ya vive en
+      // el propio perfil (autoreportado al aprobar una pasantía, ver
+      // [[project_ranking_alianzas]]), así que no hay que tocar reglas nuevas.
+      try {
+        if (rol === "empresa" && Array.isArray(data?.aliados_universidades_ids) && data.aliados_universidades_ids.length > 0) {
+          setAliados(await resolverNombres("perfiles_universidades", data.aliados_universidades_ids, "nombre_universidad"));
+        } else if (rol === "universidad" && Array.isArray(data?.aliados_empresas_ids) && data.aliados_empresas_ids.length > 0) {
+          setAliados(await resolverNombres("perfiles_empresas", data.aliados_empresas_ids, "nombre_empresa"));
+        }
+      } catch {
+        setAliados([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -127,7 +198,10 @@ export default function PerfilPublicoModal({
     if (rol === "empresa") return perfil.industria ?? perfil.sector ?? "";
     if (rol === "talento") return perfil.headline ?? perfil.area ?? "";
     if (rol === "alumno") return [perfil.carrera, perfil.semestre ? `${perfil.semestre}° sem.` : ""].filter(Boolean).join(" · ");
-    if (rol === "universidad") return perfil.ciudad ? `${perfil.ciudad}, El Salvador` : "Universidad";
+    if (rol === "universidad") {
+      const distrito = perfil.distrito ?? perfil.ciudad;
+      return distrito ? `${distrito}, El Salvador` : "Universidad";
+    }
     return "";
   };
 
@@ -189,10 +263,19 @@ export default function PerfilPublicoModal({
                         <Ionicons name="checkmark-circle" size={18} color={C.purple} />
                       )}
                     </View>
-                    <View style={[styles.rolBadge, { backgroundColor: C.purpleDim, borderColor: C.border }]}>
-                      <Text style={{ color: C.purple, fontSize: 11, fontWeight: "600" }}>
-                        {ROL_LABEL[rol]}
-                      </Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                      <View style={[styles.rolBadge, { backgroundColor: C.purpleDim, borderColor: C.border }]}>
+                        <Text style={{ color: C.purple, fontSize: 11, fontWeight: "600" }}>
+                          {ROL_LABEL[rol]}
+                        </Text>
+                      </View>
+                      {(rol === "alumno" || rol === "talento") && perfil.estado_pasantia ? (
+                        <View style={[styles.rolBadge, { backgroundColor: estadoPasantiaTokens(perfil.estado_pasantia, C).bg, borderColor: C.border }]}>
+                          <Text style={{ color: estadoPasantiaTokens(perfil.estado_pasantia, C).fg, fontSize: 11, fontWeight: "600" }}>
+                            {ESTADO_PASANTIA_LABEL[perfil.estado_pasantia as EstadoPasantia] ?? perfil.estado_pasantia}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
                     {getSubtitulo() ? (
                       <Text style={{ color: C.textSub, fontSize: 12, marginTop: 4 }}>
@@ -262,29 +345,79 @@ export default function PerfilPublicoModal({
                   { icon: "mail-outline", label: "Email", val: perfil.email ?? perfil.email_corporativo ?? perfil.email_institucional },
                   { icon: "call-outline", label: "Teléfono", val: perfil.telefono },
                   { icon: "globe-outline", label: "Web", val: perfil.web },
-                  { icon: "location-outline", label: "Ubicación", val: [perfil.ciudad, perfil.departamento].filter(Boolean).join(", ") || null },
+                  ...((rol === "alumno" || rol === "talento") ? [{ icon: "school-outline", label: "Universidad", val: universidadNombre }] : []),
+                  { icon: "location-outline", label: "Ubicación", val: [perfil.distrito ?? perfil.ciudad, perfil.departamento].filter(Boolean).join(", ") || null },
+                  { icon: "home-outline", label: "Dirección", val: perfil.direccion },
                   { icon: "logo-instagram", label: "Instagram", val: perfil.instagram },
                 ].filter((f) => f.val).map((f) => (
                   <View key={f.label} style={[styles.infoRow, { borderBottomColor: C.border }]}>
                     <Ionicons name={f.icon as any} size={16} color={C.purple} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: C.muted, fontSize: 11 }}>{f.label}</Text>
-                      <Text style={{ color: C.text, fontSize: 13 }}>{f.val}</Text>
+                      <Text style={{ color: C.text, fontSize: 13 }} noTranslate={f.label === "Universidad"}>{f.val}</Text>
                     </View>
                   </View>
                 ))}
 
                 {/* Campos específicos por rol */}
-                {rol === "talento" && perfil.habilidades && (
+                {/* Nota: el campo real en perfiles_estudiantes es `skills`, no
+                    `habilidades` — perfil.habilidades nunca lo escribe nadie
+                    (bug preexistente que dejaba esta sección siempre vacía). */}
+                {(rol === "talento" || rol === "alumno") && perfil.skills?.length > 0 && (
                   <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
                     <Text style={[styles.sectionLabel, { color: C.muted }]}>Habilidades</Text>
                     <View style={styles.tagsRow}>
-                      {(Array.isArray(perfil.habilidades)
-                        ? perfil.habilidades
-                        : String(perfil.habilidades).split(",")
+                      {(Array.isArray(perfil.skills)
+                        ? perfil.skills
+                        : String(perfil.skills).split(",")
                       ).map((h: string, i: number) => (
                         <View key={i} style={[styles.tag, { backgroundColor: C.purpleDim, borderColor: C.border }]}>
                           <Text style={{ color: C.purple, fontSize: 11 }}>{String(h).trim()}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Universidades/Empresas aliadas (convenio con pasantía real) */}
+                {(rol === "empresa" || rol === "universidad") && aliados.length > 0 && (
+                  <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
+                    <Text style={[styles.sectionLabel, { color: C.muted }]}>
+                      {rol === "empresa" ? "Universidades aliadas" : "Empresas aliadas"}
+                    </Text>
+                    <View style={styles.tagsRow}>
+                      {aliados.map((nombre, i) => (
+                        <View key={`${nombre}-${i}`} style={[styles.tag, { backgroundColor: C.purpleDim, borderColor: C.border }]}>
+                          <Text style={{ color: C.purple, fontSize: 11 }} noTranslate>{nombre}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Top 5 estudiantes con mejor calificación que trabajaron con esta
+                    empresa/universidad — dato ya autoreportado en el propio perfil
+                    (dashboard-empresa.tsx/dashboard-universidad.tsx), sin query nueva aquí. */}
+                {(rol === "empresa" || rol === "universidad") && Array.isArray(perfil.top_estudiantes) && perfil.top_estudiantes.length > 0 && (
+                  <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
+                    <Text style={[styles.sectionLabel, { color: C.muted }]}>
+                      {rol === "empresa" ? "Mejores estudiantes que trabajaron aquí" : "Mejores estudiantes de esta universidad"}
+                    </Text>
+                    <View style={{ gap: 8, marginTop: 4 }}>
+                      {perfil.top_estudiantes.map((e: any, i: number) => (
+                        <View key={e.uid ?? i} style={[styles.topEstudianteRow, { borderColor: C.border }]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: C.text, fontSize: 13, fontWeight: "600" }} noTranslate>{e.nombre}</Text>
+                            {!!e.carrera && (
+                              <Text style={{ color: C.muted, fontSize: 11, marginTop: 1 }} noTranslate>{e.carrera}</Text>
+                            )}
+                          </View>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                            <Ionicons name="star" size={13} color="#f5b50a" />
+                            <Text style={{ color: C.text, fontSize: 12.5, fontWeight: "700" }}>
+                              {Number(e.calificacion_promedio ?? 0).toFixed(1)}
+                            </Text>
+                          </View>
                         </View>
                       ))}
                     </View>
@@ -395,6 +528,15 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  topEstudianteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
   tag: {
     paddingHorizontal: 8,
     paddingVertical: 4,

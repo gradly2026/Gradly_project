@@ -78,7 +78,7 @@ type AdminUser = {
   username: string;
   telefono?: string | null;
   departamento?: string | null;
-  ciudad?: string | null;
+  distrito?: string | null;
   ban_reason?: string | null;
   created_at?: string | null;
 };
@@ -432,7 +432,7 @@ export default function AdminPreview() {
   const [editNombre, setEditNombre] = useState("");
   const [editTelefono, setEditTelefono] = useState("");
   const [editDepartamento, setEditDepartamento] = useState("");
-  const [editCiudad, setEditCiudad] = useState("");
+  const [editDistrito, setEditDistrito] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [userActionSaving, setUserActionSaving] = useState(false);
   const [reportActionSaving, setReportActionSaving] = useState(false);
@@ -525,7 +525,7 @@ export default function AdminPreview() {
     setEditNombre(u.nombre ?? "");
     setEditTelefono((u.telefono ?? "") as any);
     setEditDepartamento((u.departamento ?? "") as any);
-    setEditCiudad((u.ciudad ?? "") as any);
+    setEditDistrito((u.distrito ?? "") as any);
     setEditOpen(true);
   };
 
@@ -626,7 +626,7 @@ export default function AdminPreview() {
           username: r.username ?? "",
           telefono: r.telefono ?? null,
           departamento: r.departamento ?? null,
-          ciudad: r.ciudad ?? null,
+          distrito: r.distrito ?? r.ciudad ?? null,
           ban_reason: r.motivo_baneo ?? null,
           created_at: tsToIso(r.fecha_registro),
         };
@@ -1125,13 +1125,13 @@ export default function AdminPreview() {
         nombre: editNombre.trim(),
         telefono: editTelefono.trim() || null,
         departamento: editDepartamento.trim() || null,
-        ciudad: editCiudad.trim() || null,
+        distrito: editDistrito.trim() || null,
       };
       await updateDoc(doc(db, "usuarios", selected.id), {
         nombre_completo: patch.nombre,
         telefono: patch.telefono,
         departamento: patch.departamento,
-        ciudad: patch.ciudad,
+        distrito: patch.distrito,
       });
       setUsers((prev) =>
         prev.map((u) =>
@@ -1141,7 +1141,7 @@ export default function AdminPreview() {
                 nombre: patch.nombre,
                 telefono: patch.telefono,
                 departamento: patch.departamento,
-                ciudad: patch.ciudad,
+                distrito: patch.distrito,
               }
             : u,
         ),
@@ -1153,7 +1153,7 @@ export default function AdminPreview() {
               nombre: patch.nombre,
               telefono: patch.telefono,
               departamento: patch.departamento,
-              ciudad: patch.ciudad,
+              distrito: patch.distrito,
             }
           : prev,
       );
@@ -1164,7 +1164,7 @@ export default function AdminPreview() {
     } finally {
       setEditSaving(false);
     }
-  }, [editCiudad, editDepartamento, editNombre, editTelefono, logAction, selected]);
+  }, [editDistrito, editDepartamento, editNombre, editTelefono, logAction, selected]);
 
   const setProfileBan = useCallback(
     async (u: AdminUser, banned: boolean) => {
@@ -1486,7 +1486,7 @@ export default function AdminPreview() {
       if (u.role !== roleTab) return false;
       if (statusFilter !== "todos" && u.status !== statusFilter) return false;
       if (!q) return true;
-      const haystack = `${u.nombre} ${u.email} ${u.username} ${u.departamento ?? ""} ${u.ciudad ?? ""}`.toLowerCase();
+      const haystack = `${u.nombre} ${u.email} ${u.username} ${u.departamento ?? ""} ${u.distrito ?? ""}`.toLowerCase();
       return haystack.includes(q);
     });
   }, [roleTab, search, statusFilter, users]);
@@ -3058,7 +3058,7 @@ export default function AdminPreview() {
                   Acceso: {selected.banned ? "Baneado" : "Habilitado"}
                 </Text>
                 {selected.departamento ? <Text style={[s.textMuted, { marginTop: 6 }]}>Depto: {selected.departamento}</Text> : null}
-                {selected.ciudad ? <Text style={[s.textMuted, { marginTop: 6 }]}>Ciudad: {selected.ciudad}</Text> : null}
+                {selected.distrito ? <Text style={[s.textMuted, { marginTop: 6 }]}>Distrito: {selected.distrito}</Text> : null}
                 {selected.ban_reason ? (
                   <Text style={[s.textMuted, { marginTop: 6 }]}>
                     Motivo baneo: {selected.ban_reason}
@@ -3245,8 +3245,8 @@ export default function AdminPreview() {
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={s.inputLabel}>Ciudad</Text>
-                <TextInput style={s.input} value={editCiudad} onChangeText={setEditCiudad} placeholder="Ciudad" placeholderTextColor={C.textMuted} />
+                <Text style={s.inputLabel}>Distrito</Text>
+                <TextInput style={s.input} value={editDistrito} onChangeText={setEditDistrito} placeholder="Distrito" placeholderTextColor={C.textMuted} />
               </View>
             </View>
             <TouchableOpacity style={[s.btnPrimary, { marginTop: 16 }]} onPress={saveEdit} activeOpacity={0.85} disabled={editSaving}>

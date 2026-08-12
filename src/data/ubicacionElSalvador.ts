@@ -1,11 +1,12 @@
 // ══════════════════════════════════════════════════════════════════
 //  Catálogo de ubicación de El Salvador — los 14 departamentos y sus
-//  municipios (división tradicional de 262, la que reconoce y usa la
-//  gente para su dirección; el país los reagrupó en 44 municipios por
-//  ley en 2023, pero esos nombres nuevos no sirven para "¿dónde vivís?").
+//  distritos (división tradicional de 262 municipios, la que reconoce y
+//  usa la gente para su dirección — en la app se llama "distrito"; el
+//  país los reagrupó en 44 municipios nuevos por ley en 2023, pero esos
+//  nombres nuevos no sirven para "¿dónde vivís?").
 //
 //  Nace del onboarding de dirección del estudiante: perfiles_estudiantes
-//  no tenía departamento/municipio, así que CandidatosVacante mostraba
+//  no tenía departamento/distrito, así que CandidatosVacante mostraba
 //  "Dirección no especificada" siempre. Ver [[project_reparto_cupos]].
 // ══════════════════════════════════════════════════════════════════
 
@@ -32,13 +33,13 @@ export type DepartamentoElSalvador = (typeof DEPARTAMENTOS_EL_SALVADOR)[number];
 /** Forma que se guarda en `perfiles_estudiantes`. */
 export interface UbicacionEstudiante {
   departamento?: string;
-  municipio?: string;
-  /** Colonia/calle/referencia — complementa a departamento+municipio, no los sustituye. */
+  distrito?: string;
+  /** Colonia/calle/referencia — complementa a departamento+distrito, no los sustituye. */
   direccion?: string;
 }
 
-/** Municipios por departamento, orden alfabético (262 en total). */
-export const MUNICIPIOS_POR_DEPARTAMENTO: Record<string, string[]> = {
+/** Distritos por departamento, orden alfabético (262 en total). */
+export const DISTRITOS_POR_DEPARTAMENTO: Record<string, string[]> = {
   "Ahuachapán": [
     "Ahuachapán", "Apaneca", "Atiquizaya", "Concepción de Ataco", "El Refugio",
     "Guaymango", "Jujutla", "San Francisco Menéndez", "San Lorenzo",
@@ -137,29 +138,29 @@ export const MUNICIPIOS_POR_DEPARTAMENTO: Record<string, string[]> = {
   ],
 };
 
-/** Municipios del departamento dado, o `[]` si no está en el catálogo. */
-export function municipiosDeDepartamento(departamento?: string | null): string[] {
+/** Distritos del departamento dado, o `[]` si no está en el catálogo. */
+export function distritosDeDepartamento(departamento?: string | null): string[] {
   if (!departamento) return [];
-  return MUNICIPIOS_POR_DEPARTAMENTO[departamento] ?? [];
+  return DISTRITOS_POR_DEPARTAMENTO[departamento] ?? [];
 }
 
-/** True si el par departamento/municipio existe tal cual en el catálogo. */
+/** True si el par departamento/distrito existe tal cual en el catálogo. */
 export function esUbicacionValida(
   departamento?: string | null,
-  municipio?: string | null,
+  distrito?: string | null,
 ): boolean {
-  if (!departamento || !municipio) return false;
-  return municipiosDeDepartamento(departamento).includes(municipio);
+  if (!departamento || !distrito) return false;
+  return distritosDeDepartamento(departamento).includes(distrito);
 }
 
 /**
- * Texto legible para mostrar una ubicación. Acepta que falte el municipio
+ * Texto legible para mostrar una ubicación. Acepta que falte el distrito
  * (dato parcial) o todo (perfil sin completar) sin romper — mismo espíritu
  * que `textoCupos`/`textoHorario` en utils/cupos.ts.
  */
 export function textoUbicacion(datos: {
   departamento?: string | null;
-  municipio?: string | null;
+  distrito?: string | null;
 }): string {
-  return [datos.municipio, datos.departamento].filter(Boolean).join(", ");
+  return [datos.distrito, datos.departamento].filter(Boolean).join(", ");
 }

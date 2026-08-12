@@ -169,7 +169,7 @@ export default function TabLayout() {
       {/* Formulario obligatorio de experiencia (pasantías finalizadas) */}
       <FeedbackGate />
 
-      {/* Compuerta obligatoria: departamento/municipio si el perfil no los tiene */}
+      {/* Compuerta obligatoria: departamento/distrito si el perfil no los tiene */}
       <OnboardingDireccionGate />
 
       {/* Recorrido de bienvenida (primer login) */}

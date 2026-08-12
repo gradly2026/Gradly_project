@@ -778,19 +778,44 @@ export default function DashboardEmpresa() {
     return unsub;
   }, [user]);
 
-  // ── Autoreporta el promedio de calificaciones de los estudiantes con los
-  // que ha trabajado (grupos con pasantía aprobada/finalizada) — mismo
-  // principio que el lado universidad: alimenta "Top Empresas/Universidades"
-  // (RedGradlyBanner) sin que ese ranking necesite leer `solicitudes_practicas`
-  // de otras empresas (las reglas de Firestore solo dejan a cada dueño leer
-  // lo suyo). Solo escribe si el valor cambió, para no generar escrituras de más.
+  // Reparto de cupos (flujo alterno de pasantía) — necesario junto a
+  // solicitudesGrupo/apps para saber CON QUIÉN trabajó esta empresa en los
+  // 3 caminos posibles, al autoreportar el top de mejores estudiantes.
+  const [asignacionesCupoEmpresa, setAsignacionesCupoEmpresa] = useState<{ id: string; estudianteId?: string; estado?: string }[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'asignaciones_cupo'), where('empresaId', '==', user.uid));
+    const unsub = onSnapshot(
+      q,
+      snap => setAsignacionesCupoEmpresa(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))),
+      error => console.warn('Error en listener (asignaciones_cupo empresa):', error),
+    );
+    return unsub;
+  }, [user]);
+
+  // ── Autoreporta el promedio de calificaciones y el top 5 de mejores
+  // estudiantes con los que ha trabajado — cubre los 3 caminos de admisión
+  // (grupo completo, reparto de cupos, vacante individual) porque un
+  // estudiante puede haber trabajado con esta empresa por cualquiera de
+  // ellos. Mismo principio que el lado universidad: alimenta "Top Empresas/
+  // Universidades" (RedGradlyBanner) y el perfil público sin que esos
+  // lugares necesiten leer `solicitudes_practicas`/`asignaciones_cupo`/
+  // `aplicaciones` de otras empresas (las reglas de Firestore solo dejan a
+  // cada dueño leer lo suyo). Solo escribe si el valor cambió.
   const calificacionEmpresaReportadaRef = useRef<number | null | undefined>(undefined);
+  const topEstudiantesEmpresaReportadoRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!user?.uid) return;
     const ids = new Set<string>();
     solicitudesGrupo.forEach(sg => {
       if (sg.estado !== 'aprobado' && sg.estado !== 'finalizado') return;
       (sg.estudianteIds ?? []).forEach(id => ids.add(id));
+    });
+    apps.forEach(a => {
+      if (a.estado === 'contratado' && a.estudiante_id) ids.add(a.estudiante_id);
+    });
+    asignacionesCupoEmpresa.forEach(ac => {
+      if ((ac.estado === 'tomado' || ac.estado === 'finalizado') && ac.estudianteId) ids.add(ac.estudianteId);
     });
     if (ids.size === 0) return;
     let cancel = false;
@@ -806,22 +831,45 @@ export default function DashboardEmpresa() {
         );
         if (cancel) return;
         const vals: number[] = [];
+        const candidatos: { uid: string; nombre: string; carrera: string; calificacion_promedio: number }[] = [];
         snaps.forEach(snap => snap.docs.forEach(d => {
           const data: any = d.data();
-          if ((Number(data.calificaciones_recibidas) || 0) > 0) vals.push(Number(data.calificacion_promedio) || 0);
+          const califs = Number(data.calificaciones_recibidas) || 0;
+          if (califs > 0) {
+            const prom = Number(data.calificacion_promedio) || 0;
+            vals.push(prom);
+            candidatos.push({
+              uid: d.id,
+              nombre: data.nombre_completo ?? 'Estudiante',
+              carrera: data.carrera ?? '',
+              calificacion_promedio: prom,
+            });
+          }
         }));
         const promedio = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-        if (calificacionEmpresaReportadaRef.current === promedio) return;
-        calificacionEmpresaReportadaRef.current = promedio;
-        await updateDoc(doc(db, 'perfiles_empresas', user.uid), {
-          calificacion_estudiantes_promedio: promedio,
-        });
+        if (calificacionEmpresaReportadaRef.current !== promedio) {
+          calificacionEmpresaReportadaRef.current = promedio;
+          await updateDoc(doc(db, 'perfiles_empresas', user.uid), {
+            calificacion_estudiantes_promedio: promedio,
+          });
+        }
+
+        const top5 = candidatos
+          .sort((a, b) => b.calificacion_promedio - a.calificacion_promedio)
+          .slice(0, 5);
+        const top5Key = JSON.stringify(top5);
+        if (topEstudiantesEmpresaReportadoRef.current !== top5Key) {
+          topEstudiantesEmpresaReportadoRef.current = top5Key;
+          await updateDoc(doc(db, 'perfiles_empresas', user.uid), {
+            top_estudiantes: top5,
+          });
+        }
       } catch {
-        /* no crítico: se reintenta en el próximo cambio real de solicitudesGrupo */
+        /* no crítico: se reintenta en el próximo cambio real de las fuentes */
       }
     })();
     return () => { cancel = true; };
-  }, [user?.uid, solicitudesGrupo]);
+  }, [user?.uid, solicitudesGrupo, apps, asignacionesCupoEmpresa]);
 
   // Horas certificadas (`perfiles_estudiantes.horas_aprobadas`, el mismo campo
   // que incrementa `certificarPasantia`) de los estudiantes de cada grupo con
@@ -1651,7 +1699,7 @@ export default function DashboardEmpresa() {
               { key: 'telefono', label: 'Teléfono', value: (perfil as any)?.telefono ?? '', keyboardType: 'phone-pad' },
               { key: 'direccion', label: 'Dirección', value: (perfil as any)?.direccion ?? '' },
               { key: 'departamento', label: 'Departamento', value: (perfil as any)?.departamento ?? '' },
-              { key: 'ciudad', label: 'Municipio / Ciudad', value: (perfil as any)?.ciudad ?? '' },
+              { key: 'distrito', label: 'Distrito', value: (perfil as any)?.distrito ?? (perfil as any)?.ciudad ?? '' },
               { key: 'instagram', label: 'Instagram', value: (perfil as any)?.instagram ?? '', autoCapitalize: 'none' },
               { key: 'facebook', label: 'Facebook', value: (perfil as any)?.facebook ?? '', autoCapitalize: 'none' },
             ],
@@ -1666,7 +1714,7 @@ export default function DashboardEmpresa() {
                   telefono: v.telefono,
                   direccion: v.direccion,
                   departamento: v.departamento,
-                  ciudad: v.ciudad,
+                  distrito: v.distrito,
                   instagram: v.instagram,
                   facebook: v.facebook,
                 });

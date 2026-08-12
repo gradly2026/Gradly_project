@@ -66,8 +66,9 @@ interface EstudiantePerfil {
    *  sistema compara contra horarios es `disponibilidad_horaria`. */
   disponibilidad:     string;
   disponibilidad_horaria?: DisponibilidadHoraria;
+  descripcion?:       string;
   departamento?:      string;
-  municipio?:         string;
+  distrito?:          string;
   direccion?:         string;
   cv_url:             string;
   foto_url:           string;
@@ -130,7 +131,7 @@ export default function PerfilTab() {
   const [dispDirty, setDispDirty] = useState(false);
   const [dispSaving, setDispSaving] = useState(false);
 
-  // ── Ubicación (departamento/municipio/dirección) — mismo patrón: borrador
+  // ── Ubicación (departamento/distrito/dirección) — mismo patrón: borrador
   // local + guardado explícito, para no escribir en cada tap de chip. ──
   const [ubicDraft, setUbicDraft] = useState<Partial<UbicacionEstudiante>>({});
   const [ubicDirty, setUbicDirty] = useState(false);
@@ -152,7 +153,9 @@ export default function PerfilTab() {
         if (!dirty) {
           setUbicDraft({
             departamento: data.departamento,
-            municipio: data.municipio,
+            // Fallback al campo legado para no vaciar la ubicación de
+            // perfiles guardados antes del cambio de nombre municipio→distrito.
+            distrito: data.distrito ?? (data as any).municipio,
             direccion: data.direccion,
           });
         }
@@ -178,12 +181,12 @@ export default function PerfilTab() {
   };
 
   const guardarUbicacion = async () => {
-    if (!user || !ubicDraft.departamento || !ubicDraft.municipio) return;
+    if (!user || !ubicDraft.departamento || !ubicDraft.distrito) return;
     setUbicSaving(true);
     try {
       await updateDoc(doc(db, 'perfiles_estudiantes', user.uid), {
         departamento: ubicDraft.departamento,
-        municipio: ubicDraft.municipio,
+        distrito: ubicDraft.distrito,
         direccion: ubicDraft.direccion?.trim() || '',
       });
       setUbicDirty(false);
@@ -445,7 +448,7 @@ export default function PerfilTab() {
             title: t('ubicacion_titulo'),
             subtitle: textoUbicacion(ubicDraft) || t('ubicacion_sin_definir'),
             icon: 'location-outline',
-            tone: ubicDraft.departamento && ubicDraft.municipio ? 'green' : 'orange',
+            tone: ubicDraft.departamento && ubicDraft.distrito ? 'green' : 'orange',
             render: () => (
               <View style={{ gap: 12 }}>
                 <UbicacionSelector
@@ -454,9 +457,9 @@ export default function PerfilTab() {
                 />
                 {ubicDirty && (
                   <TouchableOpacity
-                    style={[styles.dispSaveBtn, (!ubicDraft.departamento || !ubicDraft.municipio) && { opacity: 0.45 }]}
+                    style={[styles.dispSaveBtn, (!ubicDraft.departamento || !ubicDraft.distrito) && { opacity: 0.45 }]}
                     onPress={guardarUbicacion}
-                    disabled={ubicSaving || !ubicDraft.departamento || !ubicDraft.municipio}
+                    disabled={ubicSaving || !ubicDraft.departamento || !ubicDraft.distrito}
                   >
                     {ubicSaving
                       ? <ActivityIndicator size="small" color="#FFF" />
@@ -474,6 +477,7 @@ export default function PerfilTab() {
             icon: 'person-outline',
             tone: 'blue',
             fields: [
+              { key: 'descripcion', label: t('campo_descripcion'), value: perfil?.descripcion ?? '', placeholder: t('perfil_descripcion_placeholder'), multiline: true },
               { key: 'disp', label: t('campo_disponibilidad'), value: perfil?.disponibilidad ?? '', placeholder: t('perfil_disp_placeholder') },
               { key: 'linkedin', label: t('campo_linkedin'), value: perfil?.linkedin ?? '', placeholder: 'https://linkedin.com/in/tu-perfil', autoCapitalize: 'none', keyboardType: 'url' },
               { key: 'portfolio', label: t('perfil_portfolio'), value: perfil?.portfolio ?? '', placeholder: 'https://tu-portfolio.com', autoCapitalize: 'none', keyboardType: 'url' },
@@ -481,6 +485,7 @@ export default function PerfilTab() {
             onSave: async (v) => {
               try {
                 await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), {
+                  descripcion: v.descripcion,
                   disponibilidad: v.disp,
                   linkedin: v.linkedin,
                   portfolio: v.portfolio,

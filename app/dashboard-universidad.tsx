@@ -463,17 +463,40 @@ export default function DashboardUniversidad() {
   // perfil (escritura de dueño, sin cambio de reglas) cuando visita su panel.
   // Solo escribe si el valor cambió, para no generar escrituras de más.
   const calificacionReportadaRef = useRef<number | null | undefined>(undefined);
+  // Mismo autoreporte para el top 5 de mejores estudiantes (perfil público) —
+  // se calcula aquí porque `estudiantes` ya trae calificacion_promedio de
+  // TODOS sus alumnos, sin necesitar cruzar solicitudes_practicas/
+  // asignaciones_cupo (esos solo dirían CON QUIÉN hicieron la pasantía, no
+  // hace falta para "estudiantes de esta universidad con mejor calificación").
+  const topEstudiantesReportadoRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!user?.uid || estudiantes.length === 0) return;
     const conCalificacion = estudiantes.filter(e => (e.calificaciones_recibidas ?? 0) > 0);
     const promedio = conCalificacion.length > 0
       ? conCalificacion.reduce((acc, e) => acc + (e.calificacion_promedio ?? 0), 0) / conCalificacion.length
       : null;
-    if (calificacionReportadaRef.current === promedio) return;
-    calificacionReportadaRef.current = promedio;
+    if (calificacionReportadaRef.current !== promedio) {
+      calificacionReportadaRef.current = promedio;
+      updateDoc(doc(db, 'perfiles_universidades', user.uid), {
+        calificacion_estudiantes_promedio: promedio,
+      }).catch(() => { /* no crítico: se reintenta solo si el promedio vuelve a cambiar */ });
+    }
+
+    const top5 = [...conCalificacion]
+      .sort((a, b) => (b.calificacion_promedio ?? 0) - (a.calificacion_promedio ?? 0))
+      .slice(0, 5)
+      .map(e => ({
+        uid: e.id,
+        nombre: e.nombre_completo,
+        carrera: e.carrera ?? '',
+        calificacion_promedio: e.calificacion_promedio ?? 0,
+      }));
+    const top5Key = JSON.stringify(top5);
+    if (topEstudiantesReportadoRef.current === top5Key) return;
+    topEstudiantesReportadoRef.current = top5Key;
     updateDoc(doc(db, 'perfiles_universidades', user.uid), {
-      calificacion_estudiantes_promedio: promedio,
-    }).catch(() => { /* no crítico: se reintenta solo si el promedio vuelve a cambiar */ });
+      top_estudiantes: top5,
+    }).catch(() => { /* no crítico: se reintenta solo si el top5 vuelve a cambiar */ });
   }, [user?.uid, estudiantes]);
 
   useEffect(() => {
@@ -626,7 +649,7 @@ export default function DashboardUniversidad() {
                 { key: 'telefono', label: 'Teléfono', value: (perfil as any)?.telefono ?? '', keyboardType: 'phone-pad' },
                 { key: 'direccion', label: 'Dirección', value: (perfil as any)?.direccion ?? '' },
                 { key: 'departamento', label: 'Departamento', value: (perfil as any)?.departamento ?? '' },
-                { key: 'ciudad', label: 'Municipio / Ciudad', value: (perfil as any)?.ciudad ?? '' },
+                { key: 'distrito', label: 'Distrito', value: (perfil as any)?.distrito ?? (perfil as any)?.ciudad ?? '' },
                 { key: 'instagram', label: 'Instagram', value: (perfil as any)?.instagram ?? '', autoCapitalize: 'none' },
               ],
               onSave: async (v) => {
@@ -640,7 +663,7 @@ export default function DashboardUniversidad() {
                     telefono: v.telefono,
                     direccion: v.direccion,
                     departamento: v.departamento,
-                    ciudad: v.ciudad,
+                    distrito: v.distrito,
                     instagram: v.instagram,
                   });
                 } catch { Alert.alert('Error', 'No se pudo guardar.'); }

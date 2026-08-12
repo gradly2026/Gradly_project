@@ -47,7 +47,7 @@ import {
 } from "../../src/data/carreras";
 import {
   DEPARTAMENTOS_EL_SALVADOR,
-  MUNICIPIOS_POR_DEPARTAMENTO,
+  DISTRITOS_POR_DEPARTAMENTO,
 } from "../../src/data/ubicacionElSalvador";
 import {
   maskExp,
@@ -271,7 +271,7 @@ interface PerfilEmpresa extends PlanRestricciones {
   telefono: string;
   direccion: string;
   departamento: string;
-  ciudad: string;
+  distrito: string;
   instagram: string;
   facebook: string;
   contacto_nombre: string;
@@ -303,12 +303,12 @@ const INDUSTRIAS = [
   "Otro",
 ];
 
-// Geo El Salvador (departamento → municipio): catálogo real y completo de los
-// 14 departamentos y sus 262 municipios — mismo catálogo que usa el modal de
+// Geo El Salvador (departamento → distrito): catálogo real y completo de los
+// 14 departamentos y sus 262 distritos — mismo catálogo que usa el modal de
 // bienvenida del estudiante (ver src/data/ubicacionElSalvador.ts), en vez del
 // listado parcial de "ciudades" que había antes aquí (dejaba fuera la mayoría
-// de municipios de cada departamento).
-const GEO_DATA: Record<string, string[]> = MUNICIPIOS_POR_DEPARTAMENTO;
+// de distritos de cada departamento).
+const GEO_DATA: Record<string, string[]> = DISTRITOS_POR_DEPARTAMENTO;
 
 const FLOW_LABELS: Record<Exclude<Flow, null>, string[]> = {
   empresa: ["Datos", "Logo", "Representante", "Plan", "Seguridad"],
@@ -1393,7 +1393,7 @@ export default function Registro() {
   const [eIndustriaOtro, setEIndustriaOtro] = useState("");
   const [eDesc, setEDesc] = useState("");
   const [eDepto, setEDepto] = useState("");
-  const [eCiudad, setECiudad] = useState("");
+  const [eDistrito, setEDistrito] = useState("");
   const [eDireccion, setEDireccion] = useState("");
   const [eTel, setETel] = useState("");
   const [eEmail, setEEmail] = useState("");
@@ -1427,7 +1427,7 @@ export default function Registro() {
   const [uDominio, setUDominio] = useState("");
   const [uDesc, setUDesc] = useState("");
   const [uDepto, setUDepto] = useState("");
-  const [uCiudad, setUCiudad] = useState("");
+  const [uDistrito, setUDistrito] = useState("");
   const [uDireccion, setUDireccion] = useState("");
   const [uTel, setUTel] = useState("");
   const [uEmail, setUEmail] = useState("");
@@ -1451,10 +1451,10 @@ export default function Registro() {
   const [uPass2, setUPass2] = useState("");
   const [uTerms, setUTerms] = useState(false);
 
-  // ── Opciones de ciudad derivadas del departamento ──────────────
+  // ── Opciones de distrito derivadas del departamento ──────────────
   const deptoOptions = Object.keys(GEO_DATA);
-  const eCiudadOptions = eDepto ? (GEO_DATA[eDepto] ?? []) : [];
-  const uCiudadOptions = uDepto ? (GEO_DATA[uDepto] ?? []) : [];
+  const eDistritoOptions = eDepto ? (GEO_DATA[eDepto] ?? []) : [];
+  const uDistritoOptions = uDepto ? (GEO_DATA[uDepto] ?? []) : [];
 
   // ── Verificación de correo único en Firestore (debounce 600ms) ──
   // Solo se dispara cuando el formato es válido; si el correo ya existe
@@ -1584,7 +1584,7 @@ export default function Registro() {
     put(errs, "eDesc", valDesc(eDesc));
 
     if (!eDepto) errs.eDepto = "Selecciona un departamento";
-    if (!eCiudad) errs.eCiudad = "Selecciona un municipio";
+    if (!eDistrito) errs.eDistrito = "Selecciona un distrito";
 
     put(errs, "eDireccion", valDireccion(eDireccion));
     put(errs, "eTel", valPhone(eTel));
@@ -1630,7 +1630,7 @@ export default function Registro() {
     put(errs, "uDesc", valDesc(uDesc));
 
     if (!uDepto) errs.uDepto = "Selecciona un departamento";
-    if (!uCiudad) errs.uCiudad = "Selecciona un municipio";
+    if (!uDistrito) errs.uDistrito = "Selecciona un distrito";
 
     put(errs, "uDireccion", valDireccion(uDireccion));
     put(errs, "uTel", valPhone(uTel));
@@ -1799,7 +1799,7 @@ export default function Registro() {
           telefono: eTel.trim(),
           direccion: eDireccion.trim(),
           departamento: eDepto,
-          ciudad: eCiudad,
+          distrito: eDistrito,
           instagram: eIg.trim(),
           facebook: eFb.trim(),
           contacto_nombre: eRepNombre.trim(),
@@ -1836,7 +1836,7 @@ export default function Registro() {
           telefono: uTel.trim(),
           direccion: uDireccion.trim(),
           departamento: uDepto,
-          ciudad: uCiudad,
+          distrito: uDistrito,
           instagram: uIg.trim(),
           contacto_nombre: uRespNombre.trim(),
           contacto_cargo: uRespCargo.trim(),
@@ -1967,20 +1967,20 @@ export default function Registro() {
               options={deptoOptions}
               onChange={(v) => {
                 setEDepto(v);
-                setECiudad("");
+                setEDistrito("");
                 clearErr("eDepto");
               }}
               error={errors.eDepto}
             />
             <SelectInput
-              label="Municipio (sede)"
-              value={eCiudad}
-              options={eCiudadOptions}
+              label="Distrito (sede)"
+              value={eDistrito}
+              options={eDistritoOptions}
               onChange={(v) => {
-                setECiudad(v);
-                clearErr("eCiudad");
+                setEDistrito(v);
+                clearErr("eDistrito");
               }}
-              error={errors.eCiudad}
+              error={errors.eDistrito}
             />
             <FloatInput
               label="Dirección (opcional)"
@@ -2287,20 +2287,20 @@ export default function Registro() {
               options={deptoOptions}
               onChange={(v) => {
                 setUDepto(v);
-                setUCiudad("");
+                setUDistrito("");
                 clearErr("uDepto");
               }}
               error={errors.uDepto}
             />
             <SelectInput
-              label="Municipio (sede)"
-              value={uCiudad}
-              options={uCiudadOptions}
+              label="Distrito (sede)"
+              value={uDistrito}
+              options={uDistritoOptions}
               onChange={(v) => {
-                setUCiudad(v);
-                clearErr("uCiudad");
+                setUDistrito(v);
+                clearErr("uDistrito");
               }}
-              error={errors.uCiudad}
+              error={errors.uDistrito}
             />
             <FloatInput
               label="Dirección (opcional)"

@@ -17,16 +17,18 @@
  *    sus propios estudiantes (`calificacion_estudiantes_promedio`).
  */
 import { Ionicons } from "@expo/vector-icons";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { AutoText as Text } from "./AutoText";
 import { db } from "../config/firebaseConfig";
+import { useTranslation } from "../context/TranslationContext";
 
 type EntidadRol = "estudiante" | "empresa";
 
 interface FeedbackDoc {
   id: string;
+  evaluadorId: string;
   evaluadorRol: EntidadRol;
   promedio: number;
   comentario?: string;
@@ -62,17 +64,28 @@ function Estrellas({ valor, color, size = 14 }: { valor: number; color: string; 
   );
 }
 
-function relativo(ts: any): string {
+/** Fecha y hora exactas (no relativas) — el usuario pidió poder ver cuándo
+ * se calificó, no solo "hace N días". Respeta el idioma activo. */
+function fechaHora(ts: any, locale: string): string {
   if (!ts) return "";
   const d: Date = ts?.toDate ? ts.toDate() : new Date(ts);
   if (Number.isNaN(d.getTime())) return "";
-  const dias = Math.floor((Date.now() - d.getTime()) / 86_400_000);
-  if (dias <= 0) return "Hoy";
-  if (dias === 1) return "Hace 1 día";
-  if (dias < 30) return `Hace ${dias} días`;
-  if (dias < 365) return `Hace ${Math.floor(dias / 30)} mes(es)`;
-  return `Hace ${Math.floor(dias / 365)} año(s)`;
+  const fecha = d.toLocaleDateString(locale, { day: "2-digit", month: "short", year: "numeric" });
+  const hora = d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  return `${fecha}, ${hora}`;
 }
+
+/** Colección Firestore donde vive el perfil del evaluador, según su rol. */
+const COL_POR_ROL: Record<EntidadRol, string> = {
+  empresa: "perfiles_empresas",
+  estudiante: "perfiles_estudiantes",
+};
+
+/** Campo con el nombre visible del evaluador, según su rol. */
+const CAMPO_NOMBRE_POR_ROL: Record<EntidadRol, string> = {
+  empresa: "nombre_empresa",
+  estudiante: "nombre_completo",
+};
 
 /**
  * Lista de reseñas recibidas por un estudiante o una empresa. Un solo
@@ -92,7 +105,11 @@ export default function ResenasFeedback({
   limite?: number;
 }) {
   const T = useMemo(() => tokensPorTema(theme), [theme]);
+  const { locale } = useTranslation();
   const [resenas, setResenas] = useState<FeedbackDoc[] | null>(null);
+  // Cache evaluadorId → nombre resuelto, para no repetir el mismo getDoc
+  // cuando la misma empresa/estudiante calificó varias veces.
+  const [nombres, setNombres] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!entidadId) return;
@@ -110,6 +127,40 @@ export default function ResenasFeedback({
     return unsub;
   }, [entidadId, limite]);
 
+  // Resuelve el nombre real de cada evaluador aún no cacheado.
+  useEffect(() => {
+    if (!resenas || resenas.length === 0) return;
+    const faltantes = [...new Set(resenas.map((r) => r.evaluadorId))].filter(
+      (id) => id && !(id in nombres),
+    );
+    if (faltantes.length === 0) return;
+    let cancelado = false;
+    (async () => {
+      const resueltos = await Promise.all(
+        faltantes.map(async (id) => {
+          const r = resenas.find((x) => x.evaluadorId === id);
+          const col = COL_POR_ROL[r!.evaluadorRol];
+          const campo = CAMPO_NOMBRE_POR_ROL[r!.evaluadorRol];
+          try {
+            const snap = await getDoc(doc(db, col, id));
+            return [id, snap.exists() ? ((snap.data() as any)?.[campo] ?? "") : ""] as const;
+          } catch {
+            return [id, ""] as const;
+          }
+        }),
+      );
+      if (cancelado) return;
+      setNombres((prev) => {
+        const next = { ...prev };
+        for (const [id, nombre] of resueltos) next[id] = nombre;
+        return next;
+      });
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [resenas, nombres]);
+
   if (resenas === null) return null; // cargando: no ocupar espacio con un spinner discreto
 
   return (
@@ -120,22 +171,28 @@ export default function ResenasFeedback({
       {resenas.length === 0 ? (
         <Text style={{ color: T.sub, fontSize: 13 }}>Aún no hay reseñas.</Text>
       ) : (
-        resenas.map((r) => (
-          <View key={r.id} style={[styles.card, { backgroundColor: T.card, borderColor: T.border }]}>
-            <View style={styles.cardTop}>
-              <Estrellas valor={r.promedio} color={T.star} />
-              <Text style={[styles.promedioTxt, { color: T.sub }]}>{r.promedio.toFixed(1)}</Text>
-              <View style={{ flex: 1 }} />
-              <Text style={[styles.fecha, { color: T.sub }]}>{relativo(r.createdAt)}</Text>
+        resenas.map((r) => {
+          const nombreEvaluador = nombres[r.evaluadorId];
+          const origen =
+            nombreEvaluador ||
+            (r.evaluadorRol === "empresa" ? "De una empresa" : "De un estudiante");
+          return (
+            <View key={r.id} style={[styles.card, { backgroundColor: T.card, borderColor: T.border }]}>
+              <View style={styles.cardTop}>
+                <Estrellas valor={r.promedio} color={T.star} />
+                <Text style={[styles.promedioTxt, { color: T.sub }]}>{r.promedio.toFixed(1)}</Text>
+                <View style={{ flex: 1 }} />
+                <Text style={[styles.fecha, { color: T.sub }]}>{fechaHora(r.createdAt, locale)}</Text>
+              </View>
+              <Text style={[styles.origen, { color: T.sub }]} noTranslate={!!nombreEvaluador}>
+                {origen}
+              </Text>
+              {!!r.comentario && (
+                <Text style={[styles.comentario, { color: T.text }]}>{r.comentario}</Text>
+              )}
             </View>
-            <Text style={[styles.origen, { color: T.sub }]}>
-              {r.evaluadorRol === "empresa" ? "De una empresa" : "De un estudiante"}
-            </Text>
-            {!!r.comentario && (
-              <Text style={[styles.comentario, { color: T.text }]}>{r.comentario}</Text>
-            )}
-          </View>
-        ))
+          );
+        })
       )}
     </View>
   );

@@ -397,6 +397,14 @@ export async function tomarCupo(params: {
     fechaTomado: serverTimestamp(),
   });
 
+  // Estado de pasantía autoreportado (perfil público) — escritura del propio
+  // estudiante en su propio perfil, siempre permitida. Ver [[project_reparto_cupos]].
+  try {
+    await updateDoc(doc(db, 'perfiles_estudiantes', estudianteId), { estado_pasantia: 'en_proceso' });
+  } catch {
+    /* no crítico: no debe bloquear la toma del cupo, que ya se guardó arriba */
+  }
+
   // Avisos: a la universidad (para su seguimiento) y a la empresa (sabe quién llega).
   const quien = estudianteNombre || 'Un estudiante';
   await enviarNotificacion(
@@ -425,7 +433,7 @@ export async function cancelarCupo(asignacionId: string): Promise<void> {
   if (!asignacionId) throw new Error('Asignación inválida.');
   const asigRef = doc(db, COLECCION_ASIGNACIONES, asignacionId);
 
-  await runTransaction(db, async tx => {
+  const estudianteId = await runTransaction(db, async tx => {
     const snap = await tx.get(asigRef);
     if (!snap.exists()) throw new Error('Esta asignación ya no existe.');
     const a = snap.data() as AsignacionCupo;
@@ -433,7 +441,18 @@ export async function cancelarCupo(asignacionId: string): Promise<void> {
 
     tx.update(doc(db, COLECCION_RECLAMOS, a.reclamoId), { tomados: increment(-1) });
     tx.update(asigRef, { estado: 'cancelado' as const });
+    return a.estudianteId;
   });
+
+  // Revierte el estado de pasantía autoreportado — escritura del propio
+  // estudiante en su propio perfil, siempre permitida.
+  if (estudianteId) {
+    try {
+      await updateDoc(doc(db, 'perfiles_estudiantes', estudianteId), { estado_pasantia: 'sin_iniciar' });
+    } catch {
+      /* no crítico: no debe bloquear la cancelación, que ya se guardó arriba */
+    }
+  }
 }
 
 /** Lee un reclamo puntual (para pantallas de detalle). */

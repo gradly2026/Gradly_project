@@ -43,7 +43,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Cerrar Sesión": "Sign out",
   "Certificada": "Certified",
   "Chatear con Candidato": "Chat with candidate",
-  "Ciudad (sede)": "City (headquarters)",
+  "Distrito (sede)": "District (headquarters)",
   "Comenzar": "Start",
   "Como aparece en la tarjeta": "As it appears on the card",
   "Comunicación efectiva": "Effective communication",
@@ -104,6 +104,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Facebook (opcional)": "Facebook (optional)",
   "Fecha límite*": "Deadline*",
   "Finalizada": "Completed",
+  "Sin iniciar": "Not started",
   "Finanzas": "Finance",
   "Firmar": "Sign",
   "Firmar constancia": "Sign certificate",
@@ -150,7 +151,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Mis Vacantes": "My job posts",
   "Modalidad*": "Modality*",
   "Motivo del rechazo": "Reason for rejection",
-  "Municipio / Ciudad": "Municipality / City",
+  "Distrito": "District",
   "Municipio:": "Municipality:",
   "Método de pago": "Payment method",
   "Networking desde cero": "Networking from scratch",
@@ -417,7 +418,6 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "Casos nuevos pendientes de revisión.": "New cases pending review.",
   "Casos que ya están siendo atendidos.": "Cases already being handled.",
   "Cerrar sesión": "Sign out",
-  "Ciudad": "City",
   "Config": "Config",
   "Configuración": "Settings",
   "Consulta la bitácora reciente del panel y sus acciones.": "Review the panel's recent log and its actions.",
@@ -770,8 +770,8 @@ export const CUPOS_SEED_EN: Record<string, string> = {
 // OnboardingDireccionModal) ── ver [[project_reparto_cupos]] Fase 9.1.
 export const UBICACION_SEED_EN: Record<string, string> = {
   "Departamento*": "Department*",
-  "Municipio*": "Municipality*",
-  "Buscar municipio…": "Search municipality…",
+  "Distrito*": "District*",
+  "Buscar distrito…": "Search district…",
   "Dirección específica (opcional)": "Specific address (optional)",
   "Colonia, calle, referencia…": "Neighborhood, street, landmark…",
   "Un último paso": "One last step",
@@ -782,8 +782,11 @@ export const UBICACION_SEED_EN: Record<string, string> = {
   "Como sos usuario nuevo, antes de llevarte a tu nuevo perfil necesitamos que completes este dato. Nos ayuda a mostrarte empresas y universidades cercanas a vos, y solo se pide una vez.":
     "Since you're a new user, before taking you to your new profile we need you to complete this. It helps us show you nearby companies and universities, and it's only asked once.",
   "Guardar y continuar": "Save and continue",
-  "Elige tu departamento y municipio para continuar.": "Choose your department and municipality to continue.",
+  "Elige tu departamento y distrito para continuar.": "Choose your department and district to continue.",
   "No se pudo guardar. Verifica tu conexión e intenta de nuevo.": "Couldn't save. Check your connection and try again.",
+  "Habilidades (opcional)": "Skills (optional)",
+  "Contanos brevemente sobre vos…": "Tell us briefly about yourself…",
+  "Ej: Excel, atención al cliente…": "E.g: Excel, customer service…",
 };
 
 // ── Eliminar vacante/grupo/estudiante (empresa y universidad deshacen su
@@ -835,6 +838,9 @@ export const RESUMEN_HOME_SEED_EN: Record<string, string> = {
   "Pasantes activos": "Active interns",
   "Horas validadas": "Validated hours",
   "Universidades aliadas": "Partner universities",
+  "Empresas aliadas": "Partner companies",
+  "Mejores estudiantes que trabajaron aquí": "Top-rated students who worked here",
+  "Mejores estudiantes de esta universidad": "Top-rated students from this university",
   // UniversidadHomeCards
   "Estudiantes activos": "Active students",
   "Egresados": "Graduates",

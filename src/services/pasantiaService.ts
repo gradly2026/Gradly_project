@@ -689,6 +689,12 @@ export async function respuestaFinalUniversidad(
       // esta pasantía siga aprobada (se libera en `finalizarPasantia`).
       tx.update(grupoRef, { pasantia_activa_id: solRef.id });
 
+      // Estado de pasantía autoreportado (perfil público) — arranca "en
+      // proceso" para cada alumno real del grupo. Ver [[project_reparto_cupos]].
+      alumnos.forEach(al => {
+        tx.update(doc(db, 'perfiles_estudiantes', al.id), { estado_pasantia: 'en_proceso' });
+      });
+
       // Registra la alianza en AMBOS perfiles (arrayUnion dedupe solo — no
       // pasa nada si ya se habían aliado antes). Alimenta "Top Empresas/
       // Universidades" sin que ese ranking necesite leer `solicitudes_practicas`.
