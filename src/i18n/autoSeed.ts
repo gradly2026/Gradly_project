@@ -1,3 +1,74 @@
+// ════════════════════════════════════════════════════════════════════════
+// autoSeed.ts — GUÍA PARA PRINCIPIANTES
+//
+// QUÉ ES ESTE ARCHIVO:
+// Este archivo NO tiene lógica complicada: es, sobre todo, una lista muy
+// larga de "diccionarios" de traducción escritos A MANO. Cada diccionario
+// tiene la forma:
+//
+//     {
+//       "Texto exacto en español": "Exact matching text in English",
+//       "Otro texto en español":   "Another matching text in English",
+//       ...
+//     }
+//
+// En TypeScript, el tipo de cada uno de estos diccionarios es
+// `Record<string, string>`, que significa: "un objeto donde tanto las
+// claves como los valores son texto (string)". Aquí la CLAVE es siempre
+// la frase en español TAL COMO aparece en la pantalla (con mayúsculas,
+// tildes y signos de puntuación exactos), y el VALOR es su traducción al
+// inglés.
+//
+// ¿PARA QUÉ SIRVE ESTO SI YA EXISTE translationService.ts?
+// src/services/translationService.ts (léelo primero si no lo hiciste) ya
+// sabe traducir CUALQUIER texto llamando a una función en la nube (Google
+// Translate) la primera vez que lo ve, y luego lo recuerda en caché. El
+// problema es que esa primera vez toma un poquito de tiempo (necesita
+// internet) — así que, para las pantallas más importantes/visitadas de la
+// app, en vez de esperar a que Google Translate responda la primera vez,
+// aquí se "pre-traducen a mano" las frases más comunes, para que
+// aparezcan en inglés DESDE EL PRIMER INSTANTE, sin parpadeo ni depender
+// de la red. A este proceso los desarrolladores le llaman "seed"
+// (sembrar el caché de antemano).
+//
+// translationService.ts importa TODOS estos diccionarios y, apenas la app
+// arranca (función seedStaticCache() en ese archivo), copia cada pareja
+// clave→valor dentro de su caché en memoria, como si Google Translate ya
+// las hubiera traducido.
+//
+// EL ARCHIVO TIENE 8 DICCIONARIOS, cada uno cubriendo una parte distinta
+// de la app (ya explicado con un comentario propio justo antes de cada
+// uno, pero aquí va el mapa completo):
+//   1. AUTO_SEED_EN         (línea ~16)  → Registro y dashboards de
+//                                          empresa/estudiante (uso general).
+//   2. ADMIN_SEED_EN        (línea ~376) → Panel de administración completo.
+//   3. CUPOS_SEED_EN        (línea ~576) → Flujo de "reparto de cupos"
+//                                          (disponibilidad horaria, tablero
+//                                          de selección de estudiantes).
+//   4. UBICACION_SEED_EN    (línea ~773) → Selector de ubicación/dirección
+//                                          del estudiante nuevo.
+//   5. GESTION_SEED_EN      (línea ~797) → Eliminar vacante/grupo/estudiante
+//                                          y moderación de publicaciones.
+//   6. PROGRESO_SEED_EN     (línea ~818) → Barra de progreso de la pasantía.
+//   7. RESUMEN_HOME_SEED_EN (línea ~833) → Tarjetas "Resumen general" y
+//                                          "Análisis" de los dashboards.
+//   8. NOTIF_MODALES_SEED_EN(línea ~894) → Modales que se abren al tocar
+//                                          una notificación.
+//
+// IMPORTANTE: como son cientos de frases casi idénticas en estructura
+// (clave en español → valor en inglés), NO se comenta cada línea una por
+// una — sería repetir la misma explicación cientos de veces sin aportar
+// nada nuevo. En vez de eso, cada bloque grande ya tiene un comentario
+// arriba explicando A QUÉ PANTALLA pertenece, y dentro de cada bloque hay
+// sub-comentarios (líneas que empiezan con "//") marcando qué componente
+// usa cada grupo de frases. Si buscas una frase específica, usa Ctrl+F
+// (buscar) con el texto en español exacto.
+//
+// Si algún día agregas una pantalla nueva con mucho texto fijo, puedes
+// crear un noveno diccionario siguiendo el mismo patrón, agregarlo al
+// import y al bucle seedStaticCache() de translationService.ts.
+// ════════════════════════════════════════════════════════════════════════
+
 /**
  * Diccionario estático ES→EN para SEMBRAR el caché de traducción automática.
  *
@@ -886,6 +957,61 @@ export const RESUMEN_HOME_SEED_EN: Record<string, string> = {
   "En curso": "In progress",
   "Por iniciar": "Not started",
   "Completadas": "Completed",
+};
+
+// ── Modales de detalle abiertos al tocar una notificación (vacante, grupo,
+// postulación de grupo, reclamo de cupos) — FloatingTopBar.tsx +
+// GrupoDetailViewerModal/AplicacionGrupoDetailModal/ReclamoDetailModal. ──
+export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
+  // GrupoDetailViewerModal
+  "No se encontró este grupo.": "This group was not found.",
+  "🎓 Egresado": "🎓 Graduated",
+  "Información del grupo": "Group information",
+  "Universidad": "University",
+  "No disponible": "Not available",
+  "Carrera": "Major",
+  "No especificada": "Not specified",
+  "Categoría": "Category",
+  "No determinada": "Not determined",
+  "Horas a cumplir": "Hours to complete",
+  "No especificado": "Not specified",
+  "Docente encargado": "Assigned instructor",
+  "Alianza con empresa": "Company partnership",
+  "Pasantía activa": "Active internship",
+  "Sin alianza activa": "No active partnership",
+  "Miembros del grupo": "Group members",
+  "Aún no hay estudiantes registrados en este grupo.": "No students registered in this group yet.",
+  "Sin carrera": "No major",
+
+  // AplicacionGrupoDetailModal
+  "Postulación de grupo": "Group application",
+  "No se encontró esta postulación.": "This application was not found.",
+  "Pendiente de revisión": "Pending review",
+  "Oferta enviada · esperando respuesta": "Offer sent · awaiting reply",
+  "Pasantía confirmada": "Internship confirmed",
+  "Rechazada": "Rejected",
+  "Motivo del rechazo": "Reason for rejection",
+  "Universidad y grupo": "University and group",
+  "Sin nombre": "No name",
+  "Empresa": "Company",
+  "Detalles de la pasantía": "Internship details",
+  "Horas requeridas": "Required hours",
+  "Estudiantes del grupo": "Students in the group",
+  "Período": "Period",
+  "Horario": "Schedule",
+  "Ver vacante completa": "View full job post",
+
+  // ReclamoDetailModal
+  "Reclamo de cupos": "Spot request",
+  "No se encontró este reclamo.": "This request was not found.",
+  "Pendiente de confirmación": "Pending confirmation",
+  "Cupos confirmados": "Spots confirmed",
+  "Rechazado": "Rejected",
+  "Liberado": "Released",
+  "Sin asignar todavía": "Not assigned yet",
+  "Cupos reclamados": "Requested spots",
+  "Cantidad vigente": "Current amount",
+  "Ya elegidos por estudiantes": "Already picked by students",
 };
 
 export default AUTO_SEED_EN;

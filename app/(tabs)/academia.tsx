@@ -1,9 +1,27 @@
+// ════════════════════════════════════════════════════════════════════════
+// GUÍA PARA PRINCIPIANTES:
+// La pestaña "Academia" del estudiante: cursos recomendados, guías
+// rápidas y un "tip de la semana". IMPORTANTE: todo el contenido de esta
+// pantalla (cursos, guías, el tip) está ESCRITO A MANO en este mismo
+// archivo (ver "CONTENIDO ESTÁTICO (MVP)" abajo) — NO viene de Firestore.
+// Es un buen ejemplo de una pantalla que combina datos LOCALES fijos con
+// los mismos patrones visuales (GlassCard, makeStyles) que sí se usan en
+// pantallas con datos reales de la base de datos.
+// ════════════════════════════════════════════════════════════════════════
+
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useMemo } from 'react';
 import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from "../../src/components/AutoText";
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
+// Ojo: se importa TANTO `COLORS` (el atajo fijo al tema oscuro) COMO
+// `useTheme` (el hook que sí reacciona al tema activo). Más abajo, dentro
+// del JSX, se usa `COLORS` directamente en varios lugares — significa que
+// esas partes puntuales de esta pantalla NO cambian de color en modo
+// claro (posible resabio de una migración incompleta al patrón dinámico
+// completo, algo que verás mencionado como pendiente en la memoria del
+// proyecto sobre el bug de modales/temas).
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 
@@ -16,6 +34,10 @@ function useThemedStyles() {
 // ─────────────────────────────────────────────
 // CONTENIDO ESTÁTICO (MVP)
 // ─────────────────────────────────────────────
+// "MVP" = Minimum Viable Product (producto mínimo viable): una primera
+// versión funcional, aquí con contenido fijo en vez de un sistema
+// completo de gestión de cursos — suficiente para demostrar la pantalla
+// sin necesitar un panel de administración de contenido educativo todavía.
 const CURSOS = [
   { id: '1', titulo: 'CV que enamora empresas', duracion: '1h 45min', nivel: 'Básico',    icon: 'document-text-outline', nuevo: true  },
   { id: '2', titulo: 'Entrevistas que conquistan',duracion: '2h 10min', nivel: 'Intermedio',icon: 'mic-outline',           nuevo: true  },
@@ -24,6 +46,10 @@ const CURSOS = [
   { id: '5', titulo: 'Trabajo en equipo',        duracion: '1h 15min', nivel: 'Básico',    icon: 'people-outline',        nuevo: false },
   { id: '6', titulo: 'LinkedIn profesional',     duracion: '55min',    nivel: 'Básico',    icon: 'logo-linkedin',         nuevo: false },
 ] as const;
+// Un array fijo de objetos "curso". "as const" (visto también en
+// ThemeContext.tsx) congela cada valor como literal exacto — así
+// `curso.nivel` no es un `string` genérico sino específicamente 'Básico'
+// | 'Intermedio', lo cual ayuda a TypeScript a detectar errores de tipeo.
 
 const GUIAS = [
   { id: 'g1', titulo: 'Cómo redactar un CV impactante', icon: 'document-outline' },
@@ -38,11 +64,16 @@ const TIP = {
   texto: 'Personaliza cada CV para la empresa a la que aplicas. Los reclutadores reciben decenas de solicitudes genéricas — la tuya debe mostrar que investigaste a la empresa.',
   autor: 'Equipo Gradly',
 };
+// Un solo objeto (no una lista) porque solo hay UN tip mostrado a la vez.
 
 // ─────────────────────────────────────────────
 // COMPONENTES
 // ─────────────────────────────────────────────
 function CursoCard({ curso }: { curso: typeof CURSOS[number] }) {
+  // "typeof CURSOS[number]" es un tipo calculado: significa "el tipo de
+  // UN elemento cualquiera dentro del array CURSOS" — así, si mañana se
+  // agrega o cambia una propiedad en los objetos de CURSOS, este tipo se
+  // actualiza solo, sin tener que escribir una interfaz aparte a mano.
   const { styles } = useThemedStyles();
   return (
     <GlassCard style={{ width: 160 }} contentStyle={{ padding: 0 }}>
@@ -50,6 +81,7 @@ function CursoCard({ curso }: { curso: typeof CURSOS[number] }) {
       <View style={[styles.cursoThumb, { backgroundColor: COLORS.backgroundSurface }]}>
         <Ionicons name={curso.icon as any} size={28} color={COLORS.primaryLight} />
         {curso.nuevo && (
+          // Solo se muestra el badge "NUEVO" si `curso.nuevo` es true.
           <View style={styles.nuevoBadge}>
             <Text style={styles.nuevoText}>NUEVO</Text>
           </View>
@@ -57,6 +89,8 @@ function CursoCard({ curso }: { curso: typeof CURSOS[number] }) {
       </View>
       <View style={styles.cursoMeta}>
         <Text style={styles.cursoTitulo} numberOfLines={2}>{curso.titulo}</Text>
+        {/* numberOfLines={2} corta el texto con "..." si ocupara más de 2
+            líneas, para que todas las tarjetas mantengan la misma altura. */}
         <View style={styles.cursoFooter}>
           <Text style={styles.cursoDuracion}>{curso.duracion}</Text>
           <View style={styles.nivelBadge}>
@@ -77,6 +111,9 @@ function GuiaRow({ guia }: { guia: typeof GUIAS[number] }) {
       </View>
       <Text style={styles.guiaTitulo} numberOfLines={1}>{guia.titulo}</Text>
       <Ionicons name="chevron-forward-outline" size={16} color={COLORS.textMuted} />
+      {/* Una flechita a la derecha, que sugiere "esto es tocable y lleva
+          a algo más" — aunque, en esta versión MVP, onPress no está
+          definido (tocar una guía todavía no hace nada). */}
     </TouchableOpacity>
   );
 }
@@ -92,6 +129,9 @@ export default function AcademiaTab() {
   return (
     <LiquidBackground>
     <View style={[styles.root, { backgroundColor: 'transparent' }]}>
+      {/* backgroundColor: 'transparent' sobrescribe el fondo sólido que
+          styles.root ya trae, para que en su lugar se vea el fondo
+          decorativo de <LiquidBackground> por detrás. */}
       <StatusBar style="light" />
 
       {/* Header */}
@@ -99,6 +139,11 @@ export default function AcademiaTab() {
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>Academia Gradly</Text>
           <Text style={styles.headerSub}>Prepárate para tu pasantía</Text>
+          {/* Estos textos NO usan t() ni AutoText — quedaron como texto
+              fijo en español directo. A diferencia de otras pantallas del
+              proyecto, esta no tiene traducción dinámica de su título
+              (podría ser una oportunidad de mejora futura, no un error
+              del código en sí). */}
         </View>
         <Ionicons name="school-outline" size={28} color={COLORS.primaryLight} />
       </View>
@@ -115,10 +160,15 @@ export default function AcademiaTab() {
         <Text style={styles.sectionTitle}>Cursos recomendados</Text>
         <ScrollView
           horizontal
+          // horizontal → este ScrollView anidado se desliza de IZQUIERDA
+          // A DERECHA en vez de arriba-abajo, formando el típico
+          // "carrusel" de tarjetas de cursos.
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 12, paddingRight: 16 }}
         >
           {CURSOS.map(c => <CursoCard key={c.id} curso={c} />)}
+          {/* .map() sobre el array fijo CURSOS: dibuja una <CursoCard>
+              por cada curso definido arriba. */}
         </ScrollView>
 
         {/* ── Guías rápidas ── */}
@@ -130,6 +180,12 @@ export default function AcademiaTab() {
         {/* ── Tip de la semana ── */}
         <Text style={styles.sectionTitle}>Tip de la semana</Text>
         <GlassCard style={{ borderColor: COLORS.gold + '33' }} contentStyle={{ padding: 20, gap: 12 }}>
+          {/* "COLORS.gold + '33'" concatena el color hexadecimal con el
+              texto '33' — en formato de color hexadecimal de 8 dígitos,
+              los últimos 2 caracteres representan la OPACIDAD (33 en
+              hexadecimal ≈ 20% de opacidad). Es una forma rápida de tomar
+              un color sólido existente y volverlo semi-transparente sin
+              tener que definir una variante nueva. */}
           <View style={styles.tipHeader}>
             <View style={styles.tipIconWrap}>
               <Ionicons name="bulb-outline" size={20} color={COLORS.gold} />
@@ -155,11 +211,11 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'space-between',   // título a la izquierda, ícono a la derecha, separados al máximo
     paddingTop: 56, paddingHorizontal: 20, paddingBottom: 16,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  headerLeft: {},
+  headerLeft: {},   // objeto vacío: no necesita estilos propios, solo agrupa 2 <Text> en columna por defecto
   headerTitle: { fontSize: 22, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
   headerSub: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 2 },
 
@@ -171,6 +227,11 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 
   // Cursos
   cursoCard: {
+    // Nota: este estilo `cursoCard` está definido pero NO se usa en el
+    // JSX de arriba (CursoCard aplica su tamaño con un `style={{ width: 160 }}`
+    // inline en vez de con este objeto) — puede ser un estilo que quedó
+    // sin usar tras algún cambio anterior; no rompe nada, simplemente no
+    // se aplica en ningún lado.
     width: 160,
     backgroundColor: COLORS.backgroundCard,
     borderRadius: 16, overflow: 'hidden',
@@ -200,6 +261,8 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 
   // Guías
   guiasContainer: {
+    // Tampoco se usa directamente (GuiaRow las envuelve con un GlassCard
+    // en vez de este estilo) — mismo caso que cursoCard arriba.
     backgroundColor: COLORS.backgroundCard,
     borderRadius: 16, overflow: 'hidden',
     borderWidth: 1, borderColor: COLORS.border,
@@ -222,6 +285,8 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 
   // Tip
   tipCard: {
+    // Igual que los 2 casos anteriores: no se usa en el JSX (el estilo se
+    // arma inline con `borderColor` calculado + `contentStyle`).
     backgroundColor: COLORS.backgroundSurface,
     borderRadius: 16, padding: 20,
     borderWidth: 1, borderColor: COLORS.gold + '33',

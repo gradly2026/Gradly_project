@@ -1,3 +1,23 @@
+// ═════════════════════════════════════════════════════════════════
+// PANEL ADMIN — pantalla única y gigante (rol "admin") que reemplaza al
+// antiguo panel operativo. Un solo componente `AdminPreview` controla TODAS
+// las secciones (Resumen, Aprobaciones, Usuarios, Reportes, Vacantes,
+// Suscripciones, Notificaciones, Roles, Logs, Config) mediante el estado
+// `page`, en vez de usar rutas separadas — así el sidebar/drawer/topbar no
+// se desmontan al cambiar de sección.
+//
+// Ya viste en dashboard-empresa.tsx y dashboard-universidad.tsx el patrón
+// general (useState + onSnapshot/getDocs + JSX con Card/listItem/Chip); aquí
+// solo se explica a fondo lo que es distinto: las funciones `set*Action` que
+// vienen de src/services/adminService.ts (llaman a Cloud Functions con
+// privilegios de admin, en vez de escribir directo con el SDK del cliente),
+// el sistema de confirmación propio (ConfirmDialog/ConfirmOverlay — ya que
+// Alert.alert con botones no funciona en la web, gotcha visto en varios
+// archivos), y la lectura "cruda" de un documento completo para la ficha
+// técnica del detalle de vacante (formatRawValue). Los bloques de JSX
+// repetidos (tarjetas Card, filas listItem, chips de filtro) que ya viste en
+// perfil.tsx/index.tsx/los dashboards solo llevan una nota corta.
+// ═════════════════════════════════════════════════════════════════
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -54,6 +74,8 @@ import { textoHorario } from "../../src/data/disponibilidad";
 import { textoCupos, textoSalario } from "../../src/utils/cupos";
 
 // Convierte un Timestamp de Firestore (o string) a ISO para los tipos del panel.
+// `v?.toDate === "function"` detecta un Timestamp real de Firestore (tiene
+// ese método); si ya viene como string se devuelve tal cual.
 const tsToIso = (v: any): string => {
   if (!v) return "";
   if (typeof v?.toDate === "function") return v.toDate().toISOString();
@@ -61,12 +83,18 @@ const tsToIso = (v: any): string => {
   return "";
 };
 
+// Las 10 "páginas" internas del panel — no son rutas de Expo Router, solo
+// valores del useState `page` que decide qué renderX() se muestra (ver
+// renderBody() al final del componente).
 type AdminPage = "resumen" | "aprobaciones" | "usuarios" | "reportes" | "vacantes" | "suscripciones" | "notificaciones" | "roles" | "logs" | "config";
 type Role = "admin" | "universidad" | "empresa" | "estudiante";
 type PermissionRole = Exclude<Role, "estudiante">;
 type Status = "active" | "pending" | "inactive";
 type ApprovalStatus = "active" | "pending" | "inactive";
 
+// Vista de admin sobre un documento de la colección `usuarios`, ya
+// normalizada por normalizeRole/normalizeStatus/normalizeApprovalStatus
+// (los datos crudos de Firestore traen variantes históricas inconsistentes).
 type AdminUser = {
   id: string;
   role: Role;
@@ -83,6 +111,7 @@ type AdminUser = {
   created_at?: string | null;
 };
 
+/** Un documento de la colección `audit_logs` — bitácora de acciones administrativas (ver logAction). */
 type AuditLog = {
   id: string;
   actor_email: string | null;
@@ -127,6 +156,7 @@ type RecentOpenReport = {
 
 type ReportCaseStatus = "abierto" | "en_investigacion" | "resuelto";
 
+/** Un documento de la colección `reportes` (usuario reportado por otro usuario). */
 type ReportCase = {
   id: string;
   motivo: string;
@@ -179,6 +209,9 @@ type AdminSuscripcionPago = {
   fecha: string;
 };
 
+// Qué sección de datos tuvo un error de lectura (permisos, índice faltante,
+// etc.) — alimenta el banner "Avisos de datos y permisos" que se ve arriba
+// del contenido cuando algo no cargó. Ver setDataIssue/dataIssueList.
 type DataIssueKey = "usuarios" | "metricas" | "logs" | "notificaciones" | "permisos" | "suscripciones";
 
 const MESES_ADMIN = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -186,6 +219,12 @@ const MESES_ADMIN = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Se
 const ROLE_ORDER: Role[] = ["admin", "universidad", "empresa", "estudiante"];
 const PERMISSION_ROLES: PermissionRole[] = ["admin", "universidad", "empresa"];
 
+// ── Normalizadores ──────────────────────────────────────────────
+// Los documentos de `usuarios` se han escrito con nombres de campo distintos
+// a lo largo del tiempo (rol vs role, activo:boolean vs status:string...).
+// Estas 3 funciones traducen CUALQUIER variante histórica a los 3 tipos
+// estrictos de arriba (Role/Status/ApprovalStatus), para que el resto del
+// panel no tenga que lidiar con esa inconsistencia.
 function normalizeRole(value: unknown): Role {
   const raw = String(value ?? "").trim().toLowerCase();
   if (raw === "admin" || raw === "universidad" || raw === "empresa" || raw === "estudiante") {
@@ -226,10 +265,14 @@ function normalizeApprovalStatus(value: unknown, activo: unknown): ApprovalStatu
   return activo === false ? "inactive" : "active";
 }
 
+// Solo empresa y universidad pasan por el flujo de aprobación manual del
+// admin (approval_status pending/active/inactive); estudiante y admin no.
 function roleRequiresApproval(role: Role): boolean {
   return role === "empresa" || role === "universidad";
 }
 
+// Traduce el `error.code` de Firestore/Cloud Functions a un mensaje en
+// español legible para el admin, sin exponer el código técnico crudo.
 function adminDataErrorMessage(error: any, subject: string): string {
   const code = String(error?.code ?? "").replace(/^functions\//, "");
   if (code === "permission-denied") return `Sin permisos para ${subject}.`;
@@ -290,6 +333,12 @@ function formatRawValue(value: any): string {
   return String(value);
 }
 
+// Este archivo NO usa Alert.alert de dos botones para confirmaciones (el
+// gotcha ya visto en otros archivos: no funciona en react-native-web) — usa
+// su propio ConfirmDialog/ConfirmOverlay (ver más abajo). showAdminAlert es
+// solo para AVISOS de un botón (éxito/error), donde sí hace falta un
+// fallback: en algunos runtimes web, Alert.alert de un solo botón tampoco
+// pinta nada, así que se usa `window.alert` nativo del navegador en su lugar.
 function showAdminAlert(title: string, message: string) {
   // En web, `Alert.alert` puede no mostrarse según el runtime. Usamos fallback.
   if (Platform.OS === "web" && typeof window !== "undefined" && typeof window.alert === "function") {
@@ -299,6 +348,8 @@ function showAdminAlert(title: string, message: string) {
   Alert.alert(title, message);
 }
 
+// ── Componentes UI pequeños y reutilizados en todo el panel ──────
+// Badge: pastilla de estado (verde/amarillo/rojo según Status).
 function Badge({ label, type }: { label: string; type: Status }) {
   const { C, s } = useAdminTheme();
   const map: Record<Status, { bg: string; border: string; text: string }> = {
@@ -326,6 +377,8 @@ function Badge({ label, type }: { label: string; type: Status }) {
   );
 }
 
+// Chip: botón de filtro seleccionable (activo/inactivo), usado en TODAS las
+// barras de filtro del panel (rol, estado, tipo de vacante, etc.).
 function Chip({
   label,
   active,
@@ -347,23 +400,42 @@ function Chip({
   );
 }
 
+// Card: contenedor con fondo/borde de tarjeta — envoltorio usado en casi
+// cada bloque de contenido del panel (equivalente al GlassCard de los
+// dashboards, pero con el estilo propio del tema admin).
 function Card({ children, style }: { children: React.ReactNode; style?: any }) {
   const { s } = useAdminTheme();
   return <View style={[s.card, style]}>{children}</View>;
 }
 
 export default function AdminPreview() {
+  // useAuthGuard('admin')/useAuthBackGuard(): mismos guardias de acceso y de
+  // botón "atrás" que usan los demás dashboards.
   useAuthGuard("admin");
   useAuthBackGuard();
+  // useAdminTheme(): hook de estilos propio del panel admin (src/styles/
+  // adminStyles.ts) — mismo espíritu que useThemedStyles() de los
+  // dashboards (colores + hoja de estilos que reacciona al tema), pero con
+  // su propia paleta `C` y su propia función toggleTheme.
   const { C, s, toggleTheme } = useAdminTheme();
   const { t, language, toggleLanguage } = useTranslation();
   const { rol, isLoading, refreshProfile, logout } = useAuth();
+  // Puntos de quiebre responsivos: useWindowDimensions (a diferencia de
+  // Dimensions.get() usado en otros archivos) SÍ reacciona a cambios de
+  // tamaño en vivo (redimensionar la ventana en web, o rotar el dispositivo).
   const { width } = useWindowDimensions();
   const isCompact = width < 560;
   const isPhone = width < 768;
   const isWide = width >= 900;
   const isDesktop = width >= 1200;
   const isTablet = width >= 768 && width < 1200;
+  // ── Estado local ──────────────────────────────────────────────
+  // Bloque grande de useState: qué "página" está activa, los datos de cada
+  // sección (users/vacantesList/reportCases/suscripciones/logs/
+  // notifications/permissions), qué modal está abierto y los campos de sus
+  // formularios (edición de perfil, motivo de baneo, resolución de reporte,
+  // motivo de moderación de vacante). Los comentarios en línea marcan solo
+  // lo no obvio.
   const [showAccessRecovery, setShowAccessRecovery] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 

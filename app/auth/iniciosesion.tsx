@@ -1,6 +1,34 @@
+// ════════════════════════════════════════════════════════════════════════
+// app/auth/iniciosesion.tsx — LA PANTALLA DE LOGIN (la real, no el stub)
+//
+// GUÍA PARA PRINCIPIANTES:
+// Este es el archivo MÁS grande relacionado con autenticación del
+// proyecto. Ofrece nada menos que 4 formas distintas de iniciar sesión,
+// todas dentro de la MISMA pantalla, cambiando de "paso" (`Step`):
+//   1. "credentials" → correo + contraseña (el login clásico).
+//   2. "otp"          → código de 8 dígitos enviado por correo, SIN
+//                        contraseña (ver GUIA — la app tiene su propio
+//                        sistema de login por código, con Cloud Functions).
+//   3. "reset-request" → recuperar contraseña: pide el mismo código OTP,
+//                        pero además una contraseña NUEVA, y actualiza
+//                        ambas cosas de una vez.
+//   4. (fuera de `Step`, manejado aparte) → "magic link": un link que
+//                        llega por correo y que la propia app INTERCEPTA
+//                        al abrirse, sin que el usuario tenga que escribir
+//                        nada — ver el useEffect "Interceptar el enlace
+//                        mágico" más abajo.
+// Es el mejor archivo para ver, en un solo lugar, la variedad de formas
+// en que una app puede autenticar a un usuario contra Firebase Auth (y,
+// en el caso de OTP, contra Cloud Functions propias del proyecto).
+// ════════════════════════════════════════════════════════════════════════
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
+// Linking: el módulo de Expo para trabajar con "deep links" (enlaces que
+// abren la app directamente, en vez de un navegador) — se usa aquí para
+// detectar cuándo la app se abrió a partir de un link de "magic link" de
+// Firebase.
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -27,18 +55,40 @@ import {
 import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
 
 import AppHeader from "../../components/AppHeader";
+// Componente compartido: la barra superior simple (con logo/back) que
+// aparece en pantallas fuera del área logueada, como login y registro.
 import { useTranslation } from "../../src/context/TranslationContext";
 import { auth } from "../../src/config/firebaseConfig";
 import { useTheme, type GradlyColors } from "../../src/context/ThemeContext";
 import { CORREO_TEMPORAL_KEY } from "../../src/services/authService";
 import { consultarEstadoAcceso, solicitarOtp, verificarOtpYEntrar } from "../../src/services/otpService";
+// Las 3 funciones que hablan con las Cloud Functions del sistema OTP (ver
+// GUIA_05_ESTRUCTURA_PROYECTO.md, tabla de Cloud Functions):
+//   - solicitarOtp(correo)                       → pide que se genere y
+//     envíe por correo un código de 8 dígitos.
+//   - verificarOtpYEntrar(correo, codigo, pass?)  → valida el código; si
+//     es correcto, inicia sesión de verdad (y, si se le pasa una
+//     contraseña nueva, también la actualiza — usado en el flujo de
+//     recuperación).
+//   - consultarEstadoAcceso(correo)                → sin necesitar sesión
+//     iniciada, pregunta si esa cuenta está baneada/inactiva y por qué —
+//     se usa cuando el login normal falla por "cuenta deshabilitada".
 import {
   obtenerRolConReintento,
   rutaPorRol,
   verificarBloqueoCuenta,
   type BloqueoCuenta,
 } from "../../src/utils/roleRouting";
+// obtenerRolConReintento(uid) → lee el rol del usuario desde Firestore,
+// REINTENTANDO varias veces si la primera lectura no lo encuentra
+// (explicado más abajo, es clave para evitar una condición de carrera).
+// verificarBloqueoCuenta(uid) → revisa si la cuenta está baneada/inactiva
+// DESPUÉS de un login ya exitoso (a diferencia de consultarEstadoAcceso,
+// que se usa cuando el login ni siquiera pudo completarse).
 import { useLoginBackGuard } from "../../src/hooks/useSessionBackGuard";
+// Hook que evita comportamientos raros del botón "atrás" del sistema
+// mientras se está en la pantalla de login (por ejemplo, evitar que
+// "atrás" saque al usuario de la app sin querer, en Android).
 
 // ══════════════════════════════════════════════════════════════════
 //  Design tokens — derivados del tema activo (claro / oscuro)
@@ -47,6 +97,14 @@ import { useLoginBackGuard } from "../../src/hooks/useSessionBackGuard";
 //  (fondo, tarjetas, textos, inputs) cambie con el modo claro/oscuro.
 // ══════════════════════════════════════════════════════════════════
 const makeC = (colors: GradlyColors) => ({
+  // A diferencia de app/auth/action.tsx (que usa una paleta LOCAL FIJA,
+  // sin tema), esta pantalla SÍ reacciona al tema claro/oscuro del
+  // usuario — makeC(colors) es una variante del patrón makeStyles(colors)
+  // ya visto, pero aquí arma primero un diccionario de "tokens" con
+  // nombres cortos (bg, surface, accent...) a partir de la paleta
+  // GradlyColors, y ESE diccionario es lo que después usa makeStyles más
+  // abajo — un nivel extra de indirección para mantener nombres de
+  // variable más cortos en los estilos.
   bg: colors.backgroundDark, // fondo principal (claro en light, oscuro en dark)
   surface: colors.backgroundCard, // paneles / tarjetas
   accent: colors.primary,
@@ -67,6 +125,10 @@ const makeC = (colors: GradlyColors) => ({
 });
 
 type Tokens = ReturnType<typeof makeC>;
+// "ReturnType<typeof makeC>" es un tipo CALCULADO: significa "el tipo que
+// devuelve la función makeC" — así, si algún día se agrega o quita un
+// token del diccionario de arriba, este tipo se actualiza solo, sin tener
+// que escribir una interfaz aparte a mano.
 
 const CAROUSEL_IMAGES = [
   "https://images.unsplash.com/photo-1503387762-592deb58ef4e?w=700&q=80",
@@ -76,11 +138,19 @@ const CAROUSEL_IMAGES = [
   "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=700&q=80",
   "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=700&q=80",
 ];
+// Imágenes decorativas del carrusel del panel izquierdo (solo visible en
+// escritorio/web ancho) — vienen de Unsplash, un banco de fotos gratuito,
+// no de Firebase Storage.
 
 // Claves de bullets del panel izquierdo (se traducen al renderizar).
 const BULLET_KEYS = ["login_bullet_1", "login_bullet_2", "login_bullet_3"];
 
 type Step = "credentials" | "magic-link" | "reset-request" | "otp";
+// Nota: "magic-link" aparece en el tipo pero, revisando todo el archivo,
+// nunca se le asigna realmente a `step` en ningún punto del código — el
+// flujo de magic link se maneja por COMPLETO fuera del sistema de pasos
+// (con sus propios estados `completingLink`/`showEmailPrompt`, ver más
+// abajo), así que este valor del tipo queda sin usarse en la práctica.
 
 // ══════════════════════════════════════════════════════════════════
 //  Helpers
@@ -89,6 +159,10 @@ const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(v.trim());
 
 /** Devuelve la CLAVE de traducción del error; tradúcela con t(...) en el punto de uso. */
 function mapFirebaseError(code: string): string {
+  // Igual concepto que mapActionError() de action.tsx, pero esta versión
+  // devuelve CLAVES de traducción ('fb_wrong_password') en vez de texto
+  // final directo — porque esta pantalla sí tiene el sistema t() completo
+  // disponible (a diferencia de action.tsx, que no usa traducción).
   if (code.includes("wrong-password") || code.includes("invalid-credential"))
     return "fb_wrong_password";
   if (code.includes("user-not-found")) return "fb_user_not_found";
@@ -105,6 +179,11 @@ function mapFirebaseError(code: string): string {
  * "functions/deadline-exceeded"), por eso usamos includes().
  */
 function mapOtpError(code: string): string {
+  // Los errores que devuelven las Cloud Functions de Firebase tienen sus
+  // PROPIOS códigos estándar (distintos a los de Firebase Auth), como
+  // "deadline-exceeded" (se agotó el tiempo) o "resource-exhausted"
+  // (demasiadas solicitudes seguidas) — este helper los traduce a claves
+  // de traducción legibles para el usuario.
   if (code.includes("deadline-exceeded")) return "otp_expirado";
   if (code.includes("permission-denied")) return "otp_incorrecto";
   if (code.includes("not-found")) return "otp_expirado";
@@ -132,6 +211,12 @@ export default function InicioSesion() {
   // paneles lado a lado dentro de una "tarjeta"; en móvil se apilan.
   const { width } = useWindowDimensions();
   const isDesktopWeb = Platform.OS === "web" && width >= 1100;
+  // Un segundo criterio de "responsive" además del breakpoint de 768 que
+  // vimos en mensajes/index.tsx — aquí, 1100px, y ADEMÁS solo aplica en
+  // web (Platform.OS === "web"): en un tablet nativo grande, por ejemplo,
+  // esta pantalla seguiría apilando los paneles, aunque tenga espacio de
+  // sobra, porque el diseño de 2 columnas está pensado específicamente
+  // para navegador de escritorio.
 
   const [step, setStep] = useState<Step>("credentials");
 
@@ -161,6 +246,12 @@ export default function InicioSesion() {
   const [resetSent, setResetSent] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetVerifying, setResetVerifying] = useState(false);
+  // GUÍA: nota que "otp" y "reset-request" tienen estados CASI
+  // IDÉNTICOS, duplicados con nombres distintos (otpEmail vs resetEmail,
+  // otpSent vs resetSent, etc.) — a propósito, en vez de compartir un
+  // solo grupo de estados: así, si el usuario cambia de "olvidé mi
+  // contraseña" a "acceso sin contraseña" (o viceversa) a mitad de
+  // camino, cada flujo mantiene su propio progreso sin pisarse.
 
   // ── Estado mientras se completa el enlace entrante ──
   const [completingLink, setCompletingLink] = useState(false);
@@ -175,11 +266,32 @@ export default function InicioSesion() {
   // consulta el motivo (vía Cloud Function, no requiere sesión) y muestra el
   // modal enriquecido en vez del error genérico. Devuelve true si lo mostró.
   const manejarPosibleBloqueo = useCallback(async (err: any, correo: string): Promise<boolean> => {
+    // GUÍA: esta función resuelve una sutileza real del sistema de
+    // baneos del proyecto. Hay 2 formas en que una cuenta puede estar
+    // bloqueada:
+    //   (a) Firebase Auth la tiene marcada como "disabled" — en ese caso,
+    //       el LOGIN EN SÍ falla con el código "auth/user-disabled" ANTES
+    //       de que exista ninguna sesión, así que no se puede usar
+    //       verificarBloqueoCuenta() (que necesita un uid de sesión ya
+    //       iniciada para leer Firestore).
+    //   (b) El login SÍ tiene éxito (Firebase Auth no la tiene
+    //       deshabilitada), pero el documento en Firestore dice que está
+    //       "baneado" o "inactivo" — ese caso lo cubre
+    //       verificarBloqueoCuenta(), llamado DESPUÉS de un login exitoso
+    //       en varios de los handlers de abajo.
+    // manejarPosibleBloqueo() cubre el caso (a): revisa si el error que
+    // acaba de ocurrir es justo "user-disabled", y si es así, consulta el
+    // MOTIVO vía una Cloud Function especial que no requiere sesión
+    // (consultarEstadoAcceso), para poder mostrar el mismo modal
+    // informativo en ambos casos (a) y (b).
     if (!String(err?.code ?? "").includes("user-disabled")) return false;
     const bloqueo = await consultarEstadoAcceso(correo);
     if (!bloqueo) return false;
     setBloqueoCuenta(bloqueo);
     return true;
+    // Devuelve true/false para que quien la llama sepa si YA se manejó
+    // el error (mostrando el modal) o si debe seguir con su propio manejo
+    // de error genérico (ver los catch{} de los distintos handlers).
   }, []);
 
   // ── Fallback: pedir correo si no está en AsyncStorage ──
@@ -220,6 +332,18 @@ export default function InicioSesion() {
 
         // Obtener el rol desde Firestore con reintentos (carrera token/replicación).
         const rol = await obtenerRolConReintento(result.user.uid);
+        // GUÍA DE "obtenerRolConReintento": ¿por qué haría falta
+        // REINTENTAR una simple lectura de Firestore? Porque justo
+        // después de crearse una cuenta nueva (o de un login recién
+        // completado), puede haber una PEQUEÑA ventana de tiempo donde el
+        // documento del usuario en Firestore todavía no está totalmente
+        // "propagado"/disponible para lectura, o donde el token de
+        // autenticación todavía no terminó de sincronizarse del todo con
+        // los permisos de Firestore — leer una sola vez, justo en ese
+        // instante, podría fallar o devolver vacío por pura mala suerte
+        // de timing (una "condición de carrera"). obtenerRolConReintento
+        // reintenta la lectura varias veces con pequeñas esperas entre
+        // intentos, dándole tiempo a que todo se sincronice.
         const ruta = rutaPorRol(rol);
 
         // Rol indeterminado → NO degradar a estudiante: avisamos al usuario.
@@ -231,6 +355,9 @@ export default function InicioSesion() {
         const bloqueo = await verificarBloqueoCuenta(result.user.uid);
         if (bloqueo) {
           await signOut(auth);
+          // Si la cuenta está bloqueada, se CIERRA la sesión que se
+          // acababa de abrir (no tiene sentido dejarla "medio adentro")
+          // y se muestra el modal de bloqueo en su lugar.
           setBloqueoCuenta(bloqueo);
           return;
         }
@@ -249,6 +376,13 @@ export default function InicioSesion() {
             /* no-op */
           }
         }, 500);
+        // GUÍA: este doble intento de navegación (inmediato + de
+        // respaldo medio segundo después) es una medida defensiva contra
+        // casos raros de navegadores/plataformas donde el primer
+        // router.replace() no toma efecto correctamente justo después de
+        // un cambio de estado de autenticación — más vale intentarlo dos
+        // veces que dejar al usuario "atascado" en la pantalla de login
+        // después de haber iniciado sesión con éxito.
       } catch (err: any) {
         if (await manejarPosibleBloqueo(err, correo)) return;
         Alert.alert(
@@ -268,11 +402,17 @@ export default function InicioSesion() {
   useEffect(() => {
     const handleUrl = async (url: string | null) => {
       if (!url || !isSignInWithEmailLink(auth, url)) return;
+      // Si la URL actual/entrante NO es un link válido de "magic link" de
+      // Firebase, no hace nada — deja que la pantalla se muestre
+      // normalmente.
 
       const stored = await AsyncStorage.getItem(CORREO_TEMPORAL_KEY);
       if (stored && stored.trim()) {
         await completeSignIn(stored.trim().toLowerCase(), url);
         return;
+        // Camino RÁPIDO: si el correo quedó guardado (el link se abrió en
+        // el MISMO dispositivo donde se pidió), completa el login
+        // automáticamente, sin pedirle nada al usuario.
       }
 
       // Fallback inmediato: correo nulo/vacío → modal para confirmarlo.
@@ -280,6 +420,9 @@ export default function InicioSesion() {
       setPromptEmail("");
       setPromptError("");
       setShowEmailPrompt(true);
+      // Camino de RESPALDO: guarda la URL pendiente y muestra el modal
+      // para que el usuario escriba su correo manualmente (mismo patrón
+      // ya visto en action.tsx).
     };
 
     // Web: el enlace llega como la URL de la página actual.
@@ -289,14 +432,28 @@ export default function InicioSesion() {
       window.location?.href
     ) {
       handleUrl(window.location.href);
+      // En web, el link de Firebase literalmente ES la URL que el
+      // usuario abrió (el navegador cargó esta misma pantalla porque el
+      // link apuntaba aquí) — así que se revisa la URL actual del
+      // navegador.
     }
 
     // Cold start nativo: app abierta directamente desde el enlace.
     Linking.getInitialURL().then(handleUrl);
+    // "Cold start" (arranque en frío): el usuario tocó el link estando la
+    // app COMPLETAMENTE CERRADA — el sistema operativo abre la app de
+    // cero, y Linking.getInitialURL() permite preguntar "¿con qué URL me
+    // abrieron?".
 
     // Warm start: app ya abierta cuando llega el enlace.
     const sub = Linking.addEventListener("url", (event) => handleUrl(event.url));
+    // "Warm start" (arranque en caliente): la app YA estaba abierta (en
+    // segundo plano, por ejemplo) cuando el usuario tocó el link —
+    // Linking.addEventListener("url", ...) se suscribe a ese evento en
+    // vivo, para los casos donde la app no necesitó reiniciarse.
     return () => sub.remove();
+    // Cancela la suscripción al desmontar (mismo patrón de "limpieza" ya
+    // visto en useEffect + onSnapshot).
   }, [completeSignIn]);
 
   // Confirmar correo desde el modal de fallback.
@@ -335,6 +492,10 @@ export default function InicioSesion() {
       ok = false;
     }
     if (!ok) return;
+    // Patrón de validación "acumulativa": en vez de detenerse en el
+    // PRIMER campo inválido, revisa TODOS los campos y marca el error de
+    // cada uno que falle, para que el usuario vea de una vez todo lo que
+    // debe corregir, en vez de un error a la vez tras cada intento.
 
     setLoading(true);
     try {
@@ -369,6 +530,11 @@ export default function InicioSesion() {
       setLoading(false);
     }
   };
+  // Este handler define el "esqueleto" que se repite (con variaciones)
+  // en los otros 2 flujos: autenticar → leer rol con reintento → resolver
+  // ruta → verificar bloqueo → navegar. Vale la pena reconocerlo, porque
+  // se repite CASI IDÉNTICO en handleVerificarReset y handleVerificarOtp
+  // más abajo.
 
   // ══════════════════════════════════════════════════════════════
   //  Recuperar contraseña por código OTP + nueva contraseña
@@ -407,6 +573,8 @@ export default function InicioSesion() {
     if (codigo.length !== 8 || !/^\d{8}$/.test(codigo)) {
       setResetError(t('otp_8_digitos'));
       return;
+      // /^\d{8}$/ es una expresión regular: "el texto completo debe ser
+      // EXACTAMENTE 8 dígitos, nada más" (^ inicio, \d{8} 8 dígitos, $ fin).
     }
     if (resetPassword.length < 6) {
       setResetError(t('reset_password_corta'));
@@ -417,6 +585,12 @@ export default function InicioSesion() {
     try {
       // Verifica el código, cambia la contraseña e inicia la sesión real.
       const uid = await verificarOtpYEntrar(resetEmail, codigo, resetPassword);
+      // Aquí se le pasa la NUEVA contraseña como tercer argumento (a
+      // diferencia de handleVerificarOtp más abajo, que no la pasa) — la
+      // Cloud Function detrás de esta llamada, al recibirla, ACTUALIZA la
+      // contraseña de la cuenta usando el Admin SDK (con permisos totales
+      // en el servidor) Y de paso deja la sesión iniciada, todo en una
+      // sola llamada.
 
       // Mismo flujo de rol/ruta que handleLogin.
       const rol = await obtenerRolConReintento(uid);
@@ -484,6 +658,8 @@ export default function InicioSesion() {
     try {
       // Inicia la sesión real de Firebase Auth con el custom token.
       const uid = await verificarOtpYEntrar(otpEmail, codigo);
+      // Sin tercer argumento (no hay contraseña nueva que actualizar) —
+      // este es el acceso SIN contraseña, no una recuperación.
 
       // A partir de aquí, idéntico a handleLogin: rol (con reintentos) → ruta.
       const rol = await obtenerRolConReintento(uid);
@@ -517,6 +693,8 @@ export default function InicioSesion() {
     setResetCodigo("");
     setResetPassword("");
     setResetEmail(email.trim());
+    // Precarga el correo que el usuario ya había escrito en el paso de
+    // login (si lo había escrito), para no hacerlo escribirlo de nuevo.
   };
   const switchToOtp = () => {
     setStep("otp");
@@ -531,11 +709,18 @@ export default function InicioSesion() {
     setResetError("");
     setOtpError("");
   };
+  // 3 funciones cortas para cambiar de "paso", cada una reiniciando el
+  // estado del flujo AL QUE SE ENTRA (para que no queden restos de un
+  // intento anterior) — no del que se abandona (esos estados simplemente
+  // quedan "congelados" hasta que se vuelva a entrar a ese paso).
 
   // ══════════════════════════════════════════════════════════════
   //  Pantalla de "completando enlace"
   // ══════════════════════════════════════════════════════════════
   if (completingLink) {
+    // Mientras se procesa un magic link (justo después de que
+    // handleUrl/completeSignIn arrancan), TODA la pantalla se reemplaza
+    // por un simple loader — el formulario normal ni se dibuja.
     return (
       <View style={[styles.root, styles.centered]}>
         <StatusBar style={isDark ? "light" : "dark"} />
@@ -574,6 +759,11 @@ export default function InicioSesion() {
           >
           {/* ══ PANEL IZQUIERDO — marca + bullets + carrusel ══ */}
           <View style={[styles.leftPanel, isDesktopWeb && styles.leftPanelDesktop]}>
+            {/* Este panel completo (logo, eslogan, 3 bullets con check,
+                carrusel de fotos) es puramente DECORATIVO/informativo —
+                en móvil se apila ARRIBA del formulario; en escritorio
+                ancho queda como columna IZQUIERDA fija, gracias a
+                isDesktopWeb. */}
             <View style={styles.brand}>
               <Image
                 source={require("../../assets/images/LogoGradly.png")}
@@ -604,11 +794,20 @@ export default function InicioSesion() {
               />
               <View style={styles.carouselDotsWrap}>
                 {CAROUSEL_IMAGES.map((_, i) => (
+                  // "(_, i)" — el primer parámetro del .map() (el valor de
+                  // cada imagen) se ignora a propósito (nombrado "_" por
+                  // convención, "no me interesa este valor"), solo
+                  // interesa el índice `i` para dibujar los puntos.
                   <TouchableOpacity
                     key={i}
                     onPress={() => {
                       setCarouselIndex(i);
                       startCarousel();
+                      // Al tocar un punto manualmente, además de saltar a
+                      // esa imagen, se REINICIA el temporizador automático
+                      // (startCarousel), para que no cambie de nuevo
+                      // "demasiado pronto" justo después de la elección
+                      // manual del usuario.
                     }}
                     style={[
                       styles.carouselDot,
@@ -710,6 +909,12 @@ export default function InicioSesion() {
                     styles.btnPrimary,
                     (loading || pressed) && { opacity: 0.6 },
                   ]}
+                  // Nota: aquí `style` recibe una FUNCIÓN, no un array
+                  // directo — Pressable soporta esta forma para poder
+                  // acceder al estado `pressed` (¿está el dedo/mouse
+                  // presionando AHORA MISMO?) y ajustar el estilo en
+                  // consecuencia, algo que TouchableOpacity no ofrece
+                  // directamente.
                   onPress={handleLogin}
                   disabled={loading}
                   accessibilityRole="button"
@@ -758,6 +963,11 @@ export default function InicioSesion() {
             {/* ═════ Acceso sin contraseña (código OTP de 8 dígitos) ═════ */}
             {step === "otp" && (
               <View>
+                {/* Este bloque tiene 2 sub-estados propios, controlados por
+                    `otpSent`: ANTES de enviar el código (solo pide el
+                    correo) y DESPUÉS de enviarlo (pide el código de 8
+                    dígitos). Mismo patrón de "2 sub-pasos" se repite en el
+                    bloque "reset-request" más abajo, con `resetSent`. */}
                 <View style={styles.magicIconWrap}>
                   <Ionicons
                     name={otpSent ? "keypad" : "keypad-outline"}
@@ -818,6 +1028,10 @@ export default function InicioSesion() {
                         {otpEmail.trim().toLowerCase()}
                       </Text>
                       {t('otp_enviado_post')}
+                      {/* Frase partida en 3 pedazos (pre + correo + post)
+                          para poder insertar el correo del usuario
+                          RESALTADO (color distinto, negrita) justo en
+                          medio de la oración traducida. */}
                     </Text>
 
                     <View style={styles.floatGroup}>
@@ -827,6 +1041,11 @@ export default function InicioSesion() {
                         value={otpCodigo}
                         onChangeText={(v) => {
                           setOtpCodigo(v.replace(/[^\d]/g, "").slice(0, 8));
+                          // Filtra CUALQUIER carácter que no sea dígito
+                          // (\D o [^\d], "no dígito") apenas se escribe,
+                          // y corta a 8 caracteres máximo — así el campo
+                          // nunca permite escribir letras ni más de 8
+                          // números, sin necesitar validarlo después.
                           setOtpError("");
                         }}
                         placeholder="••••••••"
@@ -875,6 +1094,10 @@ export default function InicioSesion() {
 
             {/* ═════ Recuperar contraseña (código OTP + nueva contraseña) ═════ */}
             {step === "reset-request" && (
+              // Mismo patrón de 2 sub-pasos que "otp" (controlado ahora
+              // por `resetSent`), con la diferencia de que el segundo
+              // sub-paso pide TAMBIÉN una contraseña nueva, no solo el
+              // código.
               <View>
                 <View style={styles.magicIconWrap}>
                   <Ionicons
@@ -1103,6 +1326,9 @@ export default function InicioSesion() {
               {bloqueoCuenta?.tipo === "baneado"
                 ? t('login_bloqueo_titulo_baneado')
                 : t('login_bloqueo_titulo_inactivo')}
+              {/* El texto del modal cambia según el TIPO de bloqueo: un
+                  baneo (decisión de un administrador) es un mensaje
+                  distinto a una cuenta simplemente "inactiva". */}
             </Text>
             <Text style={styles.formSub}>
               {bloqueoCuenta?.tipo === "baneado"
@@ -1124,6 +1350,9 @@ export default function InicioSesion() {
                 // con try/catch) — sin este .catch() queda como rejection sin
                 // manejar. En web el navegador siempre sabe qué hacer con mailto:.
                 Linking.openURL(`mailto:${t('help_screen_email_value')}`).catch(() => {});
+                // "mailto:correo@ejemplo.com" es un esquema de URL
+                // especial que abre la app de correo predeterminada del
+                // dispositivo, con ese destinatario ya puesto.
               }}
               accessibilityRole="link"
             >
@@ -1219,6 +1448,9 @@ const makeStyles = (C: Tokens) =>
       alignItems: "center",
       justifyContent: "center",
       flexShrink: 0,
+      // flexShrink: 0 evita que este círculo se "achique" si el texto de
+      // al lado es muy largo y el espacio se pone justo — mantiene su
+      // tamaño fijo siempre.
     },
     bulletCheckText: { fontSize: 12, color: C.accent70, fontWeight: "700" },
     bulletText: { fontSize: 15, color: C.textSub, flex: 1 },
@@ -1233,6 +1465,9 @@ const makeStyles = (C: Tokens) =>
       width: "100%",
     },
     carouselImg: { width: "100%", aspectRatio: 4 / 3 },
+    // aspectRatio: 4/3 mantiene la proporción de la imagen (ancho:alto =
+    // 4:3) sin importar el ancho real disponible — la altura se calcula
+    // automáticamente a partir del ancho.
     carouselDotsWrap: {
       position: "absolute",
       bottom: 0,
@@ -1254,6 +1489,7 @@ const makeStyles = (C: Tokens) =>
     carouselDotActive: {
       backgroundColor: C.accent70,
       transform: [{ scale: 1.3 }],
+      // El punto activo se ve un 30% más grande que los demás.
     },
 
     // Panel derecho
@@ -1385,6 +1621,8 @@ const makeStyles = (C: Tokens) =>
     // Enlace para alternar entre métodos sin contraseña
     altMethodLink: { alignItems: "center", paddingVertical: 12, marginTop: 4 },
     altMethodText: { fontSize: 13, color: C.accent70, fontWeight: "600" },
+    // (No usados directamente en el JSX actual — quedaron de una versión
+    // anterior del diseño; no rompen nada estando definidos sin aplicar.)
 
     // Input del código OTP (centrado, grande, espaciado)
     otpInput: {
@@ -1392,6 +1630,9 @@ const makeStyles = (C: Tokens) =>
       fontSize: 24,
       fontWeight: "700",
       letterSpacing: 12,
+      // letterSpacing muy grande (12) separa cada dígito visualmente,
+      // como en apps bancarias reales, para que un código de 8 dígitos
+      // se lea más fácil de un vistazo.
     },
 
     // Link de registro

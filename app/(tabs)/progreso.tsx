@@ -1,3 +1,19 @@
+// ════════════════════════════════════════════════════════════════════════
+// app/(tabs)/progreso.tsx — pestaña "Progreso" del estudiante
+//
+// GUÍA PARA PRINCIPIANTES:
+// Esta es la pantalla donde el estudiante ve el avance de su práctica:
+// un círculo de porcentaje de horas, un "termómetro" de estadísticas, el
+// tablero de cupos que su universidad le aseguró, la tarjeta de su
+// pasantía actual (si tiene una vía grupo), un calendario, la pasantía
+// "activa" (si aplicó individualmente a una vacante), y su historial de
+// pasantías completadas. Es la pantalla más rica en LECTURAS EN VIVO
+// (onSnapshot) de todo el proyecto: tiene 4 escuchas simultáneas a
+// distintas colecciones de Firestore, todas relacionadas con el mismo
+// estudiante. También tiene un ejemplo interesante de dibujo geométrico
+// puro (el círculo de progreso, sin usar ninguna librería de gráficos).
+// ════════════════════════════════════════════════════════════════════════
+
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
@@ -18,11 +34,18 @@ import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
 import { estudianteFinalizaProyecto } from '../../src/services/pasantiaService';
 import { progresoPorFechas } from '../../src/utils/progresoPasantia';
+// Función utilitaria: dado un rango de fechas (inicio/fin de una
+// pasantía), calcula en qué punto del tiempo estamos AHORA — devuelve
+// cosas como el estado ('por_iniciar' | 'en_curso' | 'completado'), el
+// porcentaje transcurrido, días transcurridos/totales/restantes. Se usa
+// para dibujar la "línea de tiempo" de la tarjeta "Mi pasantía".
 import CalendarioEventos from '../../src/components/CalendarioEventos';
 import TableroCupos from '../../src/components/TableroCupos';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
+// JellyButton: otro componente decorativo del "sistema de diseño" Liquid
+// Glass del proyecto — un botón con una animación elástica al presionarlo.
 
 // Hook que recrea los estilos según el tema activo (claro/oscuro)
 function useThemedStyles() {
@@ -43,6 +66,9 @@ interface EstudiantePerfil {
 }
 
 interface Aplicacion {
+  // La forma de un documento de la colección "aplicaciones" (aplicación
+  // INDIVIDUAL a una vacante, no de grupo) — mismo concepto ya visto en
+  // pasantiaService.ts.
   id: string;
   vacante_id: string;
   empresa_id: string;
@@ -77,11 +103,21 @@ interface AcuerdoEstudiante {
 // NIVEL GAMIFICADO
 // ─────────────────────────────────────────────
 function getLevel(pct: number) {
+  // Versión LOCAL (redefinida en este archivo) del mismo cálculo de
+  // nivel gamificado que ya vimos como calcularNivelEstudiante() en
+  // pasantiaService.ts — aquí se repite con un formato de retorno
+  // distinto (usa directamente `COLORS` fijo en vez de recibir la paleta
+  // como parámetro), pero la idea de negocio es la misma: 5 escalones
+  // según el % de horas.
   if (pct >= 100) return { name: 'Graduado',    icon: 'trophy'    as const, color: COLORS.gold };
   if (pct >= 76)  return { name: 'Experto',     icon: 'star'      as const, color: COLORS.warning };
   if (pct >= 51)  return { name: 'Profesional', icon: 'briefcase' as const, color: COLORS.success };
   if (pct >= 26)  return { name: 'Practicante', icon: 'bag'       as const, color: COLORS.primaryLight };
   return           { name: 'Explorador',  icon: 'compass'   as const, color: COLORS.accent };
+  // "as const" después de cada nombre de ícono: fija el TIPO exacto de
+  // ese texto (por ejemplo, literalmente 'trophy'), necesario porque el
+  // prop `name` de <Ionicons> espera uno de una lista cerrada de nombres
+  // válidos, no cualquier `string` genérico.
 }
 
 // ─────────────────────────────────────────────
@@ -94,22 +130,50 @@ const RING_HALF = RING_SIZE / 2;
 const RING_THICKNESS = 14;
 
 function CircleProgress({ pct, aprobadas, objetivo }: { pct: number; aprobadas: number; objetivo: number }) {
+  // GUÍA DEL TRUCO GEOMÉTRICO: React Native "puro" (sin una librería de
+  // dibujo vectorial como react-native-svg) no tiene una forma directa de
+  // dibujar "un arco que cubre el X% de un círculo". La técnica usada
+  // aquí es un truco clásico de CSS/React Native:
+  //   1. Se dibuja un círculo COMPLETO gris de fondo (el "track" o riel).
+  //   2. Se dibujan DOS mitades de círculo (semianillos) por separado —
+  //      cada una es en realidad un círculo completo con SOLO 2 de sus 4
+  //      lados de borde coloreados (los otros 2 transparentes), recortado
+  //      (overflow: 'hidden') para que solo se vea su mitad
+  //      correspondiente (derecha o izquierda).
+  //   3. Cada semianillo se ROTA (transform: rotate) una cantidad de
+  //      grados proporcional al progreso, revelando gradualmente más o
+  //      menos "arco" coloreado.
+  // Es más difícil de seguir que usar una librería de gráficos, pero
+  // evita agregar una dependencia extra solo para este único círculo.
   const { styles } = useThemedStyles();
   const clamped  = Math.min(pct, 100);
+  // "clamped" (acotado): nunca deja pasar de 100, por seguridad, aunque
+  // `pct` ya debería venir acotado desde quien llama a este componente.
   const nivel    = getLevel(pct);
   const arcColor = pct >= 100 ? COLORS.gold : COLORS.primary;
+  // El color del arco cambia a dorado si ya se alcanzó el 100%.
 
   // Semianillo derecho: cubre 0–50 % (0°–180°)
   // rotate -90 = 0 % visible, rotate +90 = 50 % visible
   const rotDer = clamped <= 50
     ? (clamped / 50) * 180 - 90
     : 90;
+  // Si el progreso es 50% o menos, el semianillo DERECHO hace todo el
+  // trabajo: se rota proporcionalmente entre -90° (nada visible) y +90°
+  // (la mitad derecha completa visible). Si el progreso ya pasa de 50%,
+  // el semianillo derecho queda fijo en +90° (completamente lleno) y el
+  // trabajo restante lo hace el semianillo izquierdo (ver abajo).
 
   // Semianillo izquierdo: cubre 50–100 % (180°–360°)
   // rotate -90 = 0 extra, rotate +90 = otro 50 % visible
   const rotIzq = clamped > 50
     ? ((clamped - 50) / 50) * 180 - 90
     : -90;
+  // Simétrico al anterior: si el progreso supera 50%, el semianillo
+  // IZQUIERDO empieza a revelarse proporcionalmente al EXCEDENTE sobre
+  // 50% (por ejemplo, con 75% de progreso, esta mitad muestra la mitad
+  // de SU propio arco). Si el progreso es 50% o menos, este semianillo
+  // se mantiene en -90° (totalmente oculto).
 
   return (
     <View style={styles.svgWrap}>
@@ -120,20 +184,36 @@ function CircleProgress({ pct, aprobadas, objetivo }: { pct: number; aprobadas: 
           borderRadius: RING_HALF, borderWidth: RING_THICKNESS,
           borderColor: COLORS.border,
         }} />
+        {/* Un círculo completo (borderRadius = mitad del tamaño = círculo
+            perfecto) con TODO su borde del mismo color apagado — sirve de
+            "riel" de fondo, visible en la parte que el progreso todavía
+            no cubre. */}
 
         {/* Semianillo derecho (derecho = x ≥ HALF) */}
         <View style={{
           position: 'absolute', top: 0, right: 0,
           width: RING_HALF, height: RING_SIZE, overflow: 'hidden',
+          // Esta "ventana" recortada (overflow: hidden) ocupa solo la
+          // MITAD DERECHA del cuadrado total — cualquier cosa que se
+          // dibuje adentro y se salga de esta ventana queda invisible.
         }}>
           <View style={{
             position: 'absolute', top: 0, left: -RING_HALF,
+            // "left: -RING_HALF" desplaza este círculo COMPLETO hacia la
+            // izquierda, de forma que su mitad derecha caiga justo dentro
+            // de la ventana recortada de arriba.
             width: RING_SIZE, height: RING_SIZE, borderRadius: RING_HALF,
             borderWidth: RING_THICKNESS,
             borderTopColor: arcColor, borderRightColor: arcColor,
             borderBottomColor: 'transparent', borderLeftColor: 'transparent',
+            // Solo los bordes SUPERIOR y DERECHO tienen color — los otros
+            // 2 son transparentes. Combinado con la rotación, esto
+            // produce el efecto de "arco creciente" en el cuadrante
+            // derecho.
             transform: [{ rotate: `${rotDer}deg` }],
             opacity: clamped > 0 ? 1 : 0,
+            // Con 0% de progreso, se oculta del todo (opacity 0) — evita
+            // mostrar un puntito de color con progreso exactamente en 0.
           }} />
         </View>
 
@@ -177,6 +257,13 @@ function PasantiaActivaCard({ app, onFinalizar }: { app: Aplicacion; onFinalizar
   const inicio = app.fecha_inicio?.toDate?.() ?? new Date();
   const ahora  = new Date();
   const diasTranscurridos = Math.floor((ahora.getTime() - inicio.getTime()) / 86_400_000);
+  // Diferencia entre 2 fechas en MILISEGUNDOS, dividida entre
+  // 86,400,000 (la cantidad de milisegundos que tiene UN día completo:
+  // 24h × 60min × 60s × 1000ms) → da la cantidad de DÍAS completos
+  // transcurridos. Math.floor() redondea hacia abajo (no cuenta un día
+  // parcial como completo). El guion bajo en "86_400_000" es solo un
+  // separador visual de miles que JavaScript permite en números
+  // literales, para que sea más fácil de leer a simple vista.
   const totalDias = 120; // estimado
   const pctDias = Math.min(100, Math.round((diasTranscurridos / totalDias) * 100));
 
@@ -204,6 +291,12 @@ function PasantiaActivaCard({ app, onFinalizar }: { app: Aplicacion; onFinalizar
       </View>
       <View style={styles.barTrack}>
         <View style={[styles.barFill, { width: `${pctDias}%` as any }]} />
+        {/* La barra de progreso simple SÍ usa el truco más sencillo:
+            un <View> cuyo ancho es un porcentaje de texto ("75%"), dentro
+            de un contenedor con overflow oculto — no necesita el truco
+            geométrico complejo del círculo de arriba, porque una barra
+            RECTA sí se puede expresar directo con `width` como
+            porcentaje. */}
       </View>
 
       <Text style={styles.horasText}>Horas completadas: {app.horas_completadas ?? 0}</Text>
@@ -236,6 +329,12 @@ function MiPasantiaCard({ acuerdo, estadoServidor }: { acuerdo: AcuerdoEstudiant
         : estadoServidor === 'finalizado' || estadoServidor === 'finalizada'
           ? { label: 'Finalizada', color: COLORS.success }
           : null;
+  // Una cadena de ternarios anidados que actúa como un "switch" compacto:
+  // revisa el estado que llegó del servidor (leído de
+  // solicitudes_practicas más abajo en el componente padre) y, si
+  // coincide con alguno de los 3 casos "terminales" del ciclo de vida,
+  // arma un override con su propia etiqueta y color — que tiene PRIORIDAD
+  // sobre lo que digan las fechas.
 
   const estadoLabel =
     estadoOverride?.label ??
@@ -244,6 +343,9 @@ function MiPasantiaCard({ acuerdo, estadoServidor }: { acuerdo: AcuerdoEstudiant
       : prog.estado === 'completado'
         ? 'Completada'
         : 'En curso');
+  // Si hay un override (la pasantía ya terminó o se certificó), se usa su
+  // etiqueta; si no (todavía está en curso según el ciclo de vida), se
+  // calcula la etiqueta a partir de `prog.estado` (calculado por fechas).
   const estadoColor =
     estadoOverride?.color ??
     (prog.estado === 'completado'
@@ -324,6 +426,10 @@ export default function ProgresoTab() {
   const [acuerdo,       setAcuerdo]       = useState<AcuerdoEstudiante | null>(null);
   const [pasantiaEstado, setPasantiaEstado] = useState<string | null>(null);
   const [cargando,      setCargando]      = useState(true);
+  // 5 estados distintos, cada uno alimentado por su PROPIO useEffect con
+  // onSnapshot (ver los 4 bloques "Firestore:" más abajo) — esta pantalla
+  // combina datos de 4 colecciones diferentes de Firestore, todas
+  // relacionadas con el mismo estudiante, para armar una vista unificada.
 
   const horasObjetivo   = perfil?.horas_objetivo   ?? 500;
   const horasAprobadas  = perfil?.horas_aprobadas  ?? 0;
@@ -331,12 +437,21 @@ export default function ProgresoTab() {
   const pct = Math.min(100, Math.round((horasAprobadas / horasObjetivo) * 100));
 
   const activa    = apps.find(a => a.estado === 'contratado');
+  // .find() devuelve el PRIMER elemento que cumple la condición (o
+  // undefined si ninguno la cumple) — a diferencia de .filter(), que
+  // devolvería TODOS los que coincidan. Se asume que un estudiante solo
+  // puede tener una aplicación "contratado" a la vez.
   const historial = apps.filter(a => a.estado === 'finalizado' || a.estado === 'aprobado');
 
   // ── Firestore: perfil ────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     const unsub = onSnapshot(doc(db, 'perfiles_estudiantes', user.uid), snap => {
+      // READ en vivo de UN SOLO documento (no una colección/query): así,
+      // si algún proceso en segundo plano actualiza las horas aprobadas
+      // del estudiante (por ejemplo, la universidad aprueba horas), esta
+      // pantalla se actualiza SOLA, sin que el estudiante tenga que
+      // recargar nada.
       if (snap.exists()) setPerfil(snap.data() as EstudiantePerfil);
       setCargando(false);
     });
@@ -375,11 +490,23 @@ export default function ProgresoTab() {
               (a.tipo === 'acuerdo_aprobado' || a.tipo === 'horario_modificado') &&
               a.fechaInicio,
           )
+          // Se queda solo con notificaciones de tipo "acuerdo" (no todas
+          // las que llegan a esta colección son sobre pasantías) y que
+          // tengan una fecha de inicio (evita notificaciones incompletas).
           .sort(
             (a, b) =>
               (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0),
           );
+          // Ordena de más reciente a más antigua, comparando la fecha
+          // convertida a milisegundos (.toMillis() es otro método de los
+          // Timestamp de Firestore, similar a .toDate() pero da un
+          // número en vez de un objeto Date — más cómodo para restar
+          // directamente en el sort).
         setAcuerdo(acuerdos[0] ?? null);
+        // Toma solo el PRIMERO (el más reciente) de la lista ya ordenada
+        // — así, si hubo una "horario_modificado" más nueva que la
+        // "acuerdo_aprobado" original, la modificación gana y se muestra
+        // esa (con el horario ya actualizado).
       },
       () => setAcuerdo(null),
     );
@@ -418,6 +545,8 @@ export default function ProgresoTab() {
   }, [user]);
 
   const handleFinalizar = async (appId: string) => {
+    // Se ejecuta al tocar "Notificar finalización" en la tarjeta de
+    // pasantía activa.
     const app = apps.find(a => a.id === appId);
     Alert.alert(
       'Confirmar finalización',
@@ -442,6 +571,18 @@ export default function ProgresoTab() {
         },
       ],
     );
+    // NOTA IMPORTANTE para quien programe en este proyecto: Alert.alert
+    // con VARIOS BOTONES (como este, con "Cancelar" y "Sí, finalicé")
+    // depende de que el sistema operativo dibuje una ventana nativa de
+    // confirmación. En react-native-web (la versión que corre en
+    // navegador), Alert.alert con botones es un "no-op": no aparece
+    // NADA, y por lo tanto los botones nunca se pueden tocar — este es un
+    // patrón de bug ya documentado en varias partes del proyecto (ver
+    // memoria "Gotcha Alert.alert en web"), donde la solución encontrada
+    // fue reemplazar Alert.alert con botones por un <Modal> de
+    // confirmación propio. Si esta pantalla se probara en la versión web,
+    // "Notificar finalización" no mostraría ningún diálogo de
+    // confirmación.
   };
 
   if (cargando) {
@@ -548,6 +689,9 @@ export default function ProgresoTab() {
               {app.calificacion_empresa > 0 && (
                 <View style={styles.starsRow}>
                   {[1, 2, 3, 4, 5].map(s => (
+                    // Dibuja 5 estrellas, cada una rellena o vacía según
+                    // si su número (1 a 5) es menor o igual a la
+                    // calificación real.
                     <Ionicons
                       key={s}
                       name={s <= app.calificacion_empresa ? 'star' : 'star-outline'}
@@ -568,6 +712,9 @@ export default function ProgresoTab() {
 }
 
 function StatItem({ label, value, color }: { label: string; value: number; color: string }) {
+  // Componente pequeño reutilizado 4 veces en el "termómetro" de arriba
+  // (Aprobadas/En proceso/Restantes/Objetivo) — un número grande + una
+  // etiqueta debajo.
   const { styles } = useThemedStyles();
   return (
     <View style={styles.statItem}>
@@ -591,6 +738,9 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 
   // Card termómetro
   card: {
+    // No usado directamente en el JSX (GlassCard maneja su propio fondo);
+    // queda como estilo de respaldo sin aplicar, igual que casos vistos
+    // en academia.tsx.
     backgroundColor: COLORS.backgroundCard,
     borderRadius: 20, padding: 20,
     borderWidth: 1, borderColor: COLORS.border,
@@ -650,6 +800,8 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 
   // Pasantía activa
   activaCard: {
+    // Tampoco usado directamente (PasantiaActivaCard usa GlassCard en su
+    // lugar).
     backgroundColor: COLORS.backgroundCard,
     borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: COLORS.border,
@@ -684,6 +836,8 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 
   // Historial
   historialCard: {
+    // No usado directamente (el .map() de historial usa GlassCard en su
+    // lugar).
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: COLORS.backgroundCard,
     borderRadius: 12, padding: 14,

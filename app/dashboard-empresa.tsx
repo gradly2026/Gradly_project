@@ -1,9 +1,27 @@
+// ═════════════════════════════════════════════════════════════════
+// DASHBOARD EMPRESA — panel principal del rol "empresa".
+//
+// Mismo esqueleto que app/dashboard-universidad.tsx (léelo primero si no lo
+// has visto: menú lateral/flotante + `seccion` activa + listeners onSnapshot
+// + PerfilMasterDetail para "Mi Perfil"). Aquí solo se explica a fondo lo que
+// es ÚNICO de la empresa: el formulario "Nueva Vacante" (con su fork
+// Pasantía/Vacante y todos sus validadores), el tablero Kanban de
+// reclutamiento, los planes de suscripción (Básico/Premium) y su flujo de
+// pago simulado, y el mapa de ubicación de la plaza. Los bloques de JSX/
+// modales que ya viste en otros archivos (perfil.tsx, app/(tabs)/index.tsx,
+// iniciosesion.tsx, dashboard-universidad.tsx) solo llevan una nota corta.
+// ═════════════════════════════════════════════════════════════════
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+// CRUD de Firestore usados en este archivo: addDoc (crear), doc+updateDoc
+// (actualizar), deleteField (borrar un campo específico al editar), getDocs
+// (lectura puntual, no en vivo), onSnapshot (lectura en vivo), query+where
+// (filtrar), documentId() (leer varios documentos por su id con `in`),
+// serverTimestamp() (fecha que pone el propio servidor de Firebase).
 import {
   addDoc,
   collection,
@@ -19,6 +37,9 @@ import {
 } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+// Funciones de negocio ya centralizadas en pasantiaService.ts (ver ese
+// archivo para el detalle de cada transacción): mover el estado de una
+// aplicación, firmar la constancia de horas, y eliminar una vacante.
 import {
   cambiarEstadoAplicacion,
   empresaFirmaConstancia,
@@ -28,6 +49,9 @@ import { abrirChatDirectoEmpresaEstudiante } from '../src/services/chatService';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import FloatingTopBar from '../src/components/FloatingTopBar';
+// Truco de renombrado ya visto en otros dashboards: se usa <Text>/<TextInput>
+// normales en todo el JSX, pero en realidad son AutoText/AutoTextInput (se
+// traducen solos). `useAutoText` traduce un string suelto fuera del JSX.
 import { AutoText, AutoText as Text, AutoTextInput as TextInput, useAutoText } from '../src/components/AutoText';
 import StorageAvatar from '../src/components/StorageAvatar';
 import {
@@ -51,6 +75,8 @@ import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import EmpresaHomeCards from '../src/components/EmpresaHomeCards';
 import HistorialPasantes from '../src/components/HistorialPasantes';
+// PerfilMasterDetail: mismo componente config-driven (array de `sections`)
+// que arma "Mi Perfil" en app/(tabs)/perfil.tsx y en dashboard-universidad.tsx.
 import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import RangoCard from '../src/components/RangoCard';
 import ResenasFeedback from '../src/components/ResenasFeedback';
@@ -80,6 +106,8 @@ import MapViewer from '../src/components/MapViewer';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../components/ui/liquid-glass/JellyButton';
+// Mismas reglas de validación/máscara de tarjeta que usa el registro
+// (utils/cardValidation.ts): Luhn, vencimiento MM/AA, CVV, titular.
 import {
   maskExp,
   maskTarjeta,
@@ -89,7 +117,11 @@ import {
   valTitular,
 } from '../utils/cardValidation';
 
-// Información de planes para la vista "Mi Perfil" (solo presentación).
+// Catálogo de planes SOLO para mostrar texto (nombre/precio/beneficios) en
+// "Mi Perfil" y en el modal de detalle del plan. Los valores REALES que se
+// aplican al comprar (con precio según mensual/anual) están en
+// obtenerPlanesVisibles() dentro del componente, y los que se guardan en la
+// BD al activar un plan están en confirmarMejoraPlan().
 const PLAN_DISPLAY: Record<'gratuito' | 'mensual' | 'premium', { nombre: string; precio: string; beneficios: string[] }> = {
   gratuito: {
     nombre: 'Gratuito',
@@ -116,7 +148,11 @@ const PRECIOS_PLAN: Record<'mensual' | 'premium', Record<'mensual' | 'anual', nu
   premium: { mensual: 24.99, anual: 149.99 },
 };
 
-// Hook que recrea los estilos según el tema activo (claro/oscuro)
+// Mismo patrón `useThemedStyles` visto en perfil.tsx/dashboard-universidad.tsx:
+// useMemo() para no reconstruir los objetos de estilos en cada render, solo
+// cuando cambia el tema (colors). Aquí hay DOS hojas de estilos separadas:
+// `styles` (makeStyles, para el layout general/modales) y `s` (makeS, para
+// las secciones internas Inicio/Vacantes/Kanban/Activas).
 function useThemedStyles() {
   const { colors } = useTheme();
   return useMemo(
@@ -131,8 +167,11 @@ const IS_WIDE = SCREEN_W >= 768;
 // ─────────────────────────────────────────────
 // TIPOS
 // ─────────────────────────────────────────────
+// Las 7 pestañas del menú (5 visibles en MENU + 'perfil'/'mensajes' que se
+// añaden siempre al final — ver navItems más abajo).
 type SeccionEmpresa = 'inicio' | 'vacantes' | 'kanban' | 'activas' | 'historial' | 'perfil' | 'mensajes';
 
+/** Forma de un documento de la colección `vacantes` en Firestore. */
 interface Vacante {
   id: string;
   titulo: string;
@@ -171,6 +210,7 @@ interface Vacante {
   motivo_moderacion?: string | null;
 }
 
+/** Forma de un documento de la colección `aplicaciones` (postulación individual a una `vacante`). */
 interface Aplicacion {
   id: string;
   estudiante_id: string;
@@ -209,6 +249,7 @@ interface SolicitudGrupo {
   acuerdo?: AcuerdoData;
 }
 
+/** Forma de un documento de la colección `perfiles_empresas` (uid del dueño = id del documento). */
 interface PerfilEmpresa {
   nombre_empresa: string;
   industria: string;
@@ -229,6 +270,7 @@ interface PerfilEmpresa {
   fechaUltimoPago?: any;
 }
 
+// Pestañas del menú lateral/flotante, en orden de aparición (icono de Ionicons + etiqueta).
 const MENU: { key: SeccionEmpresa; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'inicio',    label: 'Inicio',           icon: 'home-outline' },
   { key: 'vacantes',  label: 'Mis Vacantes',     icon: 'briefcase-outline' },
@@ -337,7 +379,10 @@ const AREAS = [...AREAS_CATALOGO];
 // ─────────────────────────────────────────────
 // VALIDADORES DE "NUEVA VACANTE" (puros: devuelven '' si es válido)
 // Reutilizados tanto en los onChangeText (tiempo real) como en la
-// validación maestra de handlePublicarVacante.
+// validación maestra de handlePublicarVacante. Mismo patrón "función pura
+// que devuelve mensaje de error o '' " que valLetters/valNit/etc. en
+// app/auth/registro.tsx — aquí cada validador es específico del formulario
+// de vacante en vez de genérico.
 // ─────────────────────────────────────────────
 const RE_SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;          // letras (con tilde/ñ) y espacios
 const RE_SKILLS       = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s,]+$/;        // letras, espacios y comas
@@ -429,6 +474,11 @@ const formatFecha = (raw: string): string => {
   if (digits.length >= 4) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
   return digits;
 };
+// Columnas del tablero Kanban de reclutamiento (SeccionKanban): key = valor
+// real guardado en `aplicaciones.estado`, label = texto de la pestaña, color
+// = acento visual. El ORDEN dentro de SeccionKanban (variable local `ORDEN`)
+// se define aparte porque debe coincidir exactamente con la secuencia en la
+// que se puede avanzar/retroceder a un candidato.
 const KANBAN_COLS: { key: string; label: string; color: string }[] = [
   { key: 'pendiente',   label: 'Pendientes',   color: COLORS.textMuted },
   { key: 'en_revision', label: 'En Revisión',  color: COLORS.warning },
@@ -441,6 +491,10 @@ const KANBAN_COLS: { key: string; label: string; color: string }[] = [
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────
 export default function DashboardEmpresa() {
+  // useAuthGuard('empresa'): redirige fuera si el usuario logueado no tiene
+  // rol 'empresa' (mismo hook que usan todos los dashboards).
+  // useAuthBackGuard(): controla el botón "atrás" del sistema para que no
+  // saque de la app en medio de la navegación por pestañas.
   useAuthGuard('empresa');
   useAuthBackGuard();
   const { user, userProfile } = useAuth();
@@ -468,6 +522,12 @@ export default function DashboardEmpresa() {
   };
 
   // ── Cambiar logo/foto de la empresa ────────────────────────────────
+  // Mismo patrón "elegir de galería → fetch→blob → uploadBytes a Storage →
+  // getDownloadURL → guardar la URL en Firestore" ya explicado a fondo en
+  // authService.ts (uploadPhoto) y perfil.tsx. La única diferencia es que
+  // aquí se actualizan DOS documentos con la misma URL: el perfil de empresa
+  // (logo_url) y el documento espejo en 'usuarios' (foto_url), para que
+  // cualquier pantalla que solo lea 'usuarios' también vea el logo nuevo.
   const handleUploadLogo = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permiso necesario', 'Necesitamos acceso a tu galería.'); return; }
@@ -501,6 +561,10 @@ export default function DashboardEmpresa() {
   };
 
   // ── Planes comerciales visibles (precio dinámico según período) ────
+  // Se recalcula en cada render (no useMemo: es barato y depende de
+  // `periodoPlanes`) para mostrar el precio mensual o anual en el modal de
+  // "Planes y Facturación". El precio real que se cobra/guarda vive en
+  // PRECIOS_PLAN — esta función solo arma el texto para pintar las tarjetas.
   const obtenerPlanesVisibles = () => {
     return [
       {
@@ -530,13 +594,25 @@ export default function DashboardEmpresa() {
   };
 
   // ── Procesar mejora de plan (pago simulado) ────────────────────────
+  // "Pago simulado" = no hay pasarela de cobro real: se confía en que la
+  // empresa ya tiene una tarjeta guardada (ver handleGuardarTarjeta) y este
+  // botón solo actualiza la BD como si el cobro hubiera ocurrido. Dos
+  // escrituras: (1) el propio perfil con el nuevo plan y sus límites, (2) un
+  // documento en 'transacciones' que alimenta el historial de suscripciones
+  // que ve el admin (dashboard-admin / panel admin).
   const confirmarMejoraPlan = async () => {
     if (!planToUpgrade || !user) return;
     setUpgradeProcessing(true);
     try {
-      // Determinamos si es un "upgrade" (mejora) para mostrar el modal de bienvenida
+      // Determinamos si es un "upgrade" real (subir de nivel) en vez de solo
+      // renovar el mismo plan, para decidir si mostrar el modal 4 de
+      // bienvenida (con la lista de nuevos beneficios) al final de la cadena.
       const isUpgrade = (perfil?.plan === 'gratuito') || (perfil?.plan === 'mensual' && planToUpgrade === 'premium');
 
+      // dataUpdates: los límites de negocio (cuántas vacantes/alianzas puede
+      // tener) se recalculan aquí según el plan comprado — son los mismos
+      // campos que inyecta el registro (ver project_planes_empresa en las
+      // notas del proyecto) y que consumen puedeCrearVacante/limiteVacantes.
       const dataUpdates: any = { plan: planToUpgrade, cicloFacturacion: periodoPlanes, fechaUltimoPago: serverTimestamp() };
       if (planToUpgrade === 'mensual') {
         dataUpdates.limiteVacantes = 10;
@@ -569,7 +645,9 @@ export default function DashboardEmpresa() {
       setShowConfirmUpgradeModal(false);
       setShowUpgradeSuccessModal(true);
 
-      // Cadenas de modales y recarga visual
+      // Cadena de 4 modales (ver los <Modal> "MODAL 1/2/3/4" en el JSX de
+      // abajo): selección de plan → confirmar compra → "¡Pago realizado!"
+      // (este setTimeout) → si fue upgrade real, el modal 4 de bienvenida.
       setTimeout(() => {
         setShowUpgradeSuccessModal(false);
         setShowPlanUpgradeModal(false);
@@ -589,6 +667,8 @@ export default function DashboardEmpresa() {
   };
 
   // ── Renovación automática: switch que se guarda solo, sin botón de confirmar ──
+  // Solo cambia una preferencia (no cobra nada): el cobro real ocurre en
+  // handleRenovarPago, que la empresa dispara manualmente cada ciclo.
   const handleToggleRenovacionAutomatica = async (value: boolean) => {
     if (!user) return;
     try {
@@ -599,6 +679,8 @@ export default function DashboardEmpresa() {
   };
 
   // ── Renovar el pago del ciclo actual ahora mismo (manual, no automático) ──
+  // Mismo patrón "pago simulado" que confirmarMejoraPlan: solo registra la
+  // transacción y actualiza fechaUltimoPago, sin cambiar el plan (ya lo tenía).
   const handleRenovarPago = async () => {
     if (!user || !perfil?.plan || perfil.plan === 'gratuito') return;
     const plan = perfil.plan as 'mensual' | 'premium';
@@ -630,6 +712,11 @@ export default function DashboardEmpresa() {
     }
   };
 
+  // ── Estado local del componente ──────────────────────────────────
+  // Bloque grande de useState: pestaña activa, datos en vivo (perfil,
+  // vacantes, apps, solicitudesGrupo), qué modal está abierto, y todos los
+  // campos del formulario "Nueva Vacante" (prefijo nv*) y de la tarjeta
+  // (prefijo card*). Los comentarios en línea marcan solo lo no obvio.
   const [seccion,     setSeccion]     = useState<SeccionEmpresa>('inicio');
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
   // Chat a abrir de inmediato dentro de la sección "Mensajes" embebida (p. ej.
@@ -733,6 +820,10 @@ export default function DashboardEmpresa() {
   const [ratingEstudiante, setRatingEstudiante] = useState(0);
 
   // ── Firestore subscriptions ──────────────────────────────────────
+  // Mismo patrón onSnapshot ya explicado en pasantiaService.ts/index.tsx:
+  // useEffect abre el listener al montar (o al cambiar `user`) y el `return
+  // unsub` lo cierra al desmontar — sin esto, el listener seguiría
+  // escuchando en segundo plano y filtrando memoria/lecturas facturables.
   useEffect(() => {
     if (!user) return;
     const unsub = onSnapshot(doc(db, 'perfiles_empresas', user.uid), snap => {
@@ -906,6 +997,10 @@ export default function DashboardEmpresa() {
   }, [gruposConPasantiaKey]);
 
   // ── Métricas ─────────────────────────────────────────────────────
+  // Números resumen que alimentan SeccionInicio y el badge del Kanban.
+  // useMemo: se recalculan solo cuando cambian los datos de origen, no en
+  // cada render (los mismos 4 useEffect de arriba son quienes empujan esos
+  // cambios al llegar datos nuevos de Firestore).
   const metricas = useMemo(() => ({
     vacantesActivas: vacantes.filter(v => v.activa).length,
     pendientes:      apps.filter(a => a.estado === 'pendiente').length,
@@ -930,6 +1025,13 @@ export default function DashboardEmpresa() {
   const vacantesRestantes = Math.max(0, limiteVacantes - metricas.vacantesActivas);
   const puedeCrearVacante = vacantesRestantes > 0;
 
+  // ── Mapa de ubicación de la vacante ──────────────────────────────
+  // Mismo mecanismo de geolocalización que usa el registro (expo-location +
+  // Nominatim/OpenStreetMap para geocodificación inversa gratuita, sin API
+  // key): capturarUbicacion() pide el GPS del dispositivo, marcarDesdeMapa()
+  // toma un toque directo en el mapa, y ambos delegan en este punto único
+  // que fija el marcador y resuelve la dirección legible.
+  //
   // ── Punto único de aplicación de coordenadas (precedencia: la última acción manda) ─
   // Los métodos (GPS, toque en mapa) llaman aquí y sobreescriben los estados compartidos.
   // Geocodificación inversa gratuita vía Nominatim (OpenStreetMap), sin API key.
@@ -1016,6 +1118,9 @@ export default function DashboardEmpresa() {
   };
 
   // ── Validación en tiempo real (onChange por campo) ───────────────
+  // setErr: helper que actualiza UN campo de nvErrors sin pisar los demás
+  // (spread del objeto previo). Cada onChangeX de abajo llama a su validador
+  // puro (definidos arriba, antes del componente) en cada tecleo.
   const setErr = (key: string, msg: string) => setNvErrors(prev => ({ ...prev, [key]: msg }));
 
   const onChangeTitulo   = (v: string) => { setNvTitulo(v);   setErr('titulo', valTitulo(v)); };
@@ -1138,7 +1243,14 @@ export default function DashboardEmpresa() {
     fechaLimiteOriginal, cambioDeCarrilBloqueado, horarioRequerido,
   ]);
 
-  // ── Abrir el formulario en modo EDICIÓN (precarga desde la vacante) ──
+  // ── Eliminar una vacante ──────────────────────────────────────────
+  // NOTA (gotcha ya visto en otros archivos): Alert.alert con botones NO
+  // dispara ninguna acción en react-native-web (es un no-op silencioso ahí)
+  // — solo funciona en móvil nativo. Este botón concreto, al vivir dentro de
+  // SeccionVacantes (ícono de basura en cada fila), heredó ese patrón del
+  // código original; a diferencia de otros flujos ya migrados a un <Modal>
+  // propio en la app, este todavía usa Alert.alert de dos botones. La lógica
+  // real de borrado vive en eliminarVacante() (pasantiaService.ts).
   const handleEliminarVacante = (v: Vacante) => {
     Alert.alert(
       'Eliminar vacante',
@@ -1160,6 +1272,19 @@ export default function DashboardEmpresa() {
     );
   };
 
+  // ── Abrir el formulario en modo EDICIÓN (precarga desde la vacante) ──
+  // Toma un documento `Vacante` ya guardado y llena TODOS los useState del
+  // formulario nv* con sus valores — el mismo modal de abajo ("Nueva
+  // Vacante") sirve para crear y editar según si `vacanteEditando` es null.
+  //
+  // La parte no trivial es la MIGRACIÓN de datos legados: el campo `tipo`
+  // solía aceptar texto libre ('Pasantía'/'Proyecto'/'Tiempo parcial'), y
+  // 'Proyecto'/'Tiempo parcial' colapsaban silenciosamente a
+  // categoria:'vacante'. Ahora el formulario solo ofrece 'Pasantía'/
+  // 'Vacante' + una "Modalidad de contrato" aparte. Para que abrir una
+  // vacante VIEJA en edición no muestre el formulario vacío/roto, se
+  // reconstruye qué habría elegido el usuario hoy a partir de `categoria`
+  // (fuente de verdad real) y del `tipo` histórico.
   const abrirEditarVacante = (v: Vacante) => {
     setVacanteEditando(v);
     setNvTitulo(v.titulo ?? '');
@@ -1226,6 +1351,10 @@ export default function DashboardEmpresa() {
   };
 
   // ── Publicar vacante ─────────────────────────────────────────────
+  // Handler más largo del archivo: valida TODO el formulario de una vez
+  // (aunque cada campo ya se valida al teclear), arma el payload para
+  // Firestore, y bifurca entre CREAR (addDoc en 'vacantes') y EDITAR
+  // (updateDoc del documento existente) según `vacanteEditando`.
   const handlePublicarVacante = async () => {
     // El límite del plan solo aplica al CREAR: editar no consume cupo nuevo.
     if (!vacanteEditando && !puedeCrearVacante) {
@@ -1368,7 +1497,7 @@ export default function DashboardEmpresa() {
             'Vacante actualizada',
             `Los cambios en "${payloadVacante.titulo ?? ''}" se guardaron correctamente.`,
             'success',
-            vacanteEditando.id,
+            `vacante:${vacanteEditando.id}`,
           );
         } catch { /* la notificación no debe afectar el flujo principal */ }
       } else {
@@ -1381,7 +1510,7 @@ export default function DashboardEmpresa() {
             'Vacante publicada',
             `Tu vacante "${payloadVacante.titulo ?? ''}" se publicó correctamente y ya es visible para el talento.`,
             'success',
-            vacanteRef.id,
+            `vacante:${vacanteRef.id}`,
           );
         } catch { /* la notificación no debe afectar el flujo principal */ }
       }
@@ -1396,7 +1525,9 @@ export default function DashboardEmpresa() {
     finally { setSavingVac(false); }
   };
 
-  // Cierra el modal de "Nueva vacante" y limpia el formulario tras un guardado exitoso.
+  // Cierra el modal de "Nueva vacante" y resetea TODOS los campos nv* a su
+  // valor inicial (mismo bloque de resets que el useEffect de abajo, para
+  // el botón "Aceptar y Cerrar" del modal de éxito).
   const finalizarGuardadoExitoso = () => {
     setEstadoGuardado('idle');
     setShowNuevaVacante(false);
@@ -1439,6 +1570,8 @@ export default function DashboardEmpresa() {
   }, [estadoGuardado]);
 
   // ── Toggle vacante activa ─────────────────────────────────────────
+  // Pausar/reactivar una vacante sin borrarla: un updateDoc de un solo
+  // campo. `!v.activa` invierte el valor actual (true→false, false→true).
   const toggleVacante = async (v: Vacante) => {
     try {
       await updateDoc(doc(db, 'vacantes', v.id), { activa: !v.activa });
@@ -1477,6 +1610,11 @@ export default function DashboardEmpresa() {
   };
 
   // ── Acciones sobre un candidato (vista detallada del Kanban) ──────
+  // Estos 5 handlers (entrevista/rechazar/calificar/CV/chatear) trabajan
+  // sobre `candidatoSeleccionado`, el objeto que abre el modal "VISTA
+  // DETALLADA DEL CANDIDATO" más abajo en el JSX. Cada uno hace un
+  // updateDoc/addDoc directo (no pasan por pasantiaService.ts porque son
+  // acciones simples de un solo documento, sin transacción).
   const handleMandarEntrevista = async () => {
     if (!candidatoSeleccionado) return;
     try {
@@ -1561,6 +1699,9 @@ export default function DashboardEmpresa() {
   };
 
   // ── Firmar constancia (usa empresaFirmaConstancia del servicio) ───
+  // La lógica real (marcar la aplicación como confirmada, generar la
+  // transacción de pago pendiente) vive en pasantiaService.ts — aquí solo se
+  // llama y se maneja el feedback visual (ícono de éxito 2s antes de cerrar).
   const handleFirmar = async (app: Aplicacion) => {
     try {
       await empresaFirmaConstancia(app.id, user!.uid, app.estudiante_id);
@@ -1620,6 +1761,9 @@ export default function DashboardEmpresa() {
   };
 
   // ── Onboarding ────────────────────────────────────────────────────
+  // Mismo hook useOnboarding (ver docs/GUIA_05 y OnboardingTour.tsx) que usan
+  // los demás dashboards: recorre TOUR_CLAVES en orden mostrando el globo de
+  // ayuda TOUR_PASOS[seccion] correspondiente a la pestaña activa.
   const tour = useOnboarding(user?.uid, seccion, TOUR_CLAVES);
   // "Continuar" marca el paso actual visto y avanza automáticamente a la
   // siguiente sección del recorrido — el usuario ya no tiene que ir tocando
@@ -1650,6 +1794,9 @@ export default function DashboardEmpresa() {
   ];
 
   // ── RENDER SECCIONES ─────────────────────────────────────────────
+  // switch clásico: según la pestaña activa (`seccion`), renderiza el
+  // sub-componente correspondiente (definidos más abajo, después del cierre
+  // de este componente principal) pasándole los datos y callbacks que necesita.
   const renderSeccion = () => {
     switch (seccion) {
       case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} onVerPerfil={setPerfilCandidatoId} />;
@@ -1665,6 +1812,10 @@ export default function DashboardEmpresa() {
 
   // ── Sección "Mi Perfil" (master-detail): rango, plan, método de pago,
   //    estadísticas y preferencias. Reemplaza al antiguo modal. ──
+  // Mismo componente config-driven PerfilMasterDetail ya explicado a fondo en
+  // app/(tabs)/perfil.tsx: recibe un array `sections`, cada una con `fields`+
+  // `onSave` (formulario genérico) o `render` (contenido 100% custom, como
+  // las secciones 'rango'/'resenas'/'plan'/'pago'/'stats' de aquí abajo).
   const renderPerfilSeccion = () => {
     const planKey = (perfil?.plan ?? 'gratuito') as 'gratuito' | 'mensual' | 'premium';
     const info = PLAN_DISPLAY[planKey];
@@ -1912,6 +2063,12 @@ export default function DashboardEmpresa() {
     );
   }
 
+  // ── JSX de retorno ──────────────────────────────────────────────
+  // Mismo esqueleto visual que dashboard-universidad.tsx: LiquidBackground
+  // (fondo animado) → header con avatar/nombre/plan → renderSeccion() con el
+  // contenido de la pestaña activa → capas flotantes (FloatingTopBar,
+  // FloatingSearchButton, FeedbackGate, ModeracionVacanteGate,
+  // FloatingNavBar) → la pila de <Modal> del formulario/planes/candidato.
   return (
     <LiquidBackground>
     <View style={[styles.root, { backgroundColor: 'transparent' }]}>
@@ -2117,7 +2274,11 @@ export default function DashboardEmpresa() {
         theme="dark"
       />
 
-      {/* ── MODAL: Nueva Vacante ──
+      {/* ── MODAL: Nueva Vacante ── el formulario grande: reutiliza los
+          FieldInput/PickerRow definidos al final del archivo, valida con las
+          funciones puras de arriba, y muestra/oculta secciones según nvTipo
+          y nvModalidad (mapa solo si Presencial/Híbrido, salario/modalidad
+          de contrato solo si 'Vacante', reclamos_auto solo si 'Pasantía').
           FIXED: se oculta mientras estadoGuardado !== 'idle' para que el Modal
           dinámico de guardado no quede tapado por este en Android / web. */}
       <Modal visible={showNuevaVacante && estadoGuardado === 'idle'} transparent animationType="none">
@@ -2597,6 +2758,12 @@ export default function DashboardEmpresa() {
         </View>
       </Modal>
 
+      {/* ── Flujo de compra de plan: 4 modales encadenados por setTimeout
+          (ver confirmarMejoraPlan arriba) — selección → confirmar → éxito →
+          bienvenida. Estilos con colores hardcodeados en línea (no COLORS/
+          makeStyles) porque este flujo se escribió antes que el resto del
+          archivo migrara al sistema de tema; funciona igual mientras el
+          dashboard sea de tema oscuro fijo, pero no reacciona a claro/oscuro. */}
       {/* ── MODAL 1: SELECCIÓN DE PLAN (Mejorar) ── */}
       <Modal visible={showPlanUpgradeModal} transparent animationType="none">
         <View style={styles.modalOverlay}>
@@ -2740,7 +2907,11 @@ export default function DashboardEmpresa() {
         </View>
       </Modal>
 
-      {/* ── MODAL: VISTA DETALLADA DEL CANDIDATO (Reclutar) ── */}
+      {/* ── MODAL: VISTA DETALLADA DEL CANDIDATO (Reclutar) ── se abre desde
+          SeccionKanban al tocar una tarjeta. Mismos colores hardcodeados en
+          línea que el flujo de planes de arriba (p. ej. 'Sora-Bold' en vez
+          de FONTS.soraBold) — funciona, pero es la excepción a como se
+          escriben los estilos en el resto del archivo. */}
       <Modal visible={!!candidatoSeleccionado && !showRechazoModal} transparent animationType="none">
         <View style={styles.modalOverlay}>
           <View style={[styles.sheetCard, { padding: 0, overflow: 'hidden' }]}>
@@ -2868,6 +3039,14 @@ export default function DashboardEmpresa() {
 }
 
 // ─────────────────────────────────────────────
+// SUB-COMPONENTES DE CADA SECCIÓN
+// A partir de aquí el componente principal ya cerró (línea con el `}` de
+// arriba). Cada función siguiente es un componente aparte que recibe sus
+// datos por props — mismo patrón que dashboard-universidad.tsx: se separan
+// para que renderSeccion() no tenga que definir JSX gigante en un switch.
+// ─────────────────────────────────────────────
+
+// ─────────────────────────────────────────────
 // SECCIÓN: INICIO
 // ─────────────────────────────────────────────
 function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitudesGrupo, onVerPerfil }: {
@@ -2951,7 +3130,8 @@ function MetricCard({ icon, label, value, color }: any) {
 }
 
 // ─────────────────────────────────────────────
-// SECCIÓN: VACANTES
+// SECCIÓN: VACANTES — lista de publicaciones propias con acciones rápidas
+// (editar/eliminar/activar-pausar) y el aviso de cupo del plan.
 // ─────────────────────────────────────────────
 function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar, onEliminar, puedeCrear, limiteVacantes, vacantesRestantes, plan, onMejorarPlan }: {
   vacantes: Vacante[]; onNueva: () => void; onToggle: (v: Vacante) => void;
@@ -3069,7 +3249,10 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
 }
 
 // ─────────────────────────────────────────────
-// SECCIÓN: KANBAN
+// SECCIÓN: KANBAN — tablero de reclutamiento con pestañas en vez de columnas
+// lado a lado (más usable en pantallas angostas que un kanban horizontal
+// clásico): una pestaña por estado, con botones "←"/"Avanzar →" en cada
+// tarjeta para mover al candidato de una etapa a la siguiente/anterior.
 // ─────────────────────────────────────────────
 function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; onMover: (a: Aplicacion, s: string) => void; onSeleccionar: (a: Aplicacion) => void }) {
   const { s } = useThemedStyles();
@@ -3162,7 +3345,11 @@ function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; o
 }
 
 // ─────────────────────────────────────────────
-// SECCIÓN: PASANTÍAS ACTIVAS
+// SECCIÓN: PASANTÍAS ACTIVAS — junta los 2 caminos de admisión que puede
+// tener una empresa: pasantes individuales (`apps` con estado 'contratado'/
+// 'finalizado', el flujo del Kanban) y pasantías de grupo aprobadas por
+// matchmaking universidad↔empresa (`solicitudesGrupo`, con su propia barra
+// de progreso). El botón "Firmar constancia" solo aplica al camino individual.
 // ─────────────────────────────────────────────
 function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
   apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[]; onFirmar: (a: Aplicacion) => void;
@@ -3259,7 +3446,11 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
 }
 
 // ─────────────────────────────────────────────
-// HELPERS UI
+// HELPERS UI — componentes de campo reutilizados en el formulario "Nueva
+// Vacante" (y en algún otro punto de este archivo). Mismo espíritu que
+// FloatInput/SelectInput en app/auth/registro.tsx: encapsulan label + input/
+// chips + línea de error/info para no repetir ese bloque de JSX en cada
+// campo del formulario.
 // ─────────────────────────────────────────────
 function FieldInput({ label, value, onChange, placeholder, multiline, keyboardType, error, valid, infoText, maxLength }: {
   label: string; value: string; onChange: (v: string) => void;
@@ -3318,6 +3509,13 @@ function PickerRow({ label, options, selected, onSelect, error }: {
 
 // ─────────────────────────────────────────────
 // ESTILOS
+// Dos hojas separadas (mismo patrón que dashboard-universidad.tsx):
+// `makeStyles` para el layout general (sidebar, header, modales, tarjeta de
+// pago/plan), y `makeS` más abajo para las secciones internas (Inicio,
+// Vacantes, Kanban, Activas). Ambas son funciones de `COLORS` para
+// reconstruirse cuando cambia el tema — ver useThemedStyles() al inicio del
+// archivo. Los nombres de cada propiedad son descriptivos por sí solos
+// (headerAvatar, sidebarPlan, modalCancel, etc.); no se anota cada línea.
 // ─────────────────────────────────────────────
 const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.backgroundDark, paddingTop: 10 },

@@ -1,3 +1,24 @@
+// ════════════════════════════════════════════════════════════════════════
+// app/auth/action.tsx — RUTA "/auth/action"
+//
+// GUÍA PARA PRINCIPIANTES:
+// Esta pantalla existe para procesar los LINKS que Firebase Auth envía por
+// correo electrónico. Cuando un usuario pide "recuperar mi contraseña",
+// Firebase le manda un correo con un link que apunta de vuelta a esta
+// misma pantalla, con información especial codificada en la URL (el
+// "modo" de la acción, y un código de un solo uso llamado `oobCode`).
+// Esta pantalla lee esos datos de la URL y decide QUÉ hacer:
+//   - "resetPassword" → mostrar un formulario para poner una contraseña nueva.
+//   - "verifyEmail"    → confirmar que el correo del usuario es válido.
+//   - "recoverEmail"   → deshacer un cambio de correo no autorizado.
+//   - "signIn"          → completar un inicio de sesión sin contraseña
+//                          (login por "magic link", un correo con un link
+//                          que ya funciona como si fuera la contraseña).
+// Es un buen ejemplo de una pantalla que se comporta como una "máquina de
+// estados": en cada momento está en UNA fase (`Phase`) específica, y solo
+// una parte del JSX se dibuja según cuál sea esa fase.
+// ════════════════════════════════════════════════════════════════════════
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -9,6 +30,22 @@ import {
   signInWithEmailLink,
   verifyPasswordResetCode,
 } from "firebase/auth";
+// 5 funciones de Firebase Auth, todas relacionadas con procesar estos
+// "códigos de acción" (oobCode = "out of band code", un código que llega
+// por FUERA del flujo normal de la app, es decir, por correo):
+//   - verifyPasswordResetCode(auth, oobCode) → valida que el código de
+//     reseteo de contraseña sea legítimo y no haya expirado; devuelve el
+//     CORREO de la cuenta asociada (útil para mostrarlo en pantalla,
+//     "vas a cambiar la contraseña de fulano@correo.com").
+//   - confirmPasswordReset(auth, oobCode, nuevaContraseña) → aplica de
+//     verdad el cambio de contraseña.
+//   - applyActionCode(auth, oobCode) → aplica una acción genérica (aquí
+//     se usa para "verificar correo" y "recuperar correo anterior").
+//   - isSignInWithEmailLink(auth, url) → revisa si una URL dada
+//     corresponde a un link válido de inicio de sesión sin contraseña.
+//   - signInWithEmailLink(auth, correo, url) → completa el inicio de
+//     sesión usando ese link + el correo del usuario.
+
 import { doc, getDoc } from "firebase/firestore";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -21,15 +58,31 @@ import {
   View,
 } from "react-native";
 import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
+// AutoTextInput: la versión de <TextInput> (el campo de texto de React
+// Native) que auto-traduce su `placeholder` — ya explicada en el archivo
+// src/components/AutoText.tsx (mencionado en GUIA_02_TRADUCTOR_I18N.md).
 
 import { auth, db } from "../../src/config/firebaseConfig";
 import type { UserRole } from "../../src/context/AuthContext";
 import { CORREO_TEMPORAL_KEY } from "../../src/services/authService";
+// Nota: aunque el import dice ".../authService", este archivo vive en
+// services/authService.ts (la raíz, no src/services/) — CORREO_TEMPORAL_KEY
+// es la clave de AsyncStorage donde se guarda TEMPORALMENTE el correo del
+// usuario mientras espera a que llegue y se abra su "magic link" de
+// inicio de sesión (necesario porque signInWithEmailLink pide el correo
+// como parámetro, y si el link se abre en el MISMO dispositivo donde se
+// pidió, se puede recuperar solo, sin pedírselo de nuevo al usuario).
 
 // ══════════════════════════════════════════════════════════════════
 //  Design tokens (modo oscuro) — alineados con iniciosesion.tsx
 // ══════════════════════════════════════════════════════════════════
 const C = {
+  // Una paleta de colores LOCAL a este archivo (no usa useTheme() ni
+  // ThemeContext) — esta pantalla siempre se ve en modo oscuro fijo,
+  // porque el usuario llega aquí desde un LINK de correo, típicamente
+  // ANTES incluso de haber iniciado sesión (donde su preferencia de tema
+  // guardada podría no estar disponible todavía). "C" es solo el nombre
+  // corto elegido para esta constante (de "Colors").
   bg: "#07050f",
   surface: "#0d0b1e",
   accent: "#8b5cf6",
@@ -46,6 +99,9 @@ const C = {
 
 // ── Modos de acción que envía Firebase en el parámetro `mode` ──────
 type Mode = "resetPassword" | "signIn" | "verifyEmail" | "recoverEmail";
+// Estos 4 valores son EXACTAMENTE los que Firebase Auth escribe en la URL
+// del correo (parámetro ?mode=...) — no se inventan en este proyecto, son
+// parte del contrato de Firebase.
 
 // ── Fases internas de la pantalla ─────────────────────────────────
 type Phase =
@@ -54,13 +110,26 @@ type Phase =
   | "needEmail" // magic link abierto sin correo en almacenamiento
   | "success" // acción completada con éxito
   | "error"; // código inválido / expirado u otro fallo
+// A diferencia de `Mode` (que viene de Firebase), `Phase` es un concepto
+// PROPIO de este componente: representa en qué momento visual está la
+// pantalla. Un mismo `mode` puede pasar por varias `Phase` (por ejemplo,
+// "resetPassword" empieza en "loading", pasa a "resetForm", y termina en
+// "success" o "error").
 
 // ══════════════════════════════════════════════════════════════════
 //  Helpers
 // ══════════════════════════════════════════════════════════════════
 const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(v.trim());
+// Expresión regular simple para validar formato de correo: "algo@algo.algo"
+// (sin espacios antes/después de la @, con un dominio de al menos 2
+// letras al final). No es una validación perfecta de correos (ningún
+// regex simple lo es), pero es suficiente para detectar errores obvios de
+// tipeo antes de enviar la solicitud.
 
 function mapActionError(code: string): string {
+  // Traduce los códigos técnicos de error de Firebase Auth (en inglés,
+  // tipo "auth/expired-action-code") a mensajes legibles en español —
+  // mismo concepto que mapAuthError() en services/authService.ts.
   if (code.includes("expired-action-code"))
     return "El enlace ha expirado. Solicita uno nuevo.";
   if (code.includes("invalid-action-code"))
@@ -77,6 +146,9 @@ function mapActionError(code: string): string {
 }
 
 function routeForRole(rol: UserRole | null): string {
+  // Igual concepto que `rutaPorRol` de app/index.tsx: decide a qué
+  // dashboard mandar según el rol, para después de un inicio de sesión
+  // exitoso por magic link.
   switch (rol) {
     case "admin":
       return "/admin";
@@ -86,6 +158,9 @@ function routeForRole(rol: UserRole | null): string {
       return "/dashboard-empresa";
     case "estudiante":
     default:
+      // El "default" cubre tanto rol === 'estudiante' explícito como
+      // cualquier otro valor inesperado (null, undefined) — por defecto,
+      // manda a las pestañas del estudiante.
       return "/(tabs)";
   }
 }
@@ -98,6 +173,10 @@ function currentUrl(): string {
     return window.location?.href ?? "";
   }
   return "";
+  // En nativo (Android/iOS), no existe `window`, así que esta función
+  // devuelve cadena vacía — coherente con el comentario: en esos casos,
+  // OTRO archivo (iniciosesion.tsx) es quien intercepta el link antes de
+  // que se llegue aquí.
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -112,9 +191,18 @@ export default function AuthAction() {
     continueUrl?: string;
     lang?: string;
   }>();
+  // Lee TODOS los parámetros que Firebase agrega a la URL del correo.
+  // Varios de ellos (apiKey, continueUrl, lang) se reciben pero NO se
+  // usan en este archivo — Firebase los agrega igual por su propio
+  // protocolo interno, y esta pantalla solo toma los 2 que necesita
+  // (mode, oobCode).
 
   const mode = params.mode as Mode | undefined;
   const oobCode = typeof params.oobCode === "string" ? params.oobCode : "";
+  // "typeof params.oobCode === 'string'" es una comprobación defensiva:
+  // useLocalSearchParams podría, en teoría, devolver un array de strings
+  // si el parámetro se repitiera en la URL — aquí se asegura de tratarlo
+  // como texto simple, o cadena vacía si no vino en ese formato.
 
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMsg, setErrorMsg] = useState("");
@@ -136,6 +224,12 @@ export default function AuthAction() {
 
   // Evita procesar dos veces (StrictMode / doble render).
   const handledRef = useRef(false);
+  // useRef (no useState) a propósito: esta bandera NO debe provocar un
+  // repintado al cambiar, solo sirve como "candado" interno. React, en
+  // modo de desarrollo estricto (StrictMode), a veces ejecuta un mismo
+  // efecto DOS VECES seguidas a propósito (para ayudar a detectar bugs) —
+  // sin este candado, se podría intentar canjear el mismo oobCode dos
+  // veces, y Firebase lo rechazaría la segunda vez por ser de un solo uso.
 
   // ── Completar inicio de sesión con enlace mágico ──────────────────
   const completeSignIn = useCallback(
@@ -144,12 +238,17 @@ export default function AuthAction() {
       try {
         const url = currentUrl();
         const result = await signInWithEmailLink(auth, correo, url);
+        // Firebase valida el link contra el correo dado, y si coincide,
+        // inicia sesión — `result.user` es la cuenta recién autenticada.
         await AsyncStorage.removeItem(CORREO_TEMPORAL_KEY);
+        // Ya no hace falta guardar el correo temporal, se limpia.
 
         let rol: UserRole | null = null;
         try {
           const snap = await getDoc(doc(db, "usuarios", result.user.uid));
           rol = snap.exists() ? (snap.data()?.rol as UserRole) : null;
+          // READ: busca el rol del usuario recién logueado para saber a
+          // dónde mandarlo.
         } catch {
           rol = null;
         }
@@ -161,11 +260,17 @@ export default function AuthAction() {
     },
     [router],
   );
+  // useCallback aquí memoriza la función para que no cambie de
+  // referencia en cada render (se usa como dependencia del useEffect de
+  // abajo, y también se le pasa a un botón más adelante).
 
   // ── Despacho inicial según el `mode` ──────────────────────────────
   useEffect(() => {
     if (handledRef.current) return;
     handledRef.current = true;
+    // El candado explicado arriba: la primera vez que este efecto corre,
+    // se marca como "ya manejado" ANTES de hacer nada asíncrono, así una
+    // segunda ejecución del efecto (por StrictMode) se detiene aquí mismo.
 
     (async () => {
       // resetPassword / verifyEmail / recoverEmail requieren oobCode.
@@ -177,16 +282,26 @@ export default function AuthAction() {
 
       try {
         switch (mode) {
+          // Este switch es el "despachador" central: según el modo que
+          // vino en la URL, decide qué hacer. Cada "case" es uno de los 4
+          // flujos posibles de Firebase Auth.
+
           case "resetPassword": {
             // Valida el código y obtiene el correo asociado antes del formulario.
             const correo = await verifyPasswordResetCode(auth, oobCode);
             setAccountEmail(correo);
             setPhase("resetForm");
             return;
+            // No se cambia la contraseña TODAVÍA — solo se valida que el
+            // link sea legítimo y se pasa a mostrar el formulario (fase
+            // "resetForm"). El cambio real ocurre en handleConfirmReset()
+            // más abajo, cuando el usuario complete y envíe el formulario.
           }
 
           case "verifyEmail": {
             await applyActionCode(auth, oobCode);
+            // Este SÍ aplica la acción de inmediato (no requiere ningún
+            // formulario adicional): confirma que el correo es válido.
             setSuccessMsg("Tu correo ha sido verificado correctamente.");
             setPhase("success");
             return;
@@ -211,11 +326,23 @@ export default function AuthAction() {
             const stored = (
               await AsyncStorage.getItem(CORREO_TEMPORAL_KEY)
             )?.trim();
+            // Intenta recuperar el correo que se guardó cuando el usuario
+            // PIDIÓ el link de acceso (si el link se abre en el MISMO
+            // dispositivo/navegador, este dato debería seguir ahí).
             if (stored) {
               await completeSignIn(stored.toLowerCase());
+              // Camino RÁPIDO: si se encontró el correo guardado, se
+              // completa el login automáticamente sin pedirle nada al
+              // usuario.
             } else {
               // Abierto en otro dispositivo: pedir el correo de nuevo.
               setPhase("needEmail");
+              // Camino de RESPALDO: si el usuario abrió el link en OTRO
+              // dispositivo (por ejemplo, pidió el link desde el celular
+              // pero lo abrió desde la laptop), no hay forma de saber su
+              // correo automáticamente — se le pide que lo escriba de
+              // nuevo, como medida de seguridad extra (así solo quien
+              // realmente conoce el correo puede completar el acceso).
             }
             return;
           }
@@ -223,6 +350,10 @@ export default function AuthAction() {
           default:
             setErrorMsg("Acción desconocida o no soportada.");
             setPhase("error");
+            // Si `mode` fuera cualquier otro valor no reconocido (o
+            // undefined, por ejemplo si alguien visitara esta ruta sin
+            // venir de un correo real de Firebase), se muestra un error
+            // genérico.
         }
       } catch (err: any) {
         setErrorMsg(mapActionError(err?.code ?? ""));
@@ -233,6 +364,7 @@ export default function AuthAction() {
 
   // ── Confirmar nueva contraseña ────────────────────────────────────
   const handleConfirmReset = async () => {
+    // Se ejecuta al enviar el formulario de la fase "resetForm".
     setFormError("");
     if (password.length < 6) {
       setFormError("La contraseña debe tener al menos 6 caracteres.");
@@ -242,10 +374,14 @@ export default function AuthAction() {
       setFormError("Las contraseñas no coinciden.");
       return;
     }
+    // 2 validaciones simples del lado del cliente ANTES de gastar una
+    // llamada a Firebase: largo mínimo, y que las 2 contraseñas escritas
+    // coincidan entre sí.
 
     setSubmitting(true);
     try {
       await confirmPasswordReset(auth, oobCode, password);
+      // Aquí sí se aplica el cambio de contraseña de verdad.
       setSuccessMsg(
         "Tu contraseña fue actualizada. Ya puedes iniciar sesión con ella.",
       );
@@ -259,6 +395,8 @@ export default function AuthAction() {
 
   // ── Confirmar correo del magic link (fallback) ────────────────────
   const handleConfirmEmail = () => {
+    // Se ejecuta al enviar el formulario de la fase "needEmail" (cuando
+    // se pidió el correo manualmente).
     const correo = promptEmail.trim().toLowerCase();
     if (!isEmail(correo)) {
       setPromptError("Ingresa un correo válido.");
@@ -268,6 +406,8 @@ export default function AuthAction() {
   };
 
   const goToLogin = () => router.replace("/auth/iniciosesion" as any);
+  // Función corta reutilizada por los botones de las fases "success" y
+  // "error" para volver a la pantalla de login.
 
   // ══════════════════════════════════════════════════════════════════
   //  RENDER
@@ -276,6 +416,10 @@ export default function AuthAction() {
     <View style={styles.root}>
       <StatusBar style="light" />
       <View style={styles.card}>
+        {/* Cada uno de los 5 bloques siguientes usa el patrón
+            "{condicion && <JSX/>}": solo UNO de ellos se dibuja a la vez,
+            según el valor actual de `phase`. */}
+
         {/* ─── Cargando ─── */}
         {phase === "loading" && (
           <View style={styles.centered}>
@@ -294,6 +438,10 @@ export default function AuthAction() {
             <Text style={styles.sub}>
               Define una nueva contraseña para{" "}
               <Text style={styles.emphasis}>{accountEmail}</Text>.
+              {/* Un <Text> anidado DENTRO de otro <Text> — React Native
+                  permite esto para aplicar un estilo distinto (aquí,
+                  emphasis) a solo una PARTE del texto de un párrafo,
+                  igual que un <span> dentro de un <p> en HTML. */}
             </Text>
 
             <View style={styles.group}>
@@ -305,10 +453,15 @@ export default function AuthAction() {
                   onChangeText={(t) => {
                     setPassword(t);
                     setFormError("");
+                    // Limpia el error de formulario apenas el usuario
+                    // vuelve a escribir, para no dejarlo mostrado tras
+                    // corregir el problema.
                   }}
                   placeholder="Mínimo 6 caracteres"
                   placeholderTextColor={C.textMuted}
                   secureTextEntry={!showPass}
+                  // secureTextEntry oculta el texto escrito (puntos en
+                  // vez de letras) — se invierte según `showPass`.
                   autoCapitalize="none"
                   selectionColor={C.accent}
                 />
@@ -318,6 +471,9 @@ export default function AuthAction() {
                   accessibilityLabel={
                     showPass ? "Ocultar contraseña" : "Mostrar contraseña"
                   }
+                  // accessibilityLabel: texto que leen los lectores de
+                  // pantalla (para personas con discapacidad visual) en
+                  // vez del ícono, que no tiene texto visible.
                 >
                   <Ionicons
                     name={showPass ? "eye-off-outline" : "eye-outline"}
@@ -343,6 +499,9 @@ export default function AuthAction() {
                 autoCapitalize="none"
                 returnKeyType="done"
                 onSubmitEditing={handleConfirmReset}
+                // onSubmitEditing: se dispara al presionar "Listo"/"Done"
+                // en el teclado del celular — permite enviar el
+                // formulario sin tener que tocar el botón.
                 selectionColor={C.accent}
               />
             </View>
@@ -393,6 +552,8 @@ export default function AuthAction() {
                 placeholderTextColor={C.textMuted}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                // keyboardType="email-address" hace que el teclado
+                // móvil muestre atajos útiles para correos (como el @).
                 autoComplete="email"
                 returnKeyType="done"
                 onSubmitEditing={handleConfirmEmail}
@@ -444,6 +605,10 @@ export default function AuthAction() {
 // ══════════════════════════════════════════════════════════════════
 //  Estilos
 // ══════════════════════════════════════════════════════════════════
+// Nota: a diferencia del patrón makeStyles(colors) visto en otras
+// pantallas, aquí los estilos se definen UNA sola vez con el objeto fijo
+// `C` de arriba — coherente con que esta pantalla no reacciona al tema
+// claro/oscuro del usuario (ver la explicación al inicio del archivo).
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -454,7 +619,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: "100%",
-    maxWidth: 440,
+    maxWidth: 440,           // en pantallas muy anchas (escritorio), la tarjeta no se estira de más
     backgroundColor: C.surface,
     borderRadius: 20,
     borderWidth: 1,
@@ -477,6 +642,8 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
   iconWrapOk: {
+    // Se combina con iconWrap (ver style={[styles.iconWrap, styles.iconWrapOk]})
+    // para sobrescribir solo el color, en el caso de éxito.
     backgroundColor: "rgba(34,197,94,0.12)",
     borderColor: "rgba(34,197,94,0.45)",
   },
@@ -521,13 +688,16 @@ const styles = StyleSheet.create({
   },
   inputErr: { borderColor: C.red },
   inputPassInner: { flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 },
+  // Las esquinas derechas quedan "cuadradas" a propósito, porque
+  // justo a la derecha va pegado el botón del ojo (eyeBtn), formando
+  // visualmente un solo campo compuesto.
   passwordRow: { flexDirection: "row", alignItems: "stretch" },
   eyeBtn: {
     width: 44,
     height: 52,
     backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
-    borderLeftWidth: 0,
+    borderLeftWidth: 0,        // sin borde izquierdo, para "fundirse" con el input de al lado
     borderColor: "rgba(139,92,246,0.30)",
     borderTopRightRadius: 10,
     borderBottomRightRadius: 10,

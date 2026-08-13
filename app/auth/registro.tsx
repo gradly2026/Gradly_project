@@ -1,3 +1,25 @@
+// ════════════════════════════════════════════════════════════════════════
+// app/auth/registro.tsx — EL WIZARD DE REGISTRO (empresa y universidad)
+//
+// GUÍA PARA PRINCIPIANTES:
+// El archivo más grande de todo el proyecto relacionado con un solo
+// formulario. Es un "wizard" (asistente paso a paso) que registra CUENTAS
+// NUEVAS de empresa o universidad, con 5 pasos cada una:
+//   Empresa:     Datos → Logo → Representante → Plan → Seguridad
+//   Universidad: Institución → Logo → Carreras → Responsable → Seguridad
+// (Los estudiantes NO se registran aquí — sus cuentas las crea la propia
+// universidad en lote, ver app/dashboard-universidad.tsx.)
+//
+// Aplicando el mismo criterio de las guías anteriores: se explica a fondo
+// TODA la lógica única (validaciones, máscaras de texto, el registro
+// final en Firebase, los sub-componentes reutilizables como FloatInput),
+// pero los 5+5 = 10 "pasos" del wizard están armados con esos MISMOS
+// sub-componentes repetidos una y otra vez con distintas etiquetas — ahí
+// se comenta el PRIMER campo de cada tipo en detalle y se deja una nota
+// corta en los siguientes, en vez de repetir la misma explicación
+// decenas de veces.
+// ════════════════════════════════════════════════════════════════════════
+
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
@@ -6,6 +28,10 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
 } from "firebase/auth";
+// updateProfile(cred.user, { displayName }) → función de Firebase Auth
+// (no vista aún en otros archivos) que guarda un nombre visible en la
+// PROPIA cuenta de autenticación (separado de Firestore) — algunas partes
+// de Firebase (como el remitente de ciertos correos) usan este nombre.
 import {
   collection,
   doc,
@@ -45,6 +71,10 @@ import {
   carrerasRojasEn,
   type AvisoZonaRoja,
 } from "../../src/data/carreras";
+// avisosZonaRoja(listaDeCarreras) → dada una lista de nombres de
+// carrera, devuelve el texto de aviso LEGAL a mostrar si alguna cae en
+// Zona Roja (Salud/Educación/Derecho — reguladas por el Estado).
+// carrerasRojasEn(lista) → filtra solo las que SÍ son Zona Roja.
 import {
   DEPARTAMENTOS_EL_SALVADOR,
   DISTRITOS_POR_DEPARTAMENTO,
@@ -57,6 +87,9 @@ import {
   valTarjetaNum,
   valTitular,
 } from "../../utils/cardValidation";
+// Validadores/máscaras de tarjeta de pago SIMULADA, compartidos con el
+// panel de empresa (mismo archivo utilitario, para no duplicar la lógica
+// de "esto es una tarjeta con formato válido" en 2 lugares).
 
 // ══════════════════════════════════════════════════════════════════
 //  Design tokens — derivados del tema activo (claro / oscuro)
@@ -65,6 +98,8 @@ import {
 //  con el modo. Cada componente obtiene C/s vía useRegistroTheme().
 // ══════════════════════════════════════════════════════════════════
 const makeC = (colors: GradlyColors) => ({
+  // Mismo patrón "tokens cortos" ya visto en app/auth/iniciosesion.tsx
+  // (makeC) — aquí se repite para esta pantalla hermana.
   bg: colors.backgroundDark, // fondo principal (claro en light, oscuro en dark)
   surface: colors.backgroundCard, // tarjetas / paneles / modales
   accent: colors.primary,
@@ -97,12 +132,18 @@ function useRegistroTheme() {
   const s = useMemo(() => makeStyles(C), [C]);
   return { C, s, isDark };
 }
+// Este hook lo llama CADA sub-componente del archivo (FloatInput,
+// SelectInput, PasswordField...) por separado — cada uno se conecta al
+// tema por su cuenta, en vez de recibir C/s como props desde el padre.
 
 // ══════════════════════════════════════════════════════════════════
 //  Tipos
 // ══════════════════════════════════════════════════════════════════
 type Flow = "empresa" | "universidad" | null;
+// null = todavía no se eligió rol (paso 0, el selector).
 type DocType = "dui" | "pasaporte" | "licencia";
+// Los 3 tipos de documento de identidad aceptados en El Salvador para
+// verificar al representante/responsable de la cuenta.
 
 // Reglas de documento (El Salvador) — SIN guiones, todo de corrido.
 interface DocRule {
@@ -132,6 +173,10 @@ const DOC_RULES: Record<DocType, DocRule> = {
     numeric: true,
   },
 };
+// Diccionario "config-driven": UN solo lugar define, para cada tipo de
+// documento, su largo máximo, su patrón de validación (RegExp), y el
+// texto de ayuda a mostrar si es inválido — así cleanDoc()/valDoc() de
+// abajo no necesitan un "if" distinto por cada tipo de documento.
 
 // Limpia la entrada del documento según su tipo (bloquea guiones y símbolos).
 function cleanDoc(v: string, docType: DocType): string {
@@ -155,6 +200,12 @@ interface PlanRestricciones {
   limiteAlianzas: number;
   verificado: boolean;
 }
+// GUÍA IMPORTANTE: estos 4 campos son la razón de negocio de TODO el
+// paso 4 del flujo de empresa — se escriben en el perfil de la empresa
+// al final del registro (ver handleRegister más abajo), y TODO el resto
+// de la app (al publicar una vacante, al postularse a una alianza) los
+// LEE para hacer cumplir los límites del plan contratado, sin volver a
+// preguntar "¿qué plan tiene esta empresa?" en cada validación.
 
 interface PlanInfo extends PlanRestricciones {
   nombre: string;
@@ -211,6 +262,10 @@ const PLANES: PlanInfo[] = [
     periodo: "/mes",
     descripcion: "Sin límites, con insignia verificada.",
     limiteVacantes: 9999,
+    // 9999 en vez de un valor "infinito" real: un número gigante que en
+    // la práctica actúa como "sin límite", sin tener que manejar un caso
+    // especial de "límite nulo/infinito" en el resto del código que lo
+    // compara.
     limiteAlianzas: 9999,
     verificado: true,
     requierePago: true,
@@ -224,6 +279,9 @@ const PLANES: PlanInfo[] = [
     ],
   },
 ];
+// Catálogo fijo de los 3 planes — cada uno con TODO lo necesario para
+// dibujarse (nombre, precio, features) Y para aplicarse (límites,
+// verificado) — un solo objeto sirve para ambas cosas.
 
 // Devuelve el precio/periodo a mostrar según el período elegido.
 // El plan gratuito se muestra siempre como mensual.
@@ -247,6 +305,10 @@ const restriccionesDePlan = (id: PlanId): PlanRestricciones => {
     verificado: p.verificado,
   };
 };
+// Toma el plan completo (con nombre, precio, features de UI) y se queda
+// SOLO con los 4 campos de negocio que hace falta persistir — evita
+// guardar en Firestore datos de presentación (como el texto de
+// "features") que no le sirven a ningún otro archivo del proyecto.
 
 // ── Datos de tarjeta capturados en el modal (solo estado local) ────
 interface DatosTarjeta {
@@ -255,6 +317,9 @@ interface DatosTarjeta {
   cvv: string;
   titular: string;
 }
+// NUNCA se guarda completo en Firestore (ver handleRegister: solo se
+// persisten los últimos 4 dígitos) — esta interfaz describe el estado
+// TEMPORAL mientras el usuario llena el modal de pago simulado.
 
 // ══════════════════════════════════════════════════════════════════
 //  Interfaz del perfil de empresa que se persiste en Firestore
@@ -287,6 +352,9 @@ interface PerfilEmpresa extends PlanRestricciones {
   tarjeta_numero: string;
   tarjeta_alias: string;
 }
+// El "contrato" completo del documento que se crea en
+// 'perfiles_empresas' al finalizar el registro — describe TODOS los
+// campos que el resto de la app puede esperar encontrar ahí.
 
 // ── Catálogos ─────────────────────────────────────────────────────
 const INDUSTRIAS = [
@@ -314,6 +382,8 @@ const FLOW_LABELS: Record<Exclude<Flow, null>, string[]> = {
   empresa: ["Datos", "Logo", "Representante", "Plan", "Seguridad"],
   universidad: ["Institución", "Logo", "Carreras", "Responsable", "Seguridad"],
 };
+// Las etiquetas que muestra el <Stepper> (los círculos numerados de
+// arriba del formulario) — un array distinto según el rol elegido.
 
 // ══════════════════════════════════════════════════════════════════
 //  Catálogo de Carreras Universitarias (El Salvador)
@@ -343,6 +413,11 @@ const RX_WEB =
   /^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&/=]*)$/;
 const RX_IG = /^(https?:\/\/)?(www\.)?instagram\.com\/[A-Za-z0-9_.\-]{1,255}\/?$/;
 const RX_FB = /^(https?:\/\/)?(www\.)?facebook\.com\/[A-Za-z0-9.]{1,255}\/?$/;
+// Una expresión regular por cada tipo de campo del formulario — cada una
+// describe el "molde" de texto válido: RX_NIT exige EXACTAMENTE el
+// formato salvadoreño de NIT (4 dígitos, guion, 6 dígitos, guion, 3
+// dígitos, guion, 1 dígito); RX_WEB/RX_IG/RX_FB validan enlaces con
+// formato de URL reconocible.
 
 // ── Máscara automática de NIT → ####-######-###-# ─────────────────
 function maskNit(v: string): string {
@@ -353,6 +428,14 @@ function maskNit(v: string): string {
   if (d.length > 13) out += "-" + d.slice(13, 14);
   return out;
 }
+// GUÍA DE "MÁSCARA": una función que TRANSFORMA lo que el usuario escribe
+// para insertar automáticamente separadores (aquí, guiones) mientras
+// teclea — así, si el usuario escribe "061234567890123" seguido, el
+// campo va mostrando "0612-345678-901-2" a medida que escribe, sin que
+// tenga que teclear los guiones él mismo. Primero se limpia TODO lo que
+// no sea dígito (por si pega texto con formato raro), y luego se
+// reconstruye el texto insertando un guion cada vez que se pasa de la
+// cantidad de dígitos correspondiente a cada segmento.
 
 // ── Filtros de entrada (bloquean caracteres inválidos al teclear) ──
 const filterLetters = (v: string) =>
@@ -366,6 +449,14 @@ const filterUniNombre = (v: string) =>
 // Siglas: mayúsculas, solo letras/números, máx. 10 caracteres.
 const filterSiglas = (v: string) =>
   v.toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ0-9]/g, "").slice(0, 10);
+// GUÍA "FILTRO" vs "VALIDADOR": un FILTRO se aplica MIENTRAS se escribe,
+// y bloquea de raíz los caracteres no permitidos (por ejemplo, si el
+// campo es "solo letras", un filtro simplemente IGNORA cualquier número
+// que el usuario intente escribir — nunca llega a aparecer en pantalla).
+// Un VALIDADOR (los "val..." de más abajo), en cambio, se aplica DESPUÉS
+// de escribir, y solo AVISA con un mensaje si el resultado final no
+// cumple la regla (por ejemplo, "mínimo 2 caracteres" — no se puede
+// bloquear eso mientras se escribe la primera letra).
 
 // ── Validadores en tiempo real: devuelven "" si el dato es válido ──
 const valLetters =
@@ -377,6 +468,12 @@ const valLetters =
     if (t.length < min) return `Mínimo ${min} caracteres`;
     return "";
   };
+// GUÍA: valLetters es una función que devuelve OTRA función (un patrón
+// llamado "función de orden superior" o, más específico, "fábrica de
+// validadores"): valLetters(2) construye un validador que exige mínimo 2
+// caracteres; valLetters() sin argumento usa el valor por defecto (min = 2).
+// Este patrón permite REUTILIZAR la misma lógica de validación con
+// distintos mínimos, sin copiar y pegar la función completa cada vez.
 const valEmailFmt = (v: string) => {
   const t = v.trim();
   if (!t) return "Este campo es requerido";
@@ -439,11 +536,19 @@ const valOptional = (rx: RegExp, msg: string) => (v: string) => {
   if (!t) return ""; // opcional: vacío es válido
   return rx.test(t) ? "" : msg;
 };
+// Otra "fábrica de validadores": valOptional(regex, mensaje) construye un
+// validador para campos NO obligatorios (sitio web, Instagram, Facebook)
+// — vacío siempre es válido, pero si el usuario SÍ escribió algo, debe
+// cumplir el formato.
 
 // Validación de tarjeta (pasarela simulada) — fuente única compartida
 // con el panel de empresa en utils/cardValidation.
 
 function getPassScore(val: string): number {
+  // Calcula qué tan "fuerte" es una contraseña, del 0 (vacía) al 4 (muy
+  // fuerte), revisando 5 características: minúsculas, mayúsculas,
+  // números, símbolos, y largo mínimo de 8. Mismo concepto de "medidor de
+  // fortaleza" que se ve en la mayoría de formularios de registro serios.
   if (!val) return 0;
   const hasLower = /[a-z]/.test(val);
   const hasUpper = /[A-Z]/.test(val);
@@ -457,6 +562,8 @@ function getPassScore(val: string): number {
 }
 const PASS_LABELS = ["", "Débil", "Media", "Fuerte", "Muy Fuerte"];
 const PASS_COLORS = ["", "#ef4444", "#f59e0b", "#22c55e", "#10b981"];
+// Los índices de estos 2 arrays coinciden con el puntaje 0-4 de
+// getPassScore(): PASS_LABELS[3] = "Fuerte", PASS_COLORS[3] = verde, etc.
 
 // ── Mapea errores de Firebase Auth a mensajes legibles ────────────
 function mapFirebaseError(code: string): string {
@@ -483,10 +590,18 @@ async function emailYaRegistrado(correo: string): Promise<boolean> {
   );
   const snap = await getDocs(q);
   return !snap.empty;
+  // READ: consulta si YA existe algún documento en "usuarios" con ese
+  // correo exacto — se usa para avisar "este correo ya está registrado"
+  // ANTES de que el usuario llegue a intentar crear la cuenta de verdad
+  // (mejor experiencia que fallar recién al final del formulario).
 }
 
 // ── Selección de imagen desde galería ─────────────────────────────
 async function pickImage(setter: (uri: string) => void): Promise<void> {
+  // Función utilitaria genérica: pide permiso, abre la galería, y si el
+  // usuario elige una imagen, llama al `setter` que se le pasó (así sirve
+  // tanto para el logo de empresa como el de universidad, sin duplicar
+  // código).
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (status !== "granted") {
     // Nota: en este flujo el aviso se delega a la UI; no bloquea.
@@ -520,10 +635,18 @@ async function uploadLogo(uid: string, localUri: string): Promise<string> {
   const storageRef = ref(storage, `logos_empresas/${uid}/logo.jpg`);
   await uploadBytes(storageRef, blob);
   return getDownloadURL(storageRef);
+  // Nota: la MISMA ruta "logos_empresas/{uid}/logo.jpg" se usa tanto para
+  // logos de empresa como de universidad (el nombre de la carpeta no
+  // cambia según el rol) — funciona porque cada `uid` es único sin
+  // importar el rol de la cuenta.
 }
 
 // ══════════════════════════════════════════════════════════════════
 //  Sub-componentes reutilizables
+//  GUÍA: estos son los "ladrillos" con los que se arma CADA campo de
+//  CADA paso del wizard (10 pasos en total entre los 2 flujos). Se
+//  explican aquí UNA vez a fondo; en los pasos más abajo (renderEmpresaStep/
+//  renderUniversidadStep) ya no se repite esta explicación por cada uso.
 // ══════════════════════════════════════════════════════════════════
 function FloatInput({
   label,
@@ -550,10 +673,20 @@ function FloatInput({
   rightIcon?: React.ReactNode;
   style?: any;
 }) {
+  // El campo de texto MÁS usado del formulario: una etiqueta "flotante"
+  // (se ve arriba del campo, en vez de desaparecer al escribir, un
+  // patrón visual típico de Material Design) + borde que cambia de color
+  // según el estado (enfocado/error/válido).
   const { s, C } = useRegistroTheme();
   const [focused, setFocused] = useState(false);
+  // Estado LOCAL de este campo específico: ¿tiene el foco del teclado
+  // ahora mismo? (no se guarda en el componente padre, cada FloatInput
+  // maneja su propio "focused" de forma independiente).
   const active = focused || value.length > 0;
+  // La etiqueta se "activa" (se ve pequeña arriba) si el campo está
+  // enfocado O si ya tiene contenido escrito.
   const success = value.trim().length > 0 && !error;
+  // Borde verde: hay contenido Y no hay ningún error activo.
   return (
     <View style={[s.floatWrap, style]}>
       <Text style={[s.floatLabel, active && s.floatLabelActive]}>{label}</Text>
@@ -562,6 +695,8 @@ function FloatInput({
           s.inputRow,
           focused && s.inputFocused,
           error ? s.inputErr : success ? s.inputSuccess : null,
+          // 3 estados de borde posibles, en orden de prioridad: foco
+          // primero, luego error (rojo), luego éxito (verde), o ninguno.
         ]}
       >
         <TextInput
@@ -575,10 +710,15 @@ function FloatInput({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           placeholderTextColor="transparent"
+          // El placeholder se hace INVISIBLE a propósito: en este diseño
+          // el "placeholder" real es la etiqueta flotante de arriba, no
+          // el texto gris tradicional dentro del campo.
           autoCapitalize={autoCapitalize}
           selectionColor={C.accent}
         />
         {rightIcon}
+        {/* Slot opcional para un ícono a la derecha (usado por
+            PasswordField para el ojo de mostrar/ocultar). */}
       </View>
       {!!error && <Text style={s.errText}>{error}</Text>}
     </View>
@@ -600,6 +740,10 @@ function SelectInput({
   error?: string;
   style?: any;
 }) {
+  // Un "selector desplegable" hecho a mano (sin usar el <Picker> nativo
+  // del sistema operativo): al tocarlo, despliega una lista de opciones
+  // dentro de un ScrollView chico — mismo patrón visto en el selector de
+  // carrera de dashboard-universidad.tsx.
   const { s, C } = useRegistroTheme();
   const [open, setOpen] = useState(false);
   const success = !!value && !error;
@@ -652,6 +796,9 @@ function PasswordField({
   onChange: (v: string) => void;
   error?: string;
 }) {
+  // Envuelve un FloatInput (con el ojo de mostrar/ocultar como rightIcon)
+  // y le agrega DEBAJO el medidor visual de fortaleza (4 barritas que se
+  // van coloreando según getPassScore()).
   const { s, C } = useRegistroTheme();
   const [show, setShow] = useState(false);
   const score = value ? getPassScore(value) : 0;
@@ -682,6 +829,9 @@ function PasswordField({
                 style={[
                   s.strengthBar,
                   i <= score && { backgroundColor: PASS_COLORS[score] },
+                  // Cada una de las 4 barras se colorea SOLO si su número
+                  // (1-4) es menor o igual al puntaje actual — así, con
+                  // score=2, se colorean las barras 1 y 2, dejando 3 y 4 grises.
                 ]}
               />
             ))}
@@ -706,6 +856,9 @@ function UploadZone({
   onPress: () => void;
   error?: string;
 }) {
+  // Zona de "arrastra o toca para subir" (aunque en móvil solo se puede
+  // TOCAR, no arrastrar): muestra un ícono + instrucciones cuando está
+  // vacía, o la vista previa de la imagen ya elegida cuando hay una.
   const { s, C } = useRegistroTheme();
   return (
     <View style={{ marginBottom: 12 }}>
@@ -744,6 +897,9 @@ function DocTypeSelector({
   value: DocType;
   onChange: (v: DocType) => void;
 }) {
+  // 3 botones tipo "chip" (DUI / Pasaporte / Licencia) para elegir el
+  // tipo de documento — más simple que un SelectInput desplegable, porque
+  // solo hay 3 opciones fijas siempre visibles.
   const { s, C } = useRegistroTheme();
   const opts: { key: DocType; label: string }[] = [
     { key: "dui", label: "DUI" },
@@ -782,6 +938,8 @@ function StepNav({
   nextLabel?: string;
   loading?: boolean;
 }) {
+  // Los 2 botones fijos al pie de cada paso: "← Anterior" y "Siguiente →"
+  // (o "Crear cuenta" en el último paso, con loader mientras se procesa).
   const { s } = useRegistroTheme();
   return (
     <View style={s.stepNav}>
@@ -804,11 +962,15 @@ function StepNav({
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
+  // Un simple subtítulo en mayúsculas ("UBICACIÓN", "CONTACTO") para
+  // dividir visualmente los campos de un mismo paso en grupos temáticos.
   const { s } = useRegistroTheme();
   return <Text style={s.sectionLabel}>{children}</Text>;
 }
 
 function InfoNote({ children }: { children: React.ReactNode }) {
+  // Una cajita informativa con fondo tenue (💡 tips) — usada varias veces
+  // en el formulario para dar contexto adicional sin ser un error.
   const { s } = useRegistroTheme();
   return (
     <View style={s.infoNote}>
@@ -818,6 +980,9 @@ function InfoNote({ children }: { children: React.ReactNode }) {
 }
 
 function Stepper({ flow, step }: { flow: Exclude<Flow, null>; step: number }) {
+  // Los círculos numerados de arriba del formulario (1-2-3-4-5), que
+  // muestran en qué paso está el usuario: círculo relleno con check si ya
+  // pasó, resaltado si es el actual, vacío si todavía no llega.
   const { s, C } = useRegistroTheme();
   const labels = FLOW_LABELS[flow];
   return (
@@ -828,6 +993,9 @@ function Stepper({ flow, step }: { flow: Exclude<Flow, null>; step: number }) {
         const activeStep = n === step;
         return (
           <React.Fragment key={n}>
+            {/* React.Fragment permite devolver 2 elementos hermanos
+                (el círculo Y el conector) en cada vuelta del .map() sin
+                envolverlos en un <View> extra. */}
             <View style={s.stepperItem}>
               <View
                 style={[
@@ -851,6 +1019,8 @@ function Stepper({ flow, step }: { flow: Exclude<Flow, null>; step: number }) {
               </View>
             </View>
             {n < labels.length && <View style={s.stepperConnector} />}
+            {/* Línea conectora entre círculos — no se dibuja después del
+                ÚLTIMO círculo. */}
           </React.Fragment>
         );
       })}
@@ -950,6 +1120,9 @@ function TarjetaModal({
       else delete n[k];
       return n;
     });
+  // Igual concepto que setErr/clearErr del componente principal
+  // (más abajo), pero implementado como una sola función que decide
+  // agregar o quitar la clave según si el mensaje viene vacío o no.
 
   const onNum = (v: string) => {
     const mv = maskTarjeta(v);
@@ -971,6 +1144,9 @@ function TarjetaModal({
     setTitular(f);
     setE("titular", valTitular(f));
   };
+  // 4 handlers, cada uno con el mismo patrón: aplica una máscara/filtro,
+  // guarda el valor, y valida en vivo — usando las funciones importadas
+  // de utils/cardValidation.ts (compartidas con el panel de empresa).
 
   const confirmar = () => {
     const e: Record<string, string> = {};
@@ -985,6 +1161,9 @@ function TarjetaModal({
     setErrs(e);
     if (Object.keys(e).length > 0) return;
     onConfirm({ numero, exp, cvv, titular });
+    // Revalida TODOS los campos de una vez al confirmar (no solo confía
+    // en los errores ya acumulados en vivo) — si cualquiera falla, no
+    // llama a onConfirm y deja los errores visibles.
   };
 
   return (
@@ -1096,6 +1275,15 @@ function CarrerasModal({
   onClose: () => void;
   onConfirm: () => void;
 }) {
+  // GUÍA: la técnica de "3 modales, pero solo UN <Modal> nativo real" es
+  // interesante — en vez de anidar 3 componentes <Modal> distintos (lo
+  // cual iOS/Android manejan mal, con animaciones y capas de gestos que
+  // se pisan entre sí), aquí se usa un solo <Modal> de verdad (el de
+  // búsqueda+lista) y los otros 2 "sub-modales" son simples <View>
+  // posicionados con position:'absolute' que cubren TODA la pantalla
+  // (ver s.subModalLayer / s.confirmLayer más abajo) — visualmente
+  // idénticos a un modal real, pero técnicamente son solo capas dentro
+  // del mismo Modal ya abierto.
   const { s, C } = useRegistroTheme();
   const [search, setSearch] = useState("");
   const [isModal2Visible, setIsModal2Visible] = useState(false);
@@ -1350,6 +1538,10 @@ export default function Registro() {
   const { C, s, isDark } = useRegistroTheme();
   const scrollRef = React.useRef<React.ElementRef<typeof ScrollView>>(null);
   const scrollTop = () => scrollRef.current?.scrollTo({ y: 0, animated: true });
+  // Se llama cada vez que se cambia de paso, para que el usuario siempre
+  // empiece a ver el formulario nuevo DESDE ARRIBA (sin esto, si el paso
+  // anterior había hecho scroll hacia abajo, el paso nuevo aparecería a
+  // mitad de camino, confuso).
 
   const [flow, setFlow] = useState<Flow>(null);
   const [step, setStep] = useState(0); // 0 = selector, 1..4 pasos, 99 = éxito
@@ -1364,6 +1556,10 @@ export default function Registro() {
       delete n[k];
       return n;
     });
+  // Un ÚNICO diccionario `errors` centraliza los mensajes de error de
+  // TODOS los campos del formulario (de ambos flujos), usando el nombre
+  // de cada campo como clave ("eNombre", "uEmail", etc.) — en vez de un
+  // estado de error separado por cada uno de los ~40 campos posibles.
 
   // ── Factory de validación en tiempo real ───────────────────────
   // Filtra la entrada, actualiza el estado y pinta el borde verde/rojo
@@ -1383,10 +1579,25 @@ export default function Registro() {
       if (msg) setErr(key, msg);
       else clearErr(key);
     };
+  // GUÍA CLAVE: `live` es la función MÁS reutilizada de todo el
+  // formulario (aparece en casi cada <FloatInput onChangeText={live(...)}
+  // más abajo). Es una "fábrica de manejadores de cambio de texto": dado
+  // el nombre del campo, su función para guardar el valor, un FILTRO
+  // opcional (que bloquea caracteres mientras se escribe) y un VALIDADOR
+  // opcional (que revisa el resultado final), construye UNA función lista
+  // para pasarle directo a onChangeText — así cada campo del formulario
+  // se conecta con una sola línea, sin repetir la lógica de "filtrar +
+  // guardar + validar + marcar error" a mano en cada uno.
 
   // ─────────────────────────────────────────────────────────────
   // Estado EMPRESA
   // ─────────────────────────────────────────────────────────────
+  // GUÍA: estos ~20 useState (prefijo "e" de "empresa") guardan el valor
+  // de CADA campo del formulario de empresa — uno por uno, sin agruparlos
+  // en un solo objeto — es el enfoque más simple para un formulario con
+  // muchos campos de texto independientes (la alternativa, un solo
+  // useState con un objeto grande, complicaría más las actualizaciones
+  // parciales en React).
   const [eNombre, setENombre] = useState("");
   const [eNit, setENit] = useState("");
   const [eIndustria, setEIndustria] = useState("");
@@ -1401,26 +1612,26 @@ export default function Registro() {
   const [eIg, setEIg] = useState("");
   const [eFb, setEFb] = useState("");
   const [eLogo, setELogo] = useState<string | null>(null);
-  // Representante
+
   const [eRepNombre, setERepNombre] = useState("");
   const [eRepCargo, setERepCargo] = useState("");
   const [eRepTel, setERepTel] = useState("");
   const [eRepEmail, setERepEmail] = useState("");
   const [eRepDocType, setERepDocType] = useState<DocType>("dui");
   const [eRepDocNum, setERepDocNum] = useState("");
-  // Plan de suscripción + pasarela simulada
+
   const [ePlan, setEPlan] = useState<PlanId | "">("");
   const [eCard, setECard] = useState<DatosTarjeta | null>(null);
   const [planModalVisible, setPlanModalVisible] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<PlanInfo | null>(null);
   const [periodoPlanes, setPeriodoPlanes] = useState<"mensual" | "anual">("mensual");
-  // Seguridad
+
   const [ePass, setEPass] = useState("");
   const [ePass2, setEPass2] = useState("");
   const [eTerms, setETerms] = useState(false);
 
   // ─────────────────────────────────────────────────────────────
-  // Estado UNIVERSIDAD
+  // Estado UNIVERSIDAD (prefijo "u") — mismo patrón que EMPRESA
   // ─────────────────────────────────────────────────────────────
   const [uNombre, setUNombre] = useState("");
   const [uSiglas, setUSiglas] = useState("");
@@ -1434,19 +1645,19 @@ export default function Registro() {
   const [uWeb, setUWeb] = useState("");
   const [uIg, setUIg] = useState("");
   const [uLogo, setULogo] = useState<string | null>(null);
-  // Responsable
+
   const [uRespNombre, setURespNombre] = useState("");
   const [uRespCargo, setURespCargo] = useState("");
   const [uRespTel, setURespTel] = useState("");
   const [uRespEmail, setURespEmail] = useState("");
   const [uRespDocType, setURespDocType] = useState<DocType>("dui");
   const [uRespDocNum, setURespDocNum] = useState("");
-  // Carreras ofertadas (paso 4 universidad)
+
   const [uCarreras, setUCarreras] = useState<string[]>([]);
   const [isModal1Visible, setIsModal1Visible] = useState(false);
-  // Aviso de carreras Zona Roja detectadas al pulsar "Siguiente".
+
   const [avisosRoja, setAvisosRoja] = useState<AvisoZonaRoja[] | null>(null);
-  // Seguridad
+
   const [uPass, setUPass] = useState("");
   const [uPass2, setUPass2] = useState("");
   const [uTerms, setUTerms] = useState(false);
@@ -1455,6 +1666,9 @@ export default function Registro() {
   const deptoOptions = Object.keys(GEO_DATA);
   const eDistritoOptions = eDepto ? (GEO_DATA[eDepto] ?? []) : [];
   const uDistritoOptions = uDepto ? (GEO_DATA[uDepto] ?? []) : [];
+  // El SelectInput de "Distrito" solo tiene sentido una vez elegido un
+  // Departamento — sus opciones se recalculan a partir del catálogo
+  // GEO_DATA usando el departamento actualmente seleccionado como clave.
 
   // ── Verificación de correo único en Firestore (debounce 600ms) ──
   // Solo se dispara cuando el formato es válido; si el correo ya existe
@@ -1473,6 +1687,13 @@ export default function Registro() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eEmail]);
+  // GUÍA: mismo patrón de "debounce" ya visto en app/(tabs)/index.tsx
+  // (la búsqueda de vacantes) aplicado aquí a una consulta de Firestore:
+  // en vez de preguntar "¿este correo ya existe?" en CADA letra que se
+  // escribe (carísimo, decenas de lecturas por segundo), se espera 600ms
+  // de silencio (sin más teclas) antes de hacer la consulta real — y si
+  // el usuario sigue escribiendo antes de que pasen los 600ms, el
+  // temporizador anterior se cancela (clearTimeout) y se reinicia.
 
   useEffect(() => {
     const correo = uEmail.trim().toLowerCase();
@@ -1488,6 +1709,7 @@ export default function Registro() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uEmail]);
+  // Mismo efecto, para el correo de universidad.
 
   // ══════════════════════════════════════════════════════════════
   //  Handlers de entrada con bloqueo de caracteres inválidos
@@ -1500,11 +1722,17 @@ export default function Registro() {
       if (digits && digits.length < 8) setErr(errKey, "El número debe tener 8 dígitos");
       else clearErr(errKey);
     };
+  // Otra "fábrica de manejadores": arma el handler de un campo de
+  // teléfono, que además de filtrar/limitar a 8 dígitos, inserta un
+  // espacio a la mitad (formato "1234 5678", típico de El Salvador)
+  // mientras se escribe.
 
   // ══════════════════════════════════════════════════════════════
   //  Navegación
   // ══════════════════════════════════════════════════════════════
   const selectRole = (role: Flow) => {
+    // Se ejecuta al tocar la tarjeta "Empresa" o "Universidad" en el
+    // paso 0 (el selector inicial).
     setFlow(role);
     setErrors({});
     setRegisterError("");
@@ -1518,6 +1746,8 @@ export default function Registro() {
     if (step <= 1) {
       setFlow(null);
       setStep(0);
+      // Si se retrocede desde el PRIMER paso del flujo, vuelve al
+      // selector de rol (deshace la elección de empresa/universidad).
     } else {
       setStep((st) => st - 1);
     }
@@ -1565,6 +1795,11 @@ export default function Registro() {
 
   // ══════════════════════════════════════════════════════════════
   //  Validaciones por paso
+  //  GUÍA: cada validateX() revisa TODOS los campos de UN paso a la vez
+  //  (no campo por campo como `live`), arma un diccionario `errs` local,
+  //  lo aplica de golpe con setErrors(errs), y devuelve true/false según
+  //  si quedó vacío — así handleNext() (más abajo) sabe si puede avanzar
+  //  al siguiente paso o debe quedarse mostrando los errores.
   // ══════════════════════════════════════════════════════════════
   // Acumula un error solo si el validador devuelve mensaje.
   const put = (errs: Record<string, string>, k: string, m: string) => {
@@ -1596,6 +1831,10 @@ export default function Registro() {
     // Conserva el aviso de correo ya registrado detectado en tiempo real.
     if (errors.eEmail === "Este correo ya está registrado")
       errs.eEmail = errors.eEmail;
+    // Sin esta línea, al recalcular TODOS los errores del paso desde
+    // cero, se perdería el aviso de "correo duplicado" (que llegó de un
+    // efecto ASÍNCRONO aparte, no de estos validadores síncronos) —
+    // aquí se "traspasa" manualmente si seguía siendo válido.
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -1623,6 +1862,7 @@ export default function Registro() {
 
   // ── Universidad paso 1 ──
   const validateU1 = () => {
+    // Espejo de validateE1(), con los campos de universidad.
     const errs: Record<string, string> = {};
     put(errs, "uNombre", valUniNombre(uNombre));
     put(errs, "uSiglas", valSiglas(uSiglas));
@@ -1683,6 +1923,9 @@ export default function Registro() {
     terms: boolean,
     prefix: "e" | "u",
   ) => {
+    // Función COMPARTIDA por ambos flujos (a diferencia de las anteriores,
+    // duplicadas "e"/"u") — recibe el `prefix` para saber en qué claves
+    // del diccionario `errors` escribir ("ePass" vs "uPass").
     const errs: Record<string, string> = {};
     if (!p) errs[`${prefix}Pass`] = "La contraseña es requerida";
     else if (p.length < 8) errs[`${prefix}Pass`] = "Mínimo 8 caracteres";
@@ -1697,6 +1940,8 @@ export default function Registro() {
   //  Avanzar paso (valida antes de continuar)
   // ══════════════════════════════════════════════════════════════
   const handleNext = () => {
+    // El "despachador" central: según el flujo Y el paso actual, llama al
+    // validador correspondiente, y solo avanza (goNext) si pasó.
     if (flow === "empresa") {
       if (step === 1 && validateE1()) goNext();
       else if (step === 2 && validateE2()) goNext();
@@ -1713,6 +1958,9 @@ export default function Registro() {
         if (rojas.length > 0) {
           setAvisosRoja(avisosZonaRoja(uCarreras));
           return;
+          // Se DETIENE aquí (no llama a validateU4 ni a goNext): primero
+          // hay que mostrar el aviso legal y esperar a que el usuario lo
+          // acepte (ver aceptarAvisoRoja más abajo).
         }
         if (validateU4()) goNext();
       }
@@ -1730,6 +1978,10 @@ export default function Registro() {
 
   // ══════════════════════════════════════════════════════════════
   //  Registro final → Firebase Auth + Firestore + Storage
+  //  GUÍA: esta es la función que de VERDAD crea la cuenta — todo lo
+  //  anterior (los 5 pasos, las validaciones) solo prepara los datos que
+  //  aquí se envían a Firebase. Es el mismo patrón CRUD "CREATE" de
+  //  services/authService.ts, pero para una sola cuenta (no un lote).
   // ══════════════════════════════════════════════════════════════
   const handleRegister = async () => {
     setRegisterError("");
@@ -1739,6 +1991,9 @@ export default function Registro() {
     const pass2 = isEmpresa ? ePass2 : uPass2;
     const terms = isEmpresa ? eTerms : uTerms;
     const prefix = isEmpresa ? "e" : "u";
+    // En vez de tener 2 funciones handleRegister casi idénticas (una por
+    // rol), esta única función usa `isEmpresa` para elegir, en cada paso,
+    // de cuál de los 2 grupos de estado (e*/u*) leer.
 
     if (!validateSecurity(pass, pass2, terms, prefix)) return;
 
@@ -1750,6 +2005,9 @@ export default function Registro() {
       // 1) Crear autenticación en Firebase
       const cred = await createUserWithEmailAndPassword(auth, correo, pass);
       const uid = cred.user.uid;
+      // CREATE en Firebase Auth: la cuenta de acceso en sí (correo +
+      // contraseña) — de aquí sale el `uid` que identifica a este usuario
+      // en TODO el resto del sistema.
 
       const nombrePrincipal = isEmpresa ? eNombre.trim() : uNombre.trim();
       await updateProfile(cred.user, { displayName: nombrePrincipal }).catch(() => {});
@@ -1778,6 +2036,10 @@ export default function Registro() {
         tourVisto: {},
         fecha_registro: serverTimestamp(),
       });
+      // CREATE en Firestore: el documento "base" común a cualquier rol —
+      // mismo patrón visto en la creación de estudiantes
+      // (services/authService.ts, dashboard-universidad.tsx): primero se
+      // crea la cuenta de Auth, LUEGO su documento base en "usuarios".
 
       // 4) Perfil extendido según rol
       if (isEmpresa) {
@@ -1787,6 +2049,9 @@ export default function Registro() {
         const tarjeta4 = eCard
           ? eCard.numero.replace(/\D/g, "").slice(-4)
           : "";
+        // Mismo principio de seguridad ya visto en app/(tabs)/perfil.tsx
+        // (handleGuardarTarjeta): NUNCA se guarda el número completo de
+        // la tarjeta, solo los últimos 4 dígitos.
 
         const perfilEmpresa: PerfilEmpresa = {
           uid,
@@ -1824,6 +2089,8 @@ export default function Registro() {
           ...perfilEmpresa,
           fecha_registro: serverTimestamp(),
         });
+        // CREATE: el perfil EXTENDIDO específico de empresa, con TODOS
+        // los campos capturados en los 4 pasos anteriores del wizard.
       } else {
         await setDoc(doc(db, "perfiles_universidades", uid), {
           uid,
@@ -1859,10 +2126,14 @@ export default function Registro() {
           }),
           fecha_registro: serverTimestamp(),
         });
+        // Mismo enriquecimiento de carreras (nombre → objeto completo) ya
+        // visto en dashboard-universidad.tsx (guardarCarreras).
       }
 
       scrollTop();
       setStep(99);
+      // Paso especial "99" = pantalla de éxito (no forma parte de la
+      // secuencia normal 1-5).
     } catch (err: any) {
       setRegisterError(mapFirebaseError(err?.code ?? ""));
     } finally {
@@ -1886,6 +2157,8 @@ export default function Registro() {
         /* no-op */
       }
     }, 400);
+    // Mismo patrón de "doble intento de navegación" visto en
+    // completeSignIn() de iniciosesion.tsx.
   };
 
   // ── Auto-redirección al dashboard 3s después del registro exitoso ──
@@ -1895,13 +2168,24 @@ export default function Registro() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
+  // Cuando `step` llega a 99 (éxito), se espera 3 segundos (para que el
+  // usuario alcance a leer el mensaje) y luego se navega SOLO al
+  // dashboard correspondiente, sin que el usuario tenga que tocar nada.
 
   // ══════════════════════════════════════════════════════════════
   //  Render del contenido por paso
+  //  GUÍA: renderEmpresaStep() y renderUniversidadStep() son 2 funciones
+  //  "switch por número de paso" que devuelven el JSX correspondiente —
+  //  cada `case` arma su View con los sub-componentes ya explicados
+  //  arriba (FloatInput, SelectInput, UploadZone...). Aquí se comenta el
+  //  PRIMER campo de cada tipo con detalle; el resto del mismo tipo, en
+  //  el mismo o en otros pasos, sigue EXACTAMENTE el mismo patrón con
+  //  distinta etiqueta/validador/estado.
   // ══════════════════════════════════════════════════════════════
   const renderEmpresaStep = () => {
     switch (step) {
       case 1:
+        // ── Paso 1: Datos de la empresa ──
         return (
           <View>
             <Text style={s.stepTitle}>Datos de la empresa</Text>
@@ -1911,6 +2195,11 @@ export default function Registro() {
               label="Nombre comercial"
               value={eNombre}
               onChangeText={live("eNombre", setENombre, filterLetters, valLetters(2))}
+              // onChangeText usa la fábrica `live()` explicada arriba:
+              // cada tecla pasa por filterLetters (bloquea números/símbolos),
+              // se guarda con setENombre, y se valida con valLetters(2)
+              // (mínimo 2 caracteres, solo letras) — si falla, aparece el
+              // error debajo del campo automáticamente vía `errors.eNombre`.
               autoCapitalize="words"
               error={errors.eNombre}
             />
@@ -1918,6 +2207,9 @@ export default function Registro() {
               label="NIT"
               value={eNit}
               onChangeText={live("eNit", setENit, maskNit, valNit)}
+              // Aquí el "filtro" es en realidad una MÁSCARA (maskNit):
+              // no solo bloquea caracteres, también INSERTA los guiones
+              // automáticamente en las posiciones correctas.
               keyboardType="number-pad"
               maxLength={17}
               error={errors.eNit}
@@ -1930,6 +2222,10 @@ export default function Registro() {
                 setEIndustria(v);
                 clearErr("eIndustria");
                 if (v !== "Otro") {
+                  // Si el usuario cambia de "Otro" a cualquier otra
+                  // industria, se limpia el campo de texto libre
+                  // "Especifica la industria" (que solo aparece cuando
+                  // eIndustria === "Otro", ver más abajo).
                   setEIndustriaOtro("");
                   clearErr("eIndustriaOtro");
                 }
@@ -1937,6 +2233,8 @@ export default function Registro() {
               error={errors.eIndustria}
             />
             {eIndustria === "Otro" && (
+              // Campo CONDICIONAL: solo aparece si se eligió "Otro" en
+              // el selector de arriba.
               <FloatInput
                 label="Especifica la industria"
                 value={eIndustriaOtro}
@@ -1954,6 +2252,8 @@ export default function Registro() {
               label="Descripción"
               value={eDesc}
               onChangeText={live("eDesc", setEDesc, undefined, valDesc)}
+              // Sin filtro (undefined): se permite escribir libremente
+              // (incluida puntuación), solo se valida el resultado final.
               multiline
               maxLength={300}
               autoCapitalize="sentences"
@@ -1967,7 +2267,7 @@ export default function Registro() {
               options={deptoOptions}
               onChange={(v) => {
                 setEDepto(v);
-                setEDistrito("");
+                setEDistrito(""); // resetea el distrito al cambiar de departamento
                 clearErr("eDepto");
               }}
               error={errors.eDepto}
@@ -1976,6 +2276,8 @@ export default function Registro() {
               label="Distrito (sede)"
               value={eDistrito}
               options={eDistritoOptions}
+              // Las opciones dependen del departamento ya elegido (ver
+              // eDistritoOptions calculado arriba, a partir de GEO_DATA).
               onChange={(v) => {
                 setEDistrito(v);
                 clearErr("eDistrito");
@@ -1995,6 +2297,8 @@ export default function Registro() {
               label="Teléfono (+503)"
               value={eTel}
               onChangeText={makePhoneHandler(setETel, "eTel")}
+              // Usa la fábrica makePhoneHandler (explicada arriba) en vez
+              // de `live`, porque necesita el formato especial "XXXX XXXX".
               keyboardType="phone-pad"
               error={errors.eTel}
             />
@@ -2002,9 +2306,17 @@ export default function Registro() {
               label="Correo de la cuenta"
               value={eEmail}
               onChangeText={live("eEmail", setEEmail, (v) => v.replace(/\s/g, ""), valEmailFmt)}
+              // El filtro aquí es una función anónima simple (quita
+              // espacios) en vez de una de las funciones "filter..."
+              // predefinidas — no hacía falta darle nombre propio para un
+              // uso tan puntual.
               keyboardType="email-address"
               error={errors.eEmail}
             />
+            {/* Los siguientes 3 campos (Sitio web, Instagram, Facebook)
+                repiten el MISMO patrón: opcionales, con valOptional(regex,
+                mensaje) como validador — ver la explicación de
+                valOptional más arriba. */}
             <FloatInput
               label="Sitio web (opcional)"
               value={eWeb}
@@ -2044,6 +2356,7 @@ export default function Registro() {
           </View>
         );
       case 2:
+        // ── Paso 2: Logo — un único UploadZone (ver componente arriba) ──
         return (
           <View>
             <Text style={s.stepTitle}>Logo de la empresa</Text>
@@ -2065,6 +2378,8 @@ export default function Registro() {
           </View>
         );
       case 3:
+        // ── Paso 3: Representante — mismos patrones de campo que el
+        // paso 1, más el DocTypeSelector explicado arriba ──
         return (
           <View>
             <Text style={s.stepTitle}>Representante</Text>
@@ -2103,7 +2418,7 @@ export default function Registro() {
               value={eRepDocType}
               onChange={(t) => {
                 setERepDocType(t);
-                setERepDocNum("");
+                setERepDocNum(""); // se limpia el número al cambiar de tipo de documento
                 clearErr("eRepDocNum");
               }}
             />
@@ -2111,6 +2426,10 @@ export default function Registro() {
               label="Número de documento (sin guiones)"
               value={eRepDocNum}
               onChangeText={(v) => {
+                // Handler escrito a mano (no usa `live`) porque `cleanDoc`
+                // y `valDoc` necesitan el `eRepDocType` actual como
+                // segundo argumento, algo que la fábrica `live` no soporta
+                // directamente.
                 const c = cleanDoc(v, eRepDocType);
                 setERepDocNum(c);
                 const m = valDoc(eRepDocType, c);
@@ -2118,6 +2437,8 @@ export default function Registro() {
                 else clearErr("eRepDocNum");
               }}
               keyboardType={eRepDocType === "pasaporte" ? "default" : "number-pad"}
+              // Teclado numérico para DUI/licencia, teclado normal para
+              // pasaporte (que mezcla una letra con números).
               autoCapitalize="characters"
               maxLength={DOC_RULES[eRepDocType].maxLen}
               error={errors.eRepDocNum}
@@ -2125,6 +2446,7 @@ export default function Registro() {
           </View>
         );
       case 4:
+        // ── Paso 4: Plan — usa PlanCard y TarjetaModal (explicados arriba) ──
         return (
           <View>
             <Text style={s.stepTitle}>Elige tu plan</Text>
@@ -2170,6 +2492,9 @@ export default function Registro() {
             </View>
 
             {PLANES.map((p) => {
+              // Dibuja las 3 tarjetas de plan (ver PLANES arriba),
+              // recalculando el precio a mostrar según Mensual/Anual con
+              // precioVisible().
               const pv = precioVisible(p, periodoPlanes);
               return (
                 <PlanCard
@@ -2184,6 +2509,9 @@ export default function Registro() {
             })}
             {!!errors.ePlan && <Text style={s.errText}>{errors.ePlan}</Text>}
             {ePlan && eCard && (
+              // Resumen de la tarjeta ya confirmada (solo si el plan
+              // elegido requería pago) — con opción de "Cambiar" que
+              // reabre el modal de pago.
               <View style={s.cardConfirmedRow}>
                 <Ionicons name="card-outline" size={16} color={C.green} />
                 <Text style={s.cardConfirmedText}>
@@ -2203,6 +2531,7 @@ export default function Registro() {
           </View>
         );
       case 5:
+        // ── Paso 5: Seguridad — 2 PasswordField + TermsRow (definido más abajo) ──
         return (
           <View>
             <Text style={s.stepTitle}>Seguridad</Text>
@@ -2240,9 +2569,16 @@ export default function Registro() {
     }
   };
 
+  // ── renderUniversidadStep(): ESPEJO de renderEmpresaStep(), con los
+  // campos de universidad. Sigue EXACTAMENTE los mismos patrones ya
+  // explicados arriba (FloatInput+live, SelectInput+GEO_DATA,
+  // UploadZone, DocTypeSelector) — la única sección realmente distinta
+  // es el paso 3 (Carreras), que usa CarrerasModal en vez de campos de
+  // texto. ──
   const renderUniversidadStep = () => {
     switch (step) {
       case 1:
+        // ── Paso 1: Institución (mismos patrones que empresa paso 1) ──
         return (
           <View>
             <Text style={s.stepTitle}>Datos de la institución</Text>
@@ -2352,6 +2688,7 @@ export default function Registro() {
           </View>
         );
       case 2:
+        // ── Paso 2: Logo (idéntico patrón a empresa paso 2) ──
         return (
           <View>
             <Text style={s.stepTitle}>Logo de la universidad</Text>
@@ -2373,6 +2710,12 @@ export default function Registro() {
           </View>
         );
       case 4:
+        // ── Paso 4: Responsable (idéntico patrón a empresa paso 3) ──
+        // Nota el orden: en universidad, "Carreras" es el case 3 y
+        // "Responsable" es el case 4 — al revés que en el switch de
+        // empresa, donde el paso 3 es "Representante" — el ORDEN VISUAL
+        // (ver FLOW_LABELS) sí sigue 1-2-3-4-5, pero el código de cada
+        // `case` está simplemente escrito en otro orden dentro del switch.
         return (
           <View>
             <Text style={s.stepTitle}>Responsable</Text>
@@ -2435,6 +2778,11 @@ export default function Registro() {
           </View>
         );
       case 3:
+        // ── Paso 3: Carreras universitarias — la sección REALMENTE
+        // distinta del flujo de universidad: en vez de campos de texto,
+        // un botón que abre CarrerasModal (ya explicado arriba), un
+        // resumen de "chips" con las primeras 6 carreras elegidas, y el
+        // conteo total. ──
         return (
           <View>
             <Text style={s.stepTitle}>Carreras universitarias</Text>
@@ -2471,6 +2819,8 @@ export default function Registro() {
                 </View>
                 <View style={s.carrerasChips}>
                   {uCarreras.slice(0, 6).map((nombre) => (
+                    // Muestra como máximo 6 "chips" con botón de quitar,
+                    // y un chip extra "+N más" si hay más de 6.
                     <View key={nombre} style={s.carreraChip}>
                       <Text style={s.carreraChipText} numberOfLines={1}>
                         {nombre}
@@ -2509,6 +2859,7 @@ export default function Registro() {
           </View>
         );
       case 5:
+        // ── Paso 5: Seguridad (idéntico patrón a empresa paso 5) ──
         return (
           <View>
             <Text style={s.stepTitle}>Seguridad</Text>
@@ -2546,8 +2897,10 @@ export default function Registro() {
     }
   };
 
-  // Empresa: Plan + Seguridad → 5 pasos. Universidad: Carreras + Seguridad → 5 pasos.
   const maxStep = flow === "universidad" ? 5 : 5;
+  // (Ambos flujos tienen 5 pasos — esta expresión, aunque siempre da 5
+  // sin importar el flujo, queda escrita como ternario probablemente
+  // por si algún día un flujo necesitara un número de pasos distinto.)
   const isLastStep = step === maxStep;
 
   // ══════════════════════════════════════════════════════════════
@@ -2575,6 +2928,9 @@ export default function Registro() {
             <TouchableOpacity
               style={s.backBtn}
               onPress={() => (step === 0 ? router.back() : goBack())}
+              // En el paso 0 (selector), "atrás" sale de la pantalla de
+              // registro por completo (router.back()); en cualquier otro
+              // paso, retrocede DENTRO del wizard (goBack()).
             >
               <Ionicons name="arrow-back" size={20} color={C.accent70} />
             </TouchableOpacity>
@@ -2642,6 +2998,9 @@ export default function Registro() {
               <StepNav
                 onBack={goBack}
                 onNext={isLastStep ? handleRegister : handleNext}
+                // En el ÚLTIMO paso, el botón "Siguiente" en realidad
+                // dispara handleRegister() (crea la cuenta de verdad) en
+                // vez de solo avanzar de paso.
                 nextLabel={isLastStep ? "Crear cuenta" : "Siguiente →"}
                 loading={submitting}
               />
@@ -2688,6 +3047,10 @@ export default function Registro() {
                 </View>
                 <ScrollView style={{ width: "100%" }}>
                   {(avisosRoja ?? []).map((a, i) => (
+                    // Puede haber VARIOS avisos a la vez si el usuario
+                    // seleccionó carreras de más de un motivo regulado
+                    // distinto (ej. Salud Y Derecho) — se muestran todos
+                    // apilados dentro del mismo modal.
                     <View key={a.motivo} style={{ marginBottom: i < (avisosRoja?.length ?? 0) - 1 ? 18 : 0 }}>
                       <Text style={s.confirmTitle}>{a.titulo}</Text>
                       <Text style={s.confirmDesc}>{a.cuerpo}</Text>
@@ -2743,6 +3106,9 @@ function TermsRow({
   onToggle: () => void;
   error?: string;
 }) {
+  // Un checkbox dibujado a mano (React Native no trae uno nativo
+  // multiplataforma) + el texto legal, usado en el último paso de ambos
+  // flujos (empresa y universidad).
   const { s } = useRegistroTheme();
   return (
     <View>
@@ -2760,7 +3126,12 @@ function TermsRow({
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  Estilos
+//  Estilos — mismo patrón makeStyles(tokens) ya explicado en
+//  ThemeContext.tsx/GUIA_03_TEMA_CLARO_OSCURO.md, aplicado aquí sobre los
+//  tokens `C` de este archivo (ver makeC arriba) en vez de sobre
+//  GradlyColors directo. Sin comentarios por propiedad — ya se explicó el
+//  significado de fontSize/borderRadius/backgroundColor/etc. en los
+//  primeros archivos comentados de esta sesión.
 // ══════════════════════════════════════════════════════════════════
 const makeStyles = (C: Tokens) =>
   StyleSheet.create({

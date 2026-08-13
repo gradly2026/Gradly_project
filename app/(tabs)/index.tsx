@@ -1,3 +1,26 @@
+// ════════════════════════════════════════════════════════════════════════
+// app/(tabs)/index.tsx — pestaña "Inicio" del estudiante (feed de vacantes)
+//
+// GUÍA PARA PRINCIPIANTES:
+// Esta es la pantalla MÁS COMPLEJA del recorrido del estudiante: el feed
+// principal que ve al abrir la app. Su particularidad es que NO muestra
+// siempre lo mismo — según la SITUACIÓN del estudiante, muestra una de 3
+// vistas completamente distintas:
+//   1. Ya culminó su práctica/está graduado → feed completo de vacantes,
+//      puede aplicar directamente.
+//   2. Está en una pasantía activa ahora mismo → ve el mercado en modo
+//      SOLO LECTURA (para "ubicarse"), no puede aplicar a nada nuevo.
+//   3. Todavía no tiene pasantía → ve el tablero de cupos que su
+//      universidad le aseguró + pasantías de otras empresas a las que
+//      puede aplicar por su cuenta (autoservicio), salvo que su carrera
+//      sea de "Zona Roja" (Salud/Educación/Derecho), en cuyo caso no ve
+//      autoservicio en absoluto.
+// Es un excelente ejemplo de: múltiples onSnapshot combinados para
+// derivar un solo "estado de negocio", filtrado/ordenamiento de listas en
+// el cliente con useMemo, "debounce" de un campo de búsqueda, y consultas
+// `in` de Firestore troceadas de 30 en 30 (un límite real de Firestore).
+// ════════════════════════════════════════════════════════════════════════
+
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -10,14 +33,28 @@ import {
   query,
   where,
 } from 'firebase/firestore';
+// documentId(): una función especial de Firestore que, usada dentro de
+// where(documentId(), 'in', listaDeIds), permite filtrar documentos POR
+// SU PROPIO ID (en vez de por el valor de un campo normal) — se usa más
+// abajo para leer varios perfiles de empresa a la vez, dados sus ids.
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   aplicarAPasantiaIndependiente,
   aplicarAVacante,
   estudianteHabilitadoParaVacantes,
 } from '../../src/services/pasantiaService';
+// Las 3 funciones de pasantiaService.ts ya comentadas a fondo en ese
+// archivo: deciden si el estudiante puede aplicar a vacantes "normales",
+// permiten aplicar por cuenta propia a una pasantía, y calculan la
+// elegibilidad.
 import { abrirChatDirectoEmpresaEstudiante } from '../../src/services/chatService';
 import { esVacanteAfin, puntuarVacante } from '../../src/data/areas';
+// esVacanteAfin(carrera, vacante) → true/false: ¿esta vacante es del área
+// de la carrera del estudiante?
+// puntuarVacante(carrera, skills, vacante) → un número: qué tan bien
+// "encaja" esa vacante con el perfil del estudiante (se usa para
+// ORDENAR el feed, mostrando primero lo más afín).
 import { hayCupos, textoSalario } from '../../src/utils/cupos';
 import { cargarOverridesCarreras, mensajeZonaRoja, zonaDeCarrera } from '../../src/data/carreras';
 import {
@@ -25,6 +62,13 @@ import {
   Alert,
   Animated,
   FlatList,
+  // FlatList: el componente de React Native OPTIMIZADO para listas
+  // largas — a diferencia de dibujar un .map() dentro de un ScrollView
+  // normal (que renderiza TODOS los elementos de una vez, aunque no se
+  // vean en pantalla), FlatList solo dibuja los elementos que están
+  // (o están por entrar) en el área visible, reciclando las filas que
+  // salen de vista — fundamental para que un feed con cientos de
+  // vacantes siga siendo fluido.
   Image,
   Platform,
   ScrollView,
@@ -42,10 +86,25 @@ import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import VacanteDetailModal from '../../src/components/VacanteDetailModal';
 import SelloEmpresa from '../../src/components/SelloEmpresa';
+// "Sello" visual (oro/plata/bronce) que indica el prestigio/rango de una
+// empresa, calculado a partir de su experiencia acumulada (XP) en la
+// plataforma — parte del mismo sistema de gamificación usado con
+// estudiantes.
 import TableroCupos from '../../src/components/TableroCupos';
 import MercadoLaboralStats from '../../src/components/MercadoLaboralStats';
+// Componente que muestra estadísticas generales del "mercado" (cuántas
+// vacantes hay, en qué áreas, etc.) — se ve cuando el estudiante está en
+// modo solo-lectura (situación 2 de arriba).
 import { AutoText, AutoText as Text, AutoTextInput as TextInput, useAutoText } from '../../src/components/AutoText';
+// Aquí se importa AutoText de 3 formas: como `AutoText` (nombre normal),
+// como alias `Text`, y también se trae el hook `useAutoText` (para
+// traducir un texto SIN envolverlo en un componente — se usa más abajo
+// para las frases motivacionales animadas).
 import { calcularRango, type RangoTier } from '../../src/services/feedbackService';
+// calcularRango(xp, 'empresa') → dado el puntaje de experiencia de una
+// empresa, calcula su "tier" (rango): 'bronce' | 'plata' | 'oro' — mismo
+// sistema de gamificación que calcula niveles de estudiante, aplicado
+// aquí a empresas.
 
 // Hook que recrea los estilos según el tema activo (claro/oscuro)
 function useThemedStyles() {
@@ -90,6 +149,9 @@ const FRASES = [
   'Cada pasantía es un paso hacia tu futuro',
   'Conecta con empresas que transforman El Salvador',
 ];
+// Frases motivacionales que rotan bajo el saludo — texto en ESPAÑOL,
+// traducido en vivo con useAutoText() al momento de mostrarse (ver el
+// render más abajo).
 
 const FILTROS = [
   { key: 'todas',       label: 'Todas' },
@@ -99,8 +161,13 @@ const FILTROS = [
 ];
 
 const HOY = new Date();
+// Se calcula UNA sola vez, al cargar el archivo (no dentro del
+// componente) — suficiente para esta pantalla, ya que la fecha "hoy" no
+// necesita actualizarse en vivo mientras el usuario tiene la app abierta.
 
 function relativeTime(ts: any): string {
+  // Convierte una fecha de Firestore a un texto relativo tipo "hace 3
+  // días" — mucho más fácil de leer de un vistazo que una fecha exacta.
   if (!ts) return '';
   const d: Date = ts.toDate ? ts.toDate() : new Date(ts);
   const days = Math.floor((HOY.getTime() - d.getTime()) / 86_400_000);
@@ -128,6 +195,8 @@ function VacanteCard({
   yaAplico: boolean;
   estadoAplicacion: string;
   onAplicar?: (v: Vacante) => void;
+  // Prop OPCIONAL (con "?"): en modo readOnly, quien use esta tarjeta
+  // simplemente no le pasa esta función.
   onVerDetalle: (v: Vacante) => void;
   applying: boolean;
   empresaTier?: RangoTier;
@@ -137,6 +206,8 @@ function VacanteCard({
 }) {
   const { styles } = useThemedStyles();
   const initial = vacante.nombre_empresa?.[0]?.toUpperCase() ?? '?';
+  // La primera LETRA del nombre de la empresa, en mayúscula, usada como
+  // "avatar" alternativo cuando no hay logo (ver logoFallback más abajo).
 
   const btnColor = readOnly
     ? COLORS.backgroundSurface
@@ -145,6 +216,15 @@ function VacanteCard({
     : estadoAplicacion === 'rechazado' ? COLORS.error
     : COLORS.warning
     : COLORS.primaryDark;
+  // Una cadena de ternarios anidados (equivalente a varios "if/else if")
+  // que calcula el color del botón según 4 posibles situaciones, en
+  // orden de prioridad:
+  //   1. readOnly → gris neutro (no se puede interactuar).
+  //   2. Ya aplicó Y fue contratado → verde.
+  //   3. Ya aplicó Y fue rechazado → rojo.
+  //   4. Ya aplicó (cualquier otro estado, ej. pendiente) → ámbar.
+  //   5. (ninguna de las anteriores) No ha aplicado todavía → morado
+  //      oscuro normal (color por defecto del botón "Aplicar").
 
   const btnLabel = readOnly
     ? 'Disponible al graduarte'
@@ -156,9 +236,15 @@ function VacanteCard({
     : estadoAplicacion === 'rechazado'  ? 'Rechazado'
     : 'Aplicado'
     : 'Aplicar';
+  // Mismo patrón de cascada de ternarios, esta vez para el TEXTO del
+  // botón, con más casos posibles según el estado exacto de la aplicación.
 
   const skillsVisible = vacante.skills_requeridas?.slice(0, 3) ?? [];
+  // Muestra como máximo 3 habilidades requeridas en la tarjeta (para no
+  // saturarla visualmente).
   const extraSkills   = (vacante.skills_requeridas?.length ?? 0) - 3;
+  // Cuántas skills MÁS hay, aparte de las 3 mostradas (se usa para el
+  // chip "+2" si hay más).
 
   return (
     <GlassCard style={{ marginBottom: 12 }} contentStyle={{ padding: 16 }}>
@@ -185,11 +271,21 @@ function VacanteCard({
               )}
             </View>
             {empresaTier && empresaTier !== 'bronce' && (
+              // Solo se muestra el sello si es plata u oro (bronce, el
+              // rango más básico, no se destaca visualmente).
               <View style={{ marginTop: 4 }}>
                 <SelloEmpresa tier={empresaTier} />
               </View>
             )}
             <AutoText style={styles.titulo} numberOfLines={2}>{vacante.titulo}</AutoText>
+            {/* El título usa AutoText (traducción dinámica) porque lo
+                escribió la empresa; nombre_empresa arriba usa <Text>
+                normal sin traducir — un nombre propio no debería
+                traducirse (aunque aquí, a diferencia de otros archivos,
+                no se usa explícitamente noTranslate; puede ser una
+                inconsistencia menor sin impacto grave, ya que <Text>
+                normal simplemente no pasa por el sistema de traducción en
+                absoluto). */}
           </View>
         </View>
 
@@ -238,6 +334,10 @@ function VacanteCard({
           ]}
           contentStyle={{ paddingVertical: 8, paddingHorizontal: 18 }}
           onPress={() => !readOnly && !yaAplico && onAplicar?.(vacante)}
+          // "onAplicar?.(vacante)" — optional chaining sobre una función:
+          // si `onAplicar` no vino como prop (undefined), esta expresión
+          // simplemente no hace nada, en vez de lanzar un error por
+          // "intentar llamar algo que no es una función".
           disabled={readOnly || yaAplico || applying}
         >
           {applying
@@ -253,6 +353,9 @@ function VacanteCard({
 function Chip({
   label, color, textColor, small,
 }: { label: string; color: string; textColor?: string; small?: boolean }) {
+  // Componente pequeño y genérico reutilizado MUCHAS veces en la tarjeta
+  // (tipo, modalidad, horas, salario, skills) — una "píldora" de color
+  // configurable.
   const { styles } = useThemedStyles();
   return (
     <View style={[styles.chip, { backgroundColor: color }, small && styles.chipSmall]}>
@@ -276,9 +379,24 @@ export default function FeedVacantes() {
 
   const [vacantes,       setVacantes]       = useState<Vacante[]>([]);
   const [aplicaciones,   setAplicaciones]   = useState<Record<string, string>>({});
+  // Un DICCIONARIO (no un array): la clave es el ID de la vacante, el
+  // valor es el estado de la aplicación del estudiante a esa vacante
+  // ('pendiente', 'contratado', etc.) — permite consultar
+  // "¿ya apliqué a esta vacante puntual, y en qué estado quedó?" en
+  // tiempo O(1) (instantáneo), en vez de recorrer un array completo cada
+  // vez que se dibuja una tarjeta.
   const [applying,       setApplying]       = useState<string | null>(null);
+  // Guarda el ID de la vacante a la que se está aplicando AHORA MISMO (o
+  // null si ninguna) — se usa para mostrar el loader solo en el botón de
+  // la tarjeta correcta, no en todas a la vez.
   const [searchInput,    setSearchInput]    = useState('');
   const [searchQuery,    setSearchQuery]    = useState('');
+  // Dos estados separados para la búsqueda: `searchInput` refleja
+  // INSTANTÁNEAMENTE lo que el usuario escribe (para que el campo de
+  // texto se sienta responsivo), mientras `searchQuery` se actualiza con
+  // RETRASO (debounce, ver más abajo) y es la que de verdad filtra la
+  // lista — evita recalcular el filtrado completo en CADA tecla
+  // presionada.
   const [filtroActivo,   setFiltroActivo]   = useState('todas');
   const [phraseIdx,      setPhraseIdx]      = useState(0);
   const [cargando,       setCargando]       = useState(true);
@@ -305,6 +423,16 @@ export default function FeedVacantes() {
   const [acuerdoCargado, setAcuerdoCargado] = useState(false);
   const [tieneCupoTomado, setTieneCupoTomado] = useState(false);
   const [cupoCargado, setCupoCargado] = useState(false);
+  // GUÍA: notarás el patrón "X" + "XCargado" repetido varias veces en
+  // este archivo (perfilCargado, acuerdoCargado, cupoCargado). Cada
+  // bandera "Cargado" existe porque este componente combina VARIAS
+  // fuentes de datos asíncronas para decidir QUÉ VISTA mostrar — y
+  // mientras no se sepa el resultado de TODAS ellas, no se puede decidir
+  // con certeza en cuál de las 3 situaciones está el estudiante. Mostrar
+  // la vista equivocada aunque sea un instante (por ejemplo, mostrarle el
+  // feed completo a alguien que en realidad está en pasantía activa,
+  // solo porque esa lectura en particular todavía no llegó) sería peor
+  // que mostrar un loader un poco más de tiempo.
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const phraseOpacity = useRef(new Animated.Value(1)).current;
@@ -317,6 +445,9 @@ export default function FeedVacantes() {
   const [filtrosContentW, setFiltrosContentW] = useState(0);
   const [filtrosScrollX, setFiltrosScrollX] = useState(0);
   const canScrollFiltros = filtrosContentW > filtrosViewportW + 8;
+  // ¿el contenido de los chips de filtro es más ancho que el espacio
+  // visible? (con 8px de margen de tolerancia) — si es así, hacen falta
+  // las flechas de navegación.
   const canScrollLeft = filtrosScrollX > 4;
   const canScrollRight = filtrosScrollX < Math.max(0, filtrosContentW - filtrosViewportW - 4);
   const moverFiltros = useCallback((delta: number) => {
@@ -324,6 +455,9 @@ export default function FeedVacantes() {
       filtrosScrollX + delta,
       Math.max(0, filtrosContentW - filtrosViewportW),
     ));
+    // Math.max(0, Math.min(..., límite)) es el patrón "clamp" (acotar):
+    // asegura que el nuevo punto de scroll nunca sea negativo NI se pase
+    // del máximo posible, sin importar cuánto sea `delta`.
     filtrosScrollRef.current?.scrollTo({ x: siguiente, animated: true });
     setFiltrosScrollX(siguiente);
   }, [filtrosContentW, filtrosScrollX, filtrosViewportW]);
@@ -331,6 +465,9 @@ export default function FeedVacantes() {
 
   // Nombre del estudiante
   const nombre = (userProfile as any)?.nombre_completo?.split(' ')[0] ?? 'Estudiante';
+  // .split(' ')[0] toma solo la PRIMERA palabra del nombre completo (el
+  // primer nombre), para un saludo más cercano ("Hola, Ana!" en vez de
+  // "Hola, Ana María Pérez López!").
   const fecha  = HOY.toLocaleDateString('es-SV', { weekday: 'long', day: 'numeric', month: 'long' });
 
   // ── Firebase: vacantes activas ──────────────────────────────────
@@ -394,12 +531,24 @@ export default function FeedVacantes() {
   // Overrides de Zona Roja (config/carreras) — sin esto el catálogo estático
   // manda siempre, aunque un admin haya reclasificado una carrera en vivo.
   useEffect(() => { void cargarOverridesCarreras(); }, []);
+  // Carga (una sola vez) posibles cambios que un administrador haya hecho
+  // a la clasificación Zona Verde/Roja de las carreras, guardados en
+  // Firestore — sin esto, `zonaDeCarrera()` solo usaría el catálogo fijo
+  // programado de antemano, ignorando cambios recientes hechos desde el
+  // panel admin.
 
   // ── ¿Tiene una pasantía activa ahora mismo? (distinto de "graduado") ──
   const tienePasantiaActiva = useMemo(
     () => Object.values(aplicaciones).includes('contratado') || tieneAcuerdoAprobado || tieneCupoTomado,
     [aplicaciones, tieneAcuerdoAprobado, tieneCupoTomado],
   );
+  // Combina las 3 posibles VÍAS por las que un estudiante puede tener una
+  // pasantía activa: (a) una aplicación individual en estado
+  // 'contratado', (b) un acuerdo de grupo aprobado, o (c) un cupo tomado
+  // del reparto por lote. Object.values(aplicaciones) convierte el
+  // diccionario de aplicaciones en un array de solo sus VALORES (los
+  // estados), y .includes('contratado') revisa si alguno de ellos es
+  // exactamente 'contratado'.
 
   // Carrera del estudiante + si cae en Zona Roja (Salud/Educación/Derecho):
   // esos estudiantes NUNCA ven la sección de autoservicio a pasantías, sin
@@ -418,7 +567,14 @@ export default function FeedVacantes() {
     const pendientes = Array.from(
       new Set(vacantes.map(v => v.empresa_id).filter(Boolean)),
     ).filter(id => !(id in empresaTiers));
+    // Calcula la lista de IDs de empresa que aparecen en las vacantes
+    // actuales pero que TODAVÍA no se han consultado (no están en el
+    // caché `empresaTiers`). "new Set(...)" elimina duplicados (varias
+    // vacantes pueden ser de la misma empresa) y Array.from(...) lo
+    // vuelve a convertir en array para poder usar .filter().
     if (pendientes.length === 0) return;
+    // Si no hay ninguna empresa pendiente de consultar, no hace nada
+    // (evita peticiones innecesarias a Firestore).
 
     let cancelado = false;
     (async () => {
@@ -426,10 +582,19 @@ export default function FeedVacantes() {
       // Firestore limita `in` a 30 ids por consulta.
       for (let i = 0; i < pendientes.length; i += 30) {
         const lote = pendientes.slice(i, i + 30);
+        // GUÍA IMPORTANTE: Firestore tiene un límite TÉCNICO real: una
+        // consulta `where(documentId(), 'in', lista)` acepta como máximo
+        // 30 valores en esa lista. Si hubiera, por ejemplo, 75 empresas
+        // distintas pendientes, este bucle las trocea en 3 lotes de hasta
+        // 30 cada uno (0-29, 30-59, 60-74) y hace UNA consulta por lote.
         try {
           const snap = await getDocs(
             query(collection(db, 'perfiles_empresas'), where(documentId(), 'in', lote)),
           );
+          // where(documentId(), 'in', lote) → "documentos cuyo PROPIO ID
+          // (no un campo interno) esté dentro de esta lista" — una forma
+          // eficiente de leer VARIOS documentos conocidos de una sola vez
+          // (en vez de hacer una consulta getDoc() separada por cada uno).
           snap.docs.forEach(d => {
             nuevos[d.id] = calcularRango(Number((d.data() as any).puntos_experiencia ?? 0), 'empresa').tier;
           });
@@ -439,6 +604,10 @@ export default function FeedVacantes() {
       }
       if (!cancelado && Object.keys(nuevos).length > 0) {
         setEmpresaTiers(prev => ({ ...prev, ...nuevos }));
+        // Combina los tiers recién calculados con los que ya estaban en
+        // caché (spread de `prev` + los `nuevos`), en vez de reemplazar
+        // todo el diccionario — así no se pierden tiers ya calculados en
+        // ejecuciones anteriores de este mismo efecto.
       }
     })();
     return () => { cancelado = true; };
@@ -452,6 +621,8 @@ export default function FeedVacantes() {
       const map: Record<string, string> = {};
       snap.docs.forEach(d => { map[d.data().vacante_id] = d.data().estado; });
       setAplicaciones(map);
+      // Convierte la lista de aplicaciones (documentos) en el diccionario
+      // { vacanteId: estado } explicado arriba.
     });
     return unsub;
   }, [user]);
@@ -461,30 +632,58 @@ export default function FeedVacantes() {
     const interval = setInterval(() => {
       Animated.timing(phraseOpacity, { toValue: 0, duration: 400, useNativeDriver: Platform.OS !== 'web' })
         .start(() => {
+          // El callback de .start() se ejecuta CUANDO la animación de
+          // desvanecer (fade out) termina: recién ahí se cambia el texto
+          // (para que el cambio sea invisible, oculto detrás de la
+          // opacidad 0) y se dispara la animación de vuelta (fade in).
           setPhraseIdx(p => (p + 1) % FRASES.length);
+          // "(p + 1) % FRASES.length" avanza al siguiente índice, y
+          // cuando llega al final de la lista, vuelve a 0 (el operador
+          // módulo % hace que el conteo sea "circular").
           Animated.timing(phraseOpacity, { toValue: 1, duration: 400, useNativeDriver: Platform.OS !== 'web' }).start();
         });
     }, 5000);
+    // Cada 5 segundos se repite el ciclo completo: desvanecer → cambiar
+    // texto → aparecer.
     return () => clearInterval(interval);
   }, []);
 
   // ── Debounce búsqueda ────────────────────────────────────────────
   const handleSearch = useCallback((text: string) => {
     setSearchInput(text);
+    // Actualiza el campo visible INMEDIATAMENTE (sin retraso), para que
+    // escribir se sienta fluido.
     clearTimeout(debounceRef.current);
+    // Cancela cualquier temporizador de "aplicar búsqueda" que hubiera
+    // quedado pendiente de la tecla ANTERIOR.
     debounceRef.current = setTimeout(() => setSearchQuery(text), 350);
+    // Programa un NUEVO temporizador: si el usuario no vuelve a escribir
+    // en los próximos 350ms, recién ENTONCES se actualiza `searchQuery`
+    // (la que de verdad dispara el filtrado de la lista). Este patrón se
+    // llama "debounce" (retraso agrupado): si el usuario escribe rápido
+    // "desarrollador", en vez de recalcular el filtro completo 13 veces
+    // (una por letra), se recalcula UNA sola vez, 350ms después de la
+    // última letra escrita.
   }, []);
 
   // ── Toast de éxito ───────────────────────────────────────────────
   const showToast = useCallback(() => {
     toastOpacity.setValue(0); toastY.setValue(20);
+    // Reinicia los valores animados a su punto de partida (invisible, 20
+    // píxeles más abajo) antes de animar, por si el toast se mostrara dos
+    // veces seguidas sin terminar la animación anterior.
     Animated.parallel([
       Animated.timing(toastOpacity, { toValue: 1, duration: 300, useNativeDriver: Platform.OS !== 'web' }),
       Animated.timing(toastY, { toValue: 0, duration: 300, useNativeDriver: Platform.OS !== 'web' }),
+      // Anima 2 valores A LA VEZ: la opacidad (aparece) y la posición
+      // vertical (sube desde 20px más abajo hasta su posición final) —
+      // el típico efecto "toast que sube y aparece".
     ]).start(() =>
       setTimeout(() =>
         Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: Platform.OS !== 'web' }).start(),
       2000),
+      // Cuando la animación de ENTRADA termina, se espera 2 segundos y
+      // luego se anima la SALIDA (solo la opacidad, de vuelta a 0).
     );
   }, []);
 
@@ -507,6 +706,13 @@ export default function FeedVacantes() {
     res = [...res].sort(
       (a, b) => puntuarVacante(miCarrera, misSkills, b) - puntuarVacante(miCarrera, misSkills, a),
     );
+    // "[...res].sort(...)" copia el array ANTES de ordenar (con spread),
+    // porque .sort() ordena "en el lugar" (modifica el array original) —
+    // copiarlo primero evita mutar `vacantes` (el estado original)
+    // directamente, lo cual sería una mala práctica en React. La función
+    // de comparación resta el puntaje de `b` menos el de `a`: cuando el
+    // resultado es negativo, `a` va primero — así se ordena de MAYOR a
+    // MENOR puntaje (los más afines, primero).
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -515,12 +721,18 @@ export default function FeedVacantes() {
         v.nombre_empresa.toLowerCase().includes(q) ||
         v.area?.toLowerCase().includes(q),
       );
+      // Búsqueda simple de texto: coincide si el término buscado aparece
+      // (sin importar mayúsculas/minúsculas) en el título, el nombre de
+      // la empresa, O el área.
     }
     if (filtroActivo !== 'todas') {
       res = res.filter(v => v.modalidad === filtroActivo || v.area === filtroActivo);
     }
     return res;
   }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, userProfile]);
+  // useMemo: este cálculo (filtrar + ordenar) solo se vuelve a ejecutar
+  // cuando cambia alguna de sus dependencias — no en CADA render de la
+  // pantalla (por ejemplo, no se recalcula solo porque `applying` cambió).
 
   // ── Autoservicio de pasantías: para quien AÚN no tiene pasantía activa,
   // pasantías de OTRAS empresas afines a su carrera — camino aparte del que
@@ -529,10 +741,17 @@ export default function FeedVacantes() {
   // cubren las otras 2 ramas del render).
   const pasantiasDisponibles = useMemo(() => {
     if (habilitadoParaVacantes || tienePasantiaActiva || zonaRoja) return [];
+    // Corta temprano: si el estudiante está en cualquiera de las otras 2
+    // situaciones (o es Zona Roja), esta lista ni siquiera se calcula —
+    // simplemente queda vacía.
 
     let res = vacantes.filter(v =>
       (v.categoria === 'pasantia' || (!v.categoria && v.tipo === 'Pasantía')) && hayCupos(v),
     );
+    // A diferencia de filteredVacantes (que EXCLUYE las de categoría
+    // 'pasantia'), aquí es al revés: se buscan JUSTO las de categoría
+    // 'pasantia' (o legadas sin categoría pero con tipo "Pasantía") que
+    // además TENGAN cupos disponibles (hayCupos).
 
     if (miCarrera) res = res.filter(v => esVacanteAfin(miCarrera, v));
 
@@ -561,6 +780,9 @@ export default function FeedVacantes() {
     if (!habilitadoParaVacantes) {
       Alert.alert('Vacantes no disponibles', 'Las vacantes se habilitan cuando culmines tu práctica o pasantía, o estés graduado.');
       return;
+      // Doble verificación de seguridad: aunque el botón ya debería estar
+      // deshabilitado visualmente en ese caso, esta comprobación evita
+      // que la acción se ejecute si de alguna forma se llamara igual.
     }
 
     setApplying(vacante.id);
@@ -579,6 +801,10 @@ export default function FeedVacantes() {
     } catch (err: any) {
       if (!err.message?.includes('Ya aplicaste')) {
         Alert.alert('Error', err.message ?? 'No se pudo enviar tu aplicación.');
+        // No muestra un Alert de error si el mensaje es "Ya aplicaste..."
+        // — ese caso puede pasar por un doble toque accidental, y no hace
+        // falta alarmar al usuario con un Alert por algo tan menor
+        // (simplemente no se envía dos veces, sin más aviso).
       }
     } finally {
       setApplying(null);
@@ -627,8 +853,12 @@ export default function FeedVacantes() {
         estudianteNombre,
         contexto: 'candidatura',
       });
+      // Crea (o reutiliza, si ya existía) un chat directo entre este
+      // estudiante y la empresa de la vacante, y devuelve su ID.
       setVacanteDetalle(null);
       router.push({ pathname: '/ChatScreen', params: { chatId, peerName: vacante.nombre_empresa ?? 'Empresa' } } as any);
+      // Navega a la pantalla de chat, pasándole el ID recién obtenido y
+      // el nombre de la empresa como parámetros de URL.
     } catch {
       Alert.alert('Error', 'No se pudo abrir el chat con la empresa.');
     }
@@ -646,6 +876,11 @@ export default function FeedVacantes() {
       <Text style={styles.emptyDesc}>{desc}</Text>
     </View>
   );
+  // Nota: EmptyState está definido DENTRO del componente FeedVacantes (no
+  // fuera, como VacanteCard o Chip) — esto significa que se vuelve a
+  // crear en CADA render de la pantalla. Para un componente tan simple no
+  // representa un problema real de rendimiento, pero es una diferencia de
+  // estilo respecto a los componentes definidos afuera.
 
   // Aviso legal de Zona Roja para la carrera del estudiante (si aplica) —
   // reutiliza el mismo texto que ya se le muestra a la universidad, en vez
@@ -677,6 +912,12 @@ export default function FeedVacantes() {
             <Text style={styles.greeting}>Hola, {nombre}! 👋</Text>
             <Animated.Text style={[styles.phrase, { opacity: phraseOpacity }]}>
               {useAutoText(FRASES[phraseIdx])}
+              {/* useAutoText(texto) — la versión "hook" de AutoText, para
+                  usar cuando el elemento que dibuja el texto NO es un
+                  <Text> normal sino, como aquí, un <Animated.Text>
+                  (necesario para poder animar su opacidad). Devuelve
+                  directamente el STRING ya traducido, en vez de un
+                  componente. */}
             </Animated.Text>
           </View>
           <Text style={styles.fecha}>{fecha}</Text>
@@ -708,6 +949,10 @@ export default function FeedVacantes() {
 
         {/* Chips de filtro (con flechas ◀▶ para navegar en web/escritorio) */}
         <View style={styles.filtrosOuter} onLayout={(e) => setFiltrosViewportW(e.nativeEvent.layout.width)}>
+          {/* onLayout: un evento de React Native que se dispara cuando el
+              componente termina de calcular su tamaño real en pantalla —
+              se usa aquí para medir cuánto espacio VISIBLE hay disponible
+              para los chips, y así decidir si hacen falta las flechas. */}
           {canScrollFiltros ? (
             <TouchableOpacity
               style={[styles.filtrosArrow, !canScrollLeft && styles.filtrosArrowDisabled]}
@@ -724,8 +969,16 @@ export default function FeedVacantes() {
             horizontal
             showsHorizontalScrollIndicator={false}
             onContentSizeChange={(w) => setFiltrosContentW(w)}
+            // onContentSizeChange mide el ancho TOTAL del contenido
+            // desplazable (todos los chips juntos, aunque no quepan en
+            // pantalla) — junto con filtrosViewportW (el ancho visible),
+            // permite calcular si hay espacio de sobra para desplazar.
             onScroll={(e) => setFiltrosScrollX(e.nativeEvent.contentOffset.x)}
             scrollEventThrottle={16}
+            // scrollEventThrottle={16} limita la frecuencia con la que se
+            // dispara onScroll a, como máximo, cada 16 milisegundos
+            // (~60 veces por segundo) — evita sobrecargar la app con
+            // actualizaciones de estado en cada micro-movimiento del dedo.
             contentContainerStyle={styles.filtrosScroll}
             style={styles.filtrosViewport}
           >
@@ -763,6 +1016,10 @@ export default function FeedVacantes() {
       </View>
 
       {/* ── FEED ── */}
+      {/* Este bloque es el CORAZÓN de la lógica "3 vistas distintas"
+          explicada al inicio del archivo: primero se revisa si TODAVÍA
+          faltan datos por cargar (loader), y si no, se decide entre 3
+          ramas mutuamente excluyentes según la situación del estudiante. */}
       {cargando || !perfilCargado || !acuerdoCargado || !cupoCargado ? (
         <View style={styles.loader}>
           <ActivityIndicator size="large" color={COLORS.primary} />
@@ -772,9 +1029,14 @@ export default function FeedVacantes() {
         <FlatList
           data={filteredVacantes}
           renderItem={({ item }) => (
+            // "renderItem" es la función que FlatList llama por cada
+            // elemento visible de `data`, para dibujar su fila — recibe
+            // un objeto con `item` (el dato de esa posición).
             <VacanteCard
               vacante={item}
               yaAplico={item.id in aplicaciones}
+              // "item.id in aplicaciones" comprueba si esa clave existe
+              // en el diccionario (sin importar su valor).
               estadoAplicacion={aplicaciones[item.id] ?? ''}
               onAplicar={handleAplicar}
               onVerDetalle={setVacanteDetalle}
@@ -788,10 +1050,17 @@ export default function FeedVacantes() {
           style={[{ flex: 1 }, webScrollStyle]}
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100, maxWidth: 640, alignSelf: 'center', width: '100%', flexGrow: 1 }}
           ListHeaderComponent={
+            // Un componente que se dibuja UNA vez, arriba de toda la
+            // lista (no se repite por cada elemento) — aquí, el banner
+            // explicativo.
             <EstadoBanner texto="Ya culminaste tu práctica o pasantía: podés aplicar directamente a cualquier vacante disponible." />
           }
           ListEmptyComponent={<EmptyState />}
+          // Se dibuja SOLO si `data` está vacío, en vez de ListHeaderComponent.
           keyExtractor={item => item.id}
+          // keyExtractor: le dice a FlatList cómo obtener una `key` única
+          // por cada elemento (equivalente al `key` que se pone a mano en
+          // un .map() normal).
         />
       ) : tienePasantiaActiva ? (
         // ── En pasantía activa: mercado en modo lectura + pulso del mercado ──
@@ -806,6 +1075,8 @@ export default function FeedVacantes() {
               applying={false}
               empresaTier={empresaTiers[item.empresa_id]}
               readOnly
+              // No se pasa onAplicar en absoluto — VacanteCard ya sabe
+              // manejar esa ausencia (ver "onAplicar?.(vacante)" arriba).
             />
           )}
           showsVerticalScrollIndicator
@@ -894,6 +1165,10 @@ export default function FeedVacantes() {
           vacanteDetalle && vacanteDetalle.id in aplicaciones
             ? () => handleContactarEmpresa(vacanteDetalle)
             : undefined
+          // El botón "Contactar empresa" solo se habilita si el
+          // estudiante YA aplicó a esa vacante (tiene sentido chatear con
+          // la empresa una vez que hay una candidatura de por medio, no
+          // antes).
         }
       />
     </View>
@@ -997,6 +1272,8 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 
   // ── Card
   card: {
+    // No usado directamente (VacanteCard usa GlassCard) — estilo de
+    // respaldo sin aplicar, igual patrón visto en otros archivos.
     backgroundColor: COLORS.backgroundCard,
     borderRadius: 16,
     padding: 16,

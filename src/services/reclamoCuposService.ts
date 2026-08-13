@@ -1,3 +1,19 @@
+// ════════════════════════════════════════════════════════════════════════
+// reclamoCuposService.ts
+//
+// GUÍA PARA PRINCIPIANTES:
+// Este archivo implementa el sistema de "reparto de cupos": en vez de que
+// una universidad postule un grupo ENTERO a una vacante (todo o nada,
+// ver pasantiaService.ts), aquí una universidad puede RESERVAR una
+// CANTIDAD de plazas sueltas de una vacante (por ejemplo, 8 de 30
+// estudiantes), y luego cada estudiante ELIGE por su cuenta tomar uno de
+// esos cupos ya reservados. Es otro gran ejemplo de CRUD + transacciones,
+// muy similar en espíritu a pasantiaService.ts, pero con un concepto de
+// negocio distinto: "inventario de cupos" en vez de "compromiso de grupo
+// completo". Si ya entendiste pasantiaService.ts, reconocerás el mismo
+// patrón de transacciones aquí, aplicado a otro problema.
+// ════════════════════════════════════════════════════════════════════════
+
 import {
   addDoc,
   arrayUnion,
@@ -13,6 +29,14 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
+// Todas estas funciones ya se explicaron a fondo en pasantiaService.ts.
+// La única nueva aquí es:
+//   - Timestamp (con mayúscula, distinto de serverTimestamp()) → permite
+//     CONSTRUIR una fecha de Firestore a partir de un valor calculado en
+//     el propio celular (ver Timestamp.fromMillis más abajo), en vez de
+//     pedirle al servidor "pon la hora actual" — se necesita cuando hay
+//     que calcular una fecha FUTURA (aquí, un plazo de 48 horas).
+
 import { db } from '../config/firebaseConfig';
 import { enviarNotificacion } from './notificationService';
 import {
@@ -22,7 +46,24 @@ import {
   expiroSeleccion,
   PLAZO_SELECCION_HORAS,
 } from '../utils/cupos';
+// Funciones utilitarias de src/utils/cupos.ts (no comentado en detalle en
+// esta sesión, pero sus nombres son bastante descriptivos):
+//   - cuposTotales(vacante)       → el total de cupos que ofrece la
+//     vacante, o null si es una vacante "legada" sin ese concepto.
+//   - cuposDisponibles(vacante)    → cuántos cupos quedan libres AHORA en
+//     toda la vacante.
+//   - cuposLibresEnReclamo(reclamo)→ cuántos cupos quedan libres DENTRO de
+//     un reclamo específico ya hecho (cantidad reservada menos tomados).
+//   - expiroSeleccion(reclamo)     → true si ya pasó el plazo de 48h para
+//     que los estudiantes elijan ese cupo.
+//   - PLAZO_SELECCION_HORAS         → la constante numérica (48) usada
+//     para calcular ese plazo.
+
 import { normalizarHorario, type HorarioPasantia } from '../data/disponibilidad';
+// normalizarHorario(horarioCrudo) → convierte el horario tal como está
+// guardado en la vacante a una forma "limpia" y consistente
+// (HorarioPasantia), por si hubiera variaciones en cómo distintas
+// vacantes guardaron ese dato con el tiempo.
 
 /**
  * Reclamo de cupos por lote: la universidad reserva N plazas de una vacante
@@ -40,6 +81,14 @@ import { normalizarHorario, type HorarioPasantia } from '../data/disponibilidad'
 export const COLECCION_RECLAMOS = 'reclamos_cupos';
 
 export type EstadoReclamo = 'pendiente' | 'aceptado' | 'rechazado' | 'liberado';
+// El ciclo de vida de un reclamo:
+//   pendiente → recién reclamado, esperando que la empresa confirme
+//               (salvo que la vacante tenga auto-aceptación, ver más abajo).
+//   aceptado  → la empresa confirmó (o se auto-aceptó); los estudiantes
+//               ya pueden elegir sus cupos.
+//   rechazado → la empresa lo rechazó; los cupos vuelven al mercado.
+//   liberado  → la propia universidad devolvió cupos sobrantes que nadie
+//               tomó (total o parcialmente).
 
 export interface ReclamoCupos {
   id: string;
@@ -52,6 +101,9 @@ export interface ReclamoCupos {
   cantidad: number;
   /** Cantidad pedida originalmente (no cambia; `cantidad` sí). */
   cantidadInicial: number;
+  // Distinción importante: `cantidad` es el saldo VIGENTE (baja cuando se
+  // liberan cupos sobrantes), mientras que `cantidadInicial` queda fija
+  // para siempre como registro histórico de cuánto se pidió originalmente.
   estado: EstadoReclamo;
   /** Datos desnormalizados para pintar las bandejas sin lecturas extra. */
   vacanteTitulo?: string;
@@ -74,6 +126,10 @@ export const COLECCION_ASIGNACIONES = 'asignaciones_cupo';
 
 /** Cupo que un estudiante concreto tomó del lote reservado por su universidad. */
 export interface AsignacionCupo {
+  // Mientras `ReclamoCupos` representa el LOTE completo reservado por la
+  // universidad, `AsignacionCupo` representa UN cupo individual dentro de
+  // ese lote, ya tomado por un estudiante específico — la relación es
+  // "1 reclamo → muchas asignaciones" (hasta `cantidad` de ellas).
   id: string;
   reclamoId: string;
   estudianteId: string;
@@ -116,11 +172,18 @@ export async function reclamarCupos(datos: DatosReclamo): Promise<{ id: string; 
   if (!universidadId || !vacanteId) throw new Error('Datos incompletos para reclamar cupos.');
   if (!Number.isFinite(cantidad) || cantidad < 1) {
     throw new Error('Indica cuántos cupos necesitas.');
+    // Number.isFinite(cantidad) valida que sea un número REAL y finito
+    // (rechaza NaN, Infinity, o cosas que no sean número en absoluto) —
+    // más estricto y seguro que solo comprobar "cantidad > 0".
   }
 
   const vacanteRef = doc(db, 'vacantes', vacanteId);
 
   const resultado = await runTransaction(db, async tx => {
+    // La transacción hace 2 trabajos: (1) validar que hay cupos
+    // suficientes y (2) reservar esa cantidad de forma ATÓMICA, para que
+    // dos universidades reclamando al mismo tiempo no puedan "sobre
+    // vender" los mismos cupos.
     const snap = await tx.get(vacanteRef);
     if (!snap.exists()) throw new Error('La vacante ya no está disponible.');
     const vacante = snap.data() as any;
@@ -141,8 +204,19 @@ export async function reclamarCupos(datos: DatosReclamo): Promise<{ id: string; 
 
     // Reserva efectiva.
     tx.update(vacanteRef, { cupos_reclamados: increment(cantidad) });
+    // UPDATE transaccional: aumenta el contador `cupos_reclamados` de la
+    // vacante en la cantidad pedida — así, la PRÓXIMA vez que alguien
+    // (dentro de otra transacción, o en una lectura normal) calcule
+    // cuposDisponibles(), ya vería estos cupos como "no libres", sin
+    // importar si el reclamo termina aceptado o no todavía.
 
     const estado: EstadoReclamo = vacante.reclamos_auto === true ? 'aceptado' : 'pendiente';
+    // Decide el estado INICIAL del reclamo según una configuración que la
+    // propia empresa eligió al publicar la vacante: si activó "aceptar
+    // reclamos automáticamente" (`reclamos_auto: true`), el reclamo nace
+    // ya 'aceptado' sin que la empresa tenga que confirmar manualmente;
+    // si no, nace 'pendiente' y la empresa deberá aceptarlo o rechazarlo
+    // a mano (ver responderReclamo() más abajo).
 
     return {
       estado,
@@ -157,6 +231,13 @@ export async function reclamarCupos(datos: DatosReclamo): Promise<{ id: string; 
   // fallara la reserva, no queremos un reclamo huérfano. Al revés (reserva sin
   // doc) sería recuperable liberando manualmente, y es el caso improbable.
   const ref = await addDoc(collection(db, COLECCION_RECLAMOS), {
+    // CREATE: recién aquí, con la reserva de cupos YA confirmada por la
+    // transacción de arriba, se crea el documento del reclamo en sí. El
+    // comentario explica una decisión de diseño deliberada: se prefiere
+    // el riesgo (poco probable) de "cupos reservados sin un documento de
+    // reclamo visible" (recuperable a mano) sobre el riesgo de "un
+    // reclamo visible que en realidad no reservó nada" (generaría
+    // confusión y promesas rotas a la universidad).
     universidadId,
     empresaId: resultado.empresaId,
     vacanteId,
@@ -176,6 +257,14 @@ export async function reclamarCupos(datos: DatosReclamo): Promise<{ id: string; 
     fechaLimiteSeleccion: Timestamp.fromMillis(
       Date.now() + PLAZO_SELECCION_HORAS * 60 * 60 * 1000,
     ),
+    // Date.now() da la fecha/hora actual en milisegundos (según el reloj
+    // del CELULAR, no del servidor). Se le suma PLAZO_SELECCION_HORAS (48)
+    // convertido a milisegundos (× 60 × 60 × 1000: horas → minutos →
+    // segundos → milisegundos). El comentario explica por qué aquí SÍ se
+    // acepta usar la hora del celular (a diferencia de otros campos que
+    // usan serverTimestamp): como el plazo es de 48 horas completas, un
+    // reloj mal configurado por unos minutos no cambia nada en la
+    // práctica — sería distinto si el plazo fuera de pocos segundos.
     motivoRechazo: '',
     fechaReclamo: serverTimestamp(),
     fechaRespuesta: null,
@@ -198,6 +287,10 @@ export async function reclamarCupos(datos: DatosReclamo): Promise<{ id: string; 
           aliados_universidades_ids: arrayUnion(universidadId),
         }),
       ]);
+      // Ambas actualizaciones en paralelo (Promise.all), fuera de
+      // cualquier transacción — son "mejor esfuerzo": si fallaran, no se
+      // deshace nada de lo anterior (la reserva y el reclamo ya son
+      // definitivos), solo quedaría sin registrar la alianza.
     } catch (e) {
       console.warn('No se pudo registrar la alianza del reclamo de cupos:', e);
     }
@@ -213,7 +306,9 @@ export async function reclamarCupos(datos: DatosReclamo): Promise<{ id: string; 
       resultado.estado === 'aceptado' ? 'Cupos reservados' : 'Solicitud de cupos',
       msg,
       resultado.estado === 'aceptado' ? 'info' : 'warning',
-      '/dashboard-empresa',
+      `reclamo:${ref.id}`,
+      // Deep link "reclamo:ID" → abre ReclamoDetailModal al tocar la
+      // notificación (ver notifRoute.ts).
     );
   }
 
@@ -242,13 +337,21 @@ export async function responderReclamo(
     const data = snap.data() as ReclamoCupos;
 
     if (data.estado !== 'pendiente') throw new Error('Este reclamo ya fue procesado.');
+    // Revalidación dentro de la transacción: evita que se procese dos
+    // veces el mismo reclamo si, por ejemplo, la empresa tocara "Aceptar"
+    // dos veces seguido por una doble pulsación accidental.
 
     if (decision === 'aceptar') {
       tx.update(reclamoRef, { estado: 'aceptado', fechaRespuesta: serverTimestamp() });
+      // Nota: al ACEPTAR no hace falta tocar el contador de cupos de la
+      // vacante — ya se habían reservado (incrementado) desde el momento
+      // del reclamo original, sigan pendientes o ya aceptados.
     } else {
       // Devuelve los cupos reservados al mercado.
       tx.update(doc(db, 'vacantes', data.vacanteId), {
         cupos_reclamados: increment(-data.cantidad),
+        // increment(-data.cantidad): un número NEGATIVO resta en vez de
+        // sumar — así se "devuelven" los cupos que se habían reservado.
       });
       tx.update(reclamoRef, {
         estado: 'rechazado',
@@ -271,7 +374,7 @@ export async function responderReclamo(
       ? `La empresa confirmó tus ${cantidad} cupo(s) de "${vacanteTitulo}".`
       : `La empresa rechazó tu solicitud de cupos para "${vacanteTitulo}". Motivo: ${motivo!.trim()}`,
     decision === 'aceptar' ? 'success' : 'warning',
-    '/dashboard-universidad',
+    `reclamo:${reclamoId}`,
   );
 }
 
@@ -310,6 +413,14 @@ export async function liberarCupos(reclamoId: string, cantidadALiberar: number):
       cantidad: restantes,
       // Solo se marca 'liberado' si ya no queda nada reservado.
       ...(restantes === 0 ? { estado: 'liberado' as EstadoReclamo } : {}),
+      // "...(condicion ? {...} : {})" es un patrón para agregar una
+      // propiedad CONDICIONALMENTE dentro de un objeto: si `restantes`
+      // llegó a 0, se "esparce" (spread) un objeto con `estado:
+      // 'liberado'` dentro de los cambios a aplicar; si no, se esparce un
+      // objeto VACÍO (sin efecto). Así, el reclamo solo cambia a estado
+      // 'liberado' cuando ya no queda NADA reservado — si la universidad
+      // liberó solo una parte de sus cupos, el reclamo sigue 'aceptado'
+      // (o el estado que tuviera), simplemente con menos `cantidad`.
     });
 
     return {
@@ -324,7 +435,7 @@ export async function liberarCupos(reclamoId: string, cantidadALiberar: number):
     'Cupos liberados',
     `${universidadNombre} liberó ${cantidadALiberar} cupo(s) de "${vacanteTitulo}". Ya están disponibles de nuevo.`,
     'info',
-    '/dashboard-empresa',
+    `reclamo:${reclamoId}`,
   );
 }
 
@@ -357,6 +468,12 @@ export async function tomarCupo(params: {
   if (!previas.empty) {
     throw new Error('Ya tomaste un cupo. Cancélalo antes de elegir otro.');
   }
+  // Esta comprobación se hace FUERA de la transacción (una lectura
+  // "barata" y no crítica en cuanto a condiciones de carrera: aunque
+  // técnicamente dos pestañas del mismo estudiante podrían burlar este
+  // chequeo en un instante muy específico, no representa un riesgo real
+  // de "sobreventa" de cupos entre distintos estudiantes, que es lo que
+  // sí protege la transacción de abajo).
 
   const reclamoRef = doc(db, COLECCION_RECLAMOS, reclamoId);
 
@@ -373,6 +490,13 @@ export async function tomarCupo(params: {
     }
     if (cuposLibresEnReclamo(r) === 0) {
       throw new Error('Alguien más acaba de tomar el último cupo.');
+      // Este es el mensaje que vería el "perdedor" de una condición de
+      // carrera: si 2 estudiantes tocan el último cupo casi al mismo
+      // tiempo, Firestore garantiza que las 2 transacciones NO se
+      // ejecuten realmente en simultáneo — una de las 2 se procesa
+      // primero (incrementa `tomados`), y cuando la SEGUNDA transacción
+      // se ejecuta (o se reintenta), esta relectura de `r` ya refleja el
+      // cambio de la primera, y cuposLibresEnReclamo(r) da 0.
     }
 
     tx.update(reclamoRef, { tomados: increment(1) });
@@ -389,10 +513,20 @@ export async function tomarCupo(params: {
   });
 
   const ref = await addDoc(collection(db, COLECCION_ASIGNACIONES), {
+    // CREATE: el documento de la asignación individual del estudiante,
+    // creado FUERA de la transacción (mismo razonamiento que con
+    // reclamarCupos: la reserva del cupo ya es definitiva, y si esta
+    // escritura fallara, sería recuperable a mano — mejor eso que dejar
+    // la transacción esperando por una escritura no crítica para la
+    // consistencia del contador de cupos).
     reclamoId,
     estudianteId,
     estudianteNombre: estudianteNombre ?? '',
     ...datos,
+    // "...datos" esparce TODAS las propiedades devueltas por la
+    // transacción (universidadId, empresaId, vacanteId, etc.) directo
+    // dentro de este nuevo documento — evita tener que escribir cada
+    // propiedad a mano de nuevo.
     estado: 'tomado' as const,
     fechaTomado: serverTimestamp(),
   });
@@ -440,6 +574,10 @@ export async function cancelarCupo(asignacionId: string): Promise<void> {
     if (a.estado !== 'tomado') throw new Error('Este cupo ya fue liberado.');
 
     tx.update(doc(db, COLECCION_RECLAMOS, a.reclamoId), { tomados: increment(-1) });
+    // El cupo vuelve a estar disponible DENTRO del mismo reclamo (resta 1
+    // a `tomados`) — importante notar que NO se toca `cupos_reclamados`
+    // de la vacante: ese cupo sigue "reservado" para la universidad, solo
+    // que ahora otro estudiante de la misma universidad puede tomarlo.
     tx.update(asigRef, { estado: 'cancelado' as const });
     return a.estudianteId;
   });
@@ -457,6 +595,9 @@ export async function cancelarCupo(asignacionId: string): Promise<void> {
 
 /** Lee un reclamo puntual (para pantallas de detalle). */
 export async function obtenerReclamo(reclamoId: string): Promise<ReclamoCupos | null> {
+  // READ simple: la función más corta del archivo, usada por pantallas de
+  // detalle que solo necesitan leer un reclamo puntual sin ninguna lógica
+  // de negocio adicional.
   const snap = await getDoc(doc(db, COLECCION_RECLAMOS, reclamoId));
   return snap.exists() ? ({ id: snap.id, ...snap.data() } as ReclamoCupos) : null;
 }

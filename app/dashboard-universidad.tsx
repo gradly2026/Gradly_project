@@ -1,3 +1,33 @@
+// ════════════════════════════════════════════════════════════════════════
+// app/dashboard-universidad.tsx — EL PANEL COMPLETO DE UNA UNIVERSIDAD
+//
+// GUÍA PARA PRINCIPIANTES:
+// Este es uno de los 4 archivos más grandes del proyecto (2500+ líneas).
+// A partir de aquí, los comentarios cambian de estilo respecto a los
+// archivos anteriores: en vez de explicar CADA línea, se explica a fondo
+// la LÓGICA ÚNICA de este archivo (los handlers, las consultas a
+// Firestore, las validaciones), y para los bloques de JSX/estilos que son
+// el MISMO patrón que ya viste en otros archivos comentados (el patrón
+// makeStyles(colors), el patrón de PerfilMasterDetail con `sections`,
+// modales de confirmación, listas con FlatList/GlassCard...), se deja un
+// comentario corto que señala "esto ya lo viste en <archivo>" en vez de
+// repetir la misma explicación línea por línea. Si algo no te queda
+// claro, revisa esos archivos — están comentados exhaustivamente.
+//
+// QUÉ HACE ESTE ARCHIVO: es el panel COMPLETO que ve una universidad al
+// iniciar sesión. Tiene 6 "secciones" internas (una sola pantalla que
+// cambia de contenido según `seccion`, en vez de navegar a rutas
+// distintas — mismo patrón mental que las pestañas del estudiante, pero
+// implementado con un simple estado local en vez de Expo Router):
+//   - inicio        → resumen general + red de alianzas + matchmaking.
+//   - estudiantes   → CREAR GRUPOS y CARGAR ESTUDIANTES MASIVAMENTE
+//                      desde un archivo Excel (la parte más compleja).
+//   - aprobar       → revisar y CERTIFICAR pasantías de grupo finalizadas.
+//   - estadisticas  → gráficos simples de barras (sin librería externa).
+//   - mensajes      → chat embebido (ver SeccionMensajes.tsx, no en esta sesión).
+//   - perfil        → datos de la universidad, vía PerfilMasterDetail.
+// ════════════════════════════════════════════════════════════════════════
+
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as DocumentPicker from 'expo-document-picker';
@@ -18,10 +48,28 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
+// writeBatch(db): OTRA forma de agrupar varias escrituras (parecida a
+// runTransaction, ya visto en pasantiaService.ts), pero MÁS SIMPLE: un
+// batch garantiza que todas sus operaciones se apliquen juntas o ninguna,
+// pero (a diferencia de una transacción) NO puede LEER datos primero
+// dentro del mismo batch para decidir qué escribir — solo sirve para
+// "ejecutar N escrituras ya decididas, todas juntas". Se usa más abajo en
+// egresarGrupo() para marcar a TODOS los estudiantes de un grupo como
+// graduados de una sola vez.
 import { deleteApp, getApps, initializeApp } from 'firebase/app';
 import { createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth';
+// Mismo patrón de "app secundaria de Firebase" ya explicado a fondo en
+// services/authService.ts (createGrupoWithStudents): se necesita para
+// crear MUCHAS cuentas de estudiante sin cerrar la sesión de la
+// universidad. Aquí se repite la implementación directo en el
+// componente en vez de reutilizar esa función del servicio (con algunas
+// diferencias: contraseñas "Gradly1234!" en vez de aleatorias, y guarda
+// el grupo antes de las cuentas) — código duplicado con una variante
+// ligeramente distinta del mismo patrón.
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Clipboard from 'expo-clipboard';
+// Clipboard: permite copiar texto al portapapeles del dispositivo — se
+// usa para que la universidad pueda copiar las credenciales generadas.
 import { firebaseConfig } from '../src/config/firebaseConfig';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -32,6 +80,10 @@ import PeriodoPracticasField, {
   periodoValido,
   type PeriodoValue,
 } from '../src/components/PeriodoPracticasField';
+// Componente reutilizable para capturar el "período de prácticas" de un
+// grupo: puede definirse por número de ciclos académicos, por rango de
+// fechas exacto, o por horas totales — PERIODO_VACIO es su valor inicial
+// vacío, y periodoValido(valor) valida que esté completo.
 import StorageAvatar from '../src/components/StorageAvatar';
 import {
   ActivityIndicator,
@@ -50,10 +102,16 @@ import {
 } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput } from "../src/components/AutoText";
 import * as XLSX from 'xlsx';
+// La librería "xlsx" (SheetJS): lee archivos de Excel (.xlsx) o CSV y los
+// convierte a arrays de objetos JavaScript — el corazón técnico de la
+// función de "importar estudiantes desde Excel" más abajo.
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import UniversidadHomeCards from '../src/components/UniversidadHomeCards';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
+// Ya explicado a fondo en app/(tabs)/perfil.tsx: recibe una lista
+// `sections` (título/ícono/campos o render personalizado) y dibuja toda
+// la pantalla de perfil de forma consistente.
 import { PromedioSimple } from '../src/components/ResenasFeedback';
 import { VacantesDisponibles } from '../src/components/Matchmaking';
 import { PerfilStatsUniversidad, RedGradlyBanner } from '../src/components/NetworkStats';
@@ -65,15 +123,30 @@ import { enviarNotificacion } from '../src/services/notificationService';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
+// Hook que verifica que el usuario logueado SÍ tenga el rol esperado
+// ('universidad'); si no, redirige — una "compuerta" de seguridad al
+// entrar a este panel.
 import { useAuthBackGuard } from '../src/hooks/useSessionBackGuard';
 import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
 import { calcularHorasAcuerdo, progresoDeGrupo } from '../src/utils/horasPasantia';
+// calcularHorasAcuerdo(acuerdo) → dado un acuerdo (horario + fechas),
+// calcula el total de horas de práctica que representa.
+// progresoDeGrupo(grupo, acuerdo) → calcula el % de avance de un grupo,
+// priorizando el acuerdo real firmado sobre la meta declarada al crear
+// el grupo (ver el comentario del propio código más abajo).
 import { esCarreraSoportada, cargarOverridesCarreras, CARRERAS_EL_SALVADOR } from '../src/data/carreras';
 import CarrerasEditorModal from '../src/components/CarrerasEditorModal';
 import ProfileViewerModal from '../src/components/ProfileViewerModal';
 import { certificarPasantia } from '../src/services/solicitudPracticaService';
 import { eliminarEstudiante as eliminarEstudianteCF, eliminarGrupo as eliminarGrupoCF } from '../src/services/universidadService';
+// Estas 2 funciones (renombradas con "as" para aclarar que son Cloud
+// Functions, no lógica local) llaman a las Cloud Functions
+// `eliminarEstudiante`/`eliminarGrupo` (ver GUIA_05_ESTRUCTURA_PROYECTO.md):
+// borran TANTO el documento de Firestore COMO la cuenta de Firebase Auth
+// del estudiante — algo que el celular de la universidad NO PUEDE hacer
+// directamente (borrar la cuenta de Auth de OTRA persona requiere
+// privilegios de administrador, que solo tiene el servidor).
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../components/ui/liquid-glass/JellyButton';
@@ -86,9 +159,20 @@ function useThemedStyles() {
     [colors, isDark],
   );
 }
+// Nota: aquí hay DOS fábricas de estilos (makeStyles Y makeS, ambas al
+// final del archivo) en vez de una sola — probablemente porque el
+// archivo creció con el tiempo y se fueron agregando estilos nuevos en
+// un segundo objeto en vez de fusionarlos en el primero. Funcionalmente
+// da igual: ambos se calculan con el mismo patrón useMemo(colors).
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const IS_WIDE = SCREEN_W >= 768;
+// Dimensions.get('window') (a diferencia del hook useWindowDimensions
+// visto en otros archivos) lee el tamaño de pantalla UNA sola vez, al
+// cargar el módulo — no se actualiza si el usuario redimensiona la
+// ventana en vivo (en web). IS_WIDE queda definida pero, revisando el
+// resto del archivo, no se usa en ningún punto — puede ser un resabio de
+// una versión anterior del diseño responsivo.
 
 // ─────────────────────────────────────────────
 // TIPOS
@@ -154,6 +238,11 @@ interface PerfilUni {
 
 // Fila genérica de Excel — los encabezados pueden variar, se detectan por patrón
 interface ExcelRow { [columna: string]: any }
+// "[columna: string]: any" es un "index signature": describe un objeto
+// donde NO se sabe de antemano cuáles serán las claves exactas (dependen
+// de los encabezados que la universidad haya puesto en SU Excel), pero
+// se sabe que TODAS las claves son texto y los valores pueden ser
+// cualquier cosa.
 
 // Columnas permitidas en la plantilla de importación
 const COLUMNAS_EXCEL = {
@@ -163,6 +252,12 @@ const COLUMNAS_EXCEL = {
   municipio:    { label: 'Municipio',                   patrones: ['municipio'],                  obligatoria: false },
   departamento: { label: 'Departamento de residencia',  patrones: ['departamento'],               obligatoria: false },
 } as const;
+// GUÍA: en vez de exigir que la universidad use encabezados de columna
+// EXACTOS ("Nombre Completo" vs "nombre completo" vs "Nombres"), este
+// diccionario define, para cada campo esperado, una lista de "patrones"
+// (fragmentos de texto) que, si aparecen DENTRO del encabezado (sin
+// importar mayúsculas), lo identifican. Ver valorColumna() justo abajo,
+// que usa esta lista para hacer coincidir columnas de forma flexible.
 
 /** Extrae el valor de una fila buscando una columna cuyo encabezado contenga alguno de los patrones. */
 function valorColumna(row: ExcelRow, patrones: readonly string[]): string {
@@ -172,6 +267,9 @@ function valorColumna(row: ExcelRow, patrones: readonly string[]): string {
   }
   return '';
 }
+// Recorre TODAS las claves (encabezados de columna) de una fila del
+// Excel, y devuelve el valor de la PRIMERA columna cuyo nombre (ya
+// normalizado a minúsculas) contenga alguno de los patrones buscados.
 
 // ── Previsualización de importación ───────────────────────────────
 const RX_EMAIL_EXCEL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -189,6 +287,14 @@ interface FilaPreview {
 
 /** Convierte las filas crudas del Excel en filas validadas para la vista previa. */
 function construirPreview(rows: ExcelRow[]): FilaPreview[] {
+  // NOTA: esta función y la interfaz FilaPreview de arriba están
+  // definidas pero, revisando el resto del archivo, NO se usan en el
+  // flujo real de importación (SeccionEstudiantes usa extraerEstudiantes(),
+  // más abajo, que va directo a crear las cuentas sin mostrar una vista
+  // previa fila por fila) — parece ser código de una versión anterior del
+  // flujo de importación (con previsualización) que quedó sin eliminar
+  // tras simplificarse a la versión actual (más directa: seleccionar
+  // archivo → crear cuentas).
   return rows.map((row, i) => {
     const nombre       = valorColumna(row, COLUMNAS_EXCEL.nombres.patrones);
     const correo       = valorColumna(row, COLUMNAS_EXCEL.correos.patrones).toLowerCase();
@@ -213,6 +319,9 @@ function construirPreview(rows: ExcelRow[]): FilaPreview[] {
 
 // Contraseña temporal unificada para el primer acceso de los estudiantes importados.
 const PASSWORD_TEMPORAL = 'Gradly2026!';
+// Definida pero tampoco usada directamente (el flujo real genera una
+// contraseña ALEATORIA distinta por estudiante con generarPassword() más
+// abajo, no esta constante fija) — otro resabio de una versión anterior.
 
 // ── Validaciones del formulario de grupo ──
 const RX_GRUPO_NOMBRE  = /^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s-]+$/; // letras, números y guiones
@@ -243,6 +352,11 @@ const valGrupoDocente = (v: string) => {
   if (!RX_GRUPO_LETRAS.test(t)) return 'Solo se permiten letras';
   return '';
 };
+// GUÍA: patrón "función pura de validación": cada una recibe el texto
+// crudo del campo y devuelve, o bien '' (válido), o bien el MENSAJE DE
+// ERROR a mostrar — así el componente que las usa (SeccionEstudiantes)
+// solo necesita comprobar "¿el string está vacío?" para saber si el
+// campo es válido, y mostrar el mensaje directo si no.
 
 interface Grupo {
   id: string;
@@ -265,6 +379,9 @@ const KEYS_CORREO = ['correo', 'email', 'e-mail', 'mail'];
 
 /** Busca en una fila la primera columna cuyo encabezado contenga alguno de los patrones. */
 function buscarValor(row: ExcelRow, patrones: string[]): string {
+  // Prácticamente idéntica a valorColumna() de más arriba — dos
+  // funciones distintas que hacen lo mismo, una para el flujo de
+  // "preview" (sin usar) y otra para el flujo real de importación (esta).
   for (const k of Object.keys(row)) {
     const norm = k.trim().toLowerCase();
     if (patrones.some(p => norm.includes(p))) return String(row[k] ?? '').trim();
@@ -276,6 +393,10 @@ function buscarValor(row: ExcelRow, patrones: string[]): string {
 function generarPassword(): string {
   const n = Math.floor(1000 + Math.random() * 9000);
   return `Gradly${n}!`;
+  // Genera un número aleatorio entre 1000 y 9999 (4 dígitos siempre) y lo
+  // inserta en una plantilla fija — más simple que el generarPassword()
+  // de services/authService.ts (que mezcla mayúsculas/minúsculas/números
+  // al azar), pero suficiente como contraseña TEMPORAL de primer acceso.
 }
 
 interface EstudianteNuevo {
@@ -286,6 +407,9 @@ interface EstudianteNuevo {
 
 /** Extrae los pares { nombre, correo, password } válidos de las filas del Excel. */
 function extraerEstudiantes(rows: ExcelRow[]): EstudianteNuevo[] {
+  // ESTA es la función que el flujo real de importación usa (a
+  // diferencia de construirPreview(), sin usar). Convierte cada fila
+  // cruda del Excel en un estudiante válido, o la descarta.
   const out: EstudianteNuevo[] = [];
   const vistos = new Set<string>();
   for (const row of rows) {
@@ -312,6 +436,9 @@ const MENU: { key: SeccionUni; label: string; icon: keyof typeof Ionicons.glyphM
 // 'perfil' (Mi Perfil es siempre la última parada del recorrido). ──
 const TOUR_CLAVES: SeccionUni[] = ['inicio', 'estudiantes', 'aprobar', 'perfil'];
 const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
+  // Mismo sistema de tour por globos ya visto en app/(tabs)/_layout.tsx
+  // (useOnboarding + OnboardingBubble), aplicado aquí a las secciones del
+  // panel de universidad en vez de a las pestañas del estudiante.
   inicio: {
     titulo: '¡Bienvenido a tu panel! 🎓',
     texto:
@@ -372,6 +499,11 @@ export default function DashboardUniversidad() {
     return Array.isArray(raw)
       ? raw.map((it: any) => (typeof it === 'string' ? it : String(it?.nombre ?? ''))).filter(Boolean)
       : [];
+    // Normaliza dos formatos posibles del campo `carreras_ofertadas`:
+    // arreglos de texto simple (formato viejo) o arreglos de objetos
+    // { nombre, modalidad, duracion, ... } (formato nuevo, ver
+    // guardarCarreras justo abajo) — en ambos casos, aquí solo se
+    // necesitan los NOMBRES.
   }, [perfil]);
 
   // Guarda las carreras editadas como objetos con modalidad/duración.
@@ -387,6 +519,10 @@ export default function DashboardUniversidad() {
       };
     });
     await updateDoc(doc(db, 'perfiles_universidades', user!.uid), { carreras_ofertadas: objs });
+    // CarrerasEditorModal solo le da a esta función una lista de NOMBRES
+    // elegidos; aquí se "enriquece" cada nombre con sus metadatos
+    // (modalidad, duración, zona verde/roja) buscándolos en el catálogo
+    // fijo CARRERAS_EL_SALVADOR, antes de guardar el objeto completo.
   };
 
   const confirmarCierreSesion = async () => {
@@ -414,6 +550,11 @@ export default function DashboardUniversidad() {
     setEditCorreo(perfil?.contacto_correo ?? '');
     setShowEditPerfil(true);
   };
+  // Nota: esta función y sus 5 estados "edit*" (justo abajo) y
+  // showEditPerfil quedaron SIN USARSE en el JSX final — la edición de
+  // perfil real se hace mediante las `sections` con `fields`/`onSave` de
+  // PerfilMasterDetail (ver más abajo, sección 'datos' y 'contacto'), que
+  // reemplazó a este modal de edición más viejo.
 
   // Edit perfil
   const [editNombre,   setEditNombre]   = useState('');
@@ -427,6 +568,10 @@ export default function DashboardUniversidad() {
   useEffect(() => { cargarOverridesCarreras(); }, []);
 
   // ── Firestore ──────────────────────────────────────────────────────
+  // Los siguientes 4 useEffect son lecturas EN VIVO (onSnapshot) de las 4
+  // colecciones que este panel necesita: el perfil propio, los
+  // estudiantes propios, las aplicaciones individuales, y las solicitudes
+  // de grupo — mismo patrón ya visto en app/(tabs)/index.tsx y progreso.tsx.
   useEffect(() => {
     if (!user) return;
     const unsub = onSnapshot(
@@ -469,6 +614,18 @@ export default function DashboardUniversidad() {
   // asignaciones_cupo (esos solo dirían CON QUIÉN hicieron la pasantía, no
   // hace falta para "estudiantes de esta universidad con mejor calificación").
   const topEstudiantesReportadoRef = useRef<string | undefined>(undefined);
+  // GUÍA IMPORTANTE (patrón de "auto-reporte"): este es un patrón de
+  // diseño particular del proyecto (ver memoria "Ranking alianzas +
+  // candado de grupo"): las reglas de seguridad de Firestore NO permiten
+  // que una universidad lea los perfiles de estudiantes de OTRAS
+  // universidades (por privacidad/aislamiento entre instituciones). Pero
+  // un ranking global tipo "Top Universidades" necesita comparar el
+  // promedio de calificación de TODAS. La solución: cada universidad,
+  // mientras usa su PROPIO panel, calcula su PROPIO promedio (de datos
+  // que sí puede leer) y lo "autoreporta" escribiéndolo en su PROPIO
+  // perfil — algo que las reglas sí permiten (cada quien escribe lo
+  // suyo). El ranking global entonces solo necesita leer ese campo ya
+  // calculado de cada perfil, sin tener que cruzar datos privados.
   useEffect(() => {
     if (!user?.uid || estudiantes.length === 0) return;
     const conCalificacion = estudiantes.filter(e => (e.calificaciones_recibidas ?? 0) > 0);
@@ -476,6 +633,10 @@ export default function DashboardUniversidad() {
       ? conCalificacion.reduce((acc, e) => acc + (e.calificacion_promedio ?? 0), 0) / conCalificacion.length
       : null;
     if (calificacionReportadaRef.current !== promedio) {
+      // Compara contra el ÚLTIMO valor ya reportado (guardado en un
+      // useRef, no en un estado, porque no necesita provocar renders) —
+      // si no cambió, NO vuelve a escribir en Firestore (evita
+      // escrituras redundantes cada vez que este efecto se reevalúa).
       calificacionReportadaRef.current = promedio;
       updateDoc(doc(db, 'perfiles_universidades', user.uid), {
         calificacion_estudiantes_promedio: promedio,
@@ -492,6 +653,10 @@ export default function DashboardUniversidad() {
         calificacion_promedio: e.calificacion_promedio ?? 0,
       }));
     const top5Key = JSON.stringify(top5);
+    // Convierte el top5 a texto JSON para poder COMPARARLO fácilmente
+    // contra el último reportado (comparar 2 arrays de objetos
+    // directamente con "===" no funcionaría, porque compararía
+    // referencias en memoria, no contenido).
     if (topEstudiantesReportadoRef.current === top5Key) return;
     topEstudiantesReportadoRef.current = top5Key;
     updateDoc(doc(db, 'perfiles_universidades', user.uid), {
@@ -544,6 +709,10 @@ export default function DashboardUniversidad() {
 
   // ── Upload logo ────────────────────────────────────────────────────
   const handleUploadLogo = async () => {
+    // Mismo flujo de 3 pasos ya visto en perfil.tsx (handleUploadFoto):
+    // permisos → elegir imagen → subir + actualizar Firestore con
+    // cache-busting. Aquí se escribe en 'perfiles_universidades' Y
+    // 'usuarios' (mismo patrón de doble escritura desnormalizada).
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permiso necesario'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -573,6 +742,7 @@ export default function DashboardUniversidad() {
 
   // ── Guardar perfil ────────────────────────────────────────────────
   const handleSavePerfil = async () => {
+    // (Ver nota arriba: función del modal de edición viejo, sin usar hoy).
     try {
       await updateDoc(doc(db, 'perfiles_universidades', user!.uid), {
         nombre_universidad: editNombre,
@@ -612,8 +782,16 @@ export default function DashboardUniversidad() {
     { key: 'mensajes', label: 'Mensajes', icon: 'chatbubble-ellipses-outline', badge: mensajesNoLeidos },
     { key: 'perfil', label: 'Mi Perfil', icon: 'person-circle-outline' },
   ];
+  // Arma la lista final de items del menú flotante (FloatingNavBar, el
+  // mismo componente que usa el estudiante en sus pestañas): "esparce"
+  // (spread) los 3 items fijos de MENU, y les agrega 2 más al final
+  // (Mensajes y Mi Perfil) que no forman parte de MENU porque se manejan
+  // aparte en el switch de renderSeccion().
 
   const renderSeccion = () => {
+    // "Router" interno MUY simple: según el valor de `seccion`, decide
+    // cuál de los 6 sub-componentes dibujar. Cada uno recibe como props
+    // solo los datos que necesita (ya cargados arriba por los useEffect).
     switch (seccion) {
       case 'inicio':       return <SeccionInicio metricas={metricas} perfil={perfil} nombreUni={nombreUni} uid={user!.uid} estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
       case 'estudiantes':  return <SeccionEstudiantes estudiantes={estudiantes} uid={user!.uid} solicitudesGrupo={solicitudesGrupo} onAbrirChatEnMensajes={(id, peerName) => { setChatAAbrir({ id, peerName }); setSeccion('mensajes'); }} />;
@@ -621,6 +799,12 @@ export default function DashboardUniversidad() {
       case 'estadisticas': return <SeccionEstadisticas estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
       case 'mensajes':     return <SeccionMensajes openChat={chatAAbrir} onOpenChatConsumed={() => setChatAAbrir(null)} />;
       case 'perfil':       return (
+        // ── Patrón PerfilMasterDetail con `sections`, ya explicado a
+        // fondo en app/(tabs)/perfil.tsx: 4 secciones ('datos', 'contacto',
+        // 'carreras', 'stats', 'resenas') definidas como configuración,
+        // con `fields`+`onSave` para edición de texto simple, o `render`
+        // para contenido personalizado (el editor de carreras, las
+        // estadísticas, el promedio de calificación). ──
         <PerfilMasterDetail
           name={nombreUni}
           subtitle={perfil?.dominio_correo || 'Universidad'}
@@ -701,6 +885,9 @@ export default function DashboardUniversidad() {
               icon: 'library-outline',
               tone: 'orange',
               render: () => {
+                // Normaliza (igual que carrerasNombres arriba, pero
+                // conservando también modalidad/duración) y dibuja la
+                // lista de carreras + botón para abrir CarrerasEditorModal.
                 const raw = (perfil as any)?.carreras_ofertadas ?? [];
                 const lista: { nombre: string; modalidad?: string; duracion?: string }[] =
                   Array.isArray(raw)
@@ -775,6 +962,10 @@ export default function DashboardUniversidad() {
       </View>
     );
   }
+  // Por qué este "return" temprano va DESPUÉS de todos los hooks (useState,
+  // useEffect, useMemo...) y no antes: React exige que los hooks se llamen
+  // SIEMPRE en el mismo orden en cada render — poner un "return" antes de
+  // terminar de declarar todos los hooks rompería esa regla.
 
   return (
     <LiquidBackground>
@@ -844,6 +1035,9 @@ export default function DashboardUniversidad() {
           react-native-web no llega a completarse a tiempo). */}
       {/* ── MODAL: Confirmar cierre de sesión (Liquid Glass) ── */}
       <Modal transparent visible={logoutModalVisible} animationType="none" onRequestClose={() => setLogoutModalVisible(false)}>
+        {/* Modal de confirmación de logout: mismo patrón visto en
+            app/(tabs)/perfil.tsx (2 botones, Cancelar/Salir, estilos
+            inline en vez de makeStyles). */}
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: colors.backgroundCard, borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: colors.primary35 }}>
             <Text style={{ fontSize: 18, color: colors.textPrimary, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>Cerrar Sesión</Text>
@@ -875,6 +1069,12 @@ export default function DashboardUniversidad() {
 // SECCIÓN: INICIO
 // ─────────────────────────────────────────────
 function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, solicitudesGrupo }: any) {
+  // GUÍA: esta sección es principalmente un "ensamblador" de componentes
+  // más especializados (RedGradlyBanner, CalendarioEventos,
+  // UniversidadHomeCards, VacantesDisponibles) — no tiene lógica propia
+  // compleja, solo los organiza en un ScrollView. Nota que sus props
+  // están tipadas como `any` (sin una interface propia) — a diferencia
+  // del resto del archivo, que sí define tipos explícitos.
   const { s, colors } = useThemedStyles();
   return (
     <ScrollView contentContainerStyle={s.scroll}>
@@ -915,6 +1115,8 @@ function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, so
 }
 
 function MetricCard({ icon, label, value, color }: any) {
+  // Tarjeta pequeña reutilizada en SeccionEstadisticas (ícono + número
+  // grande + etiqueta) — mismo concepto que StatItem en progreso.tsx.
   const { s } = useThemedStyles();
   return (
     <GlassCard style={{ flex: 1, minWidth: 120 }} contentStyle={{ padding: 14, gap: 4 }}>
@@ -928,12 +1130,22 @@ function MetricCard({ icon, label, value, color }: any) {
 // ─────────────────────────────────────────────
 // SECCIÓN: ESTUDIANTES + IMPORTAR EXCEL
 // ─────────────────────────────────────────────
+// ESTA es la sección más compleja de todo el archivo: crear un grupo y
+// cargar decenas de estudiantes de una sola vez desde un Excel, con un
+// flujo de varios pasos (formulario de grupo → reglas del Excel → elegir
+// archivo → creación masiva con barra de progreso → pantalla de
+// credenciales generadas), más la gestión de grupos ya creados (egresar,
+// eliminar, abrir su chat).
 function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnMensajes }: { estudiantes: EstudianteRow[]; uid: string; solicitudesGrupo: SolicitudGrupo[]; onAbrirChatEnMensajes: (chatId: string, peerName: string) => void }) {
   const { styles, s, colors, isDark } = useThemedStyles();
 
   // ── Búsqueda ──
   const [busqueda, setBusqueda] = useState('');
   const [busquedaAplicada, setBusquedaAplicada] = useState('');
+  // Nota: a diferencia del debounce automático visto en app/(tabs)/index.tsx,
+  // aquí la búsqueda se aplica MANUALMENTE (solo al tocar "Buscar" o
+  // presionar Enter, ver aplicarBusqueda() más abajo) — sin retraso
+  // automático mientras se escribe.
 
   // ── Pestañas ──
   const [tab, setTab] = useState<'grupos' | 'estudiantes'>('grupos');
@@ -959,6 +1171,16 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
   const [progreso, setProgreso] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
   const [credenciales, setCredenciales] = useState<EstudianteNuevo[]>([]);
   const [grupoCreadoNombre, setGrupoCreadoNombre] = useState('');
+  // GUÍA DEL FLUJO COMPLETO (5 pantallas/modales encadenados):
+  //   1. showModalGrupo    → formulario: nombre, carrera, docente, período.
+  //   2. showModalExcel     → explica qué columnas debe tener el archivo.
+  //   3. (selecciona archivo con el picker del sistema operativo)
+  //   4. showProgreso        → barra de progreso mientras se crean las cuentas.
+  //   5. showCredenciales     → lista final de correo+contraseña generados,
+  //                            para que la universidad se los entregue a
+  //                            sus estudiantes.
+  // Cada paso "apaga" el modal anterior y "enciende" el siguiente — nunca
+  // hay 2 modales visibles a la vez.
 
   // ── Carreras ofertadas por la universidad (para el selector) ──
   const [carrerasUni, setCarrerasUni] = useState<string[]>([]);
@@ -993,6 +1215,9 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
   const errDocente = valGrupoDocente(gDocente);
   const periodoOk  = periodoValido(periodo);
   const formGrupoValido = !errNombre && !errCarrera && periodoOk && !errDocente;
+  // Se recalculan en CADA render (no con useMemo): son cálculos triviales
+  // (llamadas a funciones puras sobre texto corto), así que no vale la
+  // pena memorizarlos.
 
   // ── Suscripción en tiempo real a los grupos de esta universidad ──
   useEffect(() => {
@@ -1140,6 +1365,13 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
                 query(collection(db, 'perfiles_estudiantes'), where('grupo_id', '==', grupo.id)),
               );
               const batch = writeBatch(db);
+              // CREATE/UPDATE en lote: en vez de un updateDoc() separado
+              // por cada estudiante (lo que serían N viajes al servidor),
+              // se acumulan TODAS las actualizaciones en un solo `batch`
+              // y se envían juntas con .commit() — más rápido y, si algo
+              // fallara a mitad de camino, NINGUNA se aplicaría
+              // (atomicidad, igual que una transacción, pero sin poder
+              // leer datos primero dentro del mismo batch).
               estSnap.docs.forEach(d => {
                 batch.update(d.ref, { graduado: true, fecha_graduacion: serverTimestamp() });
               });
@@ -1167,6 +1399,12 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
         },
       ],
     );
+    // NOTA: este Alert.alert TIENE botones ("Cancelar"/"Egresar") — como
+    // ya se explicó en app/(tabs)/progreso.tsx, este patrón NO FUNCIONA en
+    // la versión web del proyecto (react-native-web no dibuja nada para
+    // Alert.alert con botones) — es el mismo "gotcha" documentado en la
+    // memoria del proyecto, presente varias veces en este archivo
+    // (egresarGrupo, handleEliminarGrupo, handleEliminarEstudiante).
   };
 
   // ── Eliminar grupo (deshacer una carga por Excel equivocada) ──
@@ -1189,6 +1427,11 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
             setEliminandoGrupo(grupo.id);
             try {
               const res = await eliminarGrupoCF({ grupoId: grupo.id });
+              // Llama a la Cloud Function (no borra directo desde el
+              // celular): esa función, corriendo en el servidor, valida
+              // de nuevo que el grupo no tenga compromisos, y borra tanto
+              // los documentos de Firestore como las cuentas de Auth de
+              // cada estudiante del grupo.
               Alert.alert('Listo', `Se eliminó el grupo "${grupo.nombre}" y ${res.estudiantesEliminados} estudiante(s).`);
             } catch (e: any) {
               Alert.alert('No se pudo eliminar', e?.message ?? 'Intenta de nuevo.');
@@ -1248,6 +1491,9 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
   const handleSeleccionarArchivo = async () => {
     const result = await DocumentPicker.getDocumentAsync({
       type: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv', '*/*'],
+      // Restringe el selector a archivos .xlsx, .csv, o (como respaldo)
+      // cualquier tipo — el "*/*" evita que el picker rechace un archivo
+      // válido cuyo tipo MIME el sistema operativo no haya identificado bien.
     });
     if (result.canceled) return;
 
@@ -1256,6 +1502,10 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
       const fileUri = result.assets[0].uri;
       let workbook: XLSX.WorkBook;
       if (Platform.OS === 'web') {
+        // En WEB: no se puede usar expo-file-system (pensado para
+        // archivos nativos) — hay que leer el archivo con fetch()+Blob,
+        // convertirlo a ArrayBuffer con un FileReader (API nativa del
+        // navegador), y recién ahí pasárselo a XLSX.read().
         const blob = await (await fetch(fileUri)).blob();
         const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
           const reader = new FileReader();
@@ -1263,13 +1513,24 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
           reader.onerror = () => reject(reader.error);
           reader.readAsArrayBuffer(blob);
         });
+        // "new Promise((resolve, reject) => {...})" envuelve una API
+        // "vieja" basada en callbacks (FileReader, que avisa con
+        // eventos onload/onerror en vez de devolver una Promise) para
+        // poder usarla con await, como el resto del código asíncrono
+        // moderno del proyecto.
         workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
       } else {
+        // En NATIVO (Android/iOS): sí se puede usar expo-file-system para
+        // leer el archivo directo como texto codificado en Base64.
         const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
         workbook = XLSX.read(base64, { type: 'base64' });
       }
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      // Toma solo la PRIMERA hoja del archivo Excel (workbook.SheetNames[0]),
+      // ignorando cualquier hoja adicional si el archivo tuviera varias.
       rows = XLSX.utils.sheet_to_json<ExcelRow>(sheet);
+      // Convierte la hoja (una grilla de celdas) a un array de objetos
+      // JavaScript, usando la PRIMERA FILA como encabezados de columna.
     } catch {
       Alert.alert('Error', 'No se pudo leer el archivo. Asegúrate de que sea .xlsx o .csv.');
       return;
@@ -1295,6 +1556,11 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
     // App secundaria: registrar estudiantes sin desconectar a la universidad.
     const secondaryApp = getApps().find(a => a.name === 'Secondary')
       ?? initializeApp(firebaseConfig, 'Secondary');
+    // A diferencia de authService.ts (que crea una app secundaria NUEVA
+    // cada vez, con un nombre único basado en la hora), aquí se REUTILIZA
+    // una app secundaria ya existente llamada "Secondary" si la hubiera
+    // (por ejemplo, de una importación anterior en la misma sesión de la
+    // app), y solo la crea si todavía no existe.
     const secondaryAuth = getAuth(secondaryApp);
 
     // Período de prácticas → campos persistibles (ISO + duración).
@@ -1302,6 +1568,11 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
       d
         ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
         : null;
+    // Arma manualmente el texto de fecha en formato ISO "YYYY-MM-DD" a
+    // partir de un objeto Date. .padStart(2, '0') asegura 2 dígitos
+    // (agrega un "0" adelante si hace falta: "5" → "05") — necesario
+    // porque d.getMonth() devuelve 0-11 (enero es 0) y d.getDate() podría
+    // dar un solo dígito para los primeros 9 días del mes.
     // En modo 'horas' las horas son explícitas; en modos por fecha/ciclos no
     // medimos en horas (0 → el perfil del estudiante usa el objetivo por defecto).
     const horasGrupo = periodo.modo === 'horas' ? periodo.horas ?? 0 : 0;
@@ -1330,6 +1601,12 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
       // 2) Creamos cada cuenta de estudiante en la app secundaria.
       const creados: EstudianteNuevo[] = [];
       for (const est of lista) {
+        // Bucle SECUENCIAL (no en paralelo con Promise.all): cada cuenta
+        // se crea una DESPUÉS de la otra, esperando (await) a que termine
+        // antes de seguir con la siguiente — más lento que en paralelo,
+        // pero necesario aquí porque createUserWithEmailAndPassword sobre
+        // la MISMA conexión secundaria no es seguro de llamar en paralelo
+        // (podría mezclar el estado de sesión entre llamadas simultáneas).
         try {
           const cred = await createUserWithEmailAndPassword(secondaryAuth, est.correo, est.password);
           const uidEst = cred.user.uid;
@@ -1366,8 +1643,15 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
         } catch (e) {
           // Correo ya registrado u otro error puntual: se omite y se continúa.
           console.warn('No se pudo crear el estudiante', est.correo, e);
+          // Importante: un error en UN estudiante (por ejemplo, su correo
+          // ya estaba registrado de antes) NO detiene el bucle completo —
+          // se registra el fallo y se sigue con el siguiente, para que un
+          // solo correo problemático no arruine la importación de los
+          // otros 40 estudiantes válidos.
         }
         setProgreso(p => ({ done: p.done + 1, total: lista.length }));
+        // Actualiza la barra de progreso después de CADA estudiante
+        // (exitoso o no), para que la universidad vea el avance en vivo.
       }
 
       // 3) Actualizamos el contador real del grupo.
@@ -1392,7 +1676,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
           'Grupo creado',
           `El grupo "${nombreGrupo}" se creó con ${creados.length} estudiante(s) registrado(s).`,
           'success',
-          grupoId,
+          `grupo:${grupoId}`,
         );
       } catch { /* la notificación no debe afectar el flujo principal */ }
 
@@ -1407,6 +1691,9 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
       // Aseguramos el logout secundario y liberamos la app temporal SIEMPRE.
       await signOut(secondaryAuth).catch(() => {});
       await deleteApp(secondaryApp).catch(() => {});
+      // Este bloque "finally" corre SIEMPRE (haya éxito o error): cierra
+      // la sesión de la conexión secundaria y la destruye, para no dejar
+      // "colgada" una conexión de Firebase extra innecesaria.
       setShowProgreso(false);
     }
   };
@@ -1432,6 +1719,12 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
 
   return (
     <View style={{ flex: 1, width: '100%', maxWidth: 760, alignSelf: 'center' }}>
+      {/* A partir de aquí, el JSX combina piezas YA vistas en otros
+          archivos (barra de búsqueda, pestañas, FlatList + GlassCard,
+          modales con formularios) — se comenta solo lo distintivo de cada
+          bloque; para el detalle de CADA prop de estilo, ver los archivos
+          ya comentados (perfil.tsx, index.tsx, dashboard-empresa.tsx). */}
+
       {/* ── Barra de búsqueda + botón Buscar ── */}
       <View style={s.searchArea}>
         <View style={s.searchWrap}>
@@ -1494,7 +1787,9 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
         </TouchableOpacity>
       </View>
 
-      {/* ── Contenido de la pestaña activa ── */}
+      {/* ── Contenido de la pestaña activa: lista de grupos o de estudiantes,
+          cada fila con su barra de progreso (progresoPorGrupo) y botones de
+          acción (chat/egresar/eliminar). ── */}
       {tab === 'grupos' ? (
         <FlatList
           data={gruposFiltrados}
@@ -1677,6 +1972,11 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
                 ScrollView, siempre visibles. */}
             <ScrollView style={{ flex: 1, minHeight: 0 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 4, paddingVertical: 6 }}>
               {(() => {
+                // "(() => {...})()" — función autoejecutada dentro del
+                // JSX: se usa aquí porque hace falta calcular 2 variables
+                // (tiene/malo) ANTES de poder devolver el bloque visual —
+                // JSX normal no permite declarar variables intermedias
+                // directamente, así que se envuelve en una función.
                 const tiene = gNombre.trim().length > 0; const malo = tiene && !!errNombre;
                 return (
                   <View style={{ marginBottom: 6 }}>
@@ -1716,6 +2016,10 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
                       />
                     </TouchableOpacity>
                     {showCarreraPicker && (
+                      // Selector "desplegable" simple: en vez de un
+                      // componente <Picker> nativo, se dibuja una lista
+                      // tocable dentro de un ScrollView chico (maxHeight:
+                      // 200) que aparece/desaparece con showCarreraPicker.
                       <ScrollView
                         nestedScrollEnabled
                         style={{
@@ -1897,6 +2201,8 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
   const porCertificar = solicitudes.filter(x => x.estado === 'finalizado' && (x as any).certificacion !== 'certificada');
   const activas       = solicitudes.filter(x => x.estado === 'aprobado');
   const certificadas  = solicitudes.filter(x => (x as any).certificacion === 'certificada');
+  // 3 listas derivadas por filtro simple del mismo array — se dibujan
+  // como 3 secciones separadas más abajo.
 
   const handleCertificar = (sol: SolicitudGrupo) => {
     const h = calcularHorasAcuerdo(sol.acuerdo);
@@ -1911,6 +2217,12 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
             setCertificando(sol.id);
             try {
               const r = await certificarPasantia(sol.id);
+              // Llama al servicio (src/services/solicitudPracticaService.ts,
+              // no comentado en esta sesión) que marca la solicitud como
+              // 'certificada' y ACREDITA las horas correspondientes a
+              // TODOS los estudiantes del grupo de una sola vez —
+              // seguramente usando runTransaction/writeBatch por dentro,
+              // mismo patrón visto en pasantiaService.ts.
               Alert.alert('✅ Certificada', `Se acreditaron ${r.horas} horas a ${r.totalEstudiantes} estudiante(s).`);
             } catch {
               Alert.alert('Error', 'No se pudo certificar la pasantía.');
@@ -1924,6 +2236,10 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
   };
 
   const Card = ({ sol, accion }: { sol: SolicitudGrupo; accion?: 'certificar' }) => {
+    // Componente LOCAL (definido dentro de SeccionPracticas, se recrea en
+    // cada render de la sección) reutilizado para las 3 listas — con un
+    // badge de color/texto distinto según el estado, y el botón
+    // "Certificar" solo visible cuando `accion === 'certificar'`.
     const h = calcularHorasAcuerdo(sol.acuerdo);
     const progreso = progresoDeGrupo({}, sol.acuerdo);
     const cert = (sol as any).certificacion;
@@ -2022,6 +2338,9 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
   );
 }
 
+// ─────────────────────────────────────────────
+// SECCIÓN: ESTADÍSTICAS (gráficos de barra dibujados a mano)
+// ─────────────────────────────────────────────
 function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudiantes: EstudianteRow[]; apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[] }) {
   const { s, colors } = useThemedStyles();
 
@@ -2040,9 +2359,16 @@ function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudian
         if (sg.carrera) map[sg.carrera] = (map[sg.carrera] ?? 0) + (sg.alumnos?.length ?? 1);
       });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    // Object.entries(map) convierte { "Ingeniería": 5, "Diseño": 3 } en
+    // [["Ingeniería", 5], ["Diseño", 3]] — un array de pares
+    // [clave, valor], que se puede ordenar y recortar fácilmente
+    // (a diferencia de un objeto, que no tiene un orden garantizado).
   }, [estudiantes, apps, solicitudesGrupo]);
 
   const maxVal = Math.max(...carreras.map(c => c[1]), 1);
+  // El valor más alto entre todas las carreras (con 1 como mínimo, para
+  // evitar dividir entre 0 más abajo) — se usa para calcular el ANCHO
+  // relativo de cada barra del gráfico (barra más larga = 100% de maxVal).
 
   // Pasantías de grupo activas (aprobadas) con su línea de tiempo porcentual.
   const activas = useMemo(
@@ -2056,6 +2382,12 @@ function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudian
 
   return (
     <ScrollView contentContainerStyle={s.scroll}>
+      {/* GUÍA: el "gráfico de barras" de esta sección NO usa ninguna
+          librería de gráficos — cada barra es simplemente un <View> cuyo
+          `width` es un PORCENTAJE calculado a mano (count / maxVal * 100),
+          mismo truco visto para las barras de progreso simples en otros
+          archivos (a diferencia del círculo de progreso de progreso.tsx,
+          que sí necesitó un truco geométrico más elaborado). */}
       <Text style={s.statTitle}>Carreras con más pasantías</Text>
       {carreras.length === 0
         ? <Text style={s.emptyText}>Sin datos suficientes.</Text>
@@ -2108,6 +2440,14 @@ function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudian
 
 // ─────────────────────────────────────────────
 // ESTILOS
+// Ambas fábricas (makeStyles y makeS) siguen EXACTAMENTE el mismo patrón
+// makeStyles(colors) ya explicado a fondo en GUIA_03_TEMA_CLARO_OSCURO.md
+// y en src/context/ThemeContext.tsx — un objeto StyleSheet.create({...})
+// que recibe la paleta activa como parámetro, para que cada color
+// reaccione al tema claro/oscuro. Los nombres de propiedad (fontSize,
+// borderRadius, backgroundColor...) ya se explicaron uno por uno en los
+// primeros archivos comentados de esta sesión (ver ThemeContext.tsx,
+// help-gradly.tsx); aquí no se repite esa explicación línea por línea.
 // ─────────────────────────────────────────────
 const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.backgroundDark, paddingTop: 10 },
@@ -2162,6 +2502,9 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     padding: 16, borderTopWidth: 1, borderTopColor: COLORS.border,
   },
   logoutLabel: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.error },
+  // (sidebar/menuItem/logoutItem: estilos de un menú lateral que ya no se
+  // usa en el JSX actual — reemplazado por FloatingNavBar — quedaron
+  // definidos sin aplicar).
 
   main: { flex: 1 },
   mainHeader: {
@@ -2500,6 +2843,9 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
   previewItemMail: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
   previewItemError: { fontSize: 11, fontFamily: FONTS.interMedium, color: COLORS.error, marginTop: 2 },
   previewItemIdx: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+  // (previewRow/previewSummary/previewChip*/previewItem*: estilos del
+  // flujo de "vista previa de Excel" antiguo — ver construirPreview()
+  // arriba —, sin usar en el JSX actual.)
 
   progressTrack: {
     height: 6, borderRadius: 3, backgroundColor: COLORS.backgroundSurface, overflow: 'hidden',
@@ -2532,6 +2878,8 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', alignItems: 'center',
   },
   rechazarText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.error },
+  // (aprobacionCard/aprobBtn/rechazarBtn: de la vieja sección "Aprobar
+  // Pasantías" individual, reemplazada por SeccionPracticas — sin usar.)
 
   // Estadísticas
   statTitle: { fontSize: 15, fontFamily: FONTS.soraSemiBold, color: COLORS.textPrimary, marginBottom: 12 },

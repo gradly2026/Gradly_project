@@ -1,3 +1,33 @@
+// ════════════════════════════════════════════════════════════════════════
+// pasantiaService.ts
+//
+// QUÉ ES ESTE ARCHIVO:
+// Este es el archivo MÁS GRANDE e importante del negocio de Gradly: aquí
+// vive TODO el ciclo de vida de una pasantía/práctica laboral, desde que
+// un estudiante aplica hasta que la empresa la certifica. Es el mejor
+// lugar del proyecto para aprender el patrón CRUD completo de Firestore
+// (Create, Read, Update, Delete) en la práctica, incluyendo un mecanismo
+// avanzado llamado TRANSACCIÓN (explicado más abajo, en el punto 7).
+//
+// Si es la primera vez que lees un "service" de este proyecto, antes
+// repasa src/config/firebaseConfig.ts (de dónde sale `db`) y
+// GUIA_01_FIREBASE_Y_CRUD.md (los 4 verbos CRUD explicados en general).
+//
+// MAPA DEL ARCHIVO (los números son los mismos que usan los comentarios
+// de sección dentro del código):
+//   1. Estudiante aplica a una vacante (individual).
+//   1b. Estudiante aplica a una pasantía por su cuenta (autoservicio).
+//   2. Empresa cambia el estado de una aplicación (acepta/rechaza/entrevista).
+//   3. Estudiante marca su proyecto como finalizado.
+//   4. Empresa firma la constancia de finalización.
+//   5. (Título de sección; la aprobación de horas vive en otro archivo)
+//   6. Universidad postula un GRUPO de estudiantes a una vacante.
+//   7. Empresa evalúa (acepta/rechaza) ese grupo — usa una TRANSACCIÓN.
+//   8. Universidad da la respuesta final sobre la oferta de la empresa —
+//      usa una TRANSACCIÓN más grande, la más compleja del archivo.
+//   9. Empresa elimina una vacante (solo si nadie la tocó todavía).
+// ════════════════════════════════════════════════════════════════════════
+
 import {
   addDoc,
   arrayUnion,
@@ -13,40 +43,124 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
+// Funciones de Firestore usadas en este archivo. Ya conocemos varias de
+// archivos anteriores (addDoc, collection, doc, serverTimestamp), pero
+// aquí aparecen varias NUEVAS, muy importantes:
+//   - getDoc(refDeUnDocumento)  → READ: lee UN documento específico
+//     (por su ID). Devuelve un "snapshot" (una foto del estado actual del
+//     documento); hay que llamar .exists() para saber si existe, y
+//     .data() para obtener sus campos.
+//   - getDocs(query)            → READ: lee VARIOS documentos que
+//     cumplan ciertas condiciones (ver `query`/`where` abajo). Devuelve
+//     un "snapshot" con `.empty` (true si no hay resultados) y `.docs`
+//     (la lista de documentos encontrados).
+//   - query(coleccion, ...condiciones) → arma una "pregunta"/filtro sobre
+//     una colección, combinando una o más condiciones `where`.
+//   - where('campo', '==', valor) → una condición de filtro: "solo
+//     documentos donde `campo` sea igual a `valor`" (también existen
+//     variantes como 'array-contains', usada más abajo).
+//   - updateDoc(refDeUnDocumento, cambios) → UPDATE: modifica SOLO los
+//     campos indicados de un documento que YA EXISTE (a diferencia de
+//     setDoc, que reemplazaría el documento entero).
+//   - deleteDoc(refDeUnDocumento) → DELETE: borra un documento completo.
+//   - increment(numero)          → un valor especial de Firestore que le
+//     dice "suma (o resta, si es negativo) esta cantidad al valor actual
+//     de este campo numérico", de forma ATÓMICA y segura en el servidor
+//     (mejor que leer el valor, sumarlo en el celular, y volver a
+//     escribirlo — eso podría perder datos si dos personas lo hacen a la
+//     vez; increment() no tiene ese problema).
+//   - arrayUnion(valor)          → un valor especial que le dice "agrega
+//     este elemento a la lista (array) de este campo, PERO solo si
+//     todavía no está" (evita duplicados automáticamente).
+//   - runTransaction(db, funcion) → ejecuta una serie de lecturas y
+//     escrituras como una operación ATÓMICA e indivisible ("todo o
+//     nada"). Se explica a fondo más abajo, en la sección 7.
+
 import { db } from '../config/firebaseConfig';
+// La conexión a la base de datos.
+
 import type { AcuerdoData } from '../types/chat';
+// Un TIPO (no una función ni un valor) que describe la forma de un
+// "acuerdo" (horario, días de trabajo, fechas, pago) tal como se define
+// en src/types/chat.ts. Se usa para que TypeScript valide que los
+// acuerdos que maneja este archivo tienen todos los campos correctos.
+
 import { crearNotificacionInApp, NOTIF } from './notificacionService';
 import { enviarNotificacion } from './notificationService';
+// Los dos sistemas de notificaciones ya vistos: NOTIF trae las plantillas
+// de mensaje predefinidas, crearNotificacionInApp/enviarNotificacion
+// escriben la notificación de verdad en Firestore.
+
 import {
   alumnosRealesDeGrupo,
   buildChatId,
   grupoComprometido,
   MENSAJE_GRUPO_COMPROMETIDO,
 } from './solicitudPracticaService';
+// Funciones utilitarias de OTRO servicio del proyecto
+// (solicitudPracticaService.ts), reutilizadas aquí:
+//   - alumnosRealesDeGrupo(grupoId) → dado un grupo, devuelve la lista
+//     real de sus estudiantes (con nombre e id de cada uno).
+//   - buildChatId(...)              → arma un ID determinístico (siempre
+//     el mismo dado los mismos participantes) para la sala de chat entre
+//     una universidad y una empresa sobre un grupo específico.
+//   - grupoComprometido(grupoId)    → revisa si un grupo YA tiene una
+//     pasantía activa en curso (no puede comprometerse con dos a la vez).
+//   - MENSAJE_GRUPO_COMPROMETIDO    → el texto de error estándar a
+//     mostrar cuando un grupo ya está comprometido.
+
 import { cuposDisponibles } from '../utils/cupos';
+// Función utilitaria que calcula cuántos cupos LIBRES quedan en una
+// vacante (comparando el total contra los ya ocupados).
+
 import { zonaDeCarrera } from '../data/carreras';
+// Función que, dado el nombre de una carrera universitaria, devuelve si
+// pertenece a la "zona verde" (regulación estatal permite autoservicio)
+// o "zona roja" (Salud/Educación/Derecho — requiere que sea la
+// universidad quien gestione la práctica, sin excepción). Ver memoria del
+// proyecto "Alcance MVP prácticas" para el contexto legal detrás de esto.
 
 // ─────────────────────────────────────────────
 // NIVEL GAMIFICADO
 // ─────────────────────────────────────────────
 export interface NivelEstudiante {
-  nivel:      string;
-  titulo:     string;
-  icono:      string;
-  color:      string;
-  porcentaje: number;
+  // Describe el "rango" o nivel gamificado de un estudiante según su
+  // progreso de horas — algo parecido a un sistema de niveles de
+  // videojuego, para motivar al estudiante a avanzar.
+  nivel:      string;   // identificador interno, ej. 'explorador'
+  titulo:     string;   // texto mostrado al usuario, ej. 'Explorador'
+  icono:      string;   // nombre del ícono a mostrar
+  color:      string;   // color hexadecimal asociado a ese nivel
+  porcentaje: number;   // % de avance (0 a 100)
 }
 
 export function calcularNivelEstudiante(
   horasAprobadas: number,
   horasObjetivo: number,
 ): NivelEstudiante {
+  // Función PURA (no toca Firebase ni tiene efectos secundarios: dado el
+  // mismo input, siempre da el mismo output) que calcula en qué nivel
+  // está un estudiante, según cuántas horas aprobadas tiene sobre el
+  // total de horas que debe cumplir.
   const pct = Math.min(100, Math.round((horasAprobadas / Math.max(horasObjetivo, 1)) * 100));
+  // Calcula el porcentaje de avance:
+  //   - horasAprobadas / horasObjetivo → la fracción completada (ej. 0.5).
+  //   - Math.max(horasObjetivo, 1)     → evita dividir entre 0 si por
+  //     algún motivo horasObjetivo fuera 0 (usaría 1 en su lugar).
+  //   - * 100                          → lo convierte a porcentaje (ej. 50).
+  //   - Math.round(...)                → redondea a un número entero.
+  //   - Math.min(100, ...)              → nunca deja pasar de 100%, por si
+  //     hubiera más horas aprobadas que el objetivo original.
   if (pct >= 100) return { nivel: 'graduado',    titulo: 'Graduado',    icono: 'trophy',    color: '#D97706', porcentaje: 100 };
   if (pct >= 76)  return { nivel: 'experto',     titulo: 'Experto',     icono: 'star',      color: '#F59E0B', porcentaje: pct };
   if (pct >= 51)  return { nivel: 'profesional', titulo: 'Profesional', icono: 'briefcase', color: '#10B981', porcentaje: pct };
   if (pct >= 26)  return { nivel: 'practicante', titulo: 'Practicante', icono: 'bag',       color: '#A78BFA', porcentaje: pct };
   return             { nivel: 'explorador',  titulo: 'Explorador',  icono: 'compass',   color: '#C4B5FD', porcentaje: pct };
+  // Una serie de "if" en cascada que revisan el porcentaje de mayor a
+  // menor y devuelven el nivel correspondiente al primer umbral que se
+  // cumple. Si ninguno de los "if" se cumple (menos de 26%), se devuelve
+  // el nivel más bajo, "Explorador", en la última línea (sin "if" porque
+  // es el caso restante).
 }
 
 // ─────────────────────────────────────────────
@@ -61,15 +175,28 @@ export function estudianteHabilitadoParaVacantes(perfil: {
   horas_aprobadas?: number;
   horas_objetivo?: number;
 } | null | undefined): boolean {
+  // Otra función pura: decide si un estudiante puede aplicar a vacantes
+  // "libres" del mercado (no gestionadas por su universidad). Recibe un
+  // objeto "perfil" con 3 campos OPCIONALES (todos con "?"), o incluso
+  // null/undefined si el perfil no se pudo cargar.
   if (!perfil) return false;
+  // Si no hay perfil en absoluto, no está habilitado.
   if (perfil.graduado === true) return true;
+  // Si la universidad ya marcó explícitamente al estudiante como
+  // graduado, está habilitado sin más cálculos.
   return calcularNivelEstudiante(perfil.horas_aprobadas ?? 0, perfil.horas_objetivo ?? 0).nivel === 'graduado';
+  // Si no, se calcula su nivel gamificado (función de arriba) y se
+  // habilita solo si ese nivel es exactamente 'graduado' (100% de horas).
+  // "?? 0" usa 0 como valor por defecto si esos campos no existieran en
+  // el perfil.
 }
 
 // ─────────────────────────────────────────────
 // 1. ESTUDIANTE APLICA A VACANTE
 // ─────────────────────────────────────────────
 type PerfilParaAplicar = { nombre_completo: string; foto_url?: string; universidad_id?: string };
+// Tipo pequeño con solo los datos del estudiante que hacen falta para
+// registrar una aplicación (no todo su perfil completo).
 
 /**
  * Cuerpo compartido de "crear una aplicación": lo usan tanto `aplicarAVacante`
@@ -79,6 +206,11 @@ type PerfilParaAplicar = { nombre_completo: string; foto_url?: string; universid
  * hace su propia validación de elegibilidad ANTES de invocar esto.
  */
 async function crearAplicacion(
+  // Función INTERNA (no se exporta) que hace el trabajo real de CREAR una
+  // aplicación en Firestore. Las dos funciones públicas de más abajo
+  // (aplicarAVacante y aplicarAPasantiaIndependiente) validan reglas
+  // DISTINTAS según el caso, pero ambas terminan llamando a esta misma
+  // función para no repetir el código de guardado.
   estudianteId: string,
   vacanteId: string,
   empresaId: string,
@@ -92,16 +224,39 @@ async function crearAplicacion(
       where('vacante_id', '==', vacanteId),
     ),
   );
+  // READ: busca en la colección "aplicaciones" si YA existe un documento
+  // donde estudiante_id y vacante_id coincidan con los que se están
+  // recibiendo ahora (dos condiciones `where` combinadas = "Y" lógico:
+  // deben cumplirse AMBAS).
   if (!existing.empty) throw new Error('Ya aplicaste a esta vacante.');
+  // .empty es true si la búsqueda no encontró ningún documento. Si SÍ
+  // encontró algo (!existing.empty), significa que el estudiante ya
+  // había aplicado antes a esta misma vacante — se lanza un error para
+  // evitar aplicaciones duplicadas ("throw new Error(...)" interrumpe la
+  // función inmediatamente y el error debe ser capturado por quien la
+  // llamó, típicamente para mostrarlo en la pantalla).
 
   const appRef = await addDoc(collection(db, 'aplicaciones'), {
+    // CREATE: crea el documento de la aplicación con un ID autogenerado.
     estudiante_id:     estudianteId,
     estudiante_nombre: estudiantePerfil.nombre_completo,
+    // Nota de diseño: aquí se guarda una COPIA del nombre del estudiante
+    // dentro del propio documento de aplicación (en vez de solo guardar
+    // su ID y tener que ir a buscarlo cada vez a otra colección). A esta
+    // técnica se le llama "desnormalización" — es un patrón MUY común en
+    // Firestore (y en bases de datos NoSQL en general) para que mostrar
+    // una lista de aplicaciones en pantalla no requiera decenas de
+    // lecturas extra (una por cada estudiante). El costo es que si el
+    // estudiante cambia su nombre después, esta copia queda desactualizada
+    // — es un balance consciente entre velocidad de lectura y frescura.
     estudiante_foto:   estudiantePerfil.foto_url ?? '',
     vacante_id:        vacanteId,
     empresa_id:        empresaId,
     universidad_id:    estudiantePerfil.universidad_id ?? '',
     estado:            'pendiente',
+    // El "estado" de una aplicación viaja por varios valores posibles a
+    // lo largo de su vida: 'pendiente' → 'contratado'/'rechazado'/
+    // 'entrevista' → 'finalizado_pendiente_firma' → 'finalizado'.
     fecha_aplicacion:  serverTimestamp(),
     horas_completadas: 0,
     pago_confirmado:   false,
@@ -113,12 +268,23 @@ async function crearAplicacion(
   });
 
   await updateDoc(doc(db, 'vacantes', vacanteId), {
+    // UPDATE: en el documento de la VACANTE (no de la aplicación),
+    // incrementa en 1 el contador `aplicantes_count`.
     aplicantes_count: increment(1),
+    // Se usa increment(1) en vez de "leer el valor actual, sumarle 1 y
+    // volver a escribirlo" porque si dos estudiantes aplicaran en el
+    // mismo instante, ese enfoque manual podría perder uno de los dos
+    // incrementos (ambos leerían, por ejemplo, "5" y ambos escribirían
+    // "6", en vez de terminar en "7"). increment() lo resuelve en el
+    // servidor de forma segura sin ese riesgo ("condición de carrera").
   });
 
   // Notificar a la empresa sobre la nueva aplicación
   const n = NOTIF.nuevaAplicacion(estudiantePerfil.nombre_completo);
   await crearNotificacionInApp(empresaId, n.tipo, n.titulo, n.mensaje, '/dashboard-empresa');
+  // Usa la plantilla NOTIF.nuevaAplicacion (ver notificacionService.ts)
+  // para avisarle a la empresa. El último parámetro, '/dashboard-empresa',
+  // es la RUTA a la que navega la app si la empresa toca esta notificación.
 
   // Confirmación al propio estudiante (no bloquea el flujo).
   try {
@@ -128,12 +294,22 @@ async function crearAplicacion(
       'Tu postulación fue enviada correctamente. Te avisaremos cuando la empresa responda.',
       'success',
       appRef.id,
+      // Se pasa el ID de la aplicación recién creada como referencia
+      // (aunque en este caso puntual no se usa como deep link
+      // estructurado "tipo:id" — queda como un id suelto).
     );
   } catch {
     /* la notificación no debe afectar el flujo principal */
+    // Igual que en otros archivos: si notificar al estudiante falla, NO
+    // se debe deshacer ni fallar la aplicación que ya se guardó con
+    // éxito — es más importante que la aplicación quede registrada que
+    // que la notificación de confirmación llegue.
   }
 
   return appRef.id;
+  // Devuelve el ID de la aplicación recién creada, por si quien llamó a
+  // esta función necesita usarlo (por ejemplo, para navegar directo a
+  // su detalle).
 }
 
 export async function aplicarAVacante(
@@ -142,14 +318,27 @@ export async function aplicarAVacante(
   empresaId: string,
   estudiantePerfil: PerfilParaAplicar,
 ): Promise<string> {
+  // Camino PRINCIPAL para aplicar a una vacante del "mercado libre" (no
+  // gestionada por la universidad). Exige que el estudiante ya haya
+  // culminado su práctica/pasantía obligatoria.
   // Solo estudiantes que ya culminaron su práctica/pasantía o están
   // graduados pueden aplicar (ver `estudianteHabilitadoParaVacantes`).
   const perfilSnap = await getDoc(doc(db, 'perfiles_estudiantes', estudianteId));
+  // READ: lee el perfil COMPLETO del estudiante desde Firestore (no confía
+  // en datos que la pantalla ya tuviera en memoria — siempre revalida
+  // contra el servidor antes de dejarlo aplicar, para que nadie pueda
+  // "saltarse" la regla manipulando la app).
   if (!estudianteHabilitadoParaVacantes(perfilSnap.exists() ? (perfilSnap.data() as any) : null)) {
+    // perfilSnap.exists() → true si el documento realmente existe en la
+    // base de datos. Si existe, se lee su contenido con .data(); si no,
+    // se pasa `null` a la función de elegibilidad (que ya sabe manejar
+    // ese caso devolviendo false).
     throw new Error('Las vacantes están disponibles solo para estudiantes que ya culminaron su práctica o pasantía, o que ya están graduados.');
   }
 
   return crearAplicacion(estudianteId, vacanteId, empresaId, estudiantePerfil);
+  // Si pasó la validación, delega el trabajo real a la función interna
+  // de arriba.
 }
 
 // ─────────────────────────────────────────────
@@ -177,16 +366,26 @@ export async function aplicarAPasantiaIndependiente(
   vacanteId: string,
   empresaId: string,
   estudiantePerfil: PerfilParaAplicar & { carrera?: string },
+  // "PerfilParaAplicar & { carrera?: string }" combina (con "&", tipo
+  // "intersección") el tipo PerfilParaAplicar con un campo extra
+  // `carrera`, opcional, que se necesita para validar la Zona Roja.
 ): Promise<string> {
   const vacSnap = await getDoc(doc(db, 'vacantes', vacanteId));
+  // READ: trae la vacante completa para validarla.
   if (!vacSnap.exists()) throw new Error('Esta pasantía ya no está disponible.');
   const vacData: any = vacSnap.data();
   const esPasantia = vacData.categoria === 'pasantia' || (!vacData.categoria && vacData.tipo === 'Pasantía');
+  // Comprueba que la vacante sea realmente de categoría "pasantia" (con
+  // compatibilidad hacia atrás: si una vacante antigua no tiene el campo
+  // `categoria`, se acepta si su `tipo` es exactamente "Pasantía").
   if (!esPasantia) throw new Error('Esta publicación no es una pasantía.');
 
   if (estudiantePerfil.carrera && zonaDeCarrera(estudiantePerfil.carrera) === 'roja') {
     throw new Error('Tu carrera requiere que la práctica la gestione tu universidad.');
   }
+  // Bloquea el autoservicio para carreras de Zona Roja (Salud, Educación,
+  // Derecho), sin excepción — regla legal explicada en la memoria del
+  // proyecto, no es un capricho de diseño.
 
   // No debe tener ya una pasantía activa por ninguna de las 3 vías posibles.
   const [contratadoSnap, acuerdoSnap, cupoSnap] = await Promise.all([
@@ -200,15 +399,28 @@ export async function aplicarAPasantiaIndependiente(
       where('estudianteIds', 'array-contains', estudianteId),
       where('estado', '==', 'aprobado'),
     )),
+    // 'array-contains' es OTRO tipo de condición `where`: en vez de
+    // "el campo es igual a X", significa "el campo es una LISTA que
+    // contiene X entre sus elementos". Aquí busca solicitudes de práctica
+    // de GRUPO donde este estudiante esté dentro de la lista
+    // `estudianteIds`.
     getDocs(query(
       collection(db, 'asignaciones_cupo'),
       where('estudianteId', '==', estudianteId),
       where('estado', '==', 'tomado'),
     )),
   ]);
+  // Promise.all([...]) ejecuta las 3 búsquedas EN PARALELO (al mismo
+  // tiempo) en vez de una después de otra — más rápido, porque no hay que
+  // esperar a que termine la primera para empezar la segunda. El
+  // resultado es un array con las 3 respuestas, en el mismo orden en que
+  // se pidieron, y se reparten con destructuring a
+  // [contratadoSnap, acuerdoSnap, cupoSnap].
   if (!contratadoSnap.empty || !acuerdoSnap.empty || !cupoSnap.empty) {
     throw new Error('Ya tienes una pasantía activa.');
   }
+  // Si CUALQUIERA de las 3 búsquedas encontró algo, el estudiante ya
+  // tiene un compromiso activo por alguna vía y no puede aplicar de nuevo.
 
   return crearAplicacion(estudianteId, vacanteId, empresaId, estudiantePerfil);
 }
@@ -225,7 +437,14 @@ export async function cambiarEstadoAplicacion(
   /** Horario acordado al contratar (ver ProponerHorarioModal, sin sección de pago). */
   acuerdo?: AcuerdoData,
 ): Promise<void> {
+  // Esta función la usa la empresa para mover una aplicación individual
+  // entre estados: aceptar, rechazar, llamar a entrevista, contratar.
   const updates: Record<string, any> = { estado: nuevoEstado };
+  // Arma un objeto de cambios que empieza solo con el nuevo estado, y se
+  // le van agregando más campos condicionalmente más abajo. "Record<string,
+  // any>" es un tipo flexible: "un objeto con claves de texto y valores
+  // de cualquier tipo" — se usa aquí porque los campos a actualizar
+  // varían según el caso.
 
   if (nuevoEstado === 'contratado') {
     updates.fecha_inicio = serverTimestamp();
@@ -236,20 +455,32 @@ export async function cambiarEstadoAplicacion(
       updates.fechaInicioPasantia = acuerdo.fechaInicio;
       updates.fechaFinPasantia = acuerdo.fechaFin;
     }
+    // Si el nuevo estado es "contratado", se agregan campos extra al
+    // objeto `updates`: la fecha de inicio, y si se proporcionó un
+    // acuerdo de horario, sus detalles también (guardados tanto como
+    // objeto estructurado `acuerdo` como en campos de texto sueltos
+    // derivados, para que las pantallas que todavía leen esos campos
+    // sueltos sigan funcionando).
   }
 
   await updateDoc(doc(db, 'aplicaciones', aplicacionId), updates);
+  // UPDATE: aplica todos los cambios juntos en un solo viaje al servidor.
 
   if (nuevoEstado === 'contratado' && vacanteId) {
     await updateDoc(doc(db, 'vacantes', vacanteId), {
       contratados_count: increment(1),
     });
+    // UPDATE adicional: si se contrató a alguien, incrementa el contador
+    // de contratados de la vacante correspondiente.
   }
 
   // Notificar al estudiante si tenemos su ID
   if (estudianteId) {
     const nombre = vacanteNombre ?? 'la vacante';
     let n: { tipo: string; titulo: string; mensaje: string } | null = null;
+    // `n` empieza en null; se le asigna una plantilla de NOTIF solo si el
+    // nuevo estado corresponde a alguno de los 3 casos que sí generan
+    // notificación (los demás estados, como "pendiente", no notifican).
 
     if (nuevoEstado === 'contratado' || nuevoEstado === 'aceptado') {
       n = NOTIF.aplicacionAceptada(nombre);
@@ -275,6 +506,8 @@ export async function estudianteFinalizaProyecto(
   empresaId?: string,
   estudianteNombre?: string,
 ): Promise<void> {
+  // El estudiante avisa que ya terminó su pasantía individual. Queda en
+  // un estado "pendiente de firma" hasta que la empresa lo confirme.
   await updateDoc(doc(db, 'aplicaciones', aplicacionId), {
     estado:            'finalizado_pendiente_firma',
     horas_completadas: horasCompletadas,
@@ -298,13 +531,21 @@ export async function empresaFirmaConstancia(
   // Leer para obtener universidad_id y nombre del estudiante
   const appSnap = await getDoc(doc(db, 'aplicaciones', aplicacionId));
   const appData = appSnap.data() ?? {};
+  // READ: se necesita releer la aplicación para saber a qué universidad
+  // pertenece el estudiante y cómo se llama, datos que no llegaron como
+  // parámetros a esta función. "?? {}" evita errores si por algún motivo
+  // el documento no existiera (se seguiría con un objeto vacío).
 
   await updateDoc(doc(db, 'aplicaciones', aplicacionId), {
     estado:    'finalizado',
     fecha_fin: serverTimestamp(),
   });
+  // UPDATE: marca la aplicación como completamente finalizada.
 
   const txRef = await addDoc(collection(db, 'transacciones'), {
+    // CREATE: crea un registro de "transacción" (pago) en estado
+    // pendiente, aunque el monto todavía sea 0 — sirve como placeholder
+    // para el módulo de pagos, que después lo completará.
     empresa_id:    empresaId,
     estudiante_id: estudianteId,
     aplicacion_id: aplicacionId,
@@ -344,18 +585,33 @@ export async function empresaFirmaConstancia(
 // Las postulaciones de grupo viven en su propia colección 'aplicaciones_grupos'
 // para no mezclarse con las aplicaciones individuales de estudiantes.
 // ───────────────────────────────────────────────────────────────────
+//
+// A partir de aquí empieza el sistema de "grupos" (una universidad
+// postula MUCHOS estudiantes de una vez a una vacante, en vez de que cada
+// uno aplique individualmente).
 
 export const COLECCION_APLICACIONES_GRUPOS = 'aplicaciones_grupos';
+// Guardar el nombre de la colección en una constante (en vez de escribir
+// el texto 'aplicaciones_grupos' repetido muchas veces en el archivo)
+// evita errores de tipeo y facilita cambiarlo en un solo lugar si algún
+// día hiciera falta.
 export const MAX_GRUPOS_POR_VACANTE = 2;
+// Regla de negocio: una universidad puede postular como máximo 2 grupos
+// distintos a la misma vacante.
 
 /** Días de la semana — útil para los selectores multiselect de la UI */
 export const DIAS_SEMANA = [
   'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo',
 ] as const;
+// Lista fija reutilizada por componentes de UI que necesitan mostrar un
+// selector de días de la semana (por ejemplo, al definir un horario).
 
 export type EstadoAplicacionGrupo = 'pendiente' | 'revisando' | 'aprobada' | 'rechazada';
 export type DecisionEmpresa = 'aceptar' | 'rechazar';
 export type DecisionUniversidad = 'aceptar' | 'rechazar';
+// Tipos que restringen estos valores a exactamente las opciones válidas,
+// evitando errores de tipeo (como escribir 'aprobado' en vez de
+// 'aprobada') en cualquier parte del proyecto que los use.
 
 /**
  * Detalles que la empresa envía al aceptar un grupo. El horario/fechas/pago
@@ -373,6 +629,10 @@ export interface OfertaEmpresa {
 }
 
 export interface AplicacionGrupo {
+  // La FORMA completa de un documento de la colección
+  // "aplicaciones_grupos" — útil para saber, de un vistazo, TODOS los
+  // campos que puede tener sin tener que ir a mirar Firestore
+  // directamente.
   id: string;
   universidadId: string;
   vacanteId: string;
@@ -425,6 +685,7 @@ export async function postularGrupoAVacante(
   if (!universidadId || !vacanteId || !grupoId) {
     throw new Error('Datos incompletos para postular el grupo.');
   }
+  // Validación básica: los 3 identificadores son obligatorios.
 
   // 1) Verificar el límite de grupos por universidad en esta vacante
   const previas = await getDocs(
@@ -434,15 +695,23 @@ export async function postularGrupoAVacante(
       where('vacanteId', '==', vacanteId),
     ),
   );
+  // READ: trae TODAS las postulaciones anteriores de esta universidad a
+  // esta misma vacante (sin importar su estado).
 
   // No contamos las rechazadas para permitir reintentar con otro grupo
   const activas = previas.docs.filter(d => (d.data() as any).estado !== 'rechazada');
+  // .filter() se queda solo con los documentos cuyo estado NO sea
+  // 'rechazada' — una postulación rechazada no debe seguir "ocupando
+  // cupo" en el límite de 2 grupos.
   if (activas.length >= MAX_GRUPOS_POR_VACANTE) {
     throw new Error(
       `Solo puedes postular ${MAX_GRUPOS_POR_VACANTE} grupos por vacante. Ya alcanzaste el límite.`,
     );
   }
   if (activas.some(d => (d.data() as any).grupoId === grupoId)) {
+    // .some() revisa si AL MENOS UNO de los documentos cumple la
+    // condición (aquí: que sea justo el mismo grupoId que se quiere
+    // postular ahora).
     throw new Error('Este grupo ya fue postulado a esta vacante.');
   }
 
@@ -458,20 +727,33 @@ export async function postularGrupoAVacante(
     throw new Error(MENSAJE_GRUPO_COMPROMETIDO);
   }
 
-  // 2) Leer el grupo y la vacante para desnormalizar datos en la postulación
-  const [grupoSnap, vacanteSnap] = await Promise.all([
+  // 2) Leer el grupo, la vacante y la universidad para desnormalizar datos en
+  // la postulación (el nombre de la universidad debe verse SIEMPRE en la
+  // bandeja de la empresa, sin lecturas extra).
+  const [grupoSnap, vacanteSnap, universidadSnap] = await Promise.all([
     getDoc(doc(db, 'grupos', grupoId)),
     getDoc(doc(db, 'vacantes', vacanteId)),
+    getDoc(doc(db, 'perfiles_universidades', universidadId)),
   ]);
+  // 3 lecturas en paralelo (Promise.all), igual técnica que vimos en
+  // aplicarAPasantiaIndependiente.
   if (!grupoSnap.exists())   throw new Error('El grupo seleccionado no existe.');
   if (!vacanteSnap.exists()) throw new Error('La vacante ya no está disponible.');
 
   const grupo   = grupoSnap.data() as any;
   const vacante = vacanteSnap.data() as any;
+  const universidadNombre = universidadSnap.exists()
+    ? ((universidadSnap.data() as any).nombre_universidad ?? '')
+    : '';
+  // Si el perfil de la universidad existe, toma su nombre; si no, usa
+  // texto vacío (esta lectura, a diferencia de grupo/vacante, no es
+  // obligatoria: si fallara no debería impedir postular).
 
   if (grupo.universidad_id && grupo.universidad_id !== universidadId) {
     throw new Error('Ese grupo no pertenece a tu universidad.');
   }
+  // Verificación de seguridad: nadie puede postular un grupo que
+  // pertenece a OTRA universidad, aunque conozca su ID.
 
   // 2.5) Cupos: la vacante debe poder recibir al grupo completo. Las vacantes
   // legadas (sin el campo `cupos`) devuelven `null` en `cuposDisponibles` y NO
@@ -494,6 +776,8 @@ export async function postularGrupoAVacante(
 
   // 3) Crear la postulación
   const ref = await addDoc(collection(db, COLECCION_APLICACIONES_GRUPOS), {
+    // CREATE: finalmente, después de todas las validaciones, se crea el
+    // documento real de la postulación.
     universidadId,
     vacanteId,
     empresaId,
@@ -504,6 +788,7 @@ export async function postularGrupoAVacante(
     estudiantesCount: grupo.estudiantes_count ?? 0,
     vacanteTitulo:    vacante.titulo ?? '',
     empresaNombre:    vacante.nombre_empresa ?? '',
+    universidadNombre,
     estado:           'pendiente' as EstadoAplicacionGrupo,
     horarioPropuesto: '',
     diasTrabajo:      [],
@@ -518,8 +803,11 @@ export async function postularGrupoAVacante(
       empresaId,
       'info',
       'Nueva postulación de grupo',
-      `Una universidad postuló al grupo "${grupo.nombre ?? ''}" para "${vacante.titulo ?? 'tu vacante'}".`,
-      '/dashboard-empresa',
+      `${universidadNombre || 'Una universidad'} postuló al grupo "${grupo.nombre ?? ''}" para "${vacante.titulo ?? 'tu vacante'}".`,
+      `aplicacionGrupo:${ref.id}`,
+      // Deep link estructurado "aplicacionGrupo:ID" — al tocar la
+      // notificación, la app abrirá el modal AplicacionGrupoDetailModal
+      // con este ID (ver src/utils/notifRoute.ts).
     );
   }
 
@@ -550,24 +838,47 @@ export async function evaluarGrupoPorEmpresa(
   } else if (!detalles?.justificacionRechazo?.trim()) {
     throw new Error('Debes escribir una justificación para rechazar el grupo.');
   }
+  // Se validan los datos de entrada ANTES de tocar la base de datos, para
+  // fallar rápido y barato si falta algo, sin siquiera abrir una transacción.
 
   const ref = doc(db, COLECCION_APLICACIONES_GRUPOS, aplicacionId);
 
+  // ── ¿QUÉ ES UNA TRANSACCIÓN? ──────────────────────────────────────────
+  // runTransaction(db, async tx => { ... }) ejecuta un bloque de lecturas
+  // y escrituras como una operación "todo o nada": o se aplican TODOS
+  // los cambios juntos, o (si algo falla, o si alguien más modificó los
+  // mismos documentos al mismo tiempo) NO se aplica NINGUNO, y Firestore
+  // reintenta automáticamente el bloque completo desde cero. Esto evita
+  // el problema de "condición de carrera": por ejemplo, que dos empresas
+  // aprueben la misma postulación casi al mismo tiempo, o que se lea un
+  // estado "pendiente" que en microsegundos después ya cambió por otra
+  // operación en curso. Dentro del bloque, en vez de getDoc/updateDoc/
+  // addDoc normales, se usa tx.get/tx.update/tx.set — son las versiones
+  // "transaccionales" de esas mismas operaciones.
   const { universidadId, grupoNombre } = await runTransaction(db, async tx => {
     const snap = await tx.get(ref);
+    // READ transaccional: lee el estado ACTUAL del documento, garantizado
+    // fresco dentro de esta transacción.
     if (!snap.exists()) throw new Error('La postulación ya no existe.');
     const data = snap.data() as AplicacionGrupo;
 
     if (data.estado !== 'pendiente') {
       throw new Error('Esta postulación ya fue procesada.');
     }
+    // Revalida que el estado siga siendo 'pendiente' — si otra persona ya
+    // la procesó mientras tanto, se rechaza esta operación con un error
+    // claro en vez de sobrescribir silenciosamente su decisión.
 
     if (decision === 'aceptar') {
       const acuerdo = detalles.acuerdo!;
+      // El "!" al final le dice a TypeScript "confío en que este valor
+      // NO es undefined aquí" (ya se validó unas líneas arriba, fuera de
+      // la transacción, que existe si decision === 'aceptar').
       // Campos de texto derivados del acuerdo estructurado — solo para que
       // las tarjetas existentes (que aún leen estos campos) sigan mostrando
       // algo legible sin cambios.
       tx.update(ref, {
+        // UPDATE transaccional.
         estado: 'revisando' as EstadoAplicacionGrupo,
         acuerdo,
         horarioPropuesto: `${acuerdo.horaInicio} - ${acuerdo.horaFin}`,
@@ -587,10 +898,18 @@ export async function evaluarGrupoPorEmpresa(
     }
 
     return { universidadId: data.universidadId, grupoNombre: data.grupoNombre ?? '' };
+    // Lo que se "return" desde adentro de runTransaction es el valor que
+    // recibe la variable de afuera (aquí, desestructurado directo en
+    // "{ universidadId, grupoNombre }"). Se usa para saber a quién avisar
+    // DESPUÉS de que la transacción se confirmó con éxito.
   });
 
   // Notificar a la universidad fuera de la transacción
   if (universidadId) {
+    // Importante: las notificaciones se envían DESPUÉS de que
+    // runTransaction ya terminó (fuera del bloque), no adentro. Las
+    // transacciones deben ser rápidas y solo tocar Firestore — un envío
+    // de notificación no debería formar parte de esa unidad atómica.
     const n = decision === 'aceptar'
       ? {
           tipo: 'success',
@@ -602,7 +921,7 @@ export async function evaluarGrupoPorEmpresa(
           titulo: 'Grupo no aceptado',
           mensaje: `La empresa rechazó al grupo "${grupoNombre}". Revisa la justificación.`,
         };
-    await crearNotificacionInApp(universidadId, n.tipo, n.titulo, n.mensaje, '/dashboard-universidad');
+    await crearNotificacionInApp(universidadId, n.tipo, n.titulo, n.mensaje, `aplicacionGrupo:${aplicacionId}`);
   }
 }
 
@@ -619,6 +938,13 @@ export async function respuestaFinalUniversidad(
   decision: DecisionUniversidad,
   justificacion?: string,
 ): Promise<void> {
+  // Esta es la función MÁS LARGA y compleja del archivo: cuando la
+  // universidad acepta definitivamente la oferta de una empresa para un
+  // grupo, hay que crear/actualizar MUCHOS documentos relacionados a la
+  // vez (la solicitud de práctica "oficial", el chat, notificaciones para
+  // cada estudiante, posibles transacciones de pago, y bloquear al grupo
+  // para que no se comprometa dos veces) — todo eso debe pasar junto, o
+  // no pasar nada, de ahí que TODO viva dentro de una única transacción.
   if (!aplicacionId) throw new Error('Postulación inválida.');
   if (decision === 'rechazar' && !justificacion?.trim()) {
     throw new Error('Debes escribir una justificación para rechazar la oferta.');
@@ -649,14 +975,22 @@ export async function respuestaFinalUniversidad(
       // escritura (Firestore exige todas las lecturas antes que las escrituras).
       const grupoRef = doc(db, 'grupos', data.grupoId);
       const grupoSnap = await tx.get(grupoRef);
+      // IMPORTANTE (regla técnica de Firestore): dentro de una
+      // transacción, TODAS las lecturas (tx.get) deben hacerse ANTES que
+      // cualquier escritura (tx.set/tx.update). Por eso esta segunda
+      // lectura del grupo aparece aquí, antes de cualquier tx.update.
       if ((grupoSnap.data() as any)?.pasantia_activa_id) {
         throw new Error(MENSAJE_GRUPO_COMPROMETIDO);
       }
+      // Si el grupo YA tiene el campo `pasantia_activa_id` con algún
+      // valor, significa que ya está comprometido con otra pasantía en
+      // curso — se bloquea esta aprobación.
 
       tx.update(ref, {
         estado: 'aprobada' as EstadoAplicacionGrupo,
         fechaRespuestaUniversidad: serverTimestamp(),
       });
+      // UPDATE 1: marca la postulación como aprobada.
 
       // ── Puente Matchmaking → solicitudes_practicas ──────────────────────
       // Sin esto, una pasantía confirmada por este flujo queda invisible para
@@ -665,8 +999,19 @@ export async function respuestaFinalUniversidad(
       // directamente en `aprobado`: el horario ya se acordó aquí mismo, sin
       // pasar por el handshake de chat.
       const alumnos = await alumnosRealesDeGrupo(data.grupoId);
+      // READ (no transaccional, pero de solo lectura de datos que no
+      // necesitan ser parte de la atomicidad — es una consulta auxiliar
+      // para obtener la lista de estudiantes reales del grupo).
       const solRef = doc(collection(db, 'solicitudes_practicas'));
+      // doc(collection(...)) SIN pasar un ID → genera una referencia con
+      // un ID NUEVO autogenerado, pero SIN escribir nada todavía (a
+      // diferencia de addDoc, que lee+escribe en un solo paso; aquí hace
+      // falta el ID de antemano para poder usarlo en varios lugares antes
+      // de hacer el tx.set real un poco más abajo).
       tx.set(solRef, {
+        // CREATE transaccional: crea el documento "oficial" de la
+        // solicitud de práctica, que es la colección que TODO el resto
+        // del sistema (horas, certificación, feedback) sabe leer.
         universidadId: data.universidadId,
         empresaId: data.empresaId,
         grupoId: data.grupoId,
@@ -688,12 +1033,19 @@ export async function respuestaFinalUniversidad(
       // Bloquea el grupo: no puede comprometerse con otra empresa mientras
       // esta pasantía siga aprobada (se libera en `finalizarPasantia`).
       tx.update(grupoRef, { pasantia_activa_id: solRef.id });
+      // UPDATE 2: guarda en el documento del GRUPO el id de la solicitud
+      // que lo tiene comprometido — este es el "candado" que
+      // grupoComprometido() (usado más arriba, en postularGrupoAVacante)
+      // consulta para bloquear nuevas postulaciones de este grupo.
 
       // Estado de pasantía autoreportado (perfil público) — arranca "en
       // proceso" para cada alumno real del grupo. Ver [[project_reparto_cupos]].
       alumnos.forEach(al => {
         tx.update(doc(db, 'perfiles_estudiantes', al.id), { estado_pasantia: 'en_proceso' });
       });
+      // UPDATE 3 (uno por cada estudiante): actualiza el campo público
+      // "estado_pasantia" en el perfil de CADA estudiante del grupo, para
+      // que se muestre correctamente en su perfil visible por otros.
 
       // Registra la alianza en AMBOS perfiles (arrayUnion dedupe solo — no
       // pasa nada si ya se habían aliado antes). Alimenta "Top Empresas/
@@ -704,6 +1056,10 @@ export async function respuestaFinalUniversidad(
       tx.update(doc(db, 'perfiles_empresas', data.empresaId), {
         aliados_universidades_ids: arrayUnion(data.universidadId),
       });
+      // UPDATE 4 y 5: registra en el perfil de la universidad que ahora
+      // está aliada con esta empresa, y viceversa. arrayUnion() asegura
+      // que si ya estaban aliadas antes, no se duplique la entrada en la
+      // lista.
 
       // Sala de chat dedicada (mismo esquema determinístico que los otros
       // flujos) para que uni/empresa sigan coordinando sobre esta pasantía.
@@ -725,15 +1081,29 @@ export async function respuestaFinalUniversidad(
           createdAt: serverTimestamp(),
         },
         { merge: true },
+        // { merge: true } es una opción de tx.set (y de setDoc en
+        // general): en vez de REEMPLAZAR el documento entero si ya
+        // existiera algo en esa ubicación, MEZCLA los campos nuevos con
+        // los que ya hubiera. Como buildChatId() siempre da el mismo ID
+        // para los mismos participantes, esto evita crear un chat
+        // duplicado si por algún motivo ya existía uno.
       );
+      // CREATE/UPDATE 6: crea (o actualiza) el documento de la sala de
+      // chat entre esta universidad y esta empresa sobre este grupo.
 
       // Notifica a cada estudiante real del grupo (mismo patrón que firmarAcuerdo).
       const conPago = acuerdo.pago.tipo === 'con_pago';
       const monto = conPago ? Number(acuerdo.pago.monto ?? 0) : 0;
       const horarioTexto = `${acuerdo.dias.join(', ')} · ${acuerdo.horaInicio} - ${acuerdo.horaFin}`;
+      // .join(', ') convierte un array de textos (ej. ['Lunes','Martes'])
+      // en un solo texto separado por comas ("Lunes, Martes").
       alumnos.forEach(al => {
         const notiRef = doc(collection(db, 'notificaciones_estudiantes'));
         tx.set(notiRef, {
+          // CREATE (uno por estudiante): un tipo de notificación
+          // ESPECÍFICO para estudiantes de grupo (colección separada de
+          // "notificaciones_app"), con más detalle estructurado (horario,
+          // pago) además del texto.
           estudianteId: al.id,
           estudianteNombre: al.nombre,
           empresaId: data.empresaId,
@@ -753,6 +1123,8 @@ export async function respuestaFinalUniversidad(
         if (conPago && monto > 0) {
           const txRef = doc(collection(db, 'transacciones'));
           tx.set(txRef, {
+            // CREATE (solo si hay pago): crea el registro de la
+            // transacción/pago pendiente para este estudiante.
             estudiante_id: al.id,
             empresa_id: data.empresaId,
             solicitud_id: solRef.id,
@@ -765,6 +1137,7 @@ export async function respuestaFinalUniversidad(
         }
       });
     } else {
+      // Rama de RECHAZO (mucho más simple: solo actualiza la postulación).
       tx.update(ref, {
         estado: 'rechazada' as EstadoAplicacionGrupo,
         justificacionRechazo: justificacion!.trim(),
@@ -778,6 +1151,12 @@ export async function respuestaFinalUniversidad(
       vacanteTitulo: data.vacanteTitulo ?? '',
     };
   });
+  // Fin de la transacción: si TODO lo de arriba se ejecutó sin lanzar
+  // ningún error, Firestore confirma TODOS esos cambios juntos de forma
+  // atómica. Si algo hubiera fallado a mitad de camino, NINGUNO de esos
+  // cambios se aplicaría (ni la solicitud, ni el candado del grupo, ni el
+  // chat, ni las notificaciones) — se reintentaría o se propagaría el
+  // error hacia quien llamó a esta función.
 
   // Notificar a la empresa
   if (empresaId) {
@@ -792,7 +1171,7 @@ export async function respuestaFinalUniversidad(
           titulo: 'Oferta rechazada',
           mensaje: `La universidad rechazó tu oferta para el grupo "${grupoNombre}". Revisa la justificación.`,
         };
-    await crearNotificacionInApp(empresaId, n.tipo, n.titulo, n.mensaje, '/dashboard-empresa');
+    await crearNotificacionInApp(empresaId, n.tipo, n.titulo, n.mensaje, `aplicacionGrupo:${aplicacionId}`);
   }
 }
 
@@ -804,22 +1183,34 @@ export async function respuestaFinalUniversidad(
 // referenciando una vacante inexistente.
 // ─────────────────────────────────────────────
 export async function vacanteTieneSolicitudes(vacanteId: string): Promise<boolean> {
+  // Función de apoyo: revisa en las 3 colecciones que podrían referenciar
+  // una vacante, si HAY algo relacionado con ella.
   const [aplicaciones, aplicacionesGrupos, reclamos] = await Promise.all([
     getDocs(query(collection(db, 'aplicaciones'), where('vacante_id', '==', vacanteId))),
     getDocs(query(collection(db, 'aplicaciones_grupos'), where('vacanteId', '==', vacanteId))),
     getDocs(query(collection(db, 'reclamos_cupos'), where('vacanteId', '==', vacanteId))),
   ]);
   return !aplicaciones.empty || !aplicacionesGrupos.empty || !reclamos.empty;
+  // Devuelve true si CUALQUIERA de las 3 colecciones tiene al menos un
+  // documento relacionado con esta vacante.
 }
 
 export async function eliminarVacante(vacanteId: string, empresaId: string): Promise<void> {
   const vacSnap = await getDoc(doc(db, 'vacantes', vacanteId));
   if (!vacSnap.exists()) return;
+  // Si la vacante ya no existe (por ejemplo, se borró en otro momento),
+  // no hay nada que hacer: se sale de la función sin error (borrar algo
+  // que ya no existe se considera "éxito trivial", no un fallo).
   if ((vacSnap.data() as any)?.empresa_id !== empresaId) {
     throw new Error('Esta vacante no te pertenece.');
   }
+  // Verificación de seguridad: una empresa solo puede borrar SUS PROPIAS
+  // vacantes, comparando el `empresa_id` guardado en el documento contra
+  // quien está pidiendo borrarla.
   if (await vacanteTieneSolicitudes(vacanteId)) {
     throw new Error('No se puede eliminar: ya hay solicitudes o postulaciones para esta vacante.');
   }
   await deleteDoc(doc(db, 'vacantes', vacanteId));
+  // DELETE: recién aquí, después de pasar TODAS las validaciones, se
+  // borra el documento de verdad.
 }

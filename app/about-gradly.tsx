@@ -1,3 +1,15 @@
+// ════════════════════════════════════════════════════════════════════════
+// GUÍA PARA PRINCIPIANTES:
+// Pantalla estática "Acerca de Gradly" (misión + 3 tarjetas de valores).
+// Es prácticamente GEMELA de app/help-gradly.tsx en su estructura (mismo
+// header con botón atrás, misma tarjeta "hero", mismo patrón
+// makeStyles(colors) — ver los comentarios completos ahí si quieres el
+// detalle de cada pieza repetida). La única diferencia real es el
+// CONTENIDO y que aquí el componente local se llama `ValueCard` en vez de
+// `ContactItem`, y se usa 3 veces para las 3 tarjetas de "valores" de la
+// empresa en vez de datos de contacto.
+// ════════════════════════════════════════════════════════════════════════
+
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -10,6 +22,10 @@ import { useTheme, FONTS, type GradlyColors } from '../src/context/ThemeContext'
 import { useTranslation } from '../src/context/TranslationContext';
 
 function useThemedStyles() {
+  // Mismo hook local que en help-gradly.tsx (definido de nuevo aquí,
+  // duplicado — cada archivo tiene su propia copia chica, en vez de
+  // compartir uno solo, porque es apenas 3 líneas y no justificaba
+  // extraerlo a un archivo compartido).
   const { colors } = useTheme();
   return useMemo(() => ({ colors, styles: makeStyles(colors) }), [colors]);
 }
@@ -23,6 +39,9 @@ function ValueCard({
   title: string;
   body: string;
 }) {
+  // Igual idea que ContactItem de help-gradly.tsx: una tarjeta con ícono +
+  // título + texto, reutilizada 3 veces más abajo para no repetir el
+  // mismo bloque de JSX.
   const { colors, styles } = useThemedStyles();
   return (
     <GlassCard contentStyle={styles.valueCardContent}>
@@ -44,6 +63,8 @@ export default function AboutGradlyScreen() {
   const webScrollStyle = Platform.OS === 'web'
     ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
     : undefined;
+  // Ver la explicación completa de este estilo en help-gradly.tsx: solo
+  // aplica en la versión web, para personalizar la barra de scroll.
 
   return (
     <LiquidBackground>
@@ -80,6 +101,9 @@ export default function AboutGradlyScreen() {
             <Text style={styles.sectionTitle}>{t('about_screen_about_title')}</Text>
             <Text style={styles.paragraph}>{t('about_screen_about_p1')}</Text>
             <Text style={styles.paragraph}>{t('about_screen_about_p2')}</Text>
+            {/* Dos párrafos separados (p1, p2) en vez de un solo texto
+                largo — permite espaciarlos visualmente con el `gap` de
+                heroCard, y traducirlos como 2 claves independientes. */}
           </GlassCard>
 
           <View style={styles.valuesSection}>
@@ -181,6 +205,11 @@ const makeStyles = (COLORS: GradlyColors) =>
     valueCardContent: {
       flexDirection: 'row',
       alignItems: 'flex-start',
+      // Nota la diferencia con contactCardContent de help-gradly.tsx:
+      // aquí es 'flex-start' (alineado arriba) en vez de 'center', porque
+      // el texto `body` de cada valor es más largo y puede ocupar varias
+      // líneas — alinear arriba se ve mejor que centrar verticalmente el
+      // ícono contra un bloque de texto alto.
       gap: 12,
       padding: 16,
     },

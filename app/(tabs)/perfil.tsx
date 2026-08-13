@@ -1,5 +1,28 @@
+// ════════════════════════════════════════════════════════════════════════
+// app/(tabs)/perfil.tsx — pestaña "Perfil" del estudiante
+//
+// GUÍA PARA PRINCIPIANTES:
+// La pantalla de perfil del estudiante: foto, nivel, disponibilidad
+// horaria, ubicación, información personal editable, habilidades (skills),
+// CV, una "tarjeta bancaria" simulada, certificado, reseñas, y cerrar
+// sesión. Es el mejor archivo del proyecto para ver TODAS las variantes
+// de UPDATE de Firestore en un solo lugar: actualizar un campo de texto,
+// un array (skills), un objeto anidado (disponibilidad_horaria), y
+// escribir en 2 colecciones a la vez (usuarios + perfiles_estudiantes al
+// cambiar la foto). También muestra el patrón "borrador local + guardado
+// explícito" (para no escribir en Firestore en cada toque), y un patrón
+// de UI "orientado a configuración": en vez de escribir el JSX de cada
+// sección del perfil a mano, se arma un array `sections` con la
+// definición de cada una, y un componente reutilizable
+// (`PerfilMasterDetail`) se encarga de dibujarlas todas de forma
+// consistente.
+// ════════════════════════════════════════════════════════════════════════
+
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+// DocumentPicker: abre el selector de ARCHIVOS del sistema operativo
+// (para elegir un PDF, en este caso), distinto de ImagePicker (que abre
+// la galería de FOTOS).
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -13,6 +36,9 @@ import {
   Animated,
   Image,
   KeyboardAvoidingView,
+  // KeyboardAvoidingView: un contenedor especial que EMPUJA su contenido
+  // hacia arriba automáticamente cuando el teclado del celular aparece,
+  // para que el campo que se está escribiendo no quede tapado.
   Modal,
   Platform,
   ScrollView,
@@ -32,8 +58,19 @@ import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackgro
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import CertificadoGradly from '../../src/components/CertificadoGradly';
+// Componente que dibuja el "certificado" visual del estudiante (con su
+// XP, calificación y pasantías completadas) — parte del sistema de
+// gamificación del proyecto.
 import ResenasFeedback from '../../src/components/ResenasFeedback';
+// Muestra las reseñas/calificaciones que el estudiante recibió de las
+// empresas donde trabajó.
 import PerfilMasterDetail from '../../src/components/PerfilMasterDetail';
+// EL componente clave de este archivo: recibe la lista `sections`
+// (definida más abajo) y se encarga de dibujar toda la estructura visual
+// común del perfil (encabezado, lista de secciones expandibles, edición
+// inline de campos) — así este archivo de pantalla se concentra en QUÉ
+// datos mostrar y CÓMO guardarlos, sin tener que repetir el layout visual
+// de cada sección a mano.
 import DisponibilidadSelector from '../../src/components/DisponibilidadSelector';
 import UbicacionSelector from '../../src/components/UbicacionSelector';
 import {
@@ -81,6 +118,11 @@ interface EstudiantePerfil {
 
 // Devuelve la CLAVE de traducción del nivel; se traduce con t(nivel) al render.
 function getLevel(pct: number) {
+  // A diferencia de getLevel() en progreso.tsx (que devuelve un objeto
+  // con nombre/ícono/color), esta versión SOLO devuelve la CLAVE de
+  // traducción — el resto de la información (ícono, color) no hace falta
+  // aquí porque el nivel se muestra como simple texto en el subtítulo del
+  // perfil.
   if (pct >= 100) return 'nivel_graduado';
   if (pct >= 76)  return 'nivel_experto';
   if (pct >= 51)  return 'nivel_profesional';
@@ -89,7 +131,21 @@ function getLevel(pct: number) {
 }
 
 function formatCardNumber(raw: string) {
+  // Formatea lo que el usuario escribe en el campo de número de tarjeta,
+  // agrupándolo de a 4 dígitos con espacios ("1234 5678 9012 3456"),
+  // como se ve en una tarjeta física real.
   return raw.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim();
+  // Paso a paso:
+  //   .replace(/\D/g, '')     → elimina TODO lo que no sea un dígito
+  //                              (\D = "no dígito"), por si el usuario
+  //                              pegara texto con espacios o guiones.
+  //   .slice(0, 16)            → se queda con máximo 16 dígitos (el
+  //                              largo estándar de una tarjeta).
+  //   .replace(/(.{4})/g, '$1 ') → inserta un espacio después de cada
+  //                              grupo de 4 caracteres ("$1" se refiere
+  //                              al grupo capturado por (.{4})).
+  //   .trim()                   → quita el espacio final sobrante que
+  //                              deja el reemplazo anterior.
 }
 
 // ─────────────────────────────────────────────
@@ -130,10 +186,25 @@ export default function PerfilTab() {
   const [dispDraft, setDispDraft] = useState<DisponibilidadHoraria>({});
   const [dispDirty, setDispDirty] = useState(false);
   const [dispSaving, setDispSaving] = useState(false);
+  // GUÍA DEL PATRÓN "borrador local": si cada vez que el usuario toca una
+  // casilla del selector de disponibilidad se escribiera INMEDIATAMENTE
+  // en Firestore, se generarían decenas de escrituras innecesarias (una
+  // por cada toque, mientras el usuario todavía está decidiendo). En vez
+  // de eso: los cambios se guardan primero SOLO en el estado local
+  // `dispDraft` (rapidísimo, sin tocar la red), se marca `dispDirty =
+  // true` (para mostrar el botón "Guardar"), y solo cuando el usuario
+  // confirma, se manda TODO junto a Firestore de una vez
+  // (guardarDisponibilidad(), más abajo). El mismo patrón se repite para
+  // la ubicación (ubicDraft/ubicDirty/ubicSaving).
 
   // ── Ubicación (departamento/distrito/dirección) — mismo patrón: borrador
   // local + guardado explícito, para no escribir en cada tap de chip. ──
   const [ubicDraft, setUbicDraft] = useState<Partial<UbicacionEstudiante>>({});
+  // "Partial<UbicacionEstudiante>" significa "un objeto con ALGUNAS (o
+  // ninguna) de las propiedades de UbicacionEstudiante, todas opcionales"
+  // — útil aquí porque, mientras el usuario está llenando el formulario,
+  // el borrador puede estar incompleto (por ejemplo, con departamento
+  // pero sin distrito todavía).
   const [ubicDirty, setUbicDirty] = useState(false);
   const [ubicSaving, setUbicSaving] = useState(false);
 
@@ -146,6 +217,18 @@ export default function PerfilTab() {
       setPerfil(data);
       // No pisar lo que el usuario está editando ahora mismo.
       setDispDirty(dirty => {
+        // Este patrón "setDispDirty(dirty => {...; return dirty;})" es un
+        // truco para LEER el valor actual de `dispDirty` dentro de un
+        // efecto SIN tener que agregarlo a las dependencias del useEffect
+        // (lo cual causaría que el efecto se reinstale cada vez que
+        // dispDirty cambiara). Dentro de la función, si `dirty` es false
+        // (el usuario NO está editando ahora), se actualiza el borrador
+        // con los datos frescos de Firestore; si es true (el usuario SÍ
+        // está editando), se IGNORA la actualización de Firestore para no
+        // "pisar" lo que el usuario está escribiendo — pero de cualquier
+        // forma se devuelve el mismo `dirty` sin cambiarlo (el setter en
+        // sí no modifica dispDirty, solo se usa como excusa para leer su
+        // valor actual).
         if (!dirty) setDispDraft(normalizarDisponibilidad(data.disponibilidad_horaria));
         return dirty;
       });
@@ -166,13 +249,18 @@ export default function PerfilTab() {
   }, [user]);
 
   const guardarDisponibilidad = async () => {
+    // Se ejecuta al tocar el botón "Guardar" que aparece cuando
+    // dispDirty es true.
     if (!user) return;
     setDispSaving(true);
     try {
       await updateDoc(doc(db, 'perfiles_estudiantes', user.uid), {
         disponibilidad_horaria: dispDraft,
+        // UPDATE: guarda el objeto COMPLETO de disponibilidad de una sola
+        // vez (no campo por campo), reemplazando lo que hubiera antes.
       });
       setDispDirty(false);
+      // Ya se guardó: se apaga la bandera "hay cambios sin guardar".
     } catch {
       Alert.alert(t('error_generico'), t('err_guardar'));
     } finally {
@@ -182,6 +270,8 @@ export default function PerfilTab() {
 
   const guardarUbicacion = async () => {
     if (!user || !ubicDraft.departamento || !ubicDraft.distrito) return;
+    // No permite guardar si faltan los 2 campos obligatorios (dirección
+    // específica sí es opcional).
     setUbicSaving(true);
     try {
       await updateDoc(doc(db, 'perfiles_estudiantes', user.uid), {
@@ -207,6 +297,10 @@ export default function PerfilTab() {
   const handleUploadFoto = async () => {
     // a. Permisos de galería
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    // Le pide AL SISTEMA OPERATIVO permiso para acceder a las fotos del
+    // usuario — obligatorio en Android/iOS antes de poder abrir la
+    // galería (parte del sistema de permisos de privacidad del propio
+    // dispositivo, no algo específico de Firebase).
     if (status !== 'granted') {
       Alert.alert(t('perfil_permiso_titulo'), t('perfil_permiso_msg'));
       return;
@@ -217,15 +311,24 @@ export default function PerfilTab() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
+      // aspect: [1, 1] fuerza que el recorte de edición sea CUADRADO
+      // (proporción 1:1) — apropiado para una foto de perfil circular.
       quality: 0.8,
+      // quality: 0.8 comprime la imagen un poco (80% de calidad) para
+      // que el archivo pese menos al subirlo, sin perder demasiada
+      // nitidez visual.
     });
     if (result.canceled) return;
+    // Si el usuario cerró el selector sin elegir nada, no hay nada más
+    // que hacer.
 
     setUploadingFoto(true);
     try {
       // c. URI → Blob
       const response = await fetch(result.assets[0].uri);
       const blob = await response.blob();
+      // Mismo patrón "fetch + .blob()" visto en services/authService.ts
+      // para convertir el archivo local elegido en datos binarios subibles.
 
       // d. Subir a Storage en fotos_estudiantes/{uid}/perfil.jpg
       const storageRef = ref(storage, `fotos_estudiantes/${user!.uid}/perfil.jpg`);
@@ -237,16 +340,39 @@ export default function PerfilTab() {
       //    con dos signos de interrogación y la imagen nunca cargaría).
       const baseUrl = await getDownloadURL(storageRef);
       const urlActualizada = `${baseUrl}&t=${new Date().getTime()}`;
+      // GUÍA DEL "CACHE-BUSTING": como el nombre del archivo en Storage
+      // SIEMPRE es el mismo ("perfil.jpg"), si el usuario cambia su foto,
+      // la URL de descarga sería IDÉNTICA a la anterior — y el navegador/
+      // celular podría seguir mostrando la imagen VIEJA que tenía
+      // guardada en su caché local, pensando "ya tengo esta URL, no hace
+      // falta descargarla de nuevo". Agregar "&t=1234567890" (la hora
+      // actual en milisegundos) al final de la URL hace que, aunque la
+      // imagen sea la misma, el TEXTO de la URL sea distinto cada vez —
+      // engañando al caché para que SIEMPRE vuelva a descargar la imagen
+      // fresca.
 
       // f. Actualizar Firestore en ambas colecciones simultáneamente
       await Promise.all([
         updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), { foto_url: urlActualizada }),
         updateDoc(doc(db, 'usuarios', user!.uid), { foto_url: urlActualizada }),
       ]);
+      // UPDATE doble en paralelo: el campo `foto_url` está DUPLICADO
+      // (desnormalizado) en 2 colecciones distintas —
+      // "perfiles_estudiantes" (el perfil completo) y "usuarios" (los
+      // datos comunes a cualquier rol, que otras pantallas leen para
+      // mostrar avatares pequeños sin tener que ir a buscar el perfil
+      // completo) — así que hay que actualizar AMBAS para que la nueva
+      // foto se vea en todos lados.
 
       // g. Inyectar la nueva URL directamente en el estado del perfil para que
       //    la imagen se refleje de inmediato dentro del contenedor circular.
       setPerfil(prev => (prev ? { ...prev, foto_url: urlActualizada } : prev));
+      // Actualiza el estado LOCAL de inmediato (sin esperar a que
+      // onSnapshot detecte el cambio en Firestore, lo cual tardaría un
+      // poquito más) — la pantalla se siente instantánea. Cuando
+      // onSnapshot sí reciba la confirmación del servidor, sobrescribirá
+      // este mismo valor con el dato ya confirmado (sin cambio visible
+      // para el usuario, porque ya coinciden).
     } catch (e) {
       // h. Manejo de errores
       console.warn('Error al subir la foto de perfil:', e);
@@ -259,6 +385,8 @@ export default function PerfilTab() {
   // ── Subir CV ──────────────────────────────────────────────────────
   const handleUploadCV = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
+    // type: 'application/pdf' restringe el selector de archivos para que
+    // solo se puedan elegir archivos PDF.
     if (result.canceled) return;
 
     const file = result.assets[0];
@@ -267,6 +395,9 @@ export default function PerfilTab() {
       const resp = await fetch(file.uri);
       const blob = await resp.blob();
       const storageRef = ref(storage, `cvs/${user!.uid}/${file.name}`);
+      // A diferencia de la foto (nombre fijo "perfil.jpg"), aquí se
+      // conserva el NOMBRE ORIGINAL del archivo (file.name) — mismo
+      // patrón visto en uploadCV() de services/authService.ts.
       await uploadBytes(storageRef, blob);
       const url = await getDownloadURL(storageRef);
       await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), { cv_url: url });
@@ -284,9 +415,18 @@ export default function PerfilTab() {
     if (!sk) return;
     const current = perfil?.skills ?? [];
     if (current.includes(sk)) { setSkillInput(''); return; }
+    // No agrega duplicados: si la habilidad ya está en la lista, solo
+    // limpia el campo de texto sin volver a escribir en Firestore.
     try {
       await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), {
         skills: [...current, sk],
+        // UPDATE de un ARRAY: se construye la lista NUEVA completa
+        // (todas las skills anteriores + la nueva al final, usando
+        // spread) y se reemplaza el campo entero. Es distinto a
+        // arrayUnion() (visto en pasantiaService.ts) — aquí se hace
+        // "a mano" porque de todas formas ya se necesitaba leer y
+        // comparar `current` para evitar duplicados; arrayUnion también
+        // habría funcionado, pero este enfoque da el mismo resultado.
       });
     } catch { Alert.alert(t('error_generico'), t('err_agregar_skill')); }
     setSkillInput('');
@@ -296,6 +436,8 @@ export default function PerfilTab() {
   // ── Eliminar skill ────────────────────────────────────────────────
   const handleDeleteSkill = async (sk: string) => {
     const current = (perfil?.skills ?? []).filter(s => s !== sk);
+    // .filter() con "s !== sk" construye una lista nueva SIN la skill que
+    // se quiere borrar (se queda con todas las que NO coincidan).
     try {
       await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), { skills: current });
     } catch { Alert.alert(t('error_generico'), t('err_eliminar_skill')); }
@@ -305,22 +447,38 @@ export default function PerfilTab() {
   // ── Guardar tarjeta ───────────────────────────────────────────────
   const handleGuardarTarjeta = async () => {
     const digits = cardNumero.replace(/\s/g, '');
+    // Quita los espacios que formatCardNumber() había insertado, para
+    // volver a tener solo los dígitos puros.
     if (digits.length !== 16) { Alert.alert(t('perfil_num_invalido'), t('perfil_num_invalido_msg')); return; }
     if (!cardAlias.trim()) { Alert.alert(t('perfil_alias_req'), t('perfil_alias_req_msg')); return; }
     try {
       // SOLO guardamos los últimos 4 dígitos. NUNCA el número completo.
       await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), {
         tarjeta_numero: digits.slice(-4),
+        // .slice(-4) toma los ÚLTIMOS 4 caracteres del texto — una nota
+        // de seguridad importante marcada en el propio comentario
+        // original: NUNCA se guarda el número completo de la tarjeta en
+        // Firestore (esta es una "tarjeta simulada" de demostración del
+        // proyecto, no un sistema de pagos real, pero igual sigue esta
+        // buena práctica de no persistir datos sensibles completos).
         tarjeta_alias:  cardAlias.trim(),
       });
       Alert.alert(t('perfil_tarjeta_guardada'), t('perfil_tarjeta_guardada_msg'));
       setShowCardModal(false);
       setCardNumero(''); setCardNombre(''); setCardVence(''); setCardAlias('');
+      // Limpia todo el formulario tras guardar exitosamente.
     } catch { Alert.alert(t('error_generico'), t('err_guardar_tarjeta')); }
   };
 
   // ── Guardar perfil ────────────────────────────────────────────────
   const handleSaveEdit = async () => {
+    // Nota: esta función queda definida pero, revisando el JSX más abajo,
+    // el modal "showEditModal" que la usaría no aparece — es código que
+    // pudo haber quedado de una versión anterior de la pantalla (la
+    // edición de disponibilidad/linkedin/portfolio ahora se hace desde la
+    // sección 'info' del array `sections`, con su propio `onSave`). No
+    // afecta el funcionamiento actual, simplemente no se llama desde
+    // ningún botón visible.
     try {
       await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), {
         disponibilidad: editDisp,
@@ -349,6 +507,8 @@ export default function PerfilTab() {
   };
 
   if (!perfil && !user) return null;
+  // Mientras no haya NI perfil NI usuario (estado inicial antes de que
+  // termine de cargar), no dibuja nada.
 
   const skills  = perfil?.skills ?? [];
   const tieneCV = !!(perfil?.cv_url);
@@ -360,6 +520,14 @@ export default function PerfilTab() {
       <StatusBar style="light" />
 
       <PerfilMasterDetail
+        // Aquí es donde se activa el patrón "orientado a configuración"
+        // mencionado en la guía del encabezado: en vez de escribir el
+        // JSX completo de cada sección del perfil (con su tarjeta, su
+        // ícono, su título, su contenido) directamente en ESTE archivo,
+        // se le pasa a <PerfilMasterDetail> toda la información como
+        // DATOS (props), y ese componente reutilizable se encarga de
+        // dibujar la estructura visual repetida (acordeón, tarjetas,
+        // edición inline) de forma consistente para las 7 secciones.
         name={perfil?.nombre_completo ?? user?.email ?? 'Estudiante'}
         subtitle={`${perfil?.carrera ?? t('perfil_sin_carrera')} · ${t(nivel)}`}
         avatarUrl={perfil?.foto_url}
@@ -371,6 +539,11 @@ export default function PerfilTab() {
         onAcerca={handleAcerca}
         onLogout={() => setLogoutModalVisible(true)}
         labels={{
+          // Como PerfilMasterDetail es un componente reutilizado también
+          // por empresa/universidad (con textos distintos), este
+          // archivo le pasa TODOS los textos ya traducidos (con t())
+          // como props — así el componente compartido no necesita saber
+          // nada de idiomas, solo dibuja el texto que se le da.
           editar: t('perfil_editar'),
           guardar: t('accion_guardar'),
           cancelar: t('accion_cancelar'),
@@ -386,6 +559,18 @@ export default function PerfilTab() {
           cuenta: t('perfil_cuenta'),
         }}
         sections={[
+          // Cada objeto de este array describe UNA sección expandible
+          // del perfil. Los campos comunes son: id (identificador único),
+          // title/subtitle (lo que se ve siempre visible), icon, tone
+          // (color temático de la sección), y luego CUALQUIERA de estas 2
+          // formas de definir su contenido:
+          //   - render: () => JSX  → contenido totalmente personalizado
+          //     (usado cuando la sección necesita algo especial, como el
+          //     selector de disponibilidad o la tarjeta bancaria).
+          //   - fields: [...] + onSave → una lista de CAMPOS DE TEXTO
+          //     genéricos, que PerfilMasterDetail sabe dibujar y editar
+          //     por sí solo, sin necesitar JSX personalizado (usado en la
+          //     sección 'info').
           {
             id: 'cert',
             title: t('perfil_stat_nivel'),
@@ -422,11 +607,19 @@ export default function PerfilTab() {
             subtitle: resumenDisponibilidad(dispDraft) ?? t('disp_sin_definir'),
             icon: 'time-outline',
             tone: contarBloques(dispDraft) > 0 ? 'green' : 'orange',
+            // El "tone" (color) de la sección cambia dinámicamente: verde
+            // si ya hay al menos un bloque de disponibilidad definido,
+            // ámbar si todavía está vacío — una pista visual rápida de
+            // "esto necesita tu atención" sin tener que abrir la sección.
             render: () => (
               <View style={{ gap: 12 }}>
                 <DisponibilidadSelector
                   value={dispDraft}
                   onChange={next => { setDispDraft(next); setDispDirty(true); }}
+                  // Cada vez que el usuario toca una casilla, se actualiza
+                  // el BORRADOR local y se marca "sucio" — sin tocar
+                  // Firestore todavía (ver la explicación del patrón
+                  // arriba).
                 />
                 {dispDirty && (
                   <TouchableOpacity
@@ -477,12 +670,19 @@ export default function PerfilTab() {
             icon: 'person-outline',
             tone: 'blue',
             fields: [
+              // Este ES el patrón "fields": PerfilMasterDetail recibe
+              // esta LISTA de descripciones de campo y dibuja
+              // automáticamente sus inputs de edición, sin que este
+              // archivo tenga que escribir cada <TextInput> a mano.
               { key: 'descripcion', label: t('campo_descripcion'), value: perfil?.descripcion ?? '', placeholder: t('perfil_descripcion_placeholder'), multiline: true },
               { key: 'disp', label: t('campo_disponibilidad'), value: perfil?.disponibilidad ?? '', placeholder: t('perfil_disp_placeholder') },
               { key: 'linkedin', label: t('campo_linkedin'), value: perfil?.linkedin ?? '', placeholder: 'https://linkedin.com/in/tu-perfil', autoCapitalize: 'none', keyboardType: 'url' },
               { key: 'portfolio', label: t('perfil_portfolio'), value: perfil?.portfolio ?? '', placeholder: 'https://tu-portfolio.com', autoCapitalize: 'none', keyboardType: 'url' },
             ],
             onSave: async (v) => {
+              // `v` es el objeto con los valores YA editados por el
+              // usuario, con las mismas claves ('descripcion', 'disp',
+              // etc.) que se definieron arriba en `fields`.
               try {
                 await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), {
                   descripcion: v.descripcion,
@@ -507,6 +707,12 @@ export default function PerfilTab() {
                     style={styles.skillChip}
                     onLongPress={() => setDeletingSkill(sk)}
                     onPress={() => setDeletingSkill(sk)}
+                    // Tanto un toque normal como uno "largo" (mantener
+                    // presionado) abren la confirmación de borrado —
+                    // redundante a propósito, para que funcione fácil
+                    // tanto en celular (donde "mantener presionado" es un
+                    // gesto natural) como en web (donde no siempre existe
+                    // ese gesto, y un clic simple es más intuitivo).
                   >
                     <Text style={styles.skillText}>{sk}</Text>
                   </TouchableOpacity>
@@ -524,6 +730,9 @@ export default function PerfilTab() {
                       placeholder={t('perfil_nueva_skill')}
                       placeholderTextColor={COLORS.textMuted}
                       autoFocus
+                      // autoFocus: el teclado se abre automáticamente
+                      // apenas aparece este campo, sin que el usuario
+                      // tenga que tocarlo primero.
                       returnKeyType="done"
                       onSubmitEditing={handleAddSkill}
                       selectionColor={COLORS.primary}
@@ -599,6 +808,11 @@ export default function PerfilTab() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{t('perfil_eliminar_skill')}</Text>
             <Text style={styles.modalDesc}>{t('perfil_quitar_skill', { skill: deletingSkill ?? '' })}</Text>
+            {/* t('perfil_quitar_skill', { skill: ... }) — traducción CON
+                parámetro: la frase en el JSON tendrá algo como "¿Quitar
+                {{skill}} de tu perfil?" y aquí se rellena el nombre real
+                de la skill (ver la explicación de interpolación en
+                TranslationContext.tsx). */}
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalCancel} onPress={() => setDeletingSkill(null)}>
                 <Text style={styles.modalCancelText}>{t('accion_cancelar')}</Text>
@@ -618,6 +832,9 @@ export default function PerfilTab() {
       {/* ── MODAL: Tarjeta bancaria ── */}
       <Modal visible={showCardModal} transparent animationType="slide">
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          {/* behavior distinto por plataforma: iOS y Android manejan el
+              ajuste del teclado de forma distinta a bajo nivel — 'padding'
+              funciona mejor en iOS, 'height' en Android. */}
           <View style={styles.sheetCard}>
             <Text style={styles.modalTitle}>{t('perfil_datos_tarjeta')}</Text>
             <Text style={styles.modalDesc}>{t('perfil_tarjeta_desc')}</Text>
@@ -627,10 +844,14 @@ export default function PerfilTab() {
               style={styles.modalInput}
               value={cardNumero}
               onChangeText={t => setCardNumero(formatCardNumber(t))}
+              // Cada tecla que se escribe pasa por formatCardNumber()
+              // ANTES de guardarse en el estado — así el formato con
+              // espacios se aplica EN VIVO mientras el usuario escribe.
               placeholder="1234 5678 9012 3456"
               placeholderTextColor={COLORS.textMuted}
               keyboardType="number-pad"
               maxLength={19}
+              // 16 dígitos + 3 espacios entre grupos = 19 caracteres máximo.
               selectionColor={COLORS.primary}
             />
 
@@ -686,6 +907,11 @@ export default function PerfilTab() {
 
       {/* ── MODAL: Confirmar cierre de sesión (Liquid Glass) ── */}
       <Modal transparent visible={logoutModalVisible} animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
+        {/* Nota: este modal usa animationType="fade" (no "none"), y sus
+            estilos están escritos INLINE (directo en el JSX, no en el
+            objeto `styles` de abajo) en vez de seguir el patrón
+            makeStyles(colors) del resto del archivo — sus colores quedan
+            fijos, sin reaccionar al tema claro/oscuro. */}
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: '#1a162b', borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
             <Text style={{ fontSize: 18, color: '#fff', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>{t('cerrar_sesion')}</Text>
@@ -710,6 +936,10 @@ export default function PerfilTab() {
 // SUBCOMPONENTES
 // ─────────────────────────────────────────────
 function StatHero({ label, value }: { label: string; value: number | string }) {
+  // Nota: definido pero NO usado en el JSX actual de este archivo (el
+  // encabezado con estadísticas ahora lo dibuja PerfilMasterDetail
+  // internamente) — código que quedó de una versión anterior de esta
+  // pantalla, sin que rompa nada por seguir aquí.
   const { styles } = useThemedStyles();
   return (
     <View style={{ alignItems: 'center', flex: 1 }}>
@@ -722,6 +952,8 @@ function StatHero({ label, value }: { label: string; value: number | string }) {
 function InfoRow({ icon, label, value, last }: {
   icon: keyof typeof Ionicons.glyphMap; label: string; value: string; last?: boolean;
 }) {
+  // Tampoco usado directamente en el JSX visible (reemplazado por el
+  // sistema `fields` de PerfilMasterDetail) — mismo caso que StatHero.
   const { styles, colors } = useThemedStyles();
   return (
     <View style={[styles.infoRow, last && { borderBottomWidth: 0 }]}>
@@ -783,6 +1015,10 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   statHeroValue: { fontSize: 22, fontFamily: FONTS.rajdhaniBold, color: COLORS.textPrimary },
   statHeroLabel: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
   statSep: { width: 1, height: 32, backgroundColor: COLORS.border },
+  // (Todo este bloque "Hero" de estilos ya no se usa directamente en el
+  // JSX — PerfilMasterDetail dibuja su propio encabezado con sus propios
+  // estilos internos — pero se deja definido en el archivo sin causar
+  // ningún problema.)
 
   // ── Secciones
   section: { marginHorizontal: 16, marginTop: 16, gap: 10 },
@@ -891,6 +1127,10 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderRadius: 20, padding: 24, width: '100%',
     borderWidth: 1, borderColor: COLORS.border, gap: 8,
     position: 'absolute', bottom: 0, left: 0, right: 0,
+    // position: 'absolute' + bottom/left/right: 0 hace que esta tarjeta
+    // se pegue al FONDO de la pantalla, como una "hoja" que sube desde
+    // abajo (bottom sheet) — distinto al modalCard de arriba, que queda
+    // centrado en la pantalla.
   },
   modalTitle: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
   modalDesc: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 18 },
