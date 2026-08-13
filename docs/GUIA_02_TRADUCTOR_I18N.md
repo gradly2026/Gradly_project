@@ -42,6 +42,17 @@ agrégalo con la MISMA clave en `es.json` y en `en.json` (ver
 [`feedback_i18n_cada_cambio`](../src/i18n) — toda modificación de UI debe
 sembrar sus frases nuevas, no basta con dejar que se traduzca solo).
 
+### ¿Por qué `es.json`/`en.json` no llevan comentarios como el resto del código?
+
+A propósito: el formato JSON **no admite comentarios** (`//` o `/* */`
+dentro de un `.json` rompe el `JSON.parse()` que hace `require()` al
+cargar el archivo — la app ni siquiera arrancaría). Por eso esta guía
+existe: es donde va la explicación de "qué es cada cosa" que en un
+archivo `.ts` normal iría como comentario en línea. Si necesitas anotar
+algo sobre una clave puntual (por qué existe, dónde se usa, un caso raro),
+el lugar correcto es aquí en la guía o en un comentario del componente que
+la consume con `t('esa_clave')` — nunca dentro del propio JSON.
+
 ## Sistema B — Texto DINÁMICO (escrito por un usuario)
 
 El nombre de una vacante, la descripción de una empresa, un mensaje de

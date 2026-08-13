@@ -663,6 +663,12 @@ export default function AdminPreview() {
     setPage("suscripciones");
   }, []);
 
+  // ── Bitácora de auditoría ─────────────────────────────────────────
+  // logAction: registra CUALQUIER acción administrativa sensible como un
+  // documento nuevo en `audit_logs` (colección que alimenta la sección
+  // "Logs"). Se llama "fire and forget": el `catch` vacío evita que un fallo
+  // al escribir el log tumbe la acción real que sí importa (banear, cambiar
+  // permisos, etc.) — auditar es un extra, no debe bloquear el flujo.
   const logAction = useCallback(
     async (action: string, entityType: string, entityId: string | null, payload: any) => {
       try {
@@ -682,6 +688,13 @@ export default function AdminPreview() {
     [],
   );
 
+  // ── Lecturas de datos (fetch*) ────────────────────────────────────
+  // Todas siguen el mismo patrón: getDocs (lectura puntual, NO en vivo —
+  // a diferencia de los dashboards que usan onSnapshot, aquí se recarga a
+  // demanda con "Actualizar"/pull-to-refresh), mapear los documentos crudos
+  // a los tipos Admin* de arriba, y registrar cualquier error con
+  // setDataIssue (para el banner de avisos) en vez de dejar la sección vacía
+  // sin explicación.
   const fetchUsers = useCallback(async () => {
     try {
       const snap = await getDocs(collection(db, "usuarios"));
@@ -723,6 +736,10 @@ export default function AdminPreview() {
     setUsersRefreshing(false);
   }, [fetchUsers]);
 
+  // Métricas operativas + vacantes + reportes en un solo fetch (comparten el
+  // mismo botón "Actualizar" en Resumen). Promise.allSettled (no Promise.all):
+  // si UNA colección falla por permisos, las otras 3 igual se muestran — con
+  // Promise.all, un solo rechazo tumbaría las 4 lecturas a la vez.
   const fetchPlatformMetrics = useCallback(async () => {
     setPlatformLoading(true);
     try {
@@ -892,6 +909,13 @@ export default function AdminPreview() {
     }
   }, [setDataIssue]);
 
+  // fetchLogs/fetchNotifications comparten el mismo truco: intentan primero
+  // la consulta "ideal" con orderBy (requiere un índice compuesto en
+  // Firestore); si ese índice no existe todavía, Firestore responde con
+  // error "failed-precondition" — en ese caso, en vez de romper la pantalla,
+  // se reintenta SIN orderBy (trae los mismos documentos desordenados) y se
+  // ordenan a mano en JS justo después (`list.sort(...)`). Cualquier otro
+  // código de error si se re-lanza (`throw error`) y cae al catch de afuera.
   const fetchLogs = useCallback(async () => {
     setLogsLoading(true);
     setLogsAttempted(true);
@@ -969,6 +993,11 @@ export default function AdminPreview() {
     }
   }, [setDataIssue]);
 
+  // Trae el catálogo COMPLETO de permisos (`permissions`, igual para todos
+  // los roles) y, aparte, cuáles de esos permisos ya tiene asignados el rol
+  // pedido (`role_permissions` filtrado por role) — dos colecciones
+  // distintas para poder mostrar tanto los permisos activos como los que
+  // faltan por activar (togglePermission más abajo).
   const fetchPermissions = useCallback(
     async (role: PermissionRole) => {
       setPermissionsLoading(true);
@@ -1024,6 +1053,21 @@ export default function AdminPreview() {
     [setDataIssue],
   );
 
+  // ── Acciones administrativas (set*Action) ──────────────────────────
+  // A diferencia de la mayoría de escrituras del proyecto (updateDoc directo
+  // desde el cliente), estas acciones llaman a CLOUD FUNCTIONS
+  // (setUserStatusAction, setUserApprovalAction, setUserBanAction,
+  // setUserRoleAction, deleteUserCompleteAction, resolveReportAction,
+  // deshabilitarVacanteAdminAction, eliminarVacanteAdminAction — todas
+  // importadas de src/services/adminService.ts). La razón: son operaciones
+  // sensibles (banear, eliminar cuenta, cambiar rol) que las reglas de
+  // seguridad de Firestore NO dejan hacer con un simple updateDoc desde el
+  // cliente aunque el usuario sea admin — la Cloud Function corre con
+  // privilegios de servidor y valida la acción del lado del backend.
+  // Cada acción sigue el mismo patrón: llamar la función → si `res.ok` es
+  // false, lanzar error → actualizar el estado local optimistamente
+  // (setUsers/setSelected) para que la UI refleje el cambio sin esperar a
+  // releer todo → mostrar showAdminAlert con el resultado.
   const setProfileStatus = useCallback(
     async (u: AdminUser, nextStatus: Status) => {
       if (u.status === nextStatus) return;
@@ -1143,6 +1187,13 @@ export default function AdminPreview() {
     [t],
   );
 
+  // togglePermission SÍ escribe directo con el SDK del cliente (a diferencia
+  // de los set*Action de arriba) — asignar/quitar un permiso no requiere
+  // privilegios especiales, las reglas de Firestore ya permiten al admin
+  // escribir en `role_permissions`. `role_permissions` es una colección de
+  // pares (role, permission_key) sin id predecible, por eso hay que
+  // consultar y borrar el/los documento(s) que calcen, en vez de un
+  // deleteDoc directo por id.
   const togglePermission = useCallback(
     async (role: PermissionRole, permissionKey: string) => {
       const has = rolePermissions.has(permissionKey);
@@ -1194,6 +1245,9 @@ export default function AdminPreview() {
     }
   }, [logAction, notifications]);
 
+  // Edición de datos NO sensibles del perfil (nombre/teléfono/ubicación):
+  // updateDoc directo, sin pasar por Cloud Function — a diferencia de
+  // baneo/rol/aprobación/eliminación, que sí son sensibles.
   const saveEdit = useCallback(async () => {
     if (!selected) return;
     setEditSaving(true);
@@ -1299,6 +1353,12 @@ export default function AdminPreview() {
     [banReason, refreshOverview, t],
   );
 
+  // ── Confirmaciones de acciones sensibles ───────────────────────────
+  // confirmBanToggle/confirmStatusChange/handleDeleteUser NO ejecutan la
+  // acción directo: llenan `confirmDialog` (el ConfirmDialogState de arriba)
+  // con el texto y el callback `onConfirm`, y es ConfirmOverlay() quien lo
+  // renderiza y dispara `onConfirm` si el admin pulsa el botón destructivo.
+  // Reemplaza a Alert.alert con botones (que es un no-op en react-native-web).
   const confirmBanToggle = useCallback(
     (u: AdminUser, banned: boolean) => {
       setConfirmDialog({
@@ -1437,6 +1497,13 @@ export default function AdminPreview() {
     [t],
   );
 
+  // Botón "Recalcular alianzas y calificaciones" de Config: llama a la Cloud
+  // Function backfillAlianzasCalificaciones (adminService.ts), que revisa
+  // TODAS las pasantías de la plataforma y reescribe los campos de
+  // auto-reporte (aliados_*_ids, calificación promedio) en cada perfil de
+  // empresa/universidad — mismo mecanismo de auto-reporte ya visto en
+  // dashboard-empresa.tsx/dashboard-universidad.tsx, pero corrido en lote
+  // para datos históricos que quedaron desincronizados.
   const runBackfillAlianzas = useCallback(async () => {
     setBackfillLoading(true);
     try {
@@ -1517,6 +1584,12 @@ export default function AdminPreview() {
     [refreshOverview, reportResolution, t],
   );
 
+  // ── Carga inicial y carga perezosa por página ──────────────────────
+  // Primer efecto: usuarios + métricas se cargan SIEMPRE al montar (son la
+  // base de Resumen/Aprobaciones/Usuarios). El resto (logs/notificaciones/
+  // suscripciones/permisos) se cargan perezosamente — recién cuando el admin
+  // entra a esa página por primera vez (segundo efecto, más abajo) — para no
+  // pagar 6 lecturas de más en cada arranque del panel si nunca se visitan.
   useEffect(() => {
     (async () => {
       setUsersLoading(true);
@@ -1575,6 +1648,11 @@ export default function AdminPreview() {
     suscripcionesLoading,
   ]);
 
+  // ── Listas filtradas (useMemo) ──────────────────────────────────
+  // Mismo patrón en las 4: partir de la lista completa ya cargada en estado
+  // y aplicarle los filtros de chips/búsqueda de forma local (sin volver a
+  // pedirle nada a Firestore) — instantáneo porque users/vacantesList/
+  // reportCases ya están en memoria.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return users.filter((u) => {
@@ -1654,6 +1732,11 @@ export default function AdminPreview() {
     [fetchPermissions, roleTab],
   );
 
+  // ── Navegación (sidebar de escritorio / drawer de móvil) ──────────
+  // Brand: logos de Gradly (mismo <Image source={require(...)}> que en
+  // otras pantallas). SidebarItems: la lista de botones de MENU, compartida
+  // entre SidebarPanel (fijo, escritorio) y Drawer (deslizable, móvil/tablet)
+  // — por eso recibe `onNavigate` opcional, para cerrar el drawer al elegir.
   const Brand = () => (
     <View style={[s.brandRow, isCompact && s.brandRowCompact]}>
       <Image
@@ -1765,6 +1848,17 @@ export default function AdminPreview() {
     </Modal>
   );
 
+  // ── Funciones renderX(): una por cada AdminPage ────────────────────
+  // Todas siguen el mismo esqueleto: ScrollView con pull-to-refresh, un
+  // <View style={s.sectionHeader}> con título+subtítulo, tarjetas Card con
+  // números resumen, y listas de TouchableOpacity que abren un detalle.
+  // El JSX es repetitivo por diseño (mismo lenguaje visual del panel); los
+  // comentarios que siguen se centran en las partes de negocio no obvias
+  // (qué colección lee cada número, por qué un filtro se calcula así).
+  //
+  // renderResumen: portada del panel — hero con accesos rápidos, contador de
+  // usuarios por rol (metrics), tarjetas de "Operación de plataforma"
+  // (platformMetrics) y los últimos reportes abiertos.
   const renderResumen = () => {
     const cardMinWidth = isDesktop ? "23%" : width >= 700 ? "48%" : "100%";
     return (
@@ -2113,6 +2207,9 @@ export default function AdminPreview() {
     );
   };
 
+  // renderAprobaciones: cola de revisión de empresas/universidades pendientes
+  // (approval_status), con botones Aprobar/Rechazar/Volver a pendiente en
+  // línea, sin tener que abrir el detalle completo del usuario.
   const renderAprobaciones = () => {
     const pendientesEmpresa = users.filter(
       (u) => u.role === "empresa" && u.approval_status === "pending",
@@ -2281,6 +2378,9 @@ export default function AdminPreview() {
     </View>
   );
 
+  // renderUsuarios: listado general de la colección `usuarios`, filtrable
+  // por rol (chips ROLE_ORDER) y estado, con buscador de texto libre. Tocar
+  // una fila abre DetailModal.
   const renderUsuarios = () => (
     <ScrollView
       showsVerticalScrollIndicator
@@ -2368,6 +2468,10 @@ export default function AdminPreview() {
     </ScrollView>
   );
 
+  // renderReportes: casos de la colección `reportes` (ver también
+  // project_reportes_usuarios), agrupados por estado con contadores propios
+  // y sus colores (reportStatusColor/reportStatusType). Tocar un caso abre
+  // ReportDetailModal.
   const renderReportes = () => {
     const byStatus = (status: ReportCaseStatus) =>
       reportCases.filter((item) => item.estado === status).length;
@@ -2499,6 +2603,10 @@ export default function AdminPreview() {
     );
   };
 
+  // renderVacantes: listado de publicaciones (colección `vacantes`) con
+  // moderación en línea (Deshabilitar/Eliminar, ver moderacionRow) — layout
+  // de tarjetas en grilla en escritorio (isDesktop) y de lista simple en
+  // pantallas angostas, para las mismas filteredVacantes.
   const renderVacantes = () => {
     const totalVacantes = vacantesList.length;
     const activasCount = vacantesList.filter((v) => v.activa).length;
@@ -2687,6 +2795,9 @@ export default function AdminPreview() {
     );
   };
 
+  // renderNotificaciones: bandeja de `admin_notifications` (alertas internas
+  // del sistema, no las notificaciones in-app de usuarios finales — esas
+  // viven en `notificaciones_app`, ver project_notificaciones_app).
   const renderNotificaciones = () => (
     <ScrollView showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={notificationsLoading} onRefresh={fetchNotifications} />}>
       <View style={s.sectionHeader}>
@@ -2728,6 +2839,10 @@ export default function AdminPreview() {
     </ScrollView>
   );
 
+  // renderRoles: matriz de permisos por rol — agrupa el catálogo `permissions`
+  // por `group_name` (reduce de abajo) y pinta un interruptor por permiso;
+  // tocar uno llama togglePermission. El rol "estudiante" no tiene permisos
+  // administrables (mensaje fijo en vez de la lista).
   const renderRoles = () => {
     const grouped = permissions.reduce<Record<string, Permission[]>>((acc, p) => {
       const g = p.group_name || "General";
@@ -2838,6 +2953,12 @@ export default function AdminPreview() {
       .filter((p) => p.fecha && new Date(p.fecha) >= haceUnAnio)
       .reduce((acc, p) => acc + p.monto, 0);
 
+    // Arma los datos del BarChart (react-native-chart-kit): un balde
+    // (`buckets[i]`) por cada uno de los últimos 12 meses, en orden
+    // cronológico. `keyIdx` mapea "año-mes" → posición en el arreglo, para
+    // poder sumarle a cada balde el monto de cada pago sin tener que buscar
+    // linealmente. Los meses sin pagos quedan en 0 (no se omiten: la gráfica
+    // necesita las 12 barras para verse continua).
     const labels: string[] = [];
     const buckets: number[] = [];
     const keyIdx = new Map<string, number>();
@@ -2985,6 +3106,8 @@ export default function AdminPreview() {
     );
   };
 
+  // renderLogs: bitácora de `audit_logs` (lo que escribe logAction en cada
+  // acción sensible) — solo lectura, sin acciones, para trazabilidad.
   const renderLogs = () => (
     <ScrollView showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={logsLoading} onRefresh={fetchLogs} />}>
       <View style={s.sectionHeader}>
@@ -3028,6 +3151,9 @@ export default function AdminPreview() {
     </ScrollView>
   );
 
+  // renderConfig: accesos rápidos a otras páginas, el botón de
+  // "Recalcular alianzas y calificaciones" (runBackfillAlianzas, con su
+  // propio modal de confirmación RecalcularConfirmModal) y cerrar sesión.
   const renderConfig = () => (
     <ScrollView showsVerticalScrollIndicator>
       <View style={s.sectionHeader}>
@@ -3094,6 +3220,11 @@ export default function AdminPreview() {
     </ScrollView>
   );
 
+  // ── Modales de detalle y confirmación ──────────────────────────────
+  // Todos con animationType="none" (mismo gotcha ya visto en otros
+  // archivos: "slide"/"fade" puede dejar un <Modal> atascado invisible en
+  // react-native-web). DetailModal: ficha completa de un AdminUser — datos,
+  // cambio de rol, aprobación (si aplica) y moderación (banear/eliminar).
   const DetailModal = () => (
     <>
     <Modal visible={detailOpen} transparent animationType="none" onRequestClose={() => setDetailOpen(false)}>
@@ -3389,6 +3520,10 @@ export default function AdminPreview() {
       </View>
     ) : null;
 
+  // ReportDetailModal: detalle de un ReportCase — motivo/descripción,
+  // gestión del caso (mover a investigación/resolver con resolución
+  // obligatoria), y si el usuario reportado existe, un atajo para abrir su
+  // ficha completa y banearlo sin salir del modal.
   const ReportDetailModal = () => {
     const reportedUser =
       selectedReport?.reportado_id
@@ -3569,6 +3704,12 @@ export default function AdminPreview() {
     );
   };
 
+  // VacanteDetailAdminModal: ficha completa de una vacante, terminando en
+  // una "Ficha técnica completa" que recorre TODOS los campos del documento
+  // crudo (v.raw) con formatRawValue — así el admin puede inspeccionar
+  // cualquier campo nuevo o legado sin que este archivo tenga que conocerlo
+  // de antemano (a diferencia del resto de la UI, que sí lista campos
+  // específicos a mano).
   const VacanteDetailAdminModal = () => {
     const v = selectedVacante;
 
@@ -3863,6 +4004,8 @@ export default function AdminPreview() {
     </Modal>
   );
 
+  // Despacha al renderX() de la página activa — mismo switch simple que
+  // renderSeccion() en los dashboards de empresa/universidad.
   const renderBody = () => {
     switch (page) {
       case "resumen":
@@ -3890,6 +4033,12 @@ export default function AdminPreview() {
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
+  // ── Guardia de acceso con recuperación ──────────────────────────
+  // Mientras useAuth() todavía está resolviendo el rol (isLoading/!rol), se
+  // muestra un spinner. Si eso tarda más de 7 segundos (típico de una sesión
+  // corrupta o de red lenta), aparece un panel con "Reintentar acceso"
+  // (vuelve a pedir el perfil) o "Volver a iniciar sesión" — para no dejar
+  // al admin atascado en un spinner infinito sin salida.
   useEffect(() => {
     if (!isLoading && rol) {
       setShowAccessRecovery(false);
@@ -3939,6 +4088,11 @@ export default function AdminPreview() {
     );
   }
 
+  // ── JSX de retorno ──────────────────────────────────────────────
+  // topbar (idioma/tema/notificaciones/config) → main con sidebar fija en
+  // escritorio (isDesktop) o nada (el Drawer deslizable la reemplaza en
+  // pantallas angostas) → contentInner con el banner de avisos de datos
+  // (dataIssueList) + renderBody() → la pila de modales al final.
   return (
     <View style={s.root}>
       <View style={[s.topbar, isDesktop && s.topbarDesktop, isPhone && s.topbarCompact]}>
