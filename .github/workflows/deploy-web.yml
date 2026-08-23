@@ -1,0 +1,37 @@
+name: Deploy web build to Gradly_website
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Gradly_project
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web export
+        run: npx expo export -p web
+
+      - name: Publish dist/ to Gradly_website
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          personal_token: ${{ secrets.GRADLY_WEBSITE_TOKEN }}
+          external_repository: gradly2026/Gradly_website
+          publish_branch: main
+          publish_dir: ./dist
+          force_orphan: true
+          user_name: "github-actions[bot]"
+          user_email: "github-actions[bot]@users.noreply.github.com"
+          commit_message: "Deploy web build from Gradly_project"

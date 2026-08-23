@@ -33,13 +33,13 @@ export const CORREO_TEMPORAL_KEY = "correoTemporalAuth";
  */
 const ACTION_URL = __DEV__
   ? "http://localhost:8081/auth/action"
-  : "https://gradly-e1a2a.firebaseapp.com/auth/action";
+  : "https://gradly-db-752c2.firebaseapp.com/auth/action";
 
 const magicLinkSettings: ActionCodeSettings = {
   url: ACTION_URL,
   handleCodeInApp: true,
   android: {
-    packageName: "com.tuempresa.gradly",
+    packageName: "com.gradly.app",
     installApp: true,
     minimumVersion: "12",
   },

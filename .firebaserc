@@ -1,7 +1,8 @@
 {
   "projects": {
-    "default": "gradly-e1a2a",
-    "Gradlyfirebase": "gradly-e1a2a"
+    "default": "gradly-db-752c2",
+    "nuevo": "gradly-db-752c2",
+    "viejo": "gradly-e1a2a"
   },
   "targets": {},
   "etags": {}

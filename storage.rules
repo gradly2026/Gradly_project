@@ -1,0 +1,77 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function esAdmin() {
+      return request.auth != null &&
+        firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data.rol == "admin";
+    }
+
+    // 👤 Imágenes de perfil
+    match /imagenes_perfil/{uid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 📄 CVs
+    match /cvs/{uid}/{fileName} {
+      allow read: if request.auth != null &&
+                   (request.auth.uid == uid ||
+                    firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data.rol == "empresa" ||
+                    esAdmin());
+      allow write: if request.auth != null && request.auth.uid == uid
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType == 'application/pdf';
+    }
+
+    // 📜 CONSTANCIAS de finalización de PRÁCTICAS LABORALES
+    // 🔒 CAMBIO: se ancla a solicitudes_practicas (no aplicaciones); la EMPRESA parte
+    //    puede emitir/subir (antes solo admin); leen ambas partes, el estudiante del
+    //    grupo (estudianteIds) y admin. PDF y tamaño acotado.
+    match /constancias/{solicitudId}/{fileName} {
+      allow read: if request.auth != null && (
+        firestore.get(/databases/(default)/documents/solicitudes_practicas/$(solicitudId)).data.empresaId == request.auth.uid ||
+        firestore.get(/databases/(default)/documents/solicitudes_practicas/$(solicitudId)).data.universidadId == request.auth.uid ||
+        request.auth.uid in firestore.get(/databases/(default)/documents/solicitudes_practicas/$(solicitudId)).data.estudianteIds ||
+        esAdmin()
+      );
+      allow write: if request.auth != null
+                   && (firestore.get(/databases/(default)/documents/solicitudes_practicas/$(solicitudId)).data.empresaId == request.auth.uid || esAdmin())
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType == 'application/pdf';
+    }
+
+    // 🏢 Logos de empresas (bloque único, con límites — se elimina el duplicado laxo)
+    match /logos_empresas/{uid}/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid
+                   && request.resource.size < 2 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 🖼️ logos genéricos — ⚠️ write abierto a cualquier autenticado; si no es
+    //    imprescindible, restríngelo o elimínalo.
+    match /logos/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // 🎓 Fotos de estudiantes
+    match /fotos_estudiantes/{userId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /constancias_cupo/{asignacionId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && firestore.exists(/databases/(default)/documents/asignaciones_cupo/$(asignacionId))
+        && (firestore.get(/databases/(default)/documents/asignaciones_cupo/$(asignacionId)).data.estudianteId == request.auth.uid
+            || firestore.get(/databases/(default)/documents/asignaciones_cupo/$(asignacionId)).data.empresaId == request.auth.uid);
+    }
+  }
+}

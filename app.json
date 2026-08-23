@@ -12,14 +12,14 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.gradly.app",
       "config": {
-        "googleMapsApiKey": "AIzaSyCrsDxPdnVe_Xv9JrHs8j-gFqKugiEc6mc"
+        "googleMapsApiKey": "AIzaSyB0VDOucExe7KQurOhaLOB5O4aXB55vVmg"
       }
     },
     "android": {
       "package": "com.gradly.app",
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyCrsDxPdnVe_Xv9JrHs8j-gFqKugiEc6mc"
+          "apiKey": "AIzaSyB0VDOucExe7KQurOhaLOB5O4aXB55vVmg"
         }
       },
       "adaptiveIcon": {

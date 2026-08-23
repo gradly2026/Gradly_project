@@ -14,7 +14,7 @@
 //   3. Storage   → guardar ARCHIVOS (fotos de perfil, PDFs de constancias).
 //   4. App       → el "objeto raíz" que conecta todo lo anterior a este
 //                  proyecto de Firebase en particular (el proyecto se llama
-//                  "gradly-e1a2a", ver más abajo).
+//                  "gradly-db-752c2", ver más abajo).
 //
 // Cualquier otro archivo del proyecto que necesite hablar con la base de
 // datos, hace esto al inicio del archivo:
@@ -94,40 +94,41 @@ import { Platform } from "react-native";
 // según si el usuario está en un navegador o en el celular.
 
 // ── CREDENCIALES DEL PROYECTO DE FIREBASE ────────────────────────────────
-// Credenciales reales del proyecto e1a2a
+// Credenciales reales del proyecto gradly-db-752c2 (reemplaza al viejo
+// gradly-e1a2a, que se deja de lado sin migrar — ver decisión del 20 ago).
 const firebaseConfig = {
   // "const" = una variable que, una vez creada, no se vuelve a reasignar.
   // firebaseConfig es un OBJETO (un conjunto de pares "nombre: valor") con
   // los datos públicos que identifican a ESTE proyecto de Firebase frente
   // a los servidores de Google. Todos son de tipo texto (string).
-  apiKey: "AIzaSyDU5GwYZIxqOYoOCZrpJfXYNK3XpoIQLSQ",
+  apiKey: "AIzaSyDR5L2E7Cc3EW59C8FtcGJgedhIELQQGXE",
   // apiKey → una clave que identifica qué APLICACIÓN está llamando a
   // Firebase. OJO: en proyectos de Firebase para app móvil/web, esta clave
   // NO es secreta como una contraseña — está pensada para ir incluida en
   // el código de la app (hasta el navegador la puede ver). La seguridad
   // real de los datos la dan las REGLAS de Firestore (archivo
   // firestore.rules en la raíz del proyecto), no esta clave.
-  authDomain: "gradly-e1a2a.firebaseapp.com",
+  authDomain: "gradly-db-752c2.firebaseapp.com",
   // authDomain → el dominio web que usa Firebase Auth para ciertos flujos
   // de inicio de sesión (por ejemplo, redirecciones).
-  projectId: "gradly-e1a2a",
+  projectId: "gradly-db-752c2",
   // projectId → el identificador único del proyecto dentro de la consola
   // de Firebase/Google Cloud. Todo lo que hace la app (base de datos,
   // funciones en la nube, etc.) vive "dentro" de este projectId.
-  storageBucket: "gradly-e1a2a.firebasestorage.app",
+  storageBucket: "gradly-db-752c2.firebasestorage.app",
   // storageBucket → el "cajón" donde se guardan los archivos subidos
   // (fotos de perfil, constancias en PDF, etc.) cuando se usa Storage.
-  messagingSenderId: "310178316831",
+  messagingSenderId: "1077038818089",
   // messagingSenderId → identificador usado por Firebase Cloud Messaging
   // (notificaciones push). En este proyecto las notificaciones son
   // "in-app" (dentro de la app, ver GUIA_04_NOTIFICACIONES.md), así que
   // este campo casi no se usa hoy, pero Firebase lo pide igual.
-  appId: "1:310178316831:web:e626bac6368549df824b2a",
+  appId: "1:1077038818089:web:531d87508dfc5e77becd38",
   // appId → identificador único de ESTA app dentro del proyecto de Firebase
   // (un mismo proyecto de Firebase puede tener varias apps: web, iOS...).
-  measurementId: "G-NEC63F18E1",
-  // measurementId → identificador para Google Analytics, si se llegara a
-  // activar. No es obligatorio para que Firestore/Auth funcionen.
+  // No se incluye measurementId: la consola no lo dio en el snippet, señal
+  // de que Google Analytics no está activado en este proyecto todavía. Si
+  // se activa más adelante, se agrega este campo con el valor que dé Firebase.
 };
 
 // ── CREAR (O REUTILIZAR) LA CONEXIÓN PRINCIPAL ───────────────────────────
