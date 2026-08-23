@@ -98,8 +98,7 @@ export const solicitarOtp = onCall(
 
       const resend = new Resend(RESEND_API_KEY.value());
       await resend.emails.send({
-        // Dominio de prueba de Resend; cámbialo por tu dominio verificado en prod.
-        from: "Gradly <onboarding@resend.dev>",
+        from: "Gradly <notificaciones@gradly.website>",
         to: email,
         subject: `Tu código de acceso Gradly: ${codigo}`,
         html: `
