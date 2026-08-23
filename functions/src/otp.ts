@@ -99,7 +99,7 @@ export const solicitarOtp = onCall(
 
       const resend = new Resend(RESEND_API_KEY.value());
       const { error: errorResend } = await resend.emails.send({
-        from: "Gradly <notificaciones@gradly.website>",
+        from: "Gradly <notificaciones@send.gradly.website>",
         to: email,
         subject: `Tu código de acceso Gradly: ${codigo}`,
         html: `
