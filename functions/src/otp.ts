@@ -28,6 +28,7 @@
 import * as crypto from "crypto";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
+import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 import { Resend } from "resend";
 
@@ -97,7 +98,7 @@ export const solicitarOtp = onCall(
       });
 
       const resend = new Resend(RESEND_API_KEY.value());
-      await resend.emails.send({
+      const { error: errorResend } = await resend.emails.send({
         from: "Gradly <notificaciones@gradly.website>",
         to: email,
         subject: `Tu código de acceso Gradly: ${codigo}`,
@@ -110,6 +111,14 @@ export const solicitarOtp = onCall(
           </div>
         `,
       });
+      // El SDK de Resend no lanza excepción cuando el envío falla del lado de
+      // ellos (dominio no verificado, límite, etc.) — devuelve { error } sin
+      // tirar. Sin este chequeo, la función seguía de largo y respondía
+      // { ok: true } aunque el correo nunca hubiera salido.
+      if (errorResend) {
+        logger.error("Resend rechazó el envío del OTP", { email, errorResend });
+        throw new HttpsError("internal", "No se pudo enviar el código. Intenta de nuevo.");
+      }
     }
 
     return { ok: true };
