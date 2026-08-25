@@ -107,6 +107,12 @@ type AdminUser = {
   departamento?: string | null;
   distrito?: string | null;
   ban_reason?: string | null;
+  /** Nota interna que el admin escribió al aprobar/rechazar/dejar pendiente
+   *  la cuenta. La escribe la Cloud Function setUserApproval en el documento
+   *  del usuario (antes solo viajaba al payload de audit_logs, así que no se
+   *  veía en ninguna pantalla). */
+  approval_reason?: string | null;
+  approval_reviewed_by?: string | null;
   created_at?: string | null;
 };
 
@@ -603,7 +609,7 @@ export default function AdminPreview() {
   const openDetail = (u: AdminUser) => {
     setSelected(u);
     setBanReason(u.ban_reason ?? "");
-    setApprovalReason("");
+    setApprovalReason(u.approval_reason ?? "");
     setDetailOpen(true);
   };
 
@@ -732,6 +738,8 @@ export default function AdminPreview() {
           departamento: r.departamento ?? null,
           distrito: r.distrito ?? r.ciudad ?? null,
           ban_reason: r.motivo_baneo ?? null,
+          approval_reason: r.approval_reason ?? null,
+          approval_reviewed_by: r.approval_reviewed_by ?? null,
           created_at: tsToIso(r.fecha_registro),
         };
       });
@@ -1130,10 +1138,14 @@ export default function AdminPreview() {
         );
         return;
       }
-      if (u.approval_status === nextApprovalStatus) return;
+      const reason = approvalReason.trim() || undefined;
+      // Segundo punto donde la nota se perdía: si el estado pulsado era el que
+      // la cuenta ya tenía, esto cortaba ANTES de llamar a la Cloud Function y
+      // la nota nunca salía del navegador. Ahora solo corta si tampoco hay nota
+      // que guardar; con nota, la llamada se hace y queda registrada.
+      if (u.approval_status === nextApprovalStatus && !reason) return;
       setUserActionSaving(true);
       try {
-        const reason = approvalReason.trim() || undefined;
         const res = await setUserApprovalAction({
           targetUid: u.id,
           nextApprovalStatus,
@@ -1149,6 +1161,7 @@ export default function AdminPreview() {
                   ...item,
                   approval_status: res.approvalStatus,
                   status: res.status,
+                  approval_reason: reason ?? null,
                 }
               : item,
           ),
@@ -1159,10 +1172,13 @@ export default function AdminPreview() {
                 ...prev,
                 approval_status: res.approvalStatus,
                 status: res.status,
+                approval_reason: reason ?? null,
               }
             : prev,
         );
-        if (nextApprovalStatus !== "inactive") setApprovalReason("");
+        // Antes se limpiaba el campo al aprobar/dejar pendiente, lo que
+        // reforzaba la sensación de que la nota no se había guardado. Ahora se
+        // deja escrita: es exactamente lo que quedó registrado en el usuario.
         await refreshOverview();
         mostrarAviso(
           nextApprovalStatus === "inactive" ? "advertencia" : "exito",
@@ -3351,6 +3367,12 @@ export default function AdminPreview() {
                 {selected.ban_reason ? (
                   <Text style={[s.textMuted, { marginTop: 6 }]}>
                     Motivo baneo: {selected.ban_reason}
+                  </Text>
+                ) : null}
+                {selected.approval_reason ? (
+                  <Text style={[s.textMuted, { marginTop: 6 }]}>
+                    Nota de revisión: {selected.approval_reason}
+                    {selected.approval_reviewed_by ? ` (${selected.approval_reviewed_by})` : ""}
                   </Text>
                 ) : null}
               </Card>

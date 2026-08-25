@@ -642,6 +642,12 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "Motivo de la deshabilitación": "Reason for disabling",
   "Motivo de la eliminación": "Reason for deleting",
 
+  // ── Aprobación administrativa de la ficha de usuario (la nota de revisión
+  //    que ahora sí queda guardada en el documento del usuario) ──
+  "Aprobación administrativa": "Administrative approval",
+  "Nota interna de revisión": "Internal review note",
+  "Motivo, observación o criterio de aprobación": "Reason, note, or approval criteria",
+
   // ── Modales de aviso del panel (AvisoOverlay: éxito / advertencia / error).
   //    Reemplazan a los antiguos Alert.alert de un botón, así que todo este
   //    bloque es texto nuevo que antes no existía en la UI. ──

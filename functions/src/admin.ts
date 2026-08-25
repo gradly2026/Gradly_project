@@ -351,7 +351,12 @@ export const setUserApproval = onCall({ region: REGION }, async (req) => {
       currentApprovalStatus === nextApprovalStatus
       && asString(targetData.status) === nextStatus
       && Boolean(targetData.activo) === nextActivo
+      && !reason
     ) {
+      // Sin cambio de estado Y sin nota nueva no hay nada que registrar. Con
+      // nota sí se sigue de largo: el admin puede querer dejar constancia de
+      // por qué la cuenta se queda como está (p. ej. confirmar un rechazo
+      // anterior), y antes esa nota se perdía en silencio.
       return {
         ok: true,
         uid: targetUid,
@@ -365,6 +370,14 @@ export const setUserApproval = onCall({ region: REGION }, async (req) => {
       approval_status: nextApprovalStatus,
       status: nextStatus,
       activo: nextActivo,
+      // La nota interna de revisión se guarda EN EL DOCUMENTO, no solo en el
+      // payload de la bitácora: así queda visible en la ficha del usuario, que
+      // es donde el admin la busca. Se sobrescribe siempre (null si no se
+      // escribió ninguna) para que la nota corresponda SIEMPRE a la última
+      // decisión y no quede colgada la de una revisión anterior.
+      approval_reason: reason ?? null,
+      approval_reviewed_by: actor.email ?? actor.uid,
+      approval_reviewed_at: admin.firestore.FieldValue.serverTimestamp(),
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
@@ -377,6 +390,7 @@ export const setUserApproval = onCall({ region: REGION }, async (req) => {
           await profileRef.update({
             approval_status: nextApprovalStatus,
             activo: nextActivo,
+            approval_reason: reason ?? null,
             updated_at: admin.firestore.FieldValue.serverTimestamp(),
           });
         }
