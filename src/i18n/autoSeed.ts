@@ -106,6 +106,8 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "CV que enamora empresas": "A CV that wins companies over",
   "Calificar a este candidato:": "Rate this candidate:",
   "Cambiar": "Change",
+  "Cambiar a facturación anual": "Switch to annual billing",
+  "Cambiar a facturación mensual": "Switch to monthly billing",
   "Cancelar": "Cancel",
   "Cargo": "Position",
   "Carreras": "Majors",

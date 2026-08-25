@@ -2798,12 +2798,22 @@ export default function DashboardEmpresa() {
             </View>
 
             <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
-              {obtenerPlanesVisibles().map((p) => (
+              {obtenerPlanesVisibles().map((p) => {
+                // Un plan contratado lo define el par (plan + ciclo de
+                // facturación): "Básico mensual" y "Básico anual" son
+                // suscripciones distintas. Por eso "Tu plan actual" solo se
+                // marca cuando coinciden AMBOS con la pestaña visible; en la
+                // pestaña contraria la tarjeta queda seleccionable como un
+                // cambio de ciclo, en vez de aparecer marcada por error.
+                const cicloActual = perfil?.cicloFacturacion ?? 'mensual';
+                const esPlanActual = perfil?.plan === p.id && cicloActual === periodoPlanes;
+                const mismoPlanOtroCiclo = perfil?.plan === p.id && !esPlanActual;
+                return (
                 <TouchableOpacity
                   key={p.id}
-                  style={[{ padding: 18, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.15)', marginBottom: 12 }, perfil?.plan === p.id && { borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.05)' }]}
+                  style={[{ padding: 18, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.15)', marginBottom: 12 }, esPlanActual && { borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.05)' }]}
                   onPress={() => {
-                    if (perfil?.plan === p.id) return;
+                    if (esPlanActual) return;
                     setPlanToUpgrade(p.id as any);
                     if (!perfil?.tarjeta_numero) {
                       // Sin método de pago registrado: pide la tarjeta primero
@@ -2824,11 +2834,17 @@ export default function DashboardEmpresa() {
                       <Text key={i} style={{ color: 'rgba(255,255,255,0.6)', fontFamily: FONTS.interRegular, fontSize: 13 }}>• {ben}</Text>
                     ))}
                   </View>
-                  {perfil?.plan === p.id && (
+                  {esPlanActual && (
                     <Text style={{ color: '#10b981', fontFamily: FONTS.interSemiBold, fontSize: 12, marginTop: 8 }}>Tu plan actual</Text>
                   )}
+                  {mismoPlanOtroCiclo && (
+                    <Text style={{ color: '#a78bfa', fontFamily: FONTS.interSemiBold, fontSize: 12, marginTop: 8 }}>
+                      {periodoPlanes === 'anual' ? 'Cambiar a facturación anual' : 'Cambiar a facturación mensual'}
+                    </Text>
+                  )}
                 </TouchableOpacity>
-              ))}
+                );
+              })}
             </ScrollView>
           </View>
         </View>

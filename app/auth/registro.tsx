@@ -347,6 +347,11 @@ interface PerfilEmpresa extends PlanRestricciones {
   contacto_documento_numero: string;
   premium: boolean;
   estado_suscripcion: string;
+  /** Ciclo de facturación contratado en el paso 4 ("mensual" | "anual").
+   *  Lo LEE dashboard-empresa.tsx para saber cada cuánto renovar y con qué
+   *  monto (PRECIOS_PLAN[plan][ciclo]) — sin este campo, una empresa que
+   *  eligió anual aquí quedaba tratada como mensual al entrar al dashboard. */
+  cicloFacturacion: "mensual" | "anual";
   stripe_id: string;
   calificacion_promedio: number;
   tarjeta_numero: string;
@@ -1761,6 +1766,23 @@ export default function Registro() {
   // ══════════════════════════════════════════════════════════════
   //  Selección de plan + pasarela simulada (solo empresas)
   // ══════════════════════════════════════════════════════════════
+  // Cambio de pestaña Mensual/Anual. "Plan Básico mensual" y "Plan Básico
+  // anual" son compras DISTINTAS (otro precio y otro ciclo de cobro), así
+  // que la selección hecha en un período no se arrastra al otro: al
+  // cambiar de pestaña se limpia el plan de pago elegido (y su tarjeta)
+  // en vez de dejarlo pintado como seleccionado en el período contrario.
+  // El plan gratuito no tiene período (siempre se muestra /mes), por eso
+  // sí se conserva.
+  const cambiarPeriodoPlanes = (periodo: "mensual" | "anual") => {
+    if (periodo === periodoPlanes) return;
+    setPeriodoPlanes(periodo);
+    const seleccionado = PLANES.find((x) => x.plan === ePlan);
+    if (seleccionado?.requierePago) {
+      setEPlan("");
+      setECard(null);
+    }
+  };
+
   const handleSelectPlan = (info: PlanInfo) => {
     clearErr("ePlan");
     if (!info.requierePago) {
@@ -2080,6 +2102,9 @@ export default function Registro() {
           verificado: restric.verificado,
           premium: restric.verificado,
           estado_suscripcion: restric.plan === "gratuito" ? "gratuita" : "activa",
+          // El gratuito no se factura: se guarda "mensual" como valor neutro
+          // para no dejar el campo indefinido en el documento.
+          cicloFacturacion: restric.plan === "gratuito" ? "mensual" : periodoPlanes,
           stripe_id: "",
           calificacion_promedio: 0,
           tarjeta_numero: tarjeta4,
@@ -2462,7 +2487,7 @@ export default function Registro() {
                   s.periodoTab,
                   periodoPlanes === "mensual" && s.periodoTabActive,
                 ]}
-                onPress={() => setPeriodoPlanes("mensual")}
+                onPress={() => cambiarPeriodoPlanes("mensual")}
               >
                 <Text
                   style={[
@@ -2478,7 +2503,7 @@ export default function Registro() {
                   s.periodoTab,
                   periodoPlanes === "anual" && s.periodoTabActive,
                 ]}
-                onPress={() => setPeriodoPlanes("anual")}
+                onPress={() => cambiarPeriodoPlanes("anual")}
               >
                 <Text
                   style={[
