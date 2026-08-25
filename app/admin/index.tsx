@@ -22,7 +22,6 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   Platform,
@@ -333,20 +332,15 @@ function formatRawValue(value: any): string {
   return String(value);
 }
 
-// Este archivo NO usa Alert.alert de dos botones para confirmaciones (el
-// gotcha ya visto en otros archivos: no funciona en react-native-web) — usa
-// su propio ConfirmDialog/ConfirmOverlay (ver más abajo). showAdminAlert es
-// solo para AVISOS de un botón (éxito/error), donde sí hace falta un
-// fallback: en algunos runtimes web, Alert.alert de un solo botón tampoco
-// pinta nada, así que se usa `window.alert` nativo del navegador en su lugar.
-function showAdminAlert(title: string, message: string) {
-  // En web, `Alert.alert` puede no mostrarse según el runtime. Usamos fallback.
-  if (Platform.OS === "web" && typeof window !== "undefined" && typeof window.alert === "function") {
-    window.alert(`${title}\n\n${message}`);
-    return;
-  }
-  Alert.alert(title, message);
-}
+// Este archivo NO usa Alert.alert para NADA: ni para confirmaciones de dos
+// botones (el gotcha ya visto en otros archivos: es un no-op en
+// react-native-web) ni para avisos de un solo botón. Las confirmaciones las
+// resuelve ConfirmDialog/ConfirmOverlay y los avisos (éxito / advertencia /
+// error) los resuelve AvisoState/AvisoOverlay — ambos definidos más abajo.
+// Antes los avisos terminaban en `window.alert`, el cuadro gris del sistema:
+// fuera del tema del panel, sin ícono, y con el texto técnico crudo como
+// único contenido. Ahora son un modal propio del panel, con color e ícono
+// según el tipo de mensaje y el detalle técnico relegado a letra pequeña.
 
 // ── Componentes UI pequeños y reutilizados en todo el panel ──────
 // Badge: pastilla de estado (verde/amarillo/rojo según Status).
@@ -543,6 +537,26 @@ export default function AdminPreview() {
     onConfirm: () => void;
   };
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+
+  // ── Avisos (lo que antes eran los Alert.alert/window.alert) ────────
+  // Un solo estado para los tres tonos posibles de mensaje:
+  //   "exito"       → la acción se completó (verde).
+  //   "advertencia" → la acción NO se hizo porque falta algo o porque no
+  //                   aplica; no es una falla, es un aviso amable (ámbar).
+  //   "error"       → algo se rompió de verdad (rojo). `detail` guarda el
+  //                   texto técnico (código de Firebase, mensaje crudo) y se
+  //                   pinta en letra pequeña debajo del mensaje humano: el
+  //                   admin lo necesita para reportar el problema, pero no
+  //                   debería ser lo primero que lea.
+  type AvisoTipo = "exito" | "advertencia" | "error";
+  type AvisoState = { tipo: AvisoTipo; title: string; message: string; detail?: string };
+  const [aviso, setAviso] = useState<AvisoState | null>(null);
+  const mostrarAviso = useCallback(
+    (tipo: AvisoTipo, title: string, message: string, detail?: string) => {
+      setAviso({ tipo, title, message, detail });
+    },
+    [],
+  );
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [meName, setMeName] = useState("Administrador");
@@ -1067,7 +1081,7 @@ export default function AdminPreview() {
   // Cada acción sigue el mismo patrón: llamar la función → si `res.ok` es
   // false, lanzar error → actualizar el estado local optimistamente
   // (setUsers/setSelected) para que la UI refleje el cambio sin esperar a
-  // releer todo → mostrar showAdminAlert con el resultado.
+  // releer todo → mostrar el aviso (mostrarAviso) con el resultado.
   const setProfileStatus = useCallback(
     async (u: AdminUser, nextStatus: Status) => {
       if (u.status === nextStatus) return;
@@ -1084,15 +1098,17 @@ export default function AdminPreview() {
         setSelected((prev) => (prev?.id === u.id ? { ...prev, status: nextStatus } : prev));
         const msg =
           nextStatus === "active"
-            ? "Usuario activado correctamente."
+            ? "Ya puede volver a entrar a Gradly con normalidad."
             : nextStatus === "pending"
-              ? "Usuario marcado como pendiente."
-              : "Usuario inactivado correctamente.";
-        showAdminAlert("Admin", msg);
+              ? "La cuenta queda en revisión. Su información sigue intacta mientras tanto."
+              : "La cuenta queda inactiva y no podrá iniciar sesión. Puedes reactivarla cuando quieras desde esta misma ficha.";
+        mostrarAviso("exito", "Listo, cambio aplicado", msg);
       } catch (error) {
         console.error("Admin:setProfileStatus error", error);
-        showAdminAlert(
-          t("admin_error_titulo"),
+        mostrarAviso(
+          "error",
+          "No pudimos aplicar el cambio",
+          "El estado del usuario quedó como estaba. Revisa tu conexión e inténtalo de nuevo; si sigue igual, pásale el detalle de abajo al equipo técnico.",
           translateSync(
             `${adminDetailedErrorMessage(error, "actualizar el estado del usuario")}\n\nCódigo: ${String((error as any)?.code ?? "desconocido")}`,
           ),
@@ -1107,7 +1123,11 @@ export default function AdminPreview() {
   const setProfileApproval = useCallback(
     async (u: AdminUser, nextApprovalStatus: ApprovalStatus) => {
       if (!roleRequiresApproval(u.role)) {
-        showAdminAlert(t('admin_error_titulo'), "Solo empresa y universidad usan este flujo de aprobación.");
+        mostrarAviso(
+          "advertencia",
+          "Esta cuenta no necesita aprobación",
+          "El flujo de aprobación es solo para cuentas de empresa y universidad. Esta cuenta ya está lista para usarse tal como está.",
+        );
         return;
       }
       if (u.approval_status === nextApprovalStatus) return;
@@ -1144,18 +1164,25 @@ export default function AdminPreview() {
         );
         if (nextApprovalStatus !== "inactive") setApprovalReason("");
         await refreshOverview();
-        showAdminAlert(
-          "Admin",
+        mostrarAviso(
+          nextApprovalStatus === "inactive" ? "advertencia" : "exito",
           nextApprovalStatus === "active"
-            ? "Cuenta aprobada correctamente."
+            ? "Cuenta aprobada"
             : nextApprovalStatus === "pending"
-              ? "La cuenta volvió a revisión pendiente."
-              : "La cuenta fue rechazada correctamente.",
+              ? "Cuenta de vuelta en revisión"
+              : "Cuenta rechazada",
+          nextApprovalStatus === "active"
+            ? "La institución ya puede usar Gradly con todas sus funciones."
+            : nextApprovalStatus === "pending"
+              ? "Queda otra vez en la lista de pendientes, esperando una decisión."
+              : "Le avisamos que su solicitud no fue aprobada. Si fue un error, puedes volver a aprobarla desde esta misma ficha.",
         );
       } catch (error) {
         console.error("Admin:setProfileApproval error", error);
-        showAdminAlert(
-          t("admin_error_titulo"),
+        mostrarAviso(
+          "error",
+          "No pudimos actualizar la aprobación",
+          "La solicitud quedó como estaba, así que puedes intentarlo otra vez sin miedo a duplicar nada.",
           translateSync(
             `${adminDetailedErrorMessage(error, "actualizar la aprobación del usuario")}\n\nCódigo: ${String((error as any)?.code ?? "desconocido")}`,
           ),
@@ -1181,7 +1208,12 @@ export default function AdminPreview() {
           throw new Error("No se pudo actualizar el rol.");
         }
       } catch (error) {
-        showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "actualizar el rol del usuario")));
+        mostrarAviso(
+          "error",
+          "No pudimos cambiar el rol",
+          "El usuario conserva el rol que tenía. Vuelve a intentarlo en un momento.",
+          translateSync(adminDataErrorMessage(error, "actualizar el rol del usuario")),
+        );
       }
     },
     [t],
@@ -1223,7 +1255,12 @@ export default function AdminPreview() {
           await logAction("role_permissions.insert", "role_permissions", null, { role, permission_key: permissionKey });
         }
       } catch (error) {
-        showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "actualizar el permiso")));
+        mostrarAviso(
+          "error",
+          "No pudimos guardar el permiso",
+          "El permiso quedó como estaba antes. Prueba de nuevo en unos segundos.",
+          translateSync(adminDataErrorMessage(error, "actualizar el permiso")),
+        );
       }
     },
     [logAction, rolePermissions],
@@ -1241,7 +1278,12 @@ export default function AdminPreview() {
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       await logAction("admin_notifications.read_all", "admin_notifications", null, { count: ids.length });
     } catch (error) {
-      showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "marcar las notificaciones como leidas")));
+      mostrarAviso(
+        "error",
+        "Las notificaciones siguen sin leer",
+        "No logramos marcarlas como leídas. No se perdió ninguna: siguen ahí y puedes intentarlo otra vez.",
+        translateSync(adminDataErrorMessage(error, "marcar las notificaciones como leidas")),
+      );
     }
   }, [logAction, notifications]);
 
@@ -1291,7 +1333,12 @@ export default function AdminPreview() {
       setEditOpen(false);
       await logAction("profile.update", "usuarios", selected.id, patch);
     } catch (error) {
-      showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "guardar el perfil")));
+      mostrarAviso(
+        "error",
+        "No pudimos guardar los cambios",
+        "Los datos que escribiste siguen en el formulario, así que no perdiste nada. Intenta guardar otra vez.",
+        translateSync(adminDataErrorMessage(error, "guardar el perfil")),
+      );
     } finally {
       setEditSaving(false);
     }
@@ -1300,7 +1347,11 @@ export default function AdminPreview() {
   const setProfileBan = useCallback(
     async (u: AdminUser, banned: boolean) => {
       if (banned && !banReason.trim()) {
-        showAdminAlert(t('admin_error_titulo'), "Indica el motivo del baneo.");
+        mostrarAviso(
+          "advertencia",
+          "Falta el motivo del baneo",
+          "Escribe por qué se banea a esta persona antes de continuar. Ese motivo queda registrado y es lo que respalda la decisión más adelante.",
+        );
         return;
       }
       setUserActionSaving(true);
@@ -1337,11 +1388,19 @@ export default function AdminPreview() {
         );
         if (!banned) setBanReason("");
         await refreshOverview();
-        showAdminAlert("Admin", banned ? "Usuario baneado correctamente." : "Usuario reactivado correctamente.");
+        mostrarAviso(
+          banned ? "advertencia" : "exito",
+          banned ? "Usuario baneado" : "Usuario reactivado",
+          banned
+            ? "Ya no puede acceder a Gradly y el motivo quedó registrado en su ficha. Si hace falta, puedes reactivarlo desde aquí mismo."
+            : "Recuperó su acceso a la plataforma y puede volver a entrar cuando quiera.",
+        );
       } catch (error) {
         console.error("Admin:setProfileBan error", error);
-        showAdminAlert(
-          t("admin_error_titulo"),
+        mostrarAviso(
+          "error",
+          banned ? "No pudimos banear al usuario" : "No pudimos reactivar al usuario",
+          "Nada cambió: la cuenta sigue exactamente como estaba. Vuelve a intentarlo en un momento.",
           translateSync(
             `${adminDetailedErrorMessage(error, banned ? "banear el usuario" : "reactivar el usuario")}\n\nCódigo: ${String((error as any)?.code ?? "desconocido")}`,
           ),
@@ -1430,11 +1489,17 @@ export default function AdminPreview() {
               setSelected(null);
               setDetailOpen(false);
               await refreshOverview();
-              showAdminAlert("Admin", "Usuario eliminado correctamente.");
+              mostrarAviso(
+                "advertencia",
+                "Usuario eliminado",
+                "Se borró la cuenta y sus documentos principales. Esta acción no se puede deshacer, así que si fue un error habrá que crear la cuenta de nuevo desde cero.",
+              );
             } catch (error) {
               console.error("Admin:deleteUserComplete error", error);
-              showAdminAlert(
-                t("admin_error_titulo"),
+              mostrarAviso(
+                "error",
+                "No pudimos eliminar la cuenta",
+                "La cuenta sigue existiendo tal como estaba. Revisa el detalle de abajo antes de volver a intentarlo: si la eliminación quedó a medias, el equipo técnico necesita ese texto.",
                 translateSync(
                   `${adminDetailedErrorMessage(error, "eliminar el usuario")}\n\nCódigo: ${String((error as any)?.code ?? "desconocido")}`,
                 ),
@@ -1473,16 +1538,19 @@ export default function AdminPreview() {
         }
         setVacanteDetailOpen(false);
         setSelectedVacante(null);
-        showAdminAlert(
-          "Admin",
+        mostrarAviso(
+          "advertencia",
+          accion === "deshabilitar" ? "Publicación deshabilitada" : "Publicación eliminada",
           accion === "deshabilitar"
-            ? "Publicación deshabilitada correctamente."
-            : "Publicación eliminada correctamente.",
+            ? "Ya no aparece para los estudiantes y la empresa puede ver el motivo. Puedes volver a habilitarla si se corrige."
+            : "La publicación se borró de la plataforma. Esta acción no se puede deshacer.",
         );
       } catch (error) {
         console.error("Admin:vacanteModeracion error", error);
-        showAdminAlert(
-          t("admin_error_titulo"),
+        mostrarAviso(
+          "error",
+          "La moderación no se aplicó",
+          "La publicación sigue como estaba, sin cambios. Puedes intentarlo otra vez sin repetir nada.",
           translateSync(
             adminDetailedErrorMessage(
               error,
@@ -1508,13 +1576,16 @@ export default function AdminPreview() {
     setBackfillLoading(true);
     try {
       const r = await backfillAlianzasCalificaciones();
-      showAdminAlert(
-        "Listo",
-        `Se revisaron ${r.solicitudesRevisadas} pasantía(s) de grupo y ${r.reclamosRevisados} reclamo(s) de cupos. Se actualizaron ${r.empresasActualizadas} empresa(s) y ${r.universidadesActualizadas} universidad(es).`,
+      mostrarAviso(
+        "exito",
+        "Recálculo terminado",
+        `Revisamos ${r.solicitudesRevisadas} pasantía(s) de grupo y ${r.reclamosRevisados} reclamo(s) de cupos, y pusimos al día ${r.empresasActualizadas} empresa(s) y ${r.universidadesActualizadas} universidad(es). Los rankings y las alianzas ya muestran los números correctos.`,
       );
     } catch (error) {
-      showAdminAlert(
-        t("admin_error_titulo"),
+      mostrarAviso(
+        "error",
+        "El recálculo no terminó",
+        "Los datos quedaron como estaban, no se dañó nada. Puedes volver a lanzarlo cuando quieras.",
         translateSync(adminDataErrorMessage(error, "recalcular alianzas y calificaciones")),
       );
     } finally {
@@ -1540,7 +1611,11 @@ export default function AdminPreview() {
   const handleReportStatusChange = useCallback(
     async (report: ReportCase, nextStatus: ReportCaseStatus) => {
       if (nextStatus === "resuelto" && !reportResolution.trim()) {
-        showAdminAlert(t('admin_error_titulo'), "Debes escribir la resolución para cerrar el reporte.");
+        mostrarAviso(
+          "advertencia",
+          "Falta escribir la resolución",
+          "Cuenta en una línea cómo se resolvió el caso antes de cerrarlo. Eso es lo que queda registrado para futuras consultas.",
+        );
         return;
       }
       setReportActionSaving(true);
@@ -1574,9 +1649,20 @@ export default function AdminPreview() {
             : prev,
         );
         await refreshOverview();
-        showAdminAlert("Admin", nextStatus === "resuelto" ? "Reporte resuelto correctamente." : "Reporte actualizado correctamente.");
+        mostrarAviso(
+          "exito",
+          nextStatus === "resuelto" ? "Reporte cerrado" : "Reporte actualizado",
+          nextStatus === "resuelto"
+            ? "El caso queda cerrado con tu resolución guardada en el historial."
+            : "El caso cambió de estado. Sigue gestionándolo cuando tengas más información.",
+        );
       } catch (error) {
-        showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "gestionar el reporte")));
+        mostrarAviso(
+          "error",
+          "No pudimos actualizar el reporte",
+          "El caso sigue en el estado anterior y tu resolución no se perdió. Inténtalo de nuevo.",
+          translateSync(adminDataErrorMessage(error, "gestionar el reporte")),
+        );
       } finally {
         setReportActionSaving(false);
       }
@@ -3207,9 +3293,14 @@ export default function AdminPreview() {
           onPress={async () => {
             try {
               await logout();
-              showAdminAlert(t('admin_sesion_cerrada_titulo'), t('admin_sesion_cerrada_msg'));
+              mostrarAviso("exito", t('admin_sesion_cerrada_titulo'), t('admin_sesion_cerrada_msg'));
             } catch (error) {
-              showAdminAlert(t('admin_error_titulo'), translateSync(adminDataErrorMessage(error, "cerrar la sesion")));
+              mostrarAviso(
+                "error",
+                "No pudimos cerrar la sesión",
+                "Sigues dentro del panel. Vuelve a tocar el botón; si insiste, cierra la pestaña y vuelve a entrar.",
+                translateSync(adminDataErrorMessage(error, "cerrar la sesion")),
+              );
             }
           }}
           activeOpacity={0.85}
@@ -3402,6 +3493,7 @@ export default function AdminPreview() {
           ) : null}
         </View>
         {ConfirmOverlay()}
+        {AvisoOverlay()}
       </View>
     </Modal>
 
@@ -3452,6 +3544,7 @@ export default function AdminPreview() {
             </TouchableOpacity>
           </ScrollView>
         </View>
+        {AvisoOverlay()}
       </View>
     </Modal>
   );
@@ -3519,6 +3612,82 @@ export default function AdminPreview() {
         </View>
       </View>
     ) : null;
+
+  // Overlay de AVISO (éxito / advertencia / error) — el reemplazo de los
+  // Alert.alert de un botón. Comparte la misma decisión de diseño que
+  // ConfirmOverlay de arriba y por el mismo motivo: es un <View absolute>, no
+  // un <Modal> propio, porque casi siempre se dispara con un modal de detalle
+  // ya abierto encima (banear desde la ficha, guardar el perfil, resolver un
+  // reporte) y dos <Modal> nativos a la vez fallan en iOS. Por eso se monta en
+  // cuatro lugares (DetailModal, EditModal, ReportDetailModal y la raíz de la
+  // pantalla): el estado `aviso` es uno solo, y se ve la copia que esté dentro
+  // de la capa visible en ese momento.
+  const AvisoOverlay = () => {
+    if (!aviso) return null;
+    // Cada tono trae su color, su fondo suave y su ícono. El ícono es lo que
+    // hace legible el mensaje de un vistazo, antes de leer el texto.
+    const paleta =
+      aviso.tipo === "exito"
+        ? { color: C.green, fondo: C.greenBg, icono: "checkmark-circle" as const }
+        : aviso.tipo === "advertencia"
+          ? { color: C.yellow, fondo: C.yellowBg, icono: "alert-circle" as const }
+          : { color: C.red, fondo: C.redBg, icono: "warning" as const };
+    return (
+      <View
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(7,5,15,0.75)",
+          justifyContent: "flex-end",
+        }}
+      >
+        <View style={[s.modal, isPhone && s.modalCompact, { borderColor: paleta.color + "55" }]}>
+          <View style={s.modalHeader}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: paleta.fondo,
+                }}
+              >
+                <Ionicons name={paleta.icono} size={20} color={paleta.color} />
+              </View>
+              <Text style={[s.modalTitle, { flex: 1 }]}>{aviso.title}</Text>
+            </View>
+            <TouchableOpacity
+              style={[s.iconBtn, { width: 38, height: 38 }]}
+              onPress={() => setAviso(null)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={20} color={C.text} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[s.textMuted, { lineHeight: 20 }]}>{aviso.message}</Text>
+          {aviso.detail ? (
+            // Detalle técnico: mismo texto que antes ocupaba TODO el alert,
+            // ahora en segundo plano para quien necesite reportar la falla.
+            <Text style={[s.textMuted, { marginTop: 12, fontSize: 12, opacity: 0.7, lineHeight: 17 }]}>
+              {aviso.detail}
+            </Text>
+          ) : null}
+          <TouchableOpacity
+            style={[s.btnPrimary, { marginTop: 20, backgroundColor: paleta.color }]}
+            onPress={() => setAviso(null)}
+            activeOpacity={0.85}
+          >
+            <Text style={s.btnPrimaryText}>Entendido</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
 
   // ReportDetailModal: detalle de un ReportCase — motivo/descripción,
   // gestión del caso (mover a investigación/resolver con resolución
@@ -3699,6 +3868,7 @@ export default function AdminPreview() {
             ) : null}
           </View>
           {ConfirmOverlay()}
+          {AvisoOverlay()}
         </View>
       </Modal>
     );
@@ -4189,6 +4359,7 @@ export default function AdminPreview() {
       {VacanteModeracionModal()}
       {RecalcularConfirmModal()}
       {!isDesktop ? Drawer() : null}
+      {AvisoOverlay()}
     </View>
   );
 }

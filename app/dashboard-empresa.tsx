@@ -804,6 +804,16 @@ export default function DashboardEmpresa() {
 
   // Estados para el flujo de facturación y planes
   const [showPlanUpgradeModal, setShowPlanUpgradeModal] = useState(false);
+  // Plan que el usuario MARCÓ en la lista (solo selección visual). Es distinto
+  // de `planToUpgrade`, que es el plan que ya entró al flujo de cobro: tocar
+  // una tarjeta ahora solo selecciona, y la compra arranca con el botón
+  // "Suscribirme a este plan" de abajo. Vive junto a `periodoPlanes`: la
+  // selección se limpia al cambiar de Mensual a Anual, porque son planes
+  // distintos (ver cambiarPeriodoPlanes).
+  const [planSeleccionado, setPlanSeleccionado] = useState<'mensual' | 'premium' | null>(null);
+  // Aviso de "todavía no registraste una tarjeta", que corta la suscripción
+  // antes de empezar en vez de mandar al usuario al formulario sin explicar.
+  const [avisoSinTarjeta, setAvisoSinTarjeta] = useState(false);
   const [planToUpgrade, setPlanToUpgrade] = useState<'mensual' | 'premium' | null>(null);
   const [showConfirmUpgradeModal, setShowConfirmUpgradeModal] = useState(false);
   const [upgradeProcessing, setUpgradeProcessing] = useState(false);
@@ -811,6 +821,37 @@ export default function DashboardEmpresa() {
   const [showWelcomePlanModal, setShowWelcomePlanModal] = useState(false);
   const [newPlanInfo, setNewPlanInfo] = useState<'mensual' | 'premium' | null>(null);
   const [periodoPlanes, setPeriodoPlanes] = useState<'mensual' | 'anual'>('mensual');
+
+  // El modal de planes siempre abre sin nada marcado: una selección de una
+  // visita anterior no debe reaparecer como si el usuario acabara de elegirla.
+  useEffect(() => {
+    if (showPlanUpgradeModal) setPlanSeleccionado(null);
+  }, [showPlanUpgradeModal]);
+
+  // Cambio de pestaña Mensual/Anual dentro del modal de planes. "Básico
+  // mensual" y "Básico anual" son suscripciones distintas (otro precio, otro
+  // ciclo de cobro), así que la selección no se arrastra de una pestaña a la
+  // otra: se limpia y el usuario vuelve a elegir con los precios del período
+  // que está viendo.
+  const cambiarPeriodoPlanes = (periodo: 'mensual' | 'anual') => {
+    if (periodo === periodoPlanes) return;
+    setPeriodoPlanes(periodo);
+    setPlanSeleccionado(null);
+  };
+
+  // Botón "Suscribirme a este plan": el único punto desde el que arranca el
+  // cobro. Si la empresa no tiene tarjeta registrada, NO empieza nada — abre
+  // el aviso, y solo al aceptarlo se va al formulario de tarjeta.
+  const iniciarSuscripcion = () => {
+    if (!planSeleccionado) return;
+    setPlanToUpgrade(planSeleccionado);
+    if (!perfil?.tarjeta_numero) {
+      setAvisoSinTarjeta(true);
+      return;
+    }
+    setShowConfirmUpgradeModal(true);
+  };
+
   const [renovandoPago, setRenovandoPago] = useState(false);
 
   // ── Vista detallada de un candidato (sección Reclutar / Kanban) ──
@@ -2785,13 +2826,13 @@ export default function DashboardEmpresa() {
             <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
               <TouchableOpacity
                 style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: periodoPlanes === 'mensual' ? '#8b5cf6' : 'transparent' }}
-                onPress={() => setPeriodoPlanes('mensual')}
+                onPress={() => cambiarPeriodoPlanes('mensual')}
               >
                 <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 14 }}>Mensual</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: periodoPlanes === 'anual' ? '#8b5cf6' : 'transparent' }}
-                onPress={() => setPeriodoPlanes('anual')}
+                onPress={() => cambiarPeriodoPlanes('anual')}
               >
                 <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 14 }}>Anual</Text>
               </TouchableOpacity>
@@ -2808,25 +2849,36 @@ export default function DashboardEmpresa() {
                 const cicloActual = perfil?.cicloFacturacion ?? 'mensual';
                 const esPlanActual = perfil?.plan === p.id && cicloActual === periodoPlanes;
                 const mismoPlanOtroCiclo = perfil?.plan === p.id && !esPlanActual;
+                const estaSeleccionado = planSeleccionado === p.id;
                 return (
                 <TouchableOpacity
                   key={p.id}
-                  style={[{ padding: 18, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.15)', marginBottom: 12 }, esPlanActual && { borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.05)' }]}
+                  style={[
+                    { padding: 18, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.15)', marginBottom: 12 },
+                    esPlanActual && { borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.05)' },
+                    // La selección se pinta con el morado de la marca y un
+                    // borde más grueso, para que se distinga de un vistazo del
+                    // verde de "Tu plan actual" (que es un estado, no una
+                    // elección).
+                    estaSeleccionado && { borderColor: '#8b5cf6', borderWidth: 2, backgroundColor: 'rgba(139,92,246,0.10)' },
+                  ]}
                   onPress={() => {
+                    // Tocar la tarjeta ya no compra: solo marca el plan. El
+                    // cobro arranca en iniciarSuscripcion(), con el botón de
+                    // abajo — así el usuario ve qué eligió antes de pagar.
                     if (esPlanActual) return;
-                    setPlanToUpgrade(p.id as any);
-                    if (!perfil?.tarjeta_numero) {
-                      // Sin método de pago registrado: pide la tarjeta primero
-                      // y, al guardarla, retoma esta mejora automáticamente.
-                      setPendingUpgradeAfterCard(true);
-                      abrirCardModal();
-                    } else {
-                      setShowConfirmUpgradeModal(true);
-                    }
+                    setPlanSeleccionado(p.id as 'mensual' | 'premium');
                   }}
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontFamily: FONTS.soraBold, fontSize: 16, color: '#fff' }}>{p.nombre}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                      <Ionicons
+                        name={estaSeleccionado ? 'radio-button-on' : 'radio-button-off'}
+                        size={18}
+                        color={estaSeleccionado ? '#a78bfa' : 'rgba(255,255,255,0.25)'}
+                      />
+                      <Text style={{ fontFamily: FONTS.soraBold, fontSize: 16, color: '#fff' }}>{p.nombre}</Text>
+                    </View>
                     <Text style={{ fontFamily: FONTS.soraBold, fontSize: 16, color: '#a78bfa' }}>{p.precio}</Text>
                   </View>
                   <View style={{ marginTop: 10, gap: 5 }}>
@@ -2842,10 +2894,87 @@ export default function DashboardEmpresa() {
                       {periodoPlanes === 'anual' ? 'Cambiar a facturación anual' : 'Cambiar a facturación mensual'}
                     </Text>
                   )}
+                  {estaSeleccionado && (
+                    <Text style={{ color: '#a78bfa', fontFamily: FONTS.interSemiBold, fontSize: 12, marginTop: 8 }}>
+                      Seleccionado
+                    </Text>
+                  )}
                 </TouchableOpacity>
                 );
               })}
             </ScrollView>
+
+            {/* Pie fijo del modal: resume qué se va a cobrar y dispara el flujo.
+                Deshabilitado mientras no haya un plan marcado. */}
+            <TouchableOpacity
+              style={{
+                marginTop: 14,
+                paddingVertical: 15,
+                borderRadius: 14,
+                alignItems: 'center',
+                backgroundColor: planSeleccionado ? '#8b5cf6' : 'rgba(255,255,255,0.06)',
+                borderWidth: 1,
+                borderColor: planSeleccionado ? '#8b5cf6' : 'rgba(255,255,255,0.10)',
+              }}
+              onPress={iniciarSuscripcion}
+              disabled={!planSeleccionado}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={{
+                  color: planSeleccionado ? '#fff' : 'rgba(255,255,255,0.45)',
+                  fontFamily: FONTS.interSemiBold,
+                  fontSize: 15,
+                }}
+              >
+                {planSeleccionado ? 'Suscribirme a este plan' : 'Selecciona un plan para continuar'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Aviso de método de pago faltante. Va DENTRO de este modal, como
+                capa absoluta, y no como <Modal> propio: apilar dos Modal
+                nativos mientras uno sigue abierto falla en iOS. */}
+            {avisoSinTarjeta && (
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: 'rgba(7,5,15,0.88)',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  padding: 20,
+                  borderRadius: 24,
+                }}
+              >
+                <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 28, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(245,158,11,0.35)' }}>
+                  <Ionicons name="card-outline" size={54} color="#f59e0b" style={{ marginBottom: 14 }} />
+                  <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 10, textAlign: 'center' }}>
+                    Falta tu método de pago
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.interRegular, fontSize: 14, lineHeight: 20, textAlign: 'center', marginBottom: 22 }}>
+                    Todavía no tienes una tarjeta registrada, así que no podemos cobrar la suscripción. Al aceptar te llevamos a registrarla y retomamos la compra apenas la guardes.
+                  </Text>
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#f59e0b', paddingVertical: 13, borderRadius: 14, width: '100%', alignItems: 'center' }}
+                    onPress={() => {
+                      // Aceptar = ir a registrar la tarjeta. `pendingUpgradeAfterCard`
+                      // hace que, al guardarla, vuelva solo el modal de confirmar
+                      // compra con el plan y el período ya elegidos.
+                      setAvisoSinTarjeta(false);
+                      setPendingUpgradeAfterCard(true);
+                      setShowPlanUpgradeModal(false);
+                      abrirCardModal();
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={{ color: '#1a162b', fontFamily: FONTS.interSemiBold, fontSize: 15 }}>Aceptar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
         </View>
       </Modal>

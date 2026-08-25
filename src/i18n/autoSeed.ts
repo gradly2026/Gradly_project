@@ -439,6 +439,13 @@ export const AUTO_SEED_EN: Record<string, string> = {
     "For security, we only store the last 4 digits.",
   "Necesitas registrar un método de pago para mejorar tu plan.":
     "You need to register a payment method to upgrade your plan.",
+  // ── Modal "Planes y Facturación": selección de plan + aviso de tarjeta ──
+  "Seleccionado": "Selected",
+  "Suscribirme a este plan": "Subscribe to this plan",
+  "Selecciona un plan para continuar": "Select a plan to continue",
+  "Falta tu método de pago": "Your payment method is missing",
+  "Todavía no tienes una tarjeta registrada, así que no podemos cobrar la suscripción. Al aceptar te llevamos a registrarla y retomamos la compra apenas la guardes.":
+    "You don't have a card on file yet, so we can't charge the subscription. Tap Accept and we'll take you to register one, then pick the purchase back up as soon as you save it.",
 };
 
 /**
@@ -634,6 +641,93 @@ export const ADMIN_SEED_EN: Record<string, string> = {
     "The owning company will see the reason. The posting will stop existing for everyone, including the company itself.",
   "Motivo de la deshabilitación": "Reason for disabling",
   "Motivo de la eliminación": "Reason for deleting",
+
+  // ── Modales de aviso del panel (AvisoOverlay: éxito / advertencia / error).
+  //    Reemplazan a los antiguos Alert.alert de un botón, así que todo este
+  //    bloque es texto nuevo que antes no existía en la UI. ──
+  "Listo, cambio aplicado": "Done, change applied",
+  "Ya puede volver a entrar a Gradly con normalidad.": "They can log back into Gradly as usual.",
+  "La cuenta queda en revisión. Su información sigue intacta mientras tanto.":
+    "The account is under review. Their information stays untouched in the meantime.",
+  "La cuenta queda inactiva y no podrá iniciar sesión. Puedes reactivarla cuando quieras desde esta misma ficha.":
+    "The account is now inactive and cannot log in. You can reactivate it any time from this same record.",
+  "No pudimos aplicar el cambio": "We couldn't apply the change",
+  "El estado del usuario quedó como estaba. Revisa tu conexión e inténtalo de nuevo; si sigue igual, pásale el detalle de abajo al equipo técnico.":
+    "The user's status was left as it was. Check your connection and try again; if it keeps failing, pass the details below to the tech team.",
+  "Esta cuenta no necesita aprobación": "This account doesn't need approval",
+  "El flujo de aprobación es solo para cuentas de empresa y universidad. Esta cuenta ya está lista para usarse tal como está.":
+    "The approval flow only applies to company and university accounts. This one is ready to use as it is.",
+  "Cuenta aprobada": "Account approved",
+  "La institución ya puede usar Gradly con todas sus funciones.":
+    "The institution can now use Gradly with all of its features.",
+  "Cuenta de vuelta en revisión": "Account back under review",
+  "Queda otra vez en la lista de pendientes, esperando una decisión.":
+    "It's back on the pending list, waiting for a decision.",
+  "Cuenta rechazada": "Account rejected",
+  "Le avisamos que su solicitud no fue aprobada. Si fue un error, puedes volver a aprobarla desde esta misma ficha.":
+    "We let them know their request wasn't approved. If that was a mistake, you can approve it again from this same record.",
+  "No pudimos actualizar la aprobación": "We couldn't update the approval",
+  "La solicitud quedó como estaba, así que puedes intentarlo otra vez sin miedo a duplicar nada.":
+    "The request was left as it was, so you can try again without duplicating anything.",
+  "No pudimos cambiar el rol": "We couldn't change the role",
+  "El usuario conserva el rol que tenía. Vuelve a intentarlo en un momento.":
+    "The user keeps the role they had. Try again in a moment.",
+  "No pudimos guardar el permiso": "We couldn't save the permission",
+  "El permiso quedó como estaba antes. Prueba de nuevo en unos segundos.":
+    "The permission was left as it was. Try again in a few seconds.",
+  "Las notificaciones siguen sin leer": "The notifications are still unread",
+  "No logramos marcarlas como leídas. No se perdió ninguna: siguen ahí y puedes intentarlo otra vez.":
+    "We couldn't mark them as read. None were lost: they're still there and you can try again.",
+  "No pudimos guardar los cambios": "We couldn't save your changes",
+  "Los datos que escribiste siguen en el formulario, así que no perdiste nada. Intenta guardar otra vez.":
+    "What you typed is still in the form, so nothing was lost. Try saving again.",
+  "Falta el motivo del baneo": "The ban reason is missing",
+  "Escribe por qué se banea a esta persona antes de continuar. Ese motivo queda registrado y es lo que respalda la decisión más adelante.":
+    "Write why this person is being banned before continuing. That reason is recorded and is what backs up the decision later on.",
+  "Usuario baneado": "User banned",
+  "Ya no puede acceder a Gradly y el motivo quedó registrado en su ficha. Si hace falta, puedes reactivarlo desde aquí mismo.":
+    "They can no longer access Gradly and the reason is saved in their record. If needed, you can reactivate them right here.",
+  "Usuario reactivado": "User reactivated",
+  "Recuperó su acceso a la plataforma y puede volver a entrar cuando quiera.":
+    "They got their access back and can log in again whenever they want.",
+  "No pudimos banear al usuario": "We couldn't ban the user",
+  "No pudimos reactivar al usuario": "We couldn't reactivate the user",
+  "Nada cambió: la cuenta sigue exactamente como estaba. Vuelve a intentarlo en un momento.":
+    "Nothing changed: the account is exactly as it was. Try again in a moment.",
+  "Usuario eliminado": "User deleted",
+  "Se borró la cuenta y sus documentos principales. Esta acción no se puede deshacer, así que si fue un error habrá que crear la cuenta de nuevo desde cero.":
+    "The account and its main documents were deleted. This can't be undone, so if it was a mistake the account has to be created again from scratch.",
+  "No pudimos eliminar la cuenta": "We couldn't delete the account",
+  "La cuenta sigue existiendo tal como estaba. Revisa el detalle de abajo antes de volver a intentarlo: si la eliminación quedó a medias, el equipo técnico necesita ese texto.":
+    "The account still exists just as it was. Check the details below before trying again: if the deletion was left halfway, the tech team needs that text.",
+  "Publicación deshabilitada": "Posting disabled",
+  "Ya no aparece para los estudiantes y la empresa puede ver el motivo. Puedes volver a habilitarla si se corrige.":
+    "It no longer shows up for students and the company can see the reason. You can enable it again if it gets fixed.",
+  "Publicación eliminada": "Posting deleted",
+  "La publicación se borró de la plataforma. Esta acción no se puede deshacer.":
+    "The posting was removed from the platform. This can't be undone.",
+  "La moderación no se aplicó": "The moderation wasn't applied",
+  "La publicación sigue como estaba, sin cambios. Puedes intentarlo otra vez sin repetir nada.":
+    "The posting is unchanged. You can try again without repeating anything.",
+  "Recálculo terminado": "Recalculation finished",
+  "El recálculo no terminó": "The recalculation didn't finish",
+  "Los datos quedaron como estaban, no se dañó nada. Puedes volver a lanzarlo cuando quieras.":
+    "The data was left as it was, nothing was damaged. You can run it again whenever you want.",
+  "Falta escribir la resolución": "The resolution is missing",
+  "Cuenta en una línea cómo se resolvió el caso antes de cerrarlo. Eso es lo que queda registrado para futuras consultas.":
+    "Write a line about how the case was resolved before closing it. That's what stays on record for future reference.",
+  "Reporte cerrado": "Report closed",
+  "El caso queda cerrado con tu resolución guardada en el historial.":
+    "The case is closed with your resolution saved in the history.",
+  "Reporte actualizado": "Report updated",
+  "El caso cambió de estado. Sigue gestionándolo cuando tengas más información.":
+    "The case changed status. Keep working on it when you have more information.",
+  "No pudimos actualizar el reporte": "We couldn't update the report",
+  "El caso sigue en el estado anterior y tu resolución no se perdió. Inténtalo de nuevo.":
+    "The case is still in its previous status and your resolution wasn't lost. Try again.",
+  "No pudimos cerrar la sesión": "We couldn't sign you out",
+  "Sigues dentro del panel. Vuelve a tocar el botón; si insiste, cierra la pestaña y vuelve a entrar.":
+    "You're still inside the panel. Tap the button again; if it persists, close the tab and log back in.",
 };
 
 /**
@@ -833,11 +927,11 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Esta pasantía ya no está disponible.": "This internship is no longer available.",
   "Esta publicación no es una pasantía.": "This listing is not an internship.",
   "Ya tienes una pasantía activa.": "You already have an active internship.",
-  "Ya culminaste tu práctica o pasantía: podés aplicar directamente a cualquier vacante disponible.":
+  "Ya culminaste tu práctica o pasantía: puedes aplicar directamente a cualquier vacante disponible.":
     "You've already completed your internship: you can apply directly to any available job posting.",
-  "Estás en tu pasantía activa. Podés ver el mercado de vacantes para ubicarte, pero solo podrás aplicar cuando la culmines o te gradúes.":
+  "Estás en tu pasantía activa. Puedes ver el mercado de vacantes para ubicarte, pero solo podrás aplicar cuando la culmines o te gradúes.":
     "You're in your active internship. You can browse the job market to get a sense of it, but you'll only be able to apply once you finish it or graduate.",
-  "Todavía no iniciás tu pasantía. Debajo verás los cupos que tu universidad ya te aseguró y pasantías de otras empresas a las que podés aplicar por tu cuenta.":
+  "Todavía no inicias tu pasantía. Debajo verás los cupos que tu universidad ya te aseguró y pasantías de otras empresas a las que puedes aplicar por tu cuenta.":
     "You haven't started your internship yet. Below you'll see the slots your university already secured for you, plus internships from other companies you can apply to on your own.",
 };
 

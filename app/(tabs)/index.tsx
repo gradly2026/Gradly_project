@@ -1053,7 +1053,7 @@ export default function FeedVacantes() {
             // Un componente que se dibuja UNA vez, arriba de toda la
             // lista (no se repite por cada elemento) — aquí, el banner
             // explicativo.
-            <EstadoBanner texto="Ya culminaste tu práctica o pasantía: podés aplicar directamente a cualquier vacante disponible." />
+            <EstadoBanner texto="Ya culminaste tu práctica o pasantía: puedes aplicar directamente a cualquier vacante disponible." />
           }
           ListEmptyComponent={<EmptyState />}
           // Se dibuja SOLO si `data` está vacío, en vez de ListHeaderComponent.
@@ -1086,7 +1086,7 @@ export default function FeedVacantes() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100, maxWidth: 640, alignSelf: 'center', width: '100%', flexGrow: 1 }}
           ListHeaderComponent={
             <>
-              <EstadoBanner texto="Estás en tu pasantía activa. Podés ver el mercado de vacantes para ubicarte, pero solo podrás aplicar cuando la culmines o te gradúes." />
+              <EstadoBanner texto="Estás en tu pasantía activa. Puedes ver el mercado de vacantes para ubicarte, pero solo podrás aplicar cuando la culmines o te gradúes." />
               <MercadoLaboralStats vacantes={vacantes} />
             </>
           }
@@ -1117,7 +1117,7 @@ export default function FeedVacantes() {
           ListHeaderComponent={
             <>
               {!zonaRoja && (
-                <EstadoBanner texto="Todavía no iniciás tu pasantía. Debajo verás los cupos que tu universidad ya te aseguró y pasantías de otras empresas a las que podés aplicar por tu cuenta." />
+                <EstadoBanner texto="Todavía no inicias tu pasantía. Debajo verás los cupos que tu universidad ya te aseguró y pasantías de otras empresas a las que puedes aplicar por tu cuenta." />
               )}
               {user?.uid && (
                 <TableroCupos
