@@ -47,6 +47,10 @@ export default function ChatScreen() {
           aquí el color de la barra de estado SÍ depende del tema activo,
           porque esta pantalla de chat cambia de fondo claro/oscuro según
           el tema del usuario. */}
+      {/* Notificaciones/idioma/tema ya no flotan aparte encima de esta
+          pantalla: viven DENTRO de la cabecera de ChatThread (ver ese
+          componente), para que el diseño no cambie según desde dónde se
+          entró al chat. */}
       <ChatThread
         chatId={String(chatId)}
         // "String(chatId)" convierte el valor a texto de forma segura:

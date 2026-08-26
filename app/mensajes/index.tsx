@@ -28,6 +28,7 @@ import {
 import { AutoText as Text } from "../../src/components/AutoText";
 import { LiquidBackground } from "../../components/ui/liquid-glass/LiquidBackground";
 import ChatThread from "../../src/components/ChatThread";
+import FloatingTopBar from "../../src/components/FloatingTopBar";
 import InboxList from "../../src/components/InboxList";
 import SearchUsersModal from "../../src/components/SearchUsersModal";
 // Modal para buscar a otro usuario e iniciar una conversación nueva con
@@ -141,6 +142,15 @@ export default function MensajesScreen() {
   return (
     <LiquidBackground>
       <StatusBar style="light" />
+      {/* Esta bandeja no vive dentro de (tabs) ni de un dashboard, así que
+          sin esto los botones de notificaciones/idioma/tema desaparecían
+          por completo al llegar aquí (p. ej. desde el buscador global).
+          Cuando SÍ hay un chat abierto en el panel derecho (escritorio),
+          esos mismos botones ya viven dentro de la propia cabecera de
+          ChatThread — mostrar también esta píldora flotante los duplicaría
+          (y era, además, la causa de que la cabecera "cambiara de diseño"
+          según desde dónde se hubiera entrado al chat). */}
+      {!(isWide && selected) && <FloatingTopBar userId={user?.uid} offsetY={72} />}
       <View style={styles.row}>
         {/* ── Panel izquierdo: lista de chats ── */}
         <View style={isWide ? styles.leftPane : styles.fullPane}>

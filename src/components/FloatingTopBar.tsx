@@ -168,6 +168,24 @@ interface FloatingTopBarProps {
   // Las "props" (propiedades) que recibe este componente desde quien lo
   // usa, por ejemplo: <FloatingTopBar userId={miUsuario.uid} />
   userId?: string | null;
+  /**
+   * Desplazamiento vertical EXTRA (px), sumado a la posición por defecto
+   * (insets.top + 8). Las pantallas de chat que no tienen un header de
+   * dashboard que les reserve ese espacio arriba (ver app/ChatScreen.tsx,
+   * app/mensajes/index.tsx y app/mensajes/[id].tsx) la pasan para que la
+   * píldora no quede tapando el encabezado propio del chat — en el resto
+   * de pantallas se omite y la posición queda igual que siempre.
+   */
+  offsetY?: number;
+  /**
+   * `'floating'` (por defecto): la píldora flota con `position: absolute`
+   * encima de lo que sea que haya debajo — el comportamiento de siempre.
+   * `'inline'`: se dibuja como una fila normal, en el lugar exacto donde se
+   * la coloque en el JSX del padre (usado dentro de la cabecera de
+   * ChatThread, para que notificaciones/traducción/tema vivan SIEMPRE en el
+   * mismo sitio de la barra, sin importar qué pantalla montó el chat).
+   */
+  variant?: 'floating' | 'inline';
 }
 
 // Endónimos: cada idioma se muestra en su propio nombre (no se traducen).
@@ -180,7 +198,7 @@ const LANGS: { code: 'es' | 'en'; label: string }[] = [
 // traduce a "Inglés" aunque la app esté en español — así lo reconoce
 // cualquier hablante, sin importar qué idioma tenga activo).
 
-export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
+export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floating' }: FloatingTopBarProps) {
   // "export default function Nombre(props) { ... }" es la forma estándar
   // de definir un componente de función en React. "{ userId }" extrae
   // directamente la prop `userId` del objeto de props recibido
@@ -385,6 +403,14 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
     }
   };
 
+  // Tamaños: la variante `inline` se dibuja DENTRO de una cabecera que ya
+  // tiene sus propios íconos de 40px (ver ChatThread), así que se achica un
+  // poco para no verse más grande que sus vecinos (Vaciar chat / Reportar).
+  const isInline = variant === 'inline';
+  const pillHeight = isInline ? 40 : 46;
+  const iconBoxSize = isInline ? 36 : 40;
+  const iconSize = isInline ? 20 : 22;
+
   const tap = (fn: () => void) => () => {
     // `tap` es una función que ENVUELVE otra función: recibe la acción
     // real que se quiere ejecutar (`fn`) y devuelve una NUEVA función que,
@@ -411,40 +437,48 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
           envolverlos en un <View> extra innecesario, ya que una función
           de React solo puede devolver UN elemento raíz. */}
       <View
-        style={[styles.wrap, { top: insets.top + 8, pointerEvents: 'box-none' }]}
+        style={[
+          isInline ? styles.inlineWrap : styles.wrap,
+          !isInline && { top: insets.top + 8 + offsetY, pointerEvents: 'box-none' },
+        ]}
       >
         {/* El prop `style` puede recibir un ARRAY de estilos: React
             Native los combina en orden (los de la derecha pueden
-            sobrescribir a los de la izquierda). Aquí se combina el
-            estilo fijo `styles.wrap` con un objeto calculado en el
-            momento (la posición `top` depende del insets del
-            dispositivo). "pointerEvents: 'box-none'" hace que este
-            contenedor NO capture toques en las zonas vacías (para no
-            bloquear accidentalmente lo que esté debajo), pero sus hijos
-            (los botones) sí siguen siendo tocables. */}
+            sobrescribir a los de la izquierda). En la variante `floating`
+            se combina el estilo fijo `styles.wrap` con un objeto calculado
+            en el momento (la posición `top` depende del insets del
+            dispositivo) y "pointerEvents: 'box-none'" para que el
+            contenedor NO capture toques en las zonas vacías. En `inline`
+            (dentro de la cabecera de ChatThread) nada de eso aplica: el
+            elemento fluye en su lugar normal, como cualquier otra fila. */}
         <BlurView
           intensity={40}
           tint={isDark ? 'dark' : 'light'}
           style={[
             styles.pill,
+            { height: pillHeight },
             {
               backgroundColor: isDark ? 'rgba(26,16,48,0.55)' : 'rgba(255,255,255,0.55)',
               borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(124,58,237,0.18)',
             },
           ]}
         >
-          {/* La "píldora" flotante en sí: el color de fondo/borde cambia
+          {/* La "píldora" en sí: el color de fondo/borde cambia
               según `isDark` (proveniente de useTheme()), para verse bien
               en ambos temas. */}
 
           {/* Notificaciones */}
-          <Pressable style={styles.iconBtn} onPress={tap(() => setNotifOpen(true))} hitSlop={6}>
+          <Pressable
+            style={[styles.iconBtn, { width: iconBoxSize, height: iconBoxSize }]}
+            onPress={tap(() => setNotifOpen(true))}
+            hitSlop={6}
+          >
             {/* onPress recibe la función que arma `tap(...)`: al tocar,
                 vibra y luego abre la pantalla de notificaciones.
                 hitSlop={6} agranda el área tocable 6px en cada dirección
                 más allá del tamaño visual del botón (más fácil de tocar
                 en pantallas pequeñas). */}
-            <Ionicons name="notifications-outline" size={22} color={colors.textPrimary} />
+            <Ionicons name="notifications-outline" size={iconSize} color={colors.textPrimary} />
             {unread > 0 && (
               // "{condicion && <Componente/>}" es un patrón MUY común en
               // JSX para renderizado condicional: si `unread > 0` es
@@ -461,27 +495,38 @@ export default function FloatingTopBar({ userId }: FloatingTopBarProps) {
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
           {/* Traducción */}
-          <Pressable style={styles.iconBtn} onPress={tap(() => setLangOpen(v => !v))} hitSlop={6}>
+          <Pressable
+            style={[styles.iconBtn, { width: iconBoxSize, height: iconBoxSize }]}
+            onPress={tap(() => setLangOpen(v => !v))}
+            hitSlop={6}
+          >
             {/* setLangOpen(v => !v) alterna el estado (true↔false) usando
                 la forma funcional del setter, igual patrón visto en
                 ThemeContext.tsx. */}
-            <Ionicons name="language-outline" size={22} color={colors.textPrimary} />
+            <Ionicons name="language-outline" size={iconSize} color={colors.textPrimary} />
           </Pressable>
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
           {/* Tema claro/oscuro — ícono compartido (ver ThemeToggleButton.tsx),
               el mismo que usan login, registro y el resto de dashboards. */}
-          <Pressable style={styles.iconBtn} onPress={tap(toggleTheme)} hitSlop={6}>
-            <ThemeToggleIcon size={22} />
+          <Pressable
+            style={[styles.iconBtn, { width: iconBoxSize, height: iconBoxSize }]}
+            onPress={tap(toggleTheme)}
+            hitSlop={6}
+          >
+            <ThemeToggleIcon size={iconSize} />
           </Pressable>
         </BlurView>
 
-        {/* Menú de idioma — Español / Inglés */}
+        {/* Menú de idioma — Español / Inglés. En `inline` se ancla como
+            dropdown (`position: absolute`) para no empujar el resto de la
+            cabecera del chat hacia abajo al abrirse. */}
         {langOpen && (
           <View
             style={[
               styles.langMenu,
+              isInline && styles.langMenuInline,
               { backgroundColor: colors.backgroundCard, borderColor: colors.border },
             ]}
           >
@@ -660,6 +705,20 @@ const styles = StyleSheet.create({
     right: 15,               // pegado a 15px del borde derecho
     zIndex: 50,               // se dibuja POR ENCIMA de casi todo lo demás
     alignItems: 'flex-end',  // alinea sus hijos (la píldora, el menú) a la derecha
+  },
+  // Variante `inline` (dentro de la cabecera de ChatThread): sin `position:
+  // absolute` — ocupa su lugar normal en la fila, como cualquier otro ícono
+  // de la barra. `position: relative` es lo que le permite al menú de idioma
+  // (`langMenuInline`, más abajo) anclarse como dropdown SOBRE el resto de
+  // la cabecera en vez de empujarla hacia abajo.
+  inlineWrap: {
+    position: 'relative',
+  },
+  langMenuInline: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    zIndex: 60,
   },
   pill: {
     flexDirection: 'row',     // acomoda los 3 botones en fila horizontal

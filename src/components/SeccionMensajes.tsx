@@ -21,6 +21,15 @@ export interface SeccionMensajesProps {
   openChat?: { id: string; peerName: string } | null;
   /** Se invoca una sola vez, apenas se aplica `openChat`. */
   onOpenChatConsumed?: () => void;
+  /**
+   * Avisa al dashboard que la contiene si hay (o no) un chat abierto ahora
+   * mismo. El dashboard usa esto para OCULTAR su propia píldora flotante de
+   * notificaciones/idioma/tema mientras se ve un chat — ChatThread ya trae
+   * la suya propia en la cabecera, y mostrar las dos a la vez las duplicaba
+   * (además de ser, junto con la navegación de "Chatear" a `/mensajes`, la
+   * causa de que la cabecera del chat pareciera "cambiar de diseño").
+   */
+  onChatOpenChange?: (abierto: boolean) => void;
 }
 
 /**
@@ -34,6 +43,7 @@ export interface SeccionMensajesProps {
 export default function SeccionMensajes({
   openChat,
   onOpenChatConsumed,
+  onChatOpenChange,
 }: SeccionMensajesProps) {
   const { width } = useWindowDimensions();
   const isWide = width > BREAKPOINT;
@@ -52,6 +62,20 @@ export default function SeccionMensajes({
     onOpenChatConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openChat]);
+
+  // Un chat "abierto" ocupa la sección completa en móvil, o el panel derecho
+  // en escritorio — en ambos casos, ChatThread ya dibuja su propia barra de
+  // notificaciones/idioma/tema, así que el dashboard debe ocultar la suya.
+  // La limpieza al desmontar es clave: si el usuario cambia de sección del
+  // dashboard con un chat todavía abierto, esta sección se desmonta entera
+  // SIN pasar por "selected → null" — sin el cleanup, el dashboard se
+  // quedaría creyendo para siempre que hay un chat abierto y nunca volvería
+  // a mostrar su propia píldora flotante.
+  useEffect(() => {
+    onChatOpenChange?.(!!selected);
+    return () => onChatOpenChange?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   const handleSelect = (chat: ChatListItem) =>
     setSelected({ id: chat.id, name: chatTitle(chat, user?.uid) });

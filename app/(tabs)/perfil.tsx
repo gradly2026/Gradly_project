@@ -64,6 +64,7 @@ import CertificadoGradly from '../../src/components/CertificadoGradly';
 import ResenasFeedback from '../../src/components/ResenasFeedback';
 // Muestra las reseñas/calificaciones que el estudiante recibió de las
 // empresas donde trabajó.
+import SalirSesionModal from '../../src/components/SalirSesionModal';
 import PerfilMasterDetail from '../../src/components/PerfilMasterDetail';
 // EL componente clave de este archivo: recibe la lista `sections`
 // (definida más abajo) y se encarga de dibujar toda la estructura visual
@@ -905,28 +906,12 @@ export default function PerfilTab() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── MODAL: Confirmar cierre de sesión (Liquid Glass) ── */}
-      <Modal transparent visible={logoutModalVisible} animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
-        {/* Nota: este modal usa animationType="fade" (no "none"), y sus
-            estilos están escritos INLINE (directo en el JSX, no en el
-            objeto `styles` de abajo) en vez de seguir el patrón
-            makeStyles(colors) del resto del archivo — sus colores quedan
-            fijos, sin reaccionar al tema claro/oscuro. */}
-        <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1a162b', borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
-            <Text style={{ fontSize: 18, color: '#fff', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>{t('cerrar_sesion')}</Text>
-            <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: 24 }}>{t('cerrar_sesion_confirmar')}</Text>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }} onPress={() => setLogoutModalVisible(false)}>
-                <Text style={{ color: '#fff', fontWeight: '600' }}>{t('accion_cancelar')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: '#ef4444', alignItems: 'center' }} onPress={confirmarCierreSesion}>
-                <Text style={{ color: '#fff', fontWeight: '600' }}>{t('perfil_salir')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* ── MODAL: Confirmar cierre de sesión ── */}
+      <SalirSesionModal
+        visible={logoutModalVisible}
+        onConfirm={confirmarCierreSesion}
+        onCancel={() => setLogoutModalVisible(false)}
+      />
     </View>
     </LiquidBackground>
   );

@@ -48,6 +48,8 @@ export default function MensajeChatScreen() {
       {/* El chat ahora sigue la paleta del tema activo (ver ChatThread), así
           que la barra de estado también debe seguirlo. */}
       <StatusBar style={isDark ? "light" : "dark"} />
+      {/* Notificaciones/idioma/tema viven DENTRO de la cabecera de
+          ChatThread (ver ese componente) — ya no flotan aparte. */}
       <ChatThread
         chatId={String(id)}
         peerName={peerName}

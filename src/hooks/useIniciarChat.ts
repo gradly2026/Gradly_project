@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { useCallback } from "react";
 import { Alert } from "react-native";
 import { useAuth } from "../context/AuthContext";
@@ -16,6 +16,7 @@ import { abrirChatDirectoUsuarios } from "../services/chatService";
  */
 export function useIniciarChat() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, userProfile, rol } = useAuth();
 
   return useCallback(
@@ -33,15 +34,24 @@ export function useIniciarChat() {
           },
           otro,
         });
-        router.push({
-          pathname: "/mensajes",
-          params: { chat: chatId, peerName: otro.nombre },
-        } as any);
+        const params = { chat: chatId, peerName: otro.nombre };
+        // Si ya estamos parados en /mensajes (p. ej. se pulsó "Chatear" desde
+        // el perfil de alguien con quien YA se estaba chateando), actualizar
+        // los parámetros de la pantalla actual en vez de apilar una segunda
+        // instancia de /mensajes encima de la primera: ese doble montaje era
+        // la causa de que la cabecera del chat "cambiara de diseño" al volver
+        // — cada instancia arrancaba su propia píldora flotante en una
+        // posición ligeramente distinta.
+        if (pathname === "/mensajes") {
+          router.setParams(params as any);
+        } else {
+          router.push({ pathname: "/mensajes", params } as any);
+        }
       } catch (error) {
         console.warn("No se pudo iniciar el chat:", error);
         Alert.alert("Error", "No se pudo abrir el chat. Intenta de nuevo.");
       }
     },
-    [user?.uid, userProfile?.nombre_completo, rol, router],
+    [user?.uid, userProfile?.nombre_completo, rol, router, pathname],
   );
 }

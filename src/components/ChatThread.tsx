@@ -4,6 +4,10 @@ import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
 import * as ScreenCapture from "expo-screen-capture";
+// Import de efecto: registra los datos del locale "es" en dayjs (nombres de
+// mes/día) — sin esto, aunque le pasemos locale="es" a GiftedChat, dayjs no
+// sabría cómo formatear fechas en español y caería en inglés en silencio.
+import "dayjs/locale/es";
 import {
   arrayRemove,
   arrayUnion,
@@ -54,6 +58,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { db } from "../config/firebaseConfig";
 import { useAuth } from "../context/AuthContext";
 import { useTheme, type GradlyColors } from "../context/ThemeContext";
+import { useTranslation } from "../context/TranslationContext";
+import { traducir } from "../services/translationService";
 import {
   chatTitle,
   markChatRead,
@@ -75,7 +81,6 @@ import {
   subirConstanciaPdf,
   type FirmarAcuerdoResult,
 } from "../services/solicitudPracticaService";
-import { useAutoText } from "./AutoText";
 import {
   acuerdoToSchedule,
   type AcuerdoData,
@@ -86,7 +91,9 @@ import ProponerHorarioModal from "./ProponerHorarioModal";
 import ProfileViewerModal, { type ProfileTipo } from "./ProfileViewerModal";
 import ReportarUsuarioModal from "./ReportarUsuarioModal";
 import StorageAvatar from "./StorageAvatar";
+import FloatingTopBar from "./FloatingTopBar";
 import { useIniciarChat } from "../hooks/useIniciarChat";
+import { shadow } from "../utils/shadow";
 
 /**
  * Paleta del chat: se deriva de la paleta oficial del tema activo
@@ -145,6 +152,21 @@ const formatHoraExacta = (d: Date) =>
   d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
 
 /**
+ * Plantilla en español del separador de fecha de GiftedChat ("Hoy", "Ayer"...).
+ * Por defecto la librería siempre muestra "Today" en inglés — literal, sin
+ * traducir — sin importar el `locale` que se le pase; solo se puede cambiar
+ * pasándole esta plantilla explícita (ver dayjs `calendar` plugin).
+ */
+const CALENDARIO_ES = {
+  sameDay: "[Hoy]",
+  lastDay: "[Ayer]",
+  nextDay: "[Mañana]",
+  nextWeek: "dddd",
+  lastWeek: "[el] dddd [pasado]",
+  sameElse: "D [de] MMMM [de] YYYY",
+};
+
+/**
  * Texto del recibo bajo un mensaje propio:
  *  - "Visto HH:mm" si el otro participante entró al chat después de enviarse.
  *  - "Enviado HH:mm" en caso contrario (hora exacta de registro del mensaje).
@@ -161,7 +183,7 @@ function reciboTexto(msg: ChatMessage, peerLeido: Date | null): string {
 }
 
 /** Texto de presencia legible a partir del estado del peer. */
-function presenciaTexto(online: boolean, lastSeen: Date | null): string {
+function presenciaTexto(online: boolean, lastSeen: Date | null, locale: string): string {
   if (online) return "En línea";
   if (!lastSeen) return "Desconectado";
   const hoy = new Date();
@@ -170,8 +192,8 @@ function presenciaTexto(online: boolean, lastSeen: Date | null): string {
     lastSeen.getMonth() === hoy.getMonth() &&
     lastSeen.getFullYear() === hoy.getFullYear();
   const cuando = mismoDia
-    ? lastSeen.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
-    : lastSeen.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" });
+    ? lastSeen.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })
+    : lastSeen.toLocaleDateString(locale, { day: "2-digit", month: "2-digit" });
   return `Últ. vez ${cuando}`;
 }
 
@@ -199,17 +221,6 @@ export interface ChatThreadProps {
 }
 
 /**
- * Renderiza el texto de un mensaje traducido al vuelo (según el idioma activo),
- * pasándolo a `MessageText` de GiftedChat para conservar su formato/linkify.
- */
-function TranslatedMessageText(props: MessageTextProps<ChatMessage>) {
-  const msg = props.currentMessage;
-  const translated = useAutoText(typeof msg?.text === "string" ? msg.text : "");
-  const patched = msg ? ({ ...msg, text: translated } as ChatMessage) : msg;
-  return <MessageText {...props} currentMessage={patched} />;
-}
-
-/**
  * Hilo de conversación reutilizable. Concentra toda la lógica de chat (antes en
  * `app/ChatScreen.tsx`) para poder montarse como pantalla del stack/tab o
  * embebido en el panel derecho del master-detail.
@@ -224,6 +235,11 @@ export default function ChatThread({
   const { user, userProfile, rol } = useAuth();
   const router = useRouter();
   const iniciarChat = useIniciarChat();
+  // Idioma activo — NO para el contenido de los mensajes (eso siempre se
+  // queda como se escribió, ver toggleTraducirMensaje/mensajesVisibles),
+  // sino para que GiftedChat muestre "Hoy"/"Ayer" en vez de "Today"/
+  // "Yesterday" en el separador de fecha cuando la interfaz está en español.
+  const { language, locale } = useTranslation();
 
   // Paleta y estilos del chat: siguen el tema activo (claro/oscuro) de la app.
   const { colors: themeColors, isDark } = useTheme();
@@ -303,6 +319,15 @@ export default function ChatThread({
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   // Mensaje con el menú de acciones abierto (long-press).
   const [actionMsg, setActionMsg] = useState<ChatMessage | null>(null);
+  // Traducción manual por mensaje (estilo TikTok): a diferencia del resto de
+  // la app, el CONTENIDO de los mensajes ya no sigue el idioma global — cada
+  // mensaje se traduce solo si SU remitente lo pide explícitamente desde el
+  // menú de opciones. id de mensaje → su texto ya traducido (ausente =
+  // mostrando el original).
+  const [translatedMsgs, setTranslatedMsgs] = useState<Record<string, string>>({});
+  // id del mensaje que se está traduciendo AHORA MISMO (para no disparar dos
+  // veces la misma petición si el usuario toca rápido dos veces).
+  const [translatingId, setTranslatingId] = useState<string | null>(null);
   // Mensaje a reenviar (abre el modal con la lista de chats).
   const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
   // Usuario a reportar (abre el modal de reporte).
@@ -1006,7 +1031,45 @@ export default function ChatThread({
     [],
   );
 
-  // Render del texto: borrado en cursiva + etiqueta "Editado".
+  // ── Traducir/ver original de UN mensaje puntual (estilo TikTok) ──
+  // A diferencia del resto de la app, el idioma global YA NO traduce el
+  // contenido de los mensajes (ver renderMessageText más abajo): un mensaje
+  // se queda en el idioma en el que se escribió (español u otro) hasta que
+  // su lector pide "Traducir mensaje" — y siempre se traduce AL INGLÉS,
+  // sin importar el idioma activo de la interfaz. Antes esto usaba el
+  // idioma global como destino: si la app ya estaba en español, pedía
+  // traducir "a español" y la función devolvía el texto sin tocar — por
+  // eso el botón parecía no hacer nada.
+  const toggleTraducirMensaje = useCallback(
+    (msg: ChatMessage) => {
+      setActionMsg(null);
+      const id = String(msg._id);
+      if (translatedMsgs[id] !== undefined) {
+        // Ya estaba traducido → "Ver original": lo quita del mapa.
+        setTranslatedMsgs((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        return;
+      }
+      if (translatingId === id) return; // ya en curso, evita doble pedido
+      setTranslatingId(id);
+      traducir(msg.text, "en")
+        .then((texto) => setTranslatedMsgs((prev) => ({ ...prev, [id]: texto })))
+        .finally(() => setTranslatingId((prev) => (prev === id ? null : prev)));
+    },
+    [translatedMsgs, translatingId],
+  );
+
+  // Render del texto: borrado en cursiva + etiquetas "Editado"/"Traducido".
+  // El CONTENIDO del mensaje ya no sigue el idioma global de la app (a
+  // diferencia del resto de la interfaz): solo se traduce si su lector pide
+  // "Traducir mensaje" desde el menú de opciones (ver toggleTraducirMensaje),
+  // igual que el "Ver traducción" de TikTok — un toque más en esa misma
+  // etiqueta lo regresa al original. La sustitución del texto YA viene
+  // aplicada en `props.currentMessage` (ver mensajesVisibles más arriba);
+  // aquí solo se decide qué etiqueta mostrar debajo.
   const renderMessageText = useCallback(
     (props: MessageTextProps<ChatMessage>) => {
       const msg = props.currentMessage;
@@ -1018,17 +1081,28 @@ export default function ChatThread({
           </Text>
         );
       }
-      if (msg?.isEdited) {
-        return (
-          <View>
-            <TranslatedMessageText {...props} />
-            <Text style={styles.editedLabel}>Editado</Text>
-          </View>
-        );
+      const id = msg ? String(msg._id) : "";
+      const traducido = translatedMsgs[id];
+      const traduciendo = translatingId === id;
+
+      if (!msg?.isEdited && !traduciendo && traducido === undefined) {
+        return <MessageText {...props} />;
       }
-      return <TranslatedMessageText {...props} />;
+      return (
+        <View>
+          <MessageText {...props} />
+          {traduciendo ? (
+            <Text style={styles.editedLabel}>Traduciendo…</Text>
+          ) : traducido !== undefined ? (
+            <TouchableOpacity onPress={() => msg && toggleTraducirMensaje(msg)} hitSlop={4}>
+              <Text style={styles.editedLabel}>Traducido · Ver original</Text>
+            </TouchableOpacity>
+          ) : null}
+          {msg?.isEdited ? <Text style={styles.editedLabel}>Editado</Text> : null}
+        </View>
+      );
     },
-    [C, styles],
+    [C, styles, translatedMsgs, translatingId, toggleTraducirMensaje],
   );
 
   // ── Burbujas: salientes en acento, entrantes en morado oscuro suave ──
@@ -1643,21 +1717,38 @@ export default function ChatThread({
     setShowVaciarConfirm(false);
   }, [chatId, user?.uid]);
 
-  // Mensajes visibles tras aplicar el "vaciado" propio.
+  // Mensajes visibles tras aplicar el "vaciado" propio Y las traducciones
+  // manuales por mensaje. La sustitución del texto traducido se hace AQUÍ
+  // (no dentro de renderMessageText) a propósito: GiftedChat envuelve cada
+  // mensaje en un React.memo que compara `currentMessage` con isEqual y
+  // SALTA el re-render si no cambió — como translatedMsgs vive en un estado
+  // aparte (no es un campo real del documento de Firestore), ese memo
+  // bloqueaba la traducción aunque el estado sí se hubiera actualizado. Al
+  // aplicar la sustitución acá, el objeto `currentMessage` que le llega a
+  // GiftedChat SÍ cambia de verdad (su `text` es distinto), así que su
+  // propio memo detecta el cambio y re-renderiza sin trucos adicionales.
   const mensajesVisibles = useMemo(() => {
-    if (!clearedAtMe) return messages;
-    const corte = clearedAtMe.getTime();
-    return messages.filter((m) => {
-      const t = m.createdAt instanceof Date ? m.createdAt.getTime() : Number(m.createdAt);
-      return t > corte;
-    });
-  }, [messages, clearedAtMe]);
+    let list = messages;
+    if (clearedAtMe) {
+      const corte = clearedAtMe.getTime();
+      list = list.filter((m) => {
+        const t = m.createdAt instanceof Date ? m.createdAt.getTime() : Number(m.createdAt);
+        return t > corte;
+      });
+    }
+    if (Object.keys(translatedMsgs).length > 0) {
+      list = list.map((m) => {
+        const traducido = translatedMsgs[String(m._id)];
+        return traducido !== undefined ? { ...m, text: traducido } : m;
+      });
+    }
+    return list;
+  }, [messages, clearedAtMe, translatedMsgs]);
 
-  const tituloHeader = isGroup ? group?.name || "Grupo" : peerName || "Chat de pasantía";
-  const inicial = tituloHeader?.trim()?.[0]?.toUpperCase() ?? "?";
-  const estadoTexto = isGroup
-    ? `${group?.users.length ?? 0} participantes${isAdmin ? " · Admin" : ""}`
-    : presenciaTexto(peerOnline, peerLastSeen);
+  // El otro participante está tecleando AHORA MISMO (solo aplica a 1:1: en
+  // grupos `escribiendo` puede traer varias personas, y ese caso ya se
+  // resuelve aparte con `renderFooterTecleo`, dentro de la lista de mensajes).
+  const peerEscribiendo = !isGroup && escribiendo.length > 0;
 
   const header = (
     <View style={styles.header}>
@@ -1667,28 +1758,14 @@ export default function ChatThread({
         </TouchableOpacity>
       ) : null}
 
-      {isGroup ? (
-        <View style={styles.headerAvatar}>
-          <Ionicons name="people" size={20} color={C.accent} />
-        </View>
-      ) : (
-        <View>
-          <StorageAvatar url={peerFoto} size={42} fallbackIcon="person" />
-          <View
-            style={[
-              styles.presenceDot,
-              { backgroundColor: peerOnline ? C.green : C.textMuted },
-            ]}
-          />
-        </View>
-      )}
-
-      {/* En grupos, pulsar el nombre abre el panel de administración; en
-          chats 1:1 abre el perfil público de la contraparte. */}
+      {/* Identidad del contacto/grupo: avatar + nombre + estado en tiempo real
+          (en línea / última vez / "escribiendo…"). Tocar abre su perfil (1:1)
+          o el panel del grupo — antes esto vivía en un ícono aparte ("Ver
+          perfil"); ahora vive aquí, y con `flex: 1` empuja el resto de la
+          barra hacia la derecha, como antes hacía el espaciador solo. */}
       <TouchableOpacity
-        style={{ flex: 1 }}
-        activeOpacity={isGroup || peerUid ? 0.6 : 1}
-        disabled={!isGroup && !peerUid}
+        style={styles.headerIdentity}
+        activeOpacity={0.75}
         onPress={() => {
           if (isGroup) {
             abrirGroupInfo();
@@ -1701,14 +1778,53 @@ export default function ChatThread({
             : "estudiante") as ProfileTipo;
           setVerPerfil({ tipo, id: peerUid });
         }}
+        accessibilityLabel={isGroup ? "Detalles del grupo" : "Ver perfil"}
       >
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {tituloHeader}
-        </Text>
-        <Text style={styles.headerSub} numberOfLines={1}>
-          {estadoTexto}
-        </Text>
+        {isGroup ? (
+          <View style={styles.headerIdentityAvatar}>
+            <Ionicons name="people" size={20} color={C.accent} />
+          </View>
+        ) : (
+          <StorageAvatar url={peerFoto} size={40} fallbackIcon="person" />
+        )}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.headerIdentityName} numberOfLines={1}>
+            {isGroup ? group?.name || "Grupo" : peerName || "Usuario"}
+          </Text>
+          <View style={styles.headerIdentityStatusRow}>
+            {!isGroup && !peerEscribiendo ? (
+              <View
+                style={[
+                  styles.headerStatusDot,
+                  { backgroundColor: peerOnline ? C.green : C.textMuted },
+                ]}
+              />
+            ) : null}
+            <Text
+              style={[
+                styles.headerIdentityStatus,
+                peerEscribiendo && { color: C.accent, fontStyle: "italic" },
+              ]}
+              numberOfLines={1}
+            >
+              {isGroup
+                ? `${group?.users?.length ?? 0} integrantes`
+                : peerEscribiendo
+                  ? "Escribiendo…"
+                  : presenciaTexto(peerOnline, peerLastSeen, locale)}
+            </Text>
+          </View>
+        </View>
       </TouchableOpacity>
+
+      {/* Notificaciones · Traducción · Tema — antes flotaban aparte, encima de
+          cualquier pantalla que mostrara este chat, con una posición fija
+          (offsetY) que no siempre coincidía con la altura real de esta
+          cabecera según desde dónde se hubiera entrado al chat (por eso a
+          veces "saltaban" de lugar tras ciertas acciones). Ahora viven
+          DENTRO de la barra: el diseño ya no depende de la pantalla que
+          montó este componente. */}
+      <FloatingTopBar userId={user?.uid} variant="inline" />
 
       {/* Vaciar chat (solo para mi vista). */}
       <TouchableOpacity
@@ -1869,6 +1985,8 @@ export default function ChatThread({
         onSend={(msgs) => onSend(msgs)}
         user={giftedUser}
         text={inputText}
+        locale={language === "en" ? "en" : "es"}
+        dateFormatCalendar={language === "en" ? undefined : CALENDARIO_ES}
         onLongPress={onLongPressMessage}
         renderBubble={renderBubble}
         renderSend={renderSend}
@@ -2034,14 +2152,25 @@ export default function ChatThread({
         onRequestClose={() => setActionMsg(null)}
       >
         <TouchableOpacity
-          style={styles.menuBackdrop}
+          style={styles.actionMenuBackdrop}
           activeOpacity={1}
           onPress={() => setActionMsg(null)}
         >
-          {/* Fondo borroso alrededor del mensaje seleccionado. */}
+          {/* Fondo borroso detrás de la conversación. */}
           <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
-          <View style={styles.menuSheet}>
-            <View style={styles.menuHandle} />
+          {/* activeOpacity=1 + onPress vacío: "atrapa" los toques dentro de
+              la caja (incluidos los huecos entre botones) para que NO se
+              propaguen al backdrop de atrás — si no, tocar cualquier parte
+              vacía de la caja cerraría el menú igual que tocar afuera. Los
+              botones (MenuOption, cada uno su propio TouchableOpacity)
+              siguen respondiendo normal: React Native le da la respuesta al
+              elemento tocable MÁS profundo bajo el dedo, así que un botón
+              real nunca deja pasar el toque hasta aquí. */}
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => {}}
+            style={styles.actionMenuSheet}
+          >
             <MenuOption
               icon="copy-outline"
               label="Copiar"
@@ -2060,6 +2189,17 @@ export default function ChatThread({
                 setActionMsg(null);
               }}
             />
+            {!actionMsg?.isDeleted && actionMsg?.text?.trim() ? (
+              <MenuOption
+                icon="language-outline"
+                label={
+                  translatedMsgs[String(actionMsg._id)] !== undefined
+                    ? "Ver original"
+                    : "Traducir mensaje"
+                }
+                onPress={() => actionMsg && toggleTraducirMensaje(actionMsg)}
+              />
+            ) : null}
             {!esPropio && actionMsg?.user?._id ? (
               <MenuOption
                 icon="flag-outline"
@@ -2089,7 +2229,7 @@ export default function ChatThread({
                 onPress={() => actionMsg && eliminarMensaje(actionMsg)}
               />
             ) : null}
-          </View>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
@@ -2577,25 +2717,42 @@ const makeStyles = (C: ChatColors) => StyleSheet.create({
     fontSize: 17,
     fontWeight: "800",
   },
-  presenceDot: {
-    position: "absolute",
-    right: -1,
-    bottom: -1,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: C.surface,
+  headerIdentity: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
   },
-  headerTitle: {
+  headerIdentityAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(139,92,246,0.18)",
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  headerIdentityName: {
+    fontSize: 15,
+    fontWeight: "700",
     color: C.text,
-    fontSize: 16,
-    fontWeight: "800",
   },
-  headerSub: {
-    color: C.textMuted,
-    fontSize: 12,
+  headerIdentityStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     marginTop: 2,
+  },
+  headerStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  headerIdentityStatus: {
+    fontSize: 11,
+    color: C.textMuted,
   },
   // ── Tarjeta de propuesta ──
   card: {
@@ -2782,16 +2939,18 @@ const makeStyles = (C: ChatColors) => StyleSheet.create({
     fontWeight: "700",
   },
   // ── Texto borrado / etiqueta editado ──
+  // Color fijo en blanco (no C.textMuted): dentro de la burbuja morada
+  // propia, el gris apagado quedaba casi ilegible.
   deletedText: {
     fontStyle: "italic",
-    color: C.textMuted,
+    color: "#FFFFFF",
     fontSize: 14,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
   editedLabel: {
     fontSize: 10,
-    color: C.textMuted,
+    color: "#FFFFFF",
     paddingHorizontal: 10,
     paddingBottom: 4,
     marginTop: -2,
@@ -2852,6 +3011,29 @@ const makeStyles = (C: ChatColors) => StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: 28,
+  },
+  // ── Menú de opciones de un mensaje (long-press): caja centrada, no hoja
+  // inferior — a diferencia de menuBackdrop/menuSheet (que sí siguen usando
+  // el "compartir grupo" y el menú de un integrante del grupo). Con margen
+  // horizontal fijo en el fondo para que nunca quede pegada a los bordes de
+  // la conversación ni se salga de ella en pantallas angostas.
+  actionMenuBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(7,5,15,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 28,
+  },
+  actionMenuSheet: {
+    width: "100%",
+    maxWidth: 320,
+    backgroundColor: C.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    ...shadow({ color: "#000", y: 8, blur: 24, opacity: 0.35, elevation: 12 }),
   },
   compartirSheet: {
     backgroundColor: C.surface,

@@ -1940,6 +1940,7 @@ universidad_id (user.id)
 
 **Resumen:**
 
+
 - Total usuarios por rol (KPIs)
 - Estado: Activo | Pendiente | Bloqueado
 
