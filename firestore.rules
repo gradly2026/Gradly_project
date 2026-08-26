@@ -193,14 +193,24 @@ service cloud.firestore {
       //    quedaba fuera de este `hasOnly`, así que fallaba con permission-denied
       //    aunque la aplicación en sí ya se hubiera creado (bug real, detectado
       //    al construir el flujo de autoservicio a pasantías).
-      allow update: if request.auth != null && (
-        resource.data.empresa_id == request.auth.uid
-        || (
-          (esRol('universidad') || esRol('estudiante'))
-          && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['cupos_reclamados', 'aplicantes_count'])
-        )
-      );
+      //    `aplicantes_por_carrera` (el desglose que alimenta "N de tu carrera"
+      //    en el detalle de vacante) lo escribe SOLO la Cloud Function
+      //    contarAplicanteNuevo, con el Admin SDK, que se salta estas reglas.
+      //    Se le cierra la puerta a TODO cliente —incluida la empresa dueña—
+      //    porque una regla puede autorizar un campo pero no validar el
+      //    contenido de un mapa de claves libres: sin esto, una app modificada
+      //    podría escribir {"Ingeniería": 9999} y fabricar competencia falsa.
+      allow update: if request.auth != null
+        && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['aplicantes_por_carrera'])
+        && (
+          resource.data.empresa_id == request.auth.uid
+          || (
+            (esRol('universidad') || esRol('estudiante'))
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['cupos_reclamados', 'aplicantes_count'])
+          )
+        );
     }
 
     // 🎟️ RECLAMOS DE CUPOS (la universidad reserva N plazas de una vacante)
@@ -289,6 +299,54 @@ service cloud.firestore {
       allow update: if resource.data.empresa_id == request.auth.uid ||
                        resource.data.universidad_id == request.auth.uid ||
                        esAdmin();
+      allow delete: if esAdmin();
+    }
+
+    // 🚨 INCIDENCIAS DE PRÁCTICA (distinto de `reportes`)
+    // `reportes` denuncia la CONDUCTA de una persona y solo lo ve el admin.
+    // Aquí es al revés: un problema ocurrido durante la práctica que la empresa
+    // y la universidad TIENEN que poder ver, porque son quienes lo arreglan.
+    // Ver src/services/incidenciaService.ts para el ciclo de vida completo.
+    match /incidencias/{incidenciaId} {
+      // Las 3 partes implicadas y el admin. Nadie más: una incidencia nombra a
+      // un estudiante y describe un conflicto: no es información pública.
+      allow read: if request.auth != null && (
+        resource.data.estudiante_id == request.auth.uid
+        || resource.data.universidad_id == request.auth.uid
+        || resource.data.empresa_id == request.auth.uid
+        || esAdmin()
+      );
+
+      // Solo el estudiante abre incidencias, solo a su propio nombre y siempre
+      // en 'abierta' — así nadie puede crear una que ya nazca "resuelta".
+      allow create: if esRol('estudiante')
+        && request.resource.data.estudiante_id == request.auth.uid
+        && request.resource.data.estado == 'abierta'
+        && request.resource.data.seguimiento.size() == 0;
+
+      // Las partes no se pueden reasignar NUNCA: sin este candado, la empresa
+      // señalada podría cambiar `empresa_id` por el de otra y quitarse el caso
+      // de encima, o esconderlo de la universidad.
+      allow update: if request.auth != null
+        && request.resource.data.estudiante_id == resource.data.estudiante_id
+        && request.resource.data.universidad_id == resource.data.universidad_id
+        && request.resource.data.empresa_id == resource.data.empresa_id
+        && (
+          // Empresa señalada, universidad responsable y admin: pueden responder
+          // y mover el estado.
+          resource.data.universidad_id == request.auth.uid
+          || resource.data.empresa_id == request.auth.uid
+          || esAdmin()
+          // El estudiante puede escribir en el hilo, pero NO tocar el estado ni
+          // la resolución: nadie declara resuelto su propio problema.
+          || (
+            resource.data.estudiante_id == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['seguimiento', 'fecha_actualizacion'])
+          )
+        );
+
+      // Se conservan como evidencia; ni siquiera las partes las borran.
       allow delete: if esAdmin();
     }
 

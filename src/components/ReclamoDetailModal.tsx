@@ -207,8 +207,8 @@ export default function ReclamoDetailModal({ visible, reclamoId, onClose }: Prop
                     {/* `${estadoMeta.color(colors)}22` — llama a la función
                         de color guardada en el diccionario (pasándole los
                         colores del tema activo) y le concatena "22" al
-                        final (mismo truco de opacidad hexadecimal visto
-                        en academia.tsx: ≈13% de opacidad) para un fondo
+                        final (truco de opacidad hexadecimal: "22" ≈ 13%
+                        de opacidad) para un fondo
                         sutil detrás del badge. */}
                     <Text style={[styles.estadoText, { color: estadoMeta.color(colors) }]}>{estadoMeta.label}</Text>
                   </View>

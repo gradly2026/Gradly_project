@@ -25,6 +25,14 @@
  *    historial completo de `solicitudes_practicas` (admin.ts). Backfill de una
  *    sola vez para pasantías aprobadas antes de que existiera el autoreporte
  *    en tiempo real; también sirve para reconciliar si hiciera falta.
+ *  · contarAplicanteNuevo / descontarAplicanteBorrado → mantienen en cada
+ *    vacante el desglose `aplicantes_por_carrera` (aplicantes.ts), para que el
+ *    estudiante vea CUÁNTOS compiten con él y de qué carreras, sin poder leer
+ *    QUIÉNES son. El total `aplicantes_count` NO lo tocan: ese ya lo escribe el
+ *    cliente en pasantiaService.crearAplicacion, y contarlo aquí lo duplicaría.
+ *    `backfillAplicantesVacantes` recalcula ambos desde cero y reconcilia el
+ *    desfase que deja el borrado administrativo; hay que llamarlo una vez tras
+ *    desplegar.
  *  · eliminarEstudiante / eliminarGrupo → una universidad deshace su propia
  *    carga por Excel (estudiante o grupo completo) antes de que quede ligada
  *    a una pasantía real (universidad.ts). Borran también la cuenta de Auth.
@@ -37,6 +45,11 @@ export { solicitarOtp, verificarOtp, consultarEstadoAcceso } from "./otp";
 export { traducirTexto } from "./traducir";
 export { notifNuevoMensaje } from "./chatNotif";
 export { barridoCuposVencidos } from "./barridoCupos";
+export {
+  contarAplicanteNuevo,
+  descontarAplicanteBorrado,
+  backfillAplicantesVacantes,
+} from "./aplicantes";
 export {
   backfillAlianzasCalificaciones,
   deleteUserComplete,

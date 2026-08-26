@@ -41,3 +41,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Artefacto de build web (23 MB): se genera con `expo export`, no va al repo.
+dist.zip

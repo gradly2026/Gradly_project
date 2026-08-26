@@ -1,7 +1,7 @@
 // ═════════════════════════════════════════════════════════════════
 // PANEL ADMIN — pantalla única y gigante (rol "admin") que reemplaza al
 // antiguo panel operativo. Un solo componente `AdminPreview` controla TODAS
-// las secciones (Resumen, Aprobaciones, Usuarios, Reportes, Vacantes,
+// las secciones (Resumen, Aprobaciones, Usuarios, Reportes, Incidencias, Vacantes,
 // Suscripciones, Notificaciones, Roles, Logs, Config) mediante el estado
 // `page`, en vez de usar rutas separadas — así el sidebar/drawer/topbar no
 // se desmontan al cambiar de sección.
@@ -35,6 +35,7 @@ import {
 import { BarChart } from "react-native-chart-kit";
 import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
 import ProfileViewerModal, { type ProfileTipo } from "../../src/components/ProfileViewerModal";
+import SalirSesionModal from "../../src/components/SalirSesionModal";
 import { signOut } from "firebase/auth";
 import {
   addDoc,
@@ -67,6 +68,13 @@ import { useTranslation } from "../../src/context/TranslationContext";
 import { useAuthGuard } from "../../src/hooks/useAuthGuard";
 import { useAuthBackGuard } from "../../src/hooks/useSessionBackGuard";
 import { ThemeToggleIcon } from "../../src/components/ThemeToggleButton";
+import {
+  cambiarEstadoIncidencia,
+  responderIncidencia,
+} from "../../src/services/incidenciaService";
+// El MISMO servicio que usan estudiante, empresa y universidad. El admin no
+// escribe a Firestore por su cuenta: si el ciclo de vida de una incidencia
+// cambia, cambia en un solo archivo.
 import { translateSync } from "../../src/services/translationService";
 import { useAdminTheme } from "../../src/styles/adminStyles";
 import { textoHorario } from "../../src/data/disponibilidad";
@@ -85,7 +93,7 @@ const tsToIso = (v: any): string => {
 // Las 10 "páginas" internas del panel — no son rutas de Expo Router, solo
 // valores del useState `page` que decide qué renderX() se muestra (ver
 // renderBody() al final del componente).
-type AdminPage = "resumen" | "aprobaciones" | "usuarios" | "reportes" | "vacantes" | "suscripciones" | "notificaciones" | "roles" | "logs" | "config";
+type AdminPage = "resumen" | "aprobaciones" | "usuarios" | "reportes" | "incidencias" | "vacantes" | "suscripciones" | "notificaciones" | "roles" | "logs" | "config";
 type Role = "admin" | "universidad" | "empresa" | "estudiante";
 type PermissionRole = Exclude<Role, "estudiante">;
 type Status = "active" | "pending" | "inactive";
@@ -134,6 +142,8 @@ type AdminNotification = {
   body: string | null;
   is_read: boolean;
   created_at: string;
+  /** Id de la incidencia a la que apunta, en las de `tipo: 'incidencia'`. */
+  incidencia_id: string | null;
 };
 
 type Permission = {
@@ -148,6 +158,7 @@ type PlatformMetrics = {
   aplicacionesTotal: number;
   txCompletadas: number;
   reportesAbiertos: number;
+  incidenciasEscaladas: number;
 };
 
 type RecentOpenReport = {
@@ -172,6 +183,35 @@ type ReportCase = {
   reportante_id: string | null;
   resolucion?: string | null;
   created_at: string;
+};
+
+/**
+ * Vista de admin sobre un doc de `incidencias`.
+ *
+ * OJO, no confundir con `ReportCase` de arriba: `reportes` denuncia la CONDUCTA
+ * de una persona y solo la ve el admin; una incidencia es un problema de la
+ * práctica que la empresa y la universidad ya vieron y trataron antes de llegar
+ * aquí. El admin entra únicamente cuando la universidad ESCALA el caso — por
+ * eso esta sección abre filtrada en 'escalada' y no en todas.
+ * Ver src/services/incidenciaService.ts.
+ */
+type AdminIncidenciaEstado = "abierta" | "en_seguimiento" | "escalada" | "resuelta";
+
+type AdminIncidencia = {
+  id: string;
+  motivo: string;
+  descripcion: string;
+  categoria: string;
+  estado: AdminIncidenciaEstado;
+  estudiante_id: string;
+  estudiante_nombre: string;
+  universidad_id: string;
+  empresa_id: string;
+  empresa_nombre: string;
+  resolucion: string;
+  seguimiento: { autor_id: string; autor_nombre: string; autor_rol: string; texto: string; fecha: any }[];
+  created_at: string;
+  actualizada_at: string;
 };
 
 // Vista de admin sobre un doc de `vacantes`: campos comunes ya normalizados
@@ -410,9 +450,12 @@ function Card({ children, style }: { children: React.ReactNode; style?: any }) {
 
 export default function AdminPreview() {
   // useAuthGuard('admin')/useAuthBackGuard(): mismos guardias de acceso y de
-  // botón "atrás" que usan los demás dashboards.
+  // botón "atrás" que usan los demás dashboards. Sin `section`: el panel
+  // admin no tiene aquí un estado de sección equivalente al de los otros
+  // dashboards, así que cualquier "atrás" pregunta de inmediato por cerrar
+  // sesión (con el modal propio de abajo, no window.confirm).
   useAuthGuard("admin");
-  useAuthBackGuard();
+  const { showLogoutConfirm, confirmLogout, cancelLogout } = useAuthBackGuard();
   // useAdminTheme(): hook de estilos propio del panel admin (src/styles/
   // adminStyles.ts) — mismo espíritu que useThemedStyles() de los
   // dashboards (colores + hoja de estilos que reacciona al tema), pero con
@@ -456,6 +499,7 @@ export default function AdminPreview() {
     aplicacionesTotal: 0,
     txCompletadas: 0,
     reportesAbiertos: 0,
+    incidenciasEscaladas: 0,
   });
   const [recentOpenReports, setRecentOpenReports] = useState<RecentOpenReport[]>(
     [],
@@ -501,6 +545,18 @@ export default function AdminPreview() {
   };
   const [selectedReport, setSelectedReport] = useState<ReportCase | null>(null);
   const [reportDetailOpen, setReportDetailOpen] = useState(false);
+
+  // ── Incidencias escaladas ──────────────────────────────────────────
+  // El filtro arranca en "escalada" a propósito: el admin no es una instancia
+  // más de la conversación, solo entra cuando la universidad le pasa el caso.
+  // Las otras pestañas están para dar contexto, no para trabajar desde ellas.
+  const [incidencias, setIncidencias] = useState<AdminIncidencia[]>([]);
+  const [incidenciaFiltro, setIncidenciaFiltro] = useState<AdminIncidenciaEstado | "todos">("escalada");
+  const [selectedIncidencia, setSelectedIncidencia] = useState<AdminIncidencia | null>(null);
+  const [incidenciaDetailOpen, setIncidenciaDetailOpen] = useState(false);
+  const [incidenciaRespuesta, setIncidenciaRespuesta] = useState("");
+  const [incidenciaResolucion, setIncidenciaResolucion] = useState("");
+  const [incidenciaSaving, setIncidenciaSaving] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editNombre, setEditNombre] = useState("");
   const [editTelefono, setEditTelefono] = useState("");
@@ -765,12 +821,13 @@ export default function AdminPreview() {
   const fetchPlatformMetrics = useCallback(async () => {
     setPlatformLoading(true);
     try {
-      const [vacantesRes, aplicacionesRes, transaccionesRes, reportesRes] =
+      const [vacantesRes, aplicacionesRes, transaccionesRes, reportesRes, incidenciasRes] =
         await Promise.allSettled([
           getDocs(collection(db, "vacantes")),
           getDocs(collection(db, "aplicaciones")),
           getDocs(collection(db, "transacciones")),
           getDocs(collection(db, "reportes")),
+          getDocs(collection(db, "incidencias")),
         ]);
 
       const issues: string[] = [];
@@ -780,11 +837,14 @@ export default function AdminPreview() {
       const transaccionesSnap =
         transaccionesRes.status === "fulfilled" ? transaccionesRes.value : null;
       const reportesSnap = reportesRes.status === "fulfilled" ? reportesRes.value : null;
+      const incidenciasSnap =
+        incidenciasRes.status === "fulfilled" ? incidenciasRes.value : null;
 
       if (!vacantesSnap) issues.push("vacantes");
       if (!aplicacionesSnap) issues.push("aplicaciones");
       if (!transaccionesSnap) issues.push("transacciones");
       if (!reportesSnap) issues.push("reportes");
+      if (!incidenciasSnap) issues.push("incidencias");
 
       const vacantesPublicadas = (vacantesSnap?.docs ?? []).filter(
         (d) => !!(d.data() as any).activa,
@@ -856,6 +916,43 @@ export default function AdminPreview() {
         (item) => item.estado === "abierto",
       ).length;
 
+      // Se normaliza el estado igual que en los reportes: un documento con un
+      // valor inesperado (migración a medias, escritura manual) se degrada a
+      // "abierta" en vez de romper el filtro o pintar una etiqueta vacía.
+      const mappedIncidencias: AdminIncidencia[] = (incidenciasSnap?.docs ?? [])
+        .map((d) => {
+          const data = d.data() as any;
+          const raw = String(data.estado ?? "").toLowerCase();
+          const estado: AdminIncidenciaEstado =
+            raw === "resuelta" ? "resuelta"
+            : raw === "escalada" ? "escalada"
+            : raw === "en_seguimiento" ? "en_seguimiento"
+            : "abierta";
+          return {
+            id: d.id,
+            motivo: String(data.motivo ?? "Incidencia sin motivo"),
+            descripcion: String(data.descripcion ?? ""),
+            categoria: String(data.categoria ?? "otro"),
+            estado,
+            estudiante_id: String(data.estudiante_id ?? ""),
+            estudiante_nombre: String(data.estudiante_nombre ?? "Estudiante"),
+            universidad_id: String(data.universidad_id ?? ""),
+            empresa_id: String(data.empresa_id ?? ""),
+            empresa_nombre: String(data.empresa_nombre ?? ""),
+            resolucion: String(data.resolucion ?? ""),
+            seguimiento: Array.isArray(data.seguimiento) ? data.seguimiento : [],
+            created_at: tsToIso(data.fecha),
+            actualizada_at: tsToIso(data.fecha_actualizacion ?? data.fecha),
+          };
+        })
+        // Por última actividad, no por fecha de creación: una incidencia vieja
+        // que acaba de recibir una respuesta es más urgente que una nueva.
+        .sort((a, b) => b.actualizada_at.localeCompare(a.actualizada_at));
+
+      const incidenciasEscaladas = mappedIncidencias.filter(
+        (item) => item.estado === "escalada",
+      ).length;
+
       const latestOpenReports: RecentOpenReport[] = mappedReports
         .filter((item) => item.estado === "abierto")
         .slice(0, 4);
@@ -865,7 +962,9 @@ export default function AdminPreview() {
         aplicacionesTotal: aplicacionesSnap?.size ?? 0,
         txCompletadas,
         reportesAbiertos,
+        incidenciasEscaladas,
       });
+      setIncidencias(mappedIncidencias);
       setRecentOpenReports(latestOpenReports);
       setReportCases(mappedReports);
       setVacantesList(mappedVacantes);
@@ -881,9 +980,11 @@ export default function AdminPreview() {
         aplicacionesTotal: 0,
         txCompletadas: 0,
         reportesAbiertos: 0,
+    incidenciasEscaladas: 0,
       });
       setRecentOpenReports([]);
       setReportCases([]);
+      setIncidencias([]);
       setVacantesList([]);
       setDataIssue("metricas", adminDataErrorMessage(error, "las metricas operativas"));
     } finally {
@@ -997,11 +1098,18 @@ export default function AdminPreview() {
         const r: any = d.data();
         return {
           id: d.id,
-          type: r.type ?? "",
+          // `r.type ?? r.tipo`: el panel siempre leyó `type`, pero NINGÚN
+          // productor escribe ese nombre — `crearReporte` y `escalarIncidencia`
+          // escriben `tipo`, en español. El resultado era que la categoría de
+          // toda notificación llegaba vacía y la bandeja no podía distinguir
+          // una escalada de un reporte. Se aceptan los dos nombres en vez de
+          // migrar los documentos ya escritos.
+          type: r.type ?? r.tipo ?? "",
           title: r.title ?? "",
           body: r.body ?? null,
           is_read: !!r.is_read,
           created_at: tsToIso(r.created_at),
+          incidencia_id: r.incidencia_id ? String(r.incidencia_id) : null,
         };
       });
       list.sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -1771,6 +1879,11 @@ export default function AdminPreview() {
     return reportCases.filter((item) => item.estado === reportStatusFilter);
   }, [reportCases, reportStatusFilter]);
 
+  const filteredIncidencias = useMemo(() => {
+    if (incidenciaFiltro === "todos") return incidencias;
+    return incidencias.filter((item) => item.estado === incidenciaFiltro);
+  }, [incidencias, incidenciaFiltro]);
+
   const filteredVacantes = useMemo(() => {
     const q = vacanteSearch.trim().toLowerCase();
     return vacantesList.filter((v) => {
@@ -1817,6 +1930,7 @@ export default function AdminPreview() {
     { key: "aprobaciones", label: "Aprobaciones", icon: "checkmark-done-outline" },
     { key: "usuarios", label: "Usuarios", icon: "people-outline" },
     { key: "reportes", label: "Reportes", icon: "bar-chart-outline" },
+    { key: "incidencias", label: "Incidencias", icon: "flag-outline" },
     { key: "notificaciones", label: "Inbox", icon: "notifications-outline" },
     { key: "roles", label: "Permisos", icon: "key-outline" },
     { key: "logs", label: "Logs", icon: "receipt-outline" },
@@ -2119,6 +2233,18 @@ export default function AdminPreview() {
                 color:
                   platformMetrics.reportesAbiertos > 0 ? C.red : C.textMuted,
               },
+              {
+                // Escaladas y no "todas las incidencias": las abiertas y en
+                // seguimiento son trabajo de la empresa y la universidad, y
+                // contarlas aquí llenaría el resumen del admin de casos que no
+                // le tocan.
+                key: "incidencias",
+                label: "Incidencias escaladas",
+                value: platformMetrics.incidenciasEscaladas,
+                icon: "alert-circle-outline" as const,
+                color:
+                  platformMetrics.incidenciasEscaladas > 0 ? C.red : C.textMuted,
+              },
             ].map((item) => (
               <TouchableOpacity
                 key={item.key}
@@ -2126,8 +2252,13 @@ export default function AdminPreview() {
                 onPress={() => {
                   if (item.key === "vacantes") navigateToVacanteList();
                   if (item.key === "transacciones") navigateToSuscripciones();
+                  if (item.key === "incidencias") navigateAdminPage("incidencias");
                 }}
-                disabled={item.key !== "vacantes" && item.key !== "transacciones"}
+                disabled={
+                  item.key !== "vacantes" &&
+                  item.key !== "transacciones" &&
+                  item.key !== "incidencias"
+                }
                 activeOpacity={0.85}
               >
                 <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
@@ -2136,7 +2267,9 @@ export default function AdminPreview() {
                   </View>
                   {item.key === "reportes" && item.value > 0 ? (
                     <Badge label={`${item.value} abiertos`} type="pending" />
-                  ) : item.key === "vacantes" || item.key === "transacciones" ? (
+                  ) : item.key === "incidencias" && item.value > 0 ? (
+                    <Badge label={`${item.value} escaladas`} type="pending" />
+                  ) : item.key === "vacantes" || item.key === "transacciones" || item.key === "incidencias" ? (
                     <Ionicons name="chevron-forward-outline" size={18} color={C.textMuted} />
                   ) : null}
                 </View>
@@ -2153,7 +2286,9 @@ export default function AdminPreview() {
                       ? "Volumen general de aplicaciones registradas."
                       : item.key === "transacciones"
                         ? "Toca para ver el historial e ingresos de suscripciones."
-                        : "Casos de moderación que siguen abiertos."}
+                        : item.key === "incidencias"
+                          ? "Problemas de práctica que la universidad escaló. Toca para atenderlos."
+                          : "Casos de moderación que siguen abiertos."}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -2570,6 +2705,246 @@ export default function AdminPreview() {
     </ScrollView>
   );
 
+  // ── Incidencias escaladas ─────────────────────────────────────────
+  // Etiqueta, color y tipo de badge por estado. Se declaran fuera del render
+  // para que el detalle (IncidenciaDetailModal) use exactamente las mismas y
+  // no aparezca un caso "Escalada" en la lista y "escalada" en la ficha.
+  const labelIncidencia = (estado: AdminIncidenciaEstado | "todos") =>
+    estado === "todos" ? "Todas"
+    : estado === "abierta" ? "Abiertas"
+    : estado === "en_seguimiento" ? "En seguimiento"
+    : estado === "escalada" ? "Escaladas"
+    : "Resueltas";
+
+  const colorIncidencia = (estado: AdminIncidenciaEstado) =>
+    estado === "resuelta" ? C.green
+    : estado === "escalada" ? C.red
+    : estado === "en_seguimiento" ? C.yellow
+    : C.textMuted;
+
+  const badgeIncidencia = (estado: AdminIncidenciaEstado): Status =>
+    estado === "resuelta" ? "active" : "pending";
+
+  const labelCategoria = (categoria: string) =>
+    categoria === "empresa" ? "Sobre la empresa"
+    : categoria === "universidad" ? "Sobre la universidad"
+    : categoria === "plataforma" ? "Sobre la app"
+    : "Otro";
+
+  const openIncidenciaDetail = (inc: AdminIncidencia) => {
+    setSelectedIncidencia(inc);
+    setIncidenciaRespuesta("");
+    // La resolución arranca con lo que ya hubiera escrito quien atendió antes,
+    // no vacía: si el caso vuelve a abrirse, el admin edita sobre lo anterior
+    // en vez de reescribirlo de memoria.
+    setIncidenciaResolucion(inc.resolucion ?? "");
+    setIncidenciaDetailOpen(true);
+  };
+
+  /**
+   * Ejecuta una acción del admin sobre una incidencia y refresca.
+   *
+   * Todas pasan por incidenciaService (el MISMO servicio que usan estudiante,
+   * empresa y universidad) en vez de escribir a Firestore desde aquí: si el
+   * ciclo de vida cambia, cambia en un solo sitio. Las reglas ya autorizan al
+   * admin (esAdmin() en el update de /incidencias).
+   */
+  const accionIncidencia = async (
+    inc: AdminIncidencia,
+    accion: "seguimiento" | "resolver" | "responder",
+  ) => {
+    setIncidenciaSaving(true);
+    try {
+      if (accion === "responder") {
+        if (!incidenciaRespuesta.trim()) {
+          mostrarAviso("advertencia", "Falta el mensaje", "Escribe una respuesta antes de enviarla.");
+          return;
+        }
+        await responderIncidencia(inc.id, incidenciaRespuesta, {
+          nombre: meName || "Equipo Gradly",
+          rol: "admin",
+        });
+        setIncidenciaRespuesta("");
+        await logAction("incidencia_respondida", "incidencias", inc.id, { motivo: inc.motivo });
+        mostrarAviso("exito", "Respuesta enviada", "Ya aparece en el hilo del caso.");
+      } else if (accion === "seguimiento") {
+        await cambiarEstadoIncidencia(inc.id, "en_seguimiento", {
+          estudianteId: inc.estudiante_id,
+          motivo: inc.motivo,
+        });
+        await logAction("incidencia_en_seguimiento", "incidencias", inc.id, { motivo: inc.motivo });
+        mostrarAviso("exito", "Caso retomado", "La incidencia quedó en seguimiento y el estudiante fue avisado.");
+      } else {
+        if (!incidenciaResolucion.trim()) {
+          mostrarAviso(
+            "advertencia",
+            "Falta la resolución",
+            "Explica cómo se resolvió: el estudiante va a leer ese texto. La incidencia quedó como estaba.",
+          );
+          return;
+        }
+        await cambiarEstadoIncidencia(inc.id, "resuelta", {
+          resolucion: incidenciaResolucion,
+          estudianteId: inc.estudiante_id,
+          motivo: inc.motivo,
+        });
+        await logAction("incidencia_resuelta", "incidencias", inc.id, {
+          motivo: inc.motivo,
+          resolucion: incidenciaResolucion.trim(),
+        });
+        setIncidenciaDetailOpen(false);
+        mostrarAviso("exito", "Incidencia cerrada", "El estudiante recibió la resolución.");
+      }
+      await fetchPlatformMetrics();
+    } catch (error: any) {
+      mostrarAviso(
+        "error",
+        "No se pudo completar la acción",
+        "La incidencia quedó exactamente como estaba.",
+        String(error?.message ?? error),
+      );
+    } finally {
+      setIncidenciaSaving(false);
+    }
+  };
+
+  // renderIncidencias: casos de la colección `incidencias`. A diferencia de
+  // Reportes, aquí el admin es la ÚLTIMA instancia, no la primera: el caso ya
+  // pasó por la empresa y la universidad. Por eso el contador que manda es el
+  // de escaladas y el filtro abre ahí.
+  const renderIncidencias = () => {
+    const cuenta = (estado: AdminIncidenciaEstado) =>
+      incidencias.filter((item) => item.estado === estado).length;
+
+    return (
+      <ScrollView showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshOverview} />}>
+        <View style={s.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.kicker}>Prácticas</Text>
+            <Text style={s.pageTitle}>Incidencias</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>
+              Problemas reportados por estudiantes durante su práctica. La empresa y la universidad
+              los atienden primero; aquí llegan los que la universidad escaló.
+            </Text>
+          </View>
+          <TouchableOpacity style={s.btnOutline} onPress={refreshOverview} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Card style={{ marginBottom: 14 }}>
+          <Text style={s.cardTitle}>Estado operativo</Text>
+          <View style={s.grid2}>
+            <View style={[s.card, { flex: 1, minWidth: width >= 700 ? "48%" : "100%", padding: 14 }]}>
+              <Text style={s.itemTitle}>Escaladas</Text>
+              <Text style={[s.textMuted, { marginTop: 6 }]}>Casos que esperan una decisión tuya.</Text>
+              <Text style={{ color: cuenta("escalada") > 0 ? C.red : C.green, fontSize: 28, fontWeight: "900", marginTop: 12 }}>
+                {cuenta("escalada")}
+              </Text>
+            </View>
+            <View style={[s.card, { flex: 1, minWidth: width >= 700 ? "48%" : "100%", padding: 14 }]}>
+              <Text style={s.itemTitle}>En seguimiento</Text>
+              <Text style={[s.textMuted, { marginTop: 6 }]}>Ya las está atendiendo empresa o universidad.</Text>
+              <Text style={{ color: C.yellow, fontSize: 28, fontWeight: "900", marginTop: 12 }}>
+                {cuenta("en_seguimiento")}
+              </Text>
+            </View>
+          </View>
+          <View style={s.grid2}>
+            <View style={[s.card, { flex: 1, minWidth: width >= 700 ? "48%" : "100%", padding: 14, marginTop: 12 }]}>
+              <Text style={s.itemTitle}>Abiertas</Text>
+              <Text style={[s.textMuted, { marginTop: 6 }]}>Todavía sin respuesta de nadie.</Text>
+              <Text style={{ color: cuenta("abierta") > 0 ? C.yellow : C.textMuted, fontSize: 28, fontWeight: "900", marginTop: 12 }}>
+                {cuenta("abierta")}
+              </Text>
+            </View>
+            <View style={[s.card, { flex: 1, minWidth: width >= 700 ? "48%" : "100%", padding: 14, marginTop: 12 }]}>
+              <Text style={s.itemTitle}>Resueltas</Text>
+              <Text style={[s.textMuted, { marginTop: 6 }]}>Casos cerrados con una explicación.</Text>
+              <Text style={{ color: C.green, fontSize: 28, fontWeight: "900", marginTop: 12 }}>
+                {cuenta("resuelta")}
+              </Text>
+            </View>
+          </View>
+        </Card>
+
+        <Card style={{ marginBottom: 14 }}>
+          <Text style={s.cardTitle}>Filtro</Text>
+          <View style={[s.chipRow, { marginTop: 12 }]}>
+            {(["escalada", "abierta", "en_seguimiento", "resuelta", "todos"] as (AdminIncidenciaEstado | "todos")[]).map((estado) => (
+              <Chip
+                key={estado}
+                label={labelIncidencia(estado)}
+                active={incidenciaFiltro === estado}
+                onPress={() => setIncidenciaFiltro(estado)}
+              />
+            ))}
+          </View>
+        </Card>
+
+        <Card style={{ marginBottom: 24 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>Casos</Text>
+            <Text style={s.textMuted}>{filteredIncidencias.length}</Text>
+          </View>
+
+          {platformLoading ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : filteredIncidencias.length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>
+              {incidenciaFiltro === "escalada"
+                ? "Ninguna incidencia escalada. Las están resolviendo antes de llegar aquí."
+                : "Sin incidencias para este filtro"}
+            </Text>
+          ) : (
+            filteredIncidencias.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[s.listItem, isPhone && s.listItemStack]}
+                onPress={() => openIncidenciaDetail(item)}
+                activeOpacity={0.8}
+              >
+                <View
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 999,
+                    backgroundColor: colorIncidencia(item.estado),
+                    marginTop: 4,
+                  }}
+                />
+                <View style={{ flex: 1 }}>
+                  <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.itemTitle}>{item.motivo}</Text>
+                      <Text style={[s.itemSub, { marginTop: 4 }]}>
+                        {item.estudiante_nombre}
+                        {item.empresa_nombre ? ` · ${item.empresa_nombre}` : ""}
+                        {` · ${labelCategoria(item.categoria)}`}
+                      </Text>
+                    </View>
+                    <Badge label={labelIncidencia(item.estado)} type={badgeIncidencia(item.estado)} />
+                  </View>
+                  {item.descripcion ? (
+                    <Text style={[s.itemSub, { marginTop: 8 }]} numberOfLines={2}>
+                      {item.descripcion}
+                    </Text>
+                  ) : null}
+                  <Text style={[s.itemSub, { marginTop: 6, opacity: 0.75 }]}>
+                    {`Última actividad: ${new Date(item.actualizada_at || Date.now()).toLocaleString()}`}
+                    {item.seguimiento.length > 0 ? ` · ${item.seguimiento.length} mensaje(s)` : ""}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+        </Card>
+      </ScrollView>
+    );
+  };
+
   // renderReportes: casos de la colección `reportes` (ver también
   // project_reportes_usuarios), agrupados por estado con contadores propios
   // y sus colores (reportStatusColor/reportStatusType). Tocar un caso abre
@@ -2926,16 +3301,44 @@ export default function AdminPreview() {
         ) : notifications.length === 0 ? (
           <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin notificaciones</Text>
         ) : (
-          notifications.map((n) => (
-            <View key={n.id} style={[s.notifItem, !n.is_read && s.notifItemUnread]}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.itemTitle}>{n.title}</Text>
-                {n.body ? <Text style={[s.itemSub, { marginTop: 4 }]}>{n.body}</Text> : null}
-                <Text style={[s.itemSub, { marginTop: 6 }]}>{new Date(n.created_at).toLocaleString()}</Text>
-              </View>
-              {!n.is_read ? <Badge label="Nuevo" type="pending" /> : null}
-            </View>
-          ))
+          notifications.map((n) => {
+            // Una escalada avisa aquí, pero hasta ahora la bandeja era un muro
+            // de texto: había que ir a buscar el caso a mano en otra sección.
+            // Solo estas filas se vuelven tocables; el resto de tipos siguen
+            // siendo informativos y se dibujan igual que antes.
+            const abreIncidencia = n.type === "incidencia" && !!n.incidencia_id;
+            const Contenedor: any = abreIncidencia ? TouchableOpacity : View;
+            return (
+              <Contenedor
+                key={n.id}
+                style={[s.notifItem, !n.is_read && s.notifItemUnread]}
+                activeOpacity={abreIncidencia ? 0.8 : 1}
+                onPress={
+                  abreIncidencia
+                    ? () => {
+                        const caso = incidencias.find((x) => x.id === n.incidencia_id);
+                        // Si el caso ya no está en memoria (aún no se refrescó,
+                        // o lo borraron), se abre igual la sección con el filtro
+                        // en escaladas: mejor eso que un toque que no hace nada.
+                        navigateAdminPage("incidencias");
+                        setIncidenciaFiltro("escalada");
+                        if (caso) openIncidenciaDetail(caso);
+                      }
+                    : undefined
+                }
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={s.itemTitle}>{n.title}</Text>
+                  {n.body ? <Text style={[s.itemSub, { marginTop: 4 }]}>{n.body}</Text> : null}
+                  <Text style={[s.itemSub, { marginTop: 6 }]}>{new Date(n.created_at).toLocaleString()}</Text>
+                </View>
+                {!n.is_read ? <Badge label="Nuevo" type="pending" /> : null}
+                {abreIncidencia ? (
+                  <Ionicons name="chevron-forward-outline" size={18} color={C.textMuted} />
+                ) : null}
+              </Contenedor>
+            );
+          })
         )}
       </Card>
     </ScrollView>
@@ -3896,6 +4299,175 @@ export default function AdminPreview() {
     );
   };
 
+  // IncidenciaDetailModal: ficha completa de una incidencia escalada — las 3
+  // partes implicadas, la descripción original, el hilo de seguimiento
+  // completo (para que el admin lea lo que ya se dijo antes de opinar) y las
+  // acciones: responder en el hilo, retomar el caso, o cerrarlo con una
+  // resolución obligatoria.
+  //
+  // ConfirmOverlay/AvisoOverlay se montan DENTRO de este <Modal> y no fuera:
+  // dos <Modal> nativos a la vez fallan en iOS, misma decisión ya tomada en
+  // DetailModal/EditModal/ReportDetailModal.
+  const IncidenciaDetailModal = () => {
+    const inc = selectedIncidencia;
+    // La ficha se re-lee de la lista recién refrescada en vez de usar la copia
+    // que se guardó al abrir: tras responder o cambiar el estado, el hilo y el
+    // badge de la ficha abierta se actualizan solos.
+    const vivo = inc ? incidencias.find((x) => x.id === inc.id) ?? inc : null;
+    const cerrada = vivo?.estado === "resuelta";
+
+    return (
+      <Modal
+        visible={incidenciaDetailOpen}
+        transparent
+        animationType="none"
+        onRequestClose={() => setIncidenciaDetailOpen(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={[s.modal, isPhone && s.modalCompact]}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Detalle de la incidencia</Text>
+              <TouchableOpacity
+                style={[s.iconBtn, { width: 38, height: 38 }]}
+                onPress={() => setIncidenciaDetailOpen(false)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="close" size={20} color={C.text} />
+              </TouchableOpacity>
+            </View>
+
+            {vivo ? (
+              <ScrollView showsVerticalScrollIndicator>
+                <Card>
+                  <View style={[s.row, { justifyContent: "space-between", marginBottom: 10, gap: 10, flexWrap: "wrap" }]}>
+                    <Text style={s.cardTitle}>{vivo.motivo}</Text>
+                    <Badge label={labelIncidencia(vivo.estado)} type={badgeIncidencia(vivo.estado)} />
+                  </View>
+
+                  <Text style={s.textMuted}>Categoría</Text>
+                  <Text style={[s.itemTitle, { marginTop: 4 }]}>{labelCategoria(vivo.categoria)}</Text>
+
+                  <Text style={[s.textMuted, { marginTop: 14 }]}>Estudiante</Text>
+                  <Text style={[s.itemTitle, { marginTop: 4 }]}>{vivo.estudiante_nombre}</Text>
+
+                  {vivo.empresa_nombre ? (
+                    <>
+                      <Text style={[s.textMuted, { marginTop: 14 }]}>Empresa</Text>
+                      <Text style={[s.itemTitle, { marginTop: 4 }]}>{vivo.empresa_nombre}</Text>
+                    </>
+                  ) : null}
+
+                  <Text style={[s.textMuted, { marginTop: 14 }]}>Descripción</Text>
+                  <Text style={[s.itemSub, { marginTop: 4 }]}>{vivo.descripcion || "Sin descripción"}</Text>
+
+                  <Text style={[s.textMuted, { marginTop: 14 }]}>
+                    {`Reportada el ${new Date(vivo.created_at || Date.now()).toLocaleString()}`}
+                  </Text>
+                </Card>
+
+                {vivo.seguimiento.length > 0 ? (
+                  <Card style={{ marginTop: 12 }}>
+                    <Text style={s.cardTitle}>Seguimiento ({vivo.seguimiento.length})</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Todo lo que ya se dijo entre estudiante, empresa y universidad.
+                    </Text>
+                    {vivo.seguimiento.map((r, i) => (
+                      <View key={`${r.autor_id}-${i}`} style={[s.listItem, { marginTop: 10 }]}>
+                        <View style={{ flex: 1 }}>
+                          <View style={[s.row, { justifyContent: "space-between", gap: 10, flexWrap: "wrap" }]}>
+                            <Text style={s.itemTitle}>{r.autor_nombre || "Sin nombre"}</Text>
+                            <Text style={s.itemSub}>{r.autor_rol || "—"}</Text>
+                          </View>
+                          <Text style={[s.itemSub, { marginTop: 6 }]}>{r.texto}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </Card>
+                ) : null}
+
+                {vivo.resolucion ? (
+                  <Card style={{ marginTop: 12 }}>
+                    <Text style={s.cardTitle}>Resolución registrada</Text>
+                    <Text style={[s.itemSub, { marginTop: 8 }]}>{vivo.resolucion}</Text>
+                  </Card>
+                ) : null}
+
+                {!cerrada ? (
+                  <Card style={{ marginTop: 12, marginBottom: 8 }}>
+                    <Text style={s.cardTitle}>Acciones</Text>
+
+                    <Text style={[s.textMuted, { marginTop: 12 }]}>Responder en el hilo</Text>
+                    <TextInput
+                      style={[s.input, { marginTop: 10 }]}
+                      value={incidenciaRespuesta}
+                      onChangeText={setIncidenciaRespuesta}
+                      placeholder="Lo verán el estudiante, la empresa y la universidad"
+                      placeholderTextColor={C.textMuted}
+                      editable={!incidenciaSaving}
+                      multiline
+                    />
+                    <TouchableOpacity
+                      style={[s.btnOutline, { marginTop: 10, alignSelf: "flex-start" }]}
+                      onPress={() => void accionIncidencia(vivo, "responder")}
+                      activeOpacity={0.8}
+                      disabled={incidenciaSaving}
+                    >
+                      <Text style={s.btnOutlineText}>
+                        {incidenciaSaving ? "Procesando..." : "Enviar respuesta"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {vivo.estado === "escalada" || vivo.estado === "abierta" ? (
+                      <TouchableOpacity
+                        style={[s.btnOutline, { marginTop: 10, alignSelf: "flex-start" }]}
+                        onPress={() => void accionIncidencia(vivo, "seguimiento")}
+                        activeOpacity={0.8}
+                        disabled={incidenciaSaving}
+                      >
+                        <Text style={s.btnOutlineText}>Marcar en seguimiento</Text>
+                      </TouchableOpacity>
+                    ) : null}
+
+                    <Text style={[s.textMuted, { marginTop: 18 }]}>
+                      Resolución (obligatoria para cerrar)
+                    </Text>
+                    <TextInput
+                      style={[s.input, { marginTop: 10 }]}
+                      value={incidenciaResolucion}
+                      onChangeText={setIncidenciaResolucion}
+                      placeholder="Explica qué se hizo. El estudiante va a leer este texto."
+                      placeholderTextColor={C.textMuted}
+                      editable={!incidenciaSaving}
+                      multiline
+                    />
+                    <TouchableOpacity
+                      style={[s.btnPrimary, { marginTop: 10, alignSelf: "flex-start", backgroundColor: C.green }]}
+                      onPress={() => void accionIncidencia(vivo, "resolver")}
+                      activeOpacity={0.8}
+                      disabled={incidenciaSaving}
+                    >
+                      <Text style={s.btnPrimaryText}>
+                        {incidenciaSaving ? "Procesando..." : "Cerrar incidencia"}
+                      </Text>
+                    </TouchableOpacity>
+                  </Card>
+                ) : (
+                  <Card style={{ marginTop: 12, marginBottom: 8 }}>
+                    <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 8 }]}>
+                      Este caso ya está cerrado. Solo la empresa o la universidad pueden reabrirlo.
+                    </Text>
+                  </Card>
+                )}
+              </ScrollView>
+            ) : null}
+          </View>
+          {ConfirmOverlay()}
+          {AvisoOverlay()}
+        </View>
+      </Modal>
+    );
+  };
+
   // VacanteDetailAdminModal: ficha completa de una vacante, terminando en
   // una "Ficha técnica completa" que recorre TODOS los campos del documento
   // crudo (v.raw) con formatRawValue — así el admin puede inspeccionar
@@ -4208,6 +4780,8 @@ export default function AdminPreview() {
         return renderUsuarios();
       case "reportes":
         return renderReportes();
+      case "incidencias":
+        return renderIncidencias();
       case "vacantes":
         return renderVacantes();
       case "suscripciones":
@@ -4377,11 +4951,20 @@ export default function AdminPreview() {
       {DetailModal()}
       {EditModal()}
       {ReportDetailModal()}
+      {IncidenciaDetailModal()}
       {VacanteDetailAdminModal()}
       {VacanteModeracionModal()}
       {RecalcularConfirmModal()}
       {!isDesktop ? Drawer() : null}
       {AvisoOverlay()}
+
+      {/* Confirmación de cierre de sesión al agotar el "atrás" del
+          navegador (ver useAuthBackGuard más arriba). */}
+      <SalirSesionModal
+        visible={showLogoutConfirm}
+        onConfirm={confirmLogout}
+        onCancel={cancelLogout}
+      />
     </View>
   );
 }

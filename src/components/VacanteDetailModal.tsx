@@ -16,7 +16,9 @@ import {
 import { db } from "../config/firebaseConfig";
 import { AutoText, AutoText as Text } from "./AutoText";
 import MapViewer from "./MapViewer";
-import { hayCupos, textoCupos, textoSalario } from "../utils/cupos";
+import { cuposDisponibles, hayCupos, textoCupos, textoSalario } from "../utils/cupos";
+import { afinidadCarreraVacante } from "../data/areas";
+import { useTranslation } from "../context/TranslationContext";
 import { textoHorario, type HorarioPasantia } from "../data/disponibilidad";
 
 // Forma flexible de vacante para reutilizar el modal en varios dashboards.
@@ -46,6 +48,11 @@ export interface VacanteDetalle {
   horario?: HorarioPasantia | null;
   fecha_publicacion?: any;
   activa?: boolean;
+  /** Derivados por Cloud Function (functions/src/aplicantes.ts). AUSENTES en
+   *  vacantes anteriores a ese cambio y hasta que corra el backfill — por eso
+   *  son opcionales y el render los trata como "no hay dato", no como cero. */
+  aplicantes_count?: number;
+  aplicantes_por_carrera?: Record<string, number>;
   ubicacion_coords?: { latitude: number; longitude: number } | null;
   ubicacion_texto?: { direccion?: string; municipio?: string; departamento?: string; pais?: string } | null;
   [key: string]: any;
@@ -61,6 +68,13 @@ interface Props {
    * estudiante. Sólo se renderiza cuando la vacante tiene `empresa_id`.
    */
   onContactarEmpresa?: () => void;
+  /**
+   * Carrera del estudiante que está mirando. Solo la manda el feed del
+   * estudiante; los dashboards de empresa y universidad reutilizan este mismo
+   * modal y no la pasan, así que todo el bloque de afinidad/competencia
+   * simplemente no se dibuja para ellos.
+   */
+  carreraEstudiante?: string | null;
 }
 
 const C = {
@@ -99,7 +113,10 @@ function normalizarUrl(v: string): string {
   return /^https?:\/\//i.test(t) ? t : `https://${t}`;
 }
 
-export default function VacanteDetailModal({ visible, vacante, onClose, onContactarEmpresa }: Props) {
+export default function VacanteDetailModal({
+  visible, vacante, onClose, onContactarEmpresa, carreraEstudiante,
+}: Props) {
+  const { t } = useTranslation();
   const [empresa, setEmpresa] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -128,6 +145,23 @@ export default function VacanteDetailModal({ visible, vacante, onClose, onContac
   if (!vacante) return null;
 
   const activa = vacante.activa !== false;
+
+  // ── Afinidad y competencia (solo cuando mira un estudiante) ─────────
+  // `afinidadCarreraVacante` es el MISMO motor que ya ordena el feed: si aquí
+  // se calculara distinto, el estudiante vería una vacante en los primeros
+  // puestos de su lista y luego el detalle le diría que no es de su área.
+  const afinidad = carreraEstudiante ? afinidadCarreraVacante(carreraEstudiante, vacante) : null;
+
+  // `typeof === "number"` y no un `??`: la diferencia entre "esta vacante no
+  // tiene postulantes" (0, un dato real) y "todavía no se ha contado nunca"
+  // (undefined, en vacantes previas al contador) es justo lo que no se puede
+  // perder — decir "0 postulantes" sobre una vacante con 30 sería mentir.
+  const hayConteo = typeof vacante.aplicantes_count === "number";
+  const totalAplicantes = vacante.aplicantes_count ?? 0;
+  const misAfines = carreraEstudiante
+    ? vacante.aplicantes_por_carrera?.[carreraEstudiante] ?? 0
+    : 0;
+  const libres = cuposDisponibles(vacante);
   const logo = vacante.logo_empresa_url || empresa?.logo_url || null;
   const industria = empresa?.industria ?? vacante.area ?? "";
 
@@ -200,6 +234,53 @@ export default function VacanteDetailModal({ visible, vacante, onClose, onContac
                 </View>
               )}
             </View>
+
+            {/* ── ¿Encaja conmigo y contra cuántos compito? ──
+                Solo para el estudiante (ver la prop `carreraEstudiante`). */}
+            {!!afinidad && (
+              <View style={styles.afinidadBox}>
+                <View style={styles.afinidadFila}>
+                  {/* Tres estados, no dos: `afinidadCarreraVacante` devuelve
+                      también "ninguna", y tratarla como "posible" le diría al
+                      estudiante que una vacante de Salud "podría encajar" con
+                      Contaduría. Se dice lo que es. */}
+                  <Ionicons
+                    name={
+                      afinidad === "alta" ? "checkmark-circle"
+                      : afinidad === "posible" ? "help-circle-outline"
+                      : "remove-circle-outline"
+                    }
+                    size={17}
+                    color={
+                      afinidad === "alta" ? C.green
+                      : afinidad === "posible" ? C.purple
+                      : C.muted
+                    }
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.afinidadTitulo}>
+                      {afinidad === "alta" ? t("vac_afin_alta")
+                        : afinidad === "posible" ? t("vac_afin_posible")
+                        : t("vac_afin_ninguna")}
+                    </Text>
+                    <Text style={styles.afinidadSub} noTranslate>{carreraEstudiante}</Text>
+                  </View>
+                </View>
+
+                {hayConteo && (
+                  <View style={styles.competenciaFila}>
+                    <Ionicons name="people-outline" size={15} color={C.muted} />
+                    <Text style={styles.competenciaTxt}>
+                      {[
+                        t("vac_postulantes", { n: totalAplicantes }),
+                        misAfines > 0 ? t("vac_postulantes_carrera", { n: misAfines }) : null,
+                        libres !== null && libres > 0 ? t("vac_cupos_libres", { n: libres }) : null,
+                      ].filter(Boolean).join("  ·  ")}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Horario declarado por la empresa (ausente en vacantes legadas) */}
             {textoHorario(vacante.horario) && (
@@ -355,6 +436,23 @@ const styles = StyleSheet.create({
   estadoText: { fontSize: 12, fontWeight: "700" },
   titulo: { fontSize: 22, fontWeight: "800", color: C.text, lineHeight: 28 },
   fecha: { fontSize: 13, color: C.muted, marginTop: 6 },
+  afinidadBox: {
+    marginTop: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+    padding: 13,
+    gap: 10,
+  },
+  afinidadFila: { flexDirection: "row", alignItems: "center", gap: 9 },
+  afinidadTitulo: { fontSize: 13.5, fontWeight: "700", color: C.text },
+  afinidadSub: { fontSize: 12, color: C.textSub, marginTop: 1 },
+  competenciaFila: {
+    flexDirection: "row", alignItems: "center", gap: 7,
+    borderTopWidth: 1, borderTopColor: C.border, paddingTop: 9,
+  },
+  competenciaTxt: { flex: 1, fontSize: 12, color: C.textSub },
   horarioBox: {
     marginTop: 16,
     backgroundColor: C.surface,

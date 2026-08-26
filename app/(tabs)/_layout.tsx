@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════════
 // GUÍA PARA PRINCIPIANTES:
 // El "_layout.tsx" de la carpeta app/(tabs)/ — envuelve las 5 pestañas del
-// estudiante (Vacantes/Inicio, Progreso, Academia, Mensajes, Perfil) con
+// estudiante (Vacantes/Inicio, Progreso, Mi institución, Mensajes, Perfil) con
 // una barra de navegación inferior PERSONALIZADA (no la barra estándar de
 // React Navigation), además de varios elementos flotantes que deben verse
 // en TODAS las pestañas: la barra superior (notificaciones/idioma/tema),
@@ -34,6 +34,7 @@ import FloatingNavBar, { type NavItem } from '../../src/components/FloatingNavBa
 
 import FloatingSearchButton from '../../src/components/FloatingSearchButton';
 import FloatingTopBar from '../../src/components/FloatingTopBar';
+import SalirSesionModal from '../../src/components/SalirSesionModal';
 import OnboardingDireccionGate from '../../src/components/OnboardingDireccionGate';
 // Otra "compuerta": si al estudiante le falta completar su
 // departamento/distrito (dirección), bloquea la pantalla con ese
@@ -58,7 +59,7 @@ import { subscribeUnreadTotal } from '../../src/services/chatService';
 // número como "badge" sobre el ícono de la pestaña Mensajes.
 
 // Rutas de las tabs en orden, mapeadas a los items del menú flotante
-type TabKey = 'index' | 'progreso' | 'academia' | 'mensajes' | 'perfil';
+type TabKey = 'index' | 'progreso' | 'institucion' | 'mensajes' | 'perfil';
 // Tipo que enumera las 5 pestañas válidas — coincide con los nombres de
 // archivo dentro de app/(tabs)/ (index.tsx, progreso.tsx, etc.).
 
@@ -66,7 +67,7 @@ type TabKey = 'index' | 'progreso' | 'academia' | 'mensajes' | 'perfil';
 const TAB_ITEMS: { key: TabKey; labelKey: string; icon: NavItem<TabKey>['icon'] }[] = [
   { key: 'index',     labelKey: 'tab_vacantes', icon: 'briefcase-outline' },
   { key: 'progreso',  labelKey: 'tab_progreso', icon: 'stats-chart-outline' },
-  { key: 'academia',  labelKey: 'tab_academia', icon: 'school-outline' },
+  { key: 'institucion', labelKey: 'tab_institucion', icon: 'school-outline' },
   { key: 'mensajes',  labelKey: 'tab_mensajes', icon: 'chatbubble-ellipses-outline' },
   { key: 'perfil',    labelKey: 'tab_perfil',   icon: 'person-circle-outline' },
 ];
@@ -78,11 +79,11 @@ const TAB_ITEMS: { key: TabKey; labelKey: string; icon: NavItem<TabKey>['icon'] 
 // ── Onboarding (guía por globos) — mismo orden que TAB_ITEMS, terminando en
 // 'perfil' (Mi Perfil es siempre la última parada del recorrido). Mismo
 // componente compartido que ya usan dashboard-empresa.tsx/dashboard-universidad.tsx. ──
-const TOUR_CLAVES: TabKey[] = ['index', 'progreso', 'academia', 'mensajes', 'perfil'];
+const TOUR_CLAVES: TabKey[] = ['index', 'progreso', 'institucion', 'mensajes', 'perfil'];
 const TOUR_RUTAS: Record<TabKey, string> = {
   index:    '/(tabs)',
   progreso: '/(tabs)/progreso',
-  academia: '/(tabs)/academia',
+  institucion: '/(tabs)/institucion',
   mensajes: '/(tabs)/mensajes',
   perfil:   '/(tabs)/perfil',
 };
@@ -100,9 +101,9 @@ const TOUR_PASOS: Record<TabKey, { titulo: string; texto: string }> = {
     texto:
       'Sigue tus horas de práctica, tu pasantía activa y los cupos que tu universidad te asegure.',
   },
-  academia: {
-    titulo: 'Academia',
-    texto: 'Cursos recomendados, guías rápidas y tips para tu desarrollo profesional.',
+  institucion: {
+    titulo: 'Mi institución',
+    texto: 'Mira a qué universidad y grupo perteneces, en qué punto va tu período de prácticas y a quién escribirle en tu universidad.',
   },
   mensajes: {
     titulo: 'Mensajes',
@@ -188,13 +189,23 @@ function GlassTabBar({
     }
   };
 
+  // Oculta en la pestaña "Mensajes": la sección de chat debe verse limpia,
+  // sin menú inferior superpuesto sobre la conversación.
+  if (activeKey === 'mensajes') return null;
+
   return <FloatingNavBar items={items} activeKey={activeKey} onChange={handleChange} />;
 }
 
 export default function TabLayout() {
   const { user } = useAuth();
   const router = useRouter();
-  useAuthBackGuard();
+  // Las pestañas ya sincronizan su propia URL (expo-router), así que aquí
+  // NO se le pasa `section` al guard (eso es solo para los dashboards, cuyo
+  // cambio de sección es estado local puro sin historial propio) — evita
+  // que el guard duplique entradas de historial peleando con esa
+  // sincronización nativa. Sigue mostrando el modal de cierre de sesión al
+  // agotar el "atrás", solo que sin recorrer pestañas primero.
+  const { showLogoutConfirm, confirmLogout, cancelLogout } = useAuthBackGuard();
   const [nuevasVacantes, setNuevasVacantes] = useState(0);
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
   const [activeKey, setActiveKey] = useState<TabKey>('index');
@@ -261,7 +272,7 @@ export default function TabLayout() {
       >
         <Tabs.Screen name="index" />
         <Tabs.Screen name="progreso" />
-        <Tabs.Screen name="academia" />
+        <Tabs.Screen name="institucion" />
         <Tabs.Screen name="mensajes" />
         <Tabs.Screen name="perfil" />
       </Tabs>
@@ -291,6 +302,14 @@ export default function TabLayout() {
         esUltimo={tour.esUltimo}
         onContinuar={handleTourContinuar}
         onSaltar={tour.saltar}
+      />
+
+      {/* Confirmación de cierre de sesión al agotar el "atrás" del
+          navegador (ver useAuthBackGuard más arriba). */}
+      <SalirSesionModal
+        visible={showLogoutConfirm}
+        onConfirm={confirmLogout}
+        onCancel={cancelLogout}
       />
     </>
   );

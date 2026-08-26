@@ -75,6 +75,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import FloatingTopBar from '../src/components/FloatingTopBar';
+import SalirSesionModal from '../src/components/SalirSesionModal';
 import PeriodoPracticasField, {
   PERIODO_VACIO,
   periodoValido,
@@ -98,6 +99,7 @@ import {
 
 
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput } from "../src/components/AutoText";
@@ -105,6 +107,11 @@ import * as XLSX from 'xlsx';
 // La librería "xlsx" (SheetJS): lee archivos de Excel (.xlsx) o CSV y los
 // convierte a arrays de objetos JavaScript — el corazón técnico de la
 // función de "importar estudiantes desde Excel" más abajo.
+import { useTranslation } from '../src/context/TranslationContext';
+import BandejaIncidencias from '../src/components/BandejaIncidencias';
+// Bandeja de incidencias de práctica. El MISMO componente que ven el
+// estudiante y la empresa; la prop `rol` decide qué puede hacer cada uno —
+// aquí es el único de los tres que puede escalar un caso al equipo de Gradly.
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import UniversidadHomeCards from '../src/components/UniversidadHomeCards';
 import CalendarioEventos from '../src/components/CalendarioEventos';
@@ -475,16 +482,31 @@ const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
 // ─────────────────────────────────────────────
 export default function DashboardUniversidad() {
   useAuthGuard('universidad');
-  useAuthBackGuard();
   const { user, userProfile } = useAuth();
   const router = useRouter();
   const { styles, colors } = useThemedStyles();
 
   const [seccion,      setSeccion]      = useState<SeccionUni>('inicio');
+  // useAuthBackGuard(): controla el botón "atrás" del navegador para que
+  // primero recorra las secciones internas visitadas (Inicio → Estudiantes →
+  // Mensajes → ...) y solo al final pregunte si desea cerrar sesión — con
+  // el modal propio de abajo (showLogoutConfirm), no window.confirm.
+  const { showLogoutConfirm, confirmLogout, cancelLogout } = useAuthBackGuard<SeccionUni>({
+    section: seccion,
+    onSectionBack: setSeccion,
+  });
+  // Header superior simplificado en "Mensajes": solo desde tablet/web (no
+  // en móvil angosto, donde el header normal sigue igual que siempre).
+  const { width: anchoVentana } = useWindowDimensions();
+  const headerChatSimplificado = seccion === 'mensajes' && anchoVentana > 768;
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
   // Chat a abrir de inmediato dentro de la sección "Mensajes" embebida (p. ej.
   // al pulsar "Abrir chat del grupo"), en vez de navegar a otra pantalla.
   const [chatAAbrir, setChatAAbrir] = useState<{ id: string; peerName: string } | null>(null);
+  // ¿Hay un chat abierto AHORA dentro de la sección "Mensajes"? Mientras sea
+  // así, ChatThread ya dibuja su propia píldora de notificaciones/idioma/
+  // tema en la cabecera — mostrar también la de este dashboard la duplicaría.
+  const [chatAbiertoEnMensajes, setChatAbiertoEnMensajes] = useState(false);
   const [perfil,       setPerfil]       = useState<PerfilUni | null>(null);
   const [estudiantes,  setEstudiantes]  = useState<EstudianteRow[]>([]);
   const [apps,         setApps]         = useState<Aplicacion[]>([]);
@@ -795,9 +817,15 @@ export default function DashboardUniversidad() {
     switch (seccion) {
       case 'inicio':       return <SeccionInicio metricas={metricas} perfil={perfil} nombreUni={nombreUni} uid={user!.uid} estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
       case 'estudiantes':  return <SeccionEstudiantes estudiantes={estudiantes} uid={user!.uid} solicitudesGrupo={solicitudesGrupo} onAbrirChatEnMensajes={(id, peerName) => { setChatAAbrir({ id, peerName }); setSeccion('mensajes'); }} />;
-      case 'aprobar':      return <SeccionPracticas solicitudes={solicitudesGrupo} />;
+      case 'aprobar':      return <SeccionPracticas solicitudes={solicitudesGrupo} uid={user!.uid} nombreUni={nombreUni} />;
       case 'estadisticas': return <SeccionEstadisticas estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
-      case 'mensajes':     return <SeccionMensajes openChat={chatAAbrir} onOpenChatConsumed={() => setChatAAbrir(null)} />;
+      case 'mensajes':     return (
+        <SeccionMensajes
+          openChat={chatAAbrir}
+          onOpenChatConsumed={() => setChatAAbrir(null)}
+          onChatOpenChange={setChatAbiertoEnMensajes}
+        />
+      );
       case 'perfil':       return (
         // ── Patrón PerfilMasterDetail con `sections`, ya explicado a
         // fondo en app/(tabs)/perfil.tsx: 4 secciones ('datos', 'contacto',
@@ -974,48 +1002,74 @@ export default function DashboardUniversidad() {
 
       {/* ── CONTENIDO ── */}
       <View style={styles.main}>
-        <View style={styles.mainHeader}>
-          <TouchableOpacity onPress={() => setSeccion('perfil')} activeOpacity={0.8}>
-            <StorageAvatar
-              url={perfil?.logo_url}
-              storagePath={user ? `logos/${user.uid}` : null}
-              size={40}
-              fallbackIcon="school"
-            />
-          </TouchableOpacity>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            {/* En Inicio el título es el nombre de la universidad; el subtítulo
-                se oculta para no repetirlo justo debajo. */}
-            {/* El nombre de la universidad es nombre propio → `noTranslate`. */}
-            {seccion === 'inicio' ? (
-              <Text style={styles.mainTitle} numberOfLines={1} noTranslate>
-                {nombreUni || 'Inicio'}
-              </Text>
-            ) : (
-              <>
-                <Text style={styles.mainTitle} numberOfLines={1}>
-                  {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
-                </Text>
-                <Text style={styles.mainSubtitle} numberOfLines={1} noTranslate>{nombreUni}</Text>
-              </>
-            )}
-          </View>
+        {/* Header superior — en "Mensajes" (solo tablet/web) se reemplaza
+            por una fila delgada con una flecha "atrás" a la misma altura
+            que la píldora flotante de arriba, para no verse doble/grueso
+            encima de la conversación. En móvil angosto y en el resto de
+            secciones sigue exactamente igual que siempre. */}
+        <View style={headerChatSimplificado ? styles.mainHeaderChat : styles.mainHeader}>
+          {headerChatSimplificado ? (
+            <TouchableOpacity
+              onPress={() => setSeccion('inicio')}
+              style={styles.mainHeaderBackBtn}
+              accessibilityLabel="Volver a Inicio"
+              hitSlop={8}
+            >
+              <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity onPress={() => setSeccion('perfil')} activeOpacity={0.8}>
+                <StorageAvatar
+                  url={perfil?.logo_url}
+                  storagePath={user ? `logos/${user.uid}` : null}
+                  size={40}
+                  fallbackIcon="school"
+                />
+              </TouchableOpacity>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                {/* En Inicio el título es el nombre de la universidad; el subtítulo
+                    se oculta para no repetirlo justo debajo. */}
+                {/* El nombre de la universidad es nombre propio → `noTranslate`. */}
+                {seccion === 'inicio' ? (
+                  <Text style={styles.mainTitle} numberOfLines={1} noTranslate>
+                    {nombreUni || 'Inicio'}
+                  </Text>
+                ) : (
+                  <>
+                    <Text style={styles.mainTitle} numberOfLines={1}>
+                      {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
+                    </Text>
+                    <Text style={styles.mainSubtitle} numberOfLines={1} noTranslate>{nombreUni}</Text>
+                  </>
+                )}
+              </View>
+            </>
+          )}
         </View>
         {renderSeccion()}
       </View>
 
-      {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ── */}
-      <FloatingTopBar userId={user?.uid} />
+      {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ──
+          Ocultos mientras se ve un chat abierto en "Mensajes": ChatThread ya
+          trae su propia versión de estos mismos 3 botones en su cabecera. */}
+      {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
+        <FloatingTopBar userId={user?.uid} />
+      )}
 
       {/* ── BÚSQUEDA FLOTANTE (oculta en "Mis Estudiantes", "Mi Perfil" y "Mensajes") ── */}
       {seccion !== 'estudiantes' && seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
 
-      {/* ── MENÚ FLOTANTE (Glassmorphism) ── */}
-      <FloatingNavBar
-        items={navItems}
-        activeKey={seccion}
-        onChange={(k) => setSeccion(k as SeccionUni)}
-      />
+      {/* ── MENÚ FLOTANTE (Glassmorphism) ──
+          Oculto en "Mensajes": la sección de chat debe verse limpia, sin
+          menú inferior superpuesto sobre la conversación. */}
+      {seccion !== 'mensajes' && (
+        <FloatingNavBar
+          items={navItems}
+          activeKey={seccion}
+          onChange={(k) => setSeccion(k as SeccionUni)}
+        />
+      )}
 
       {/* ── Onboarding (guía por globos) ── */}
       <OnboardingBubble
@@ -1029,30 +1083,20 @@ export default function DashboardUniversidad() {
         onSaltar={tour.saltar}
       />
 
-      {/* Todos los <Modal> de este archivo usan animationType="none" — ver el
-          comentario equivalente en dashboard-empresa.tsx (el modal queda
-          atascado fuera de pantalla si la animación de entrada de
-          react-native-web no llega a completarse a tiempo). */}
-      {/* ── MODAL: Confirmar cierre de sesión (Liquid Glass) ── */}
-      <Modal transparent visible={logoutModalVisible} animationType="none" onRequestClose={() => setLogoutModalVisible(false)}>
-        {/* Modal de confirmación de logout: mismo patrón visto en
-            app/(tabs)/perfil.tsx (2 botones, Cancelar/Salir, estilos
-            inline en vez de makeStyles). */}
-        <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: colors.backgroundCard, borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: colors.primary35 }}>
-            <Text style={{ fontSize: 18, color: colors.textPrimary, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>Cerrar Sesión</Text>
-            <Text style={{ fontSize: 14, color: colors.white60, textAlign: 'center', marginBottom: 24 }}>¿Estás seguro de que deseas salir de tu cuenta?</Text>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: colors.white8, alignItems: 'center' }} onPress={() => setLogoutModalVisible(false)}>
-                <Text style={{ color: colors.textPrimary, fontWeight: '600' }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: colors.error, alignItems: 'center' }} onPress={confirmarCierreSesion}>
-                <Text style={{ color: '#fff', fontWeight: '600' }}>Salir</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* ── MODAL: Confirmar cierre de sesión (botón manual del perfil) ── */}
+      <SalirSesionModal
+        visible={logoutModalVisible}
+        onConfirm={confirmarCierreSesion}
+        onCancel={() => setLogoutModalVisible(false)}
+      />
+
+      {/* ── MODAL: Confirmar cierre de sesión (al agotar el "atrás" del
+          navegador — ver useAuthBackGuard más arriba) ── */}
+      <SalirSesionModal
+        visible={showLogoutConfirm}
+        onConfirm={confirmLogout}
+        onCancel={cancelLogout}
+      />
 
       <CarrerasEditorModal
         visible={showCarrerasEditor}
@@ -2194,8 +2238,9 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
 // Gestiona las pasantías de grupo (solicitudes_practicas): en curso, por
 // certificar (la empresa ya finalizó y emitió constancia) y certificadas.
 // La universidad revisa la constancia y pulsa "Certificar" → acredita horas.
-function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
+function SeccionPracticas({ solicitudes, uid, nombreUni }: { solicitudes: SolicitudGrupo[]; uid: string; nombreUni: string }) {
   const { s, colors } = useThemedStyles();
+  const { t } = useTranslation();
   const [certificando, setCertificando] = useState<string | null>(null);
 
   const porCertificar = solicitudes.filter(x => x.estado === 'finalizado' && (x as any).certificacion !== 'certificada');
@@ -2312,6 +2357,19 @@ function SeccionPracticas({ solicitudes }: { solicitudes: SolicitudGrupo[] }) {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
+      {/* ── Incidencias reportadas por sus estudiantes ──
+          Van PRIMERO y no al final: son lo único de esta pantalla que puede
+          estar esperando una respuesta de la universidad ahora mismo. Es
+          también la única de las tres bandejas que puede ESCALAR al equipo
+          de Gradly, porque la universidad es la responsable del estudiante
+          ante la práctica. */}
+      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginBottom: 8 }}>
+        {t('inc_titulo')}
+      </Text>
+      <View style={{ marginBottom: 18 }}>
+        <BandejaIncidencias rol="universidad" uid={uid} nombreUsuario={nombreUni} />
+      </View>
+
       <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginBottom: 8 }}>
         Por certificar ({porCertificar.length})
       </Text>
@@ -2513,6 +2571,19 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     paddingLeft: 20, paddingRight: 150, paddingBottom: 16,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
     backgroundColor: COLORS.backgroundCard,
+  },
+  // Header simplificado de "Mensajes" (tablet/web): una fila delgada en vez
+  // del bloque de avatar/nombre — el paddingTop/paddingBottom más chico deja
+  // la flecha "atrás" a la misma altura que la píldora flotante de arriba.
+  mainHeaderChat: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingTop: 8, paddingLeft: 12, paddingRight: 150, paddingBottom: 8,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.backgroundCard,
+  },
+  mainHeaderBackBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
   mainTitle: { fontSize: 20, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
 

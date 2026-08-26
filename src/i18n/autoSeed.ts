@@ -36,7 +36,7 @@
 // clave→valor dentro de su caché en memoria, como si Google Translate ya
 // las hubiera traducido.
 //
-// EL ARCHIVO TIENE 8 DICCIONARIOS, cada uno cubriendo una parte distinta
+// EL ARCHIVO TIENE 9 DICCIONARIOS, cada uno cubriendo una parte distinta
 // de la app (ya explicado con un comentario propio justo antes de cada
 // uno, pero aquí va el mapa completo):
 //   1. AUTO_SEED_EN         (línea ~16)  → Registro y dashboards de
@@ -345,6 +345,9 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Todas": "All",
   "Total recibido": "Total received",
   "Trabajo en equipo": "Teamwork",
+  "Traducido · Ver original": "Translated · Show original",
+  "Traducir mensaje": "Translate message",
+  "Traduciendo…": "Translating…",
   "Tu plan actual": "Your current plan",
   "Título*": "Title*",
   "Ubicación": "Location",
@@ -359,6 +362,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Vencimiento (MM/AA)": "Expiry (MM/YY)",
   "Ver credenciales de pago": "View payment credentials",
   "Ver detalles del plan": "View plan details",
+  "Ver original": "Show original",
   "Verificada": "Verified",
   "Volver": "Back",
   "← Anterior": "← Back",
@@ -418,9 +422,11 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Mi Progreso": "My Progress",
   "Sigue tus horas de práctica, tu pasantía activa, tus pagos y los cupos que tu universidad te asegure.":
     "Track your internship hours, your active internship, your payments, and the slots your university secures for you.",
-  "Academia": "Academy",
-  "Cursos recomendados, guías rápidas y tips para tu desarrollo profesional.":
-    "Recommended courses, quick guides, and tips for your professional development.",
+  // La parada "Academia" del tour se reemplazó por "Mi institución" cuando esa
+  // pestaña pasó a mostrar universidad/grupo/período en vez de contenido fijo.
+  "Mi institución": "My institution",
+  "Mira a qué universidad y grupo perteneces, en qué punto va tu período de prácticas y a quién escribirle en tu universidad.":
+    "See which university and group you belong to, where your internship term stands, and who to contact at your university.",
   "Chatea con empresas y con tu universidad sobre tu práctica.":
     "Chat with companies and your university about your internship.",
   "Consulta tu certificación, tu CV, tus habilidades y ajusta tus preferencias.":
@@ -877,6 +883,15 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   // fijos por si la CF falla, y las variantes sin nombre.
   "Alguien está escribiendo…": "Someone is typing…",
 
+  // ── Identidad + presencia en la cabecera del chat (ChatThread) ──
+  // "Escribiendo…" es la versión corta que se muestra bajo el nombre del
+  // contacto (a diferencia de "Alguien está escribiendo…"/"está
+  // escribiendo…" de arriba, que van al pie de la lista de mensajes).
+  // "Últ. vez {hora}" no se siembra: lleva la hora interpolada.
+  "Escribiendo…": "Typing…",
+  "En línea": "Online",
+  "Desconectado": "Offline",
+
   // ── Renegociación del horario de una pasantía aprobada ──
   "Cambiar horario": "Change schedule",
   "Enviar cambio": "Send change",
@@ -1117,3 +1132,21 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
 };
 
 export default AUTO_SEED_EN;
+
+// ── Incidencias de práctica (BandejaIncidencias.tsx / ReportarIncidenciaModal.tsx).
+// El catálogo MOTIVOS_INCIDENCIA vive en incidenciaService.ts como texto en
+// español (es el valor que se guarda en Firestore, no una clave), así que se
+// dibuja con AutoText y necesita siembra: sin ella dependería por completo de
+// la traducción por red y quedaría en español si esa llamada falla —el fallo
+// se cachea, ver translationService.ts—. La descripción que escribe el propio
+// estudiante NO se siembra: es texto libre, imposible de conocer de antemano. ──
+export const INCIDENCIAS_SEED_EN: Record<string, string> = {
+  "No me asignaron tareas": "I was not assigned any tasks",
+  "Horario distinto al acordado": "Schedule differs from what was agreed",
+  "Falta de supervisor o acompañamiento": "No supervisor or guidance",
+  "Condiciones inseguras": "Unsafe conditions",
+  "Trato inadecuado": "Inappropriate treatment",
+  "Mis horas no se están registrando": "My hours are not being recorded",
+  "Problema con la plataforma": "Problem with the platform",
+  "Otro": "Other",
+};

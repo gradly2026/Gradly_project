@@ -30,6 +30,7 @@ import {
 } from 'react-native';
 import { AutoText as Text } from "../../src/components/AutoText";
 import { useAuth } from '../../src/context/AuthContext';
+import { useTranslation } from '../../src/context/TranslationContext';
 import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
 import { estudianteFinalizaProyecto } from '../../src/services/pasantiaService';
@@ -41,6 +42,10 @@ import { progresoPorFechas } from '../../src/utils/progresoPasantia';
 // para dibujar la "línea de tiempo" de la tarjeta "Mi pasantía".
 import CalendarioEventos from '../../src/components/CalendarioEventos';
 import TableroCupos from '../../src/components/TableroCupos';
+import MiInstitucionCard from '../../src/components/MiInstitucionCard';
+// Ficha completa de la universidad y el grupo del estudiante. Va primero
+// en esta pantalla porque es el CONTEXTO de todo lo demás: las horas, el
+// calendario y el período de prácticas los define su grupo.
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
@@ -416,6 +421,7 @@ function MiPasantiaCard({ acuerdo, estadoServidor }: { acuerdo: AcuerdoEstudiant
 // ─────────────────────────────────────────────
 export default function ProgresoTab() {
   const { user, userProfile } = useAuth();
+  const { t } = useTranslation();
   const { styles, colors } = useThemedStyles();
   const webScrollStyle = Platform.OS === 'web'
     ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
@@ -610,6 +616,16 @@ export default function ProgresoTab() {
         contentContainerStyle={[styles.scroll, { flexGrow: 1 }]}
       >
 
+        {/* ── Mi institución: universidad y grupo al que pertenece ──
+            Va ARRIBA del termómetro a propósito: las horas objetivo, el
+            calendario y el período que se ven más abajo salen todos del
+            grupo, así que primero se dice de qué grupo hablamos. */}
+        <Text style={styles.sectionTitle}>{t('inst_titulo')}</Text>
+        <MiInstitucionCard
+          universidadId={perfil?.universidad_id ?? (userProfile as any)?.universidad_id}
+          grupoId={perfil?.grupo_id}
+        />
+
         {/* ── Termómetro ── */}
         <GlassCard style={{ marginBottom: 20 }} contentStyle={{ padding: 20 }}>
           <Text style={styles.sectionLabel}>Horas de práctica</Text>
@@ -739,8 +755,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   // Card termómetro
   card: {
     // No usado directamente en el JSX (GlassCard maneja su propio fondo);
-    // queda como estilo de respaldo sin aplicar, igual que casos vistos
-    // en academia.tsx.
+    // queda como estilo de respaldo sin aplicar.
     backgroundColor: COLORS.backgroundCard,
     borderRadius: 20, padding: 20,
     borderWidth: 1, borderColor: COLORS.border,

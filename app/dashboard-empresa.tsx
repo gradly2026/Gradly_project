@@ -49,6 +49,7 @@ import { abrirChatDirectoEmpresaEstudiante } from '../src/services/chatService';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import FloatingTopBar from '../src/components/FloatingTopBar';
+import SalirSesionModal from '../src/components/SalirSesionModal';
 // Truco de renombrado ya visto en otros dashboards: se usa <Text>/<TextInput>
 // normales en todo el JSX, pero en realidad son AutoText/AutoTextInput (se
 // traducen solos). `useAutoText` traduce un string suelto fuera del JSX.
@@ -67,8 +68,13 @@ import {
   Switch,
 
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { useTranslation } from '../src/context/TranslationContext';
+import BandejaIncidencias from '../src/components/BandejaIncidencias';
+// Bandeja de incidencias de práctica. El MISMO componente que ven el
+// estudiante y la universidad; la prop `rol` decide qué puede hacer cada uno.
 import FeedbackGate from '../src/components/FeedbackGate';
 import ModeracionVacanteGate from '../src/components/ModeracionVacanteGate';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
@@ -493,10 +499,7 @@ const KANBAN_COLS: { key: string; label: string; color: string }[] = [
 export default function DashboardEmpresa() {
   // useAuthGuard('empresa'): redirige fuera si el usuario logueado no tiene
   // rol 'empresa' (mismo hook que usan todos los dashboards).
-  // useAuthBackGuard(): controla el botón "atrás" del sistema para que no
-  // saque de la app en medio de la navegación por pestañas.
   useAuthGuard('empresa');
-  useAuthBackGuard();
   const { user, userProfile } = useAuth();
   const router = useRouter();
   const { styles, colors, s } = useThemedStyles();
@@ -718,10 +721,26 @@ export default function DashboardEmpresa() {
   // campos del formulario "Nueva Vacante" (prefijo nv*) y de la tarjeta
   // (prefijo card*). Los comentarios en línea marcan solo lo no obvio.
   const [seccion,     setSeccion]     = useState<SeccionEmpresa>('inicio');
+  // useAuthBackGuard(): controla el botón "atrás" del navegador para que
+  // primero recorra las secciones internas visitadas (Inicio → Vacantes →
+  // Mensajes → ...) y solo al final pregunte si desea cerrar sesión — con
+  // el modal propio de abajo (showLogoutConfirm), no window.confirm.
+  const { showLogoutConfirm, confirmLogout, cancelLogout } = useAuthBackGuard<SeccionEmpresa>({
+    section: seccion,
+    onSectionBack: setSeccion,
+  });
+  // Header superior simplificado en "Mensajes": solo desde tablet/web (no
+  // en móvil angosto, donde el header normal sigue igual que siempre).
+  const { width: anchoVentana } = useWindowDimensions();
+  const headerChatSimplificado = seccion === 'mensajes' && anchoVentana > 768;
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
   // Chat a abrir de inmediato dentro de la sección "Mensajes" embebida (p. ej.
   // al pulsar "Chatear con Candidato"), en vez de navegar a otra pantalla.
   const [chatAAbrir, setChatAAbrir] = useState<{ id: string; peerName: string } | null>(null);
+  // ¿Hay un chat abierto AHORA dentro de la sección "Mensajes"? Mientras sea
+  // así, ChatThread ya dibuja su propia píldora de notificaciones/idioma/
+  // tema en la cabecera — mostrar también la de este dashboard la duplicaría.
+  const [chatAbiertoEnMensajes, setChatAbiertoEnMensajes] = useState(false);
   const [perfil,      setPerfil]      = useState<PerfilEmpresa | null>(null);
   const [vacantes,    setVacantes]    = useState<Vacante[]>([]);
   const [apps,        setApps]        = useState<Aplicacion[]>([]);
@@ -1843,10 +1862,16 @@ export default function DashboardEmpresa() {
       case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} onVerPerfil={setPerfilCandidatoId} />;
       case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => { setVacanteEditando(null); setShowNuevaVacante(true); }} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} onEditar={abrirEditarVacante} onEliminar={handleEliminarVacante} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
       case 'kanban':   return <SeccionKanban apps={apps} onMover={moverEstado} onSeleccionar={(a) => { setRatingEstudiante(0); setCandidatoSeleccionado(a); }} />;
-      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} />;
+      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? 'Empresa'} />;
       case 'historial': return <HistorialPasantes empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
       case 'perfil':   return renderPerfilSeccion();
-      case 'mensajes': return <SeccionMensajes openChat={chatAAbrir} onOpenChatConsumed={() => setChatAAbrir(null)} />;
+      case 'mensajes': return (
+        <SeccionMensajes
+          openChat={chatAAbrir}
+          onOpenChatConsumed={() => setChatAAbrir(null)}
+          onChatOpenChange={setChatAbiertoEnMensajes}
+        />
+      );
       default:         return null;
     }
   };
@@ -2117,49 +2142,70 @@ export default function DashboardEmpresa() {
 
       {/* ── CONTENIDO ── */}
       <View style={styles.main}>
-        {/* Header superior */}
-        <View style={styles.mainHeader}>
-          <TouchableOpacity onPress={() => setSeccion('perfil')} activeOpacity={0.8}>
-            <StorageAvatar
-              url={perfil?.logo_url}
-              storagePath={user ? `logos_empresas/${user.uid}/logo.jpg` : null}
-              size={40}
-              fallbackIcon="business"
-            />
-          </TouchableOpacity>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            {/* En Inicio el título es el nombre de la empresa (más identidad que
-                un genérico "Inicio"); el subtítulo deja de repetirlo. */}
-            {/* En Inicio el título es el nombre de la empresa → `noTranslate`,
-                es un nombre propio y no debe pasar por el traductor. */}
-            {seccion === 'inicio' ? (
-              <Text style={styles.mainTitle} numberOfLines={1} noTranslate>
-                {nombreEmpresa || 'Inicio'}
-              </Text>
-            ) : (
-              <Text style={styles.mainTitle} numberOfLines={1}>
-                {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
-              </Text>
-            )}
-            {seccion === 'inicio' ? (
-              <Text style={styles.mainGreeting} numberOfLines={1} noTranslate>
-                {planBadgeLabel}
-              </Text>
-            ) : (
-              <Text style={styles.mainGreeting} numberOfLines={1} noTranslate>
-                {planBadgeLabel}
-                {' · '}
-                {nombreEmpresa}
-              </Text>
-            )}
-          </View>
+        {/* Header superior — en "Mensajes" (solo tablet/web) se reemplaza
+            por una fila delgada con una flecha "atrás" a la misma altura
+            que la píldora flotante, para no verse doble/grueso encima de
+            la conversación. En móvil angosto y en el resto de secciones
+            sigue exactamente igual que siempre. */}
+        <View style={headerChatSimplificado ? styles.mainHeaderChat : styles.mainHeader}>
+          {headerChatSimplificado ? (
+            <TouchableOpacity
+              onPress={() => setSeccion('inicio')}
+              style={styles.mainHeaderBackBtn}
+              accessibilityLabel="Volver a Inicio"
+              hitSlop={8}
+            >
+              <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity onPress={() => setSeccion('perfil')} activeOpacity={0.8}>
+                <StorageAvatar
+                  url={perfil?.logo_url}
+                  storagePath={user ? `logos_empresas/${user.uid}/logo.jpg` : null}
+                  size={40}
+                  fallbackIcon="business"
+                />
+              </TouchableOpacity>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                {/* En Inicio el título es el nombre de la empresa (más identidad que
+                    un genérico "Inicio"); el subtítulo deja de repetirlo. */}
+                {/* En Inicio el título es el nombre de la empresa → `noTranslate`,
+                    es un nombre propio y no debe pasar por el traductor. */}
+                {seccion === 'inicio' ? (
+                  <Text style={styles.mainTitle} numberOfLines={1} noTranslate>
+                    {nombreEmpresa || 'Inicio'}
+                  </Text>
+                ) : (
+                  <Text style={styles.mainTitle} numberOfLines={1}>
+                    {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
+                  </Text>
+                )}
+                {seccion === 'inicio' ? (
+                  <Text style={styles.mainGreeting} numberOfLines={1} noTranslate>
+                    {planBadgeLabel}
+                  </Text>
+                ) : (
+                  <Text style={styles.mainGreeting} numberOfLines={1} noTranslate>
+                    {planBadgeLabel}
+                    {' · '}
+                    {nombreEmpresa}
+                  </Text>
+                )}
+              </View>
+            </>
+          )}
         </View>
 
         {renderSeccion()}
       </View>
 
-      {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ── */}
-      <FloatingTopBar userId={user?.uid} />
+      {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ──
+          Ocultos mientras se ve un chat abierto en "Mensajes": ChatThread ya
+          trae su propia versión de estos mismos 3 botones en su cabecera. */}
+      {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
+        <FloatingTopBar userId={user?.uid} />
+      )}
 
       {/* ── BÚSQUEDA FLOTANTE (oculta en "Mi Perfil" y "Mensajes") ── */}
       {seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar candidatos o vacantes..." />}
@@ -2170,12 +2216,16 @@ export default function DashboardEmpresa() {
       {/* ── AVISO DE MODERACIÓN (vacantes deshabilitadas/eliminadas por admin) ── */}
       <ModeracionVacanteGate />
 
-      {/* ── MENÚ FLOTANTE (Glassmorphism) ── */}
-      <FloatingNavBar
-        items={navItems}
-        activeKey={seccion}
-        onChange={(k) => setSeccion(k as SeccionEmpresa)}
-      />
+      {/* ── MENÚ FLOTANTE (Glassmorphism) ──
+          Oculto en "Mensajes": la sección de chat debe verse limpia, sin
+          menú inferior superpuesto sobre la conversación. */}
+      {seccion !== 'mensajes' && (
+        <FloatingNavBar
+          items={navItems}
+          activeKey={seccion}
+          onChange={(k) => setSeccion(k as SeccionEmpresa)}
+        />
+      )}
 
       {/* Todos los <Modal> de este archivo usan animationType="none": con
           "slide"/"fade", react-native-web anima con un `transform`/`opacity`
@@ -2727,23 +2777,20 @@ export default function DashboardEmpresa() {
         onSaltar={tour.saltar}
       />
 
-      {/* ── MODAL: Confirmar cierre de sesión (Liquid Glass) ── */}
-      <Modal transparent visible={logoutModalVisible} animationType="none" onRequestClose={() => setLogoutModalVisible(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1a162b', borderRadius: 20, padding: 24, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
-            <Text style={{ fontSize: 18, color: '#fff', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>Cerrar Sesión</Text>
-            <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: 24 }}>¿Estás seguro de que deseas salir de tu cuenta?</Text>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }} onPress={() => setLogoutModalVisible(false)}>
-                <Text style={{ color: '#fff', fontWeight: '600' }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: 12, backgroundColor: '#ef4444', alignItems: 'center' }} onPress={confirmarCierreSesion}>
-                <Text style={{ color: '#fff', fontWeight: '600' }}>Salir</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* ── MODAL: Confirmar cierre de sesión (botón manual del perfil) ── */}
+      <SalirSesionModal
+        visible={logoutModalVisible}
+        onConfirm={confirmarCierreSesion}
+        onCancel={() => setLogoutModalVisible(false)}
+      />
+
+      {/* ── MODAL: Confirmar cierre de sesión (al agotar el "atrás" del
+          navegador — ver useAuthBackGuard más arriba) ── */}
+      <SalirSesionModal
+        visible={showLogoutConfirm}
+        onConfirm={confirmLogout}
+        onCancel={cancelLogout}
+      />
 
       {/* MODAL DINÁMICO DE ESTADO DE GUARDADO */}
       <Modal transparent visible={estadoGuardado !== 'idle'} animationType="none">
@@ -3496,17 +3543,30 @@ function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; o
 // matchmaking universidad↔empresa (`solicitudesGrupo`, con su propia barra
 // de progreso). El botón "Firmar constancia" solo aplica al camino individual.
 // ─────────────────────────────────────────────
-function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
+function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresaId, empresaNombre }: {
   apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[]; onFirmar: (a: Aplicacion) => void;
   onVerPerfil: (estudianteId: string) => void;
+  empresaId: string; empresaNombre: string;
 }) {
   const { s } = useThemedStyles();
+  const { t } = useTranslation();
   const activos    = apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado');
   const pendFirma  = apps.filter(a => a.estado === 'finalizado');
   const grupoActivas = solicitudesGrupo.filter(sg => sg.estado === 'aprobado' && sg.fechaInicio);
 
+  // Bandeja de incidencias: va en ESTA sección y no en Inicio porque una
+  // incidencia siempre habla de una pasantía en curso — es el mismo contexto.
+  // Se dibuja aunque esté vacía: si solo apareciera cuando hay problemas, la
+  // empresa nunca sabría que este canal existe hasta el día que lo necesita.
+  const Incidencias = (
+    <View style={{ marginBottom: 20 }}>
+      <Text style={[s.activaNombre, { marginBottom: 10 }]}>{t('inc_titulo')}</Text>
+      <BandejaIncidencias rol="empresa" uid={empresaId} nombreUsuario={empresaNombre} />
+    </View>
+  );
+
   // Encabezado con las pasantías de grupo y su línea de tiempo porcentual.
-  const Header = grupoActivas.length === 0 ? null : (
+  const Grupos = grupoActivas.length === 0 ? null : (
     <View style={{ marginBottom: 16 }}>
       <Text style={[s.activaNombre, { marginBottom: 10 }]}>Pasantías de grupo</Text>
       {grupoActivas.map(sg => {
@@ -3550,6 +3610,8 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil }: {
       <Text style={[s.activaNombre, { marginTop: 14, marginBottom: 4 }]}>Pasantes individuales</Text>
     </View>
   );
+
+  const Header = <>{Incidencias}{Grupos}</>;
 
   return (
     <FlatList
@@ -3718,6 +3780,19 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     paddingLeft: 20, paddingRight: 150, paddingBottom: 16,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
     backgroundColor: COLORS.backgroundCard,
+  },
+  // Header simplificado de "Mensajes" (tablet/web): una fila delgada en vez
+  // del bloque de avatar/nombre — el paddingTop/paddingBottom más chico deja
+  // la flecha "atrás" a la misma altura que la píldora flotante de arriba.
+  mainHeaderChat: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingTop: 8, paddingLeft: 12, paddingRight: 150, paddingBottom: 8,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.backgroundCard,
+  },
+  mainHeaderBackBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
   mainTitle: { fontSize: 20, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
   mainGreeting: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted },

@@ -79,9 +79,19 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../../src/context/AuthContext';
+import { useTranslation } from '../../src/context/TranslationContext';
+// useTranslation() da acceso a t('clave'): traducción INSTANTÁNEA desde el
+// catálogo local (src/locales/es.json / en.json), sin esperar a la red —
+// a diferencia de AutoText, que traduce en vivo y con un parpadeo inicial.
+// Se usa para todo el texto FIJO de esta pantalla; AutoText se queda solo
+// para el texto que escribieron las empresas (títulos de vacante, etc.).
 import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
+import MiInstitucionCard from '../../src/components/MiInstitucionCard';
+// Línea de identidad "UES · Grupo 2026-A" bajo el saludo: le recuerda al
+// estudiante a qué universidad y grupo pertenece, dato que ya estaba en su
+// perfil pero no se mostraba en ninguna pantalla.
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import VacanteDetailModal from '../../src/components/VacanteDetailModal';
@@ -95,11 +105,14 @@ import MercadoLaboralStats from '../../src/components/MercadoLaboralStats';
 // Componente que muestra estadísticas generales del "mercado" (cuántas
 // vacantes hay, en qué áreas, etc.) — se ve cuando el estudiante está en
 // modo solo-lectura (situación 2 de arriba).
-import { AutoText, AutoText as Text, AutoTextInput as TextInput, useAutoText } from '../../src/components/AutoText';
-// Aquí se importa AutoText de 3 formas: como `AutoText` (nombre normal),
-// como alias `Text`, y también se trae el hook `useAutoText` (para
-// traducir un texto SIN envolverlo en un componente — se usa más abajo
-// para las frases motivacionales animadas).
+import { AutoText, AutoText as Text, AutoTextInput as TextInput } from '../../src/components/AutoText';
+// Aquí se importa AutoText de 2 formas: como `AutoText` (nombre normal) y
+// como alias `Text`, para que cada <Text> de la pantalla se auto-traduzca.
+// Ojo con el reparto de responsabilidades en este archivo: AutoText queda
+// para el texto que ESCRIBIERON LAS EMPRESAS (título de la vacante, sus
+// skills), que no puede estar en ningún catálogo por adelantado; todo el
+// texto FIJO de la interfaz pasa ahora por t() (ver el import de
+// TranslationContext más abajo).
 import { calcularRango, type RangoTier } from '../../src/services/feedbackService';
 // calcularRango(xp, 'empresa') → dado el puntaje de experiencia de una
 // empresa, calcula su "tier" (rango): 'bronce' | 'plata' | 'oro' — mismo
@@ -132,6 +145,11 @@ interface Vacante {
   salario_max?: number | null;
   skills_requeridas: string[];
   fecha_publicacion: any;
+  /** Derivados por Cloud Function (functions/src/aplicantes.ts): cuántos
+   *  postularon y de qué carreras. Opcionales: las vacantes anteriores al
+   *  contador no los tienen hasta que corra el backfill. */
+  aplicantes_count?: number;
+  aplicantes_por_carrera?: Record<string, number>;
   premium?: boolean;
   /** 'pasantia' se maneja por matchmaking universidad↔empresa; el feed individual solo muestra 'vacante' (o legado sin categoría). */
   categoria?: 'pasantia' | 'vacante';
@@ -144,38 +162,41 @@ interface Vacante {
 // ─────────────────────────────────────────────
 // CONSTANTES
 // ─────────────────────────────────────────────
-const FRASES = [
-  'Tu próxima oportunidad te está esperando',
-  'Cada pasantía es un paso hacia tu futuro',
-  'Conecta con empresas que transforman El Salvador',
-];
-// Frases motivacionales que rotan bajo el saludo — texto en ESPAÑOL,
-// traducido en vivo con useAutoText() al momento de mostrarse (ver el
-// render más abajo).
+const FRASES = ['feed_frase_1', 'feed_frase_2', 'feed_frase_3'];
+// Frases motivacionales que rotan bajo el saludo. Se guardan como CLAVES
+// de traducción (no como el texto en español) y se resuelven con t() en
+// el render — así aparecen ya traducidas desde el primer fotograma.
 
 const FILTROS = [
-  { key: 'todas',       label: 'Todas' },
-  { key: 'Remoto',      label: 'Remoto' },
-  { key: 'Presencial',  label: 'Presencial' },
-  { key: 'Híbrido',     label: 'Híbrido' },
+  { key: 'todas',       labelKey: 'feed_filtro_todas' },
+  { key: 'Remoto',      labelKey: 'feed_filtro_remoto' },
+  { key: 'Presencial',  labelKey: 'feed_filtro_presencial' },
+  { key: 'Híbrido',     labelKey: 'feed_filtro_hibrido' },
 ];
+// `key` es el valor REAL con el que se filtra la lista (debe seguir
+// coincidiendo con `vacante.modalidad` tal como se guarda en Firestore, en
+// español) — por eso no se traduce. `labelKey` es solo lo que LEE el
+// usuario.
 
 const HOY = new Date();
 // Se calcula UNA sola vez, al cargar el archivo (no dentro del
 // componente) — suficiente para esta pantalla, ya que la fecha "hoy" no
 // necesita actualizarse en vivo mientras el usuario tiene la app abierta.
 
-function relativeTime(ts: any): string {
+function relativeTime(ts: any, t: (k: string, p?: Record<string, string | number>) => string): string {
   // Convierte una fecha de Firestore a un texto relativo tipo "hace 3
   // días" — mucho más fácil de leer de un vistazo que una fecha exacta.
+  // Recibe `t` como PARÁMETRO porque es una función suelta, no un
+  // componente: los hooks (useTranslation) solo pueden llamarse dentro de
+  // un componente, así que quien la llama le pasa su propia `t`.
   if (!ts) return '';
   const d: Date = ts.toDate ? ts.toDate() : new Date(ts);
   const days = Math.floor((HOY.getTime() - d.getTime()) / 86_400_000);
-  if (days === 0) return 'hoy';
-  if (days === 1) return 'hace 1 día';
-  if (days < 7)  return `hace ${days} días`;
-  if (days < 30) return `hace ${Math.floor(days / 7)} sem.`;
-  return `hace ${Math.floor(days / 30)} meses`;
+  if (days === 0) return t('feed_fecha_hoy');
+  if (days === 1) return t('feed_fecha_1_dia');
+  if (days < 7)  return t('feed_fecha_dias', { n: days });
+  if (days < 30) return t('feed_fecha_semanas', { n: Math.floor(days / 7) });
+  return t('feed_fecha_meses', { n: Math.floor(days / 30) });
 }
 
 // ─────────────────────────────────────────────
@@ -205,6 +226,7 @@ function VacanteCard({
   readOnly?: boolean;
 }) {
   const { styles } = useThemedStyles();
+  const { t } = useTranslation();
   const initial = vacante.nombre_empresa?.[0]?.toUpperCase() ?? '?';
   // La primera LETRA del nombre de la empresa, en mayúscula, usada como
   // "avatar" alternativo cuando no hay logo (ver logoFallback más abajo).
@@ -227,15 +249,15 @@ function VacanteCard({
   //      oscuro normal (color por defecto del botón "Aplicar").
 
   const btnLabel = readOnly
-    ? 'Disponible al graduarte'
+    ? t('feed_btn_disponible_graduarte')
     : yaAplico
-    ? estadoAplicacion === 'pendiente'  ? 'Pendiente'
-    : estadoAplicacion === 'en_revision'? 'En revisión'
-    : estadoAplicacion === 'entrevista' ? 'Entrevista'
-    : estadoAplicacion === 'contratado' ? '¡Contratado!'
-    : estadoAplicacion === 'rechazado'  ? 'Rechazado'
-    : 'Aplicado'
-    : 'Aplicar';
+    ? estadoAplicacion === 'pendiente'  ? t('feed_btn_pendiente')
+    : estadoAplicacion === 'en_revision'? t('feed_btn_en_revision')
+    : estadoAplicacion === 'entrevista' ? t('feed_btn_entrevista')
+    : estadoAplicacion === 'contratado' ? t('feed_btn_contratado')
+    : estadoAplicacion === 'rechazado'  ? t('feed_btn_rechazado')
+    : t('feed_btn_aplicado')
+    : t('accion_aplicar');
   // Mismo patrón de cascada de ternarios, esta vez para el TEXTO del
   // botón, con más casos posibles según el estado exacto de la aplicación.
 
@@ -324,7 +346,7 @@ function VacanteCard({
 
       {/* Footer */}
       <View style={styles.cardFooter}>
-        <Text style={styles.dateText}>{relativeTime(vacante.fecha_publicacion)}</Text>
+        <Text style={styles.dateText}>{relativeTime(vacante.fecha_publicacion, t)}</Text>
         <JellyButton
           style={[
             styles.aplicarBtn,
@@ -371,6 +393,7 @@ function Chip({
 // ─────────────────────────────────────────────
 export default function FeedVacantes() {
   const { user, userProfile } = useAuth();
+  const { t, language } = useTranslation();
   const { styles, colors } = useThemedStyles();
   const router = useRouter();
   const webScrollStyle = Platform.OS === 'web'
@@ -464,11 +487,14 @@ export default function FeedVacantes() {
   const toastY        = useRef(new Animated.Value(20)).current;
 
   // Nombre del estudiante
-  const nombre = (userProfile as any)?.nombre_completo?.split(' ')[0] ?? 'Estudiante';
+  const nombre = (userProfile as any)?.nombre_completo?.split(' ')[0] ?? t('feed_estudiante');
   // .split(' ')[0] toma solo la PRIMERA palabra del nombre completo (el
   // primer nombre), para un saludo más cercano ("Hola, Ana!" en vez de
   // "Hola, Ana María Pérez López!").
-  const fecha  = HOY.toLocaleDateString('es-SV', { weekday: 'long', day: 'numeric', month: 'long' });
+  const fecha  = HOY.toLocaleDateString(language === 'en' ? 'en-US' : 'es-SV', { weekday: 'long', day: 'numeric', month: 'long' });
+  // La fecha larga la formatea el SISTEMA OPERATIVO, no nuestro catálogo:
+  // por eso aquí no va t(), sino el código de idioma correspondiente —
+  // así "lunes 25 de agosto" se vuelve "Monday, August 25" solo.
 
   // ── Firebase: vacantes activas ──────────────────────────────────
   useEffect(() => {
@@ -776,9 +802,9 @@ export default function FeedVacantes() {
 
   // ── Aplicar a vacante ────────────────────────────────────────────
   const handleAplicar = useCallback(async (vacante: Vacante) => {
-    if (!user) { Alert.alert('Debes iniciar sesión.'); return; }
+    if (!user) { Alert.alert(t('feed_alert_sesion')); return; }
     if (!habilitadoParaVacantes) {
-      Alert.alert('Vacantes no disponibles', 'Las vacantes se habilitan cuando culmines tu práctica o pasantía, o estés graduado.');
+      Alert.alert(t('feed_alert_no_disp_titulo'), t('feed_alert_no_disp_msg'));
       return;
       // Doble verificación de seguridad: aunque el botón ya debería estar
       // deshabilitado visualmente en ese caso, esta comprobación evita
@@ -800,7 +826,7 @@ export default function FeedVacantes() {
       showToast();
     } catch (err: any) {
       if (!err.message?.includes('Ya aplicaste')) {
-        Alert.alert('Error', err.message ?? 'No se pudo enviar tu aplicación.');
+        Alert.alert(t('error_generico'), err.message ?? t('feed_alert_error_aplicar'));
         // No muestra un Alert de error si el mensaje es "Ya aplicaste..."
         // — ese caso puede pasar por un doble toque accidental, y no hace
         // falta alarmar al usuario con un Alert por algo tan menor
@@ -809,11 +835,11 @@ export default function FeedVacantes() {
     } finally {
       setApplying(null);
     }
-  }, [user, userProfile, showToast, habilitadoParaVacantes]);
+  }, [user, userProfile, showToast, habilitadoParaVacantes, t]);
 
   // ── Aplicar a una pasantía por cuenta propia (autoservicio) ──────
   const handleAplicarPasantia = useCallback(async (vacante: Vacante) => {
-    if (!user) { Alert.alert('Debes iniciar sesión.'); return; }
+    if (!user) { Alert.alert(t('feed_alert_sesion')); return; }
 
     setApplying(vacante.id);
     try {
@@ -831,17 +857,17 @@ export default function FeedVacantes() {
       showToast();
     } catch (err: any) {
       if (!err.message?.includes('Ya aplicaste')) {
-        Alert.alert('Error', err.message ?? 'No se pudo enviar tu aplicación.');
+        Alert.alert(t('error_generico'), err.message ?? t('feed_alert_error_aplicar'));
       }
     } finally {
       setApplying(null);
     }
-  }, [user, userProfile, showToast, miCarrera]);
+  }, [user, userProfile, showToast, miCarrera, t]);
 
   // ── Contactar empresa (chat directo estudiante↔empresa) ──────────
   const handleContactarEmpresa = useCallback(async (vacante: Vacante) => {
     if (!user?.uid || !vacante.empresa_id) {
-      Alert.alert('No disponible', 'No se pudo identificar a la empresa para iniciar el chat.');
+      Alert.alert(t('feed_alert_no_disponible_titulo'), t('feed_alert_chat_sin_empresa'));
       return;
     }
     const estudianteNombre = (userProfile as any)?.nombre_completo ?? 'Estudiante';
@@ -860,15 +886,15 @@ export default function FeedVacantes() {
       // Navega a la pantalla de chat, pasándole el ID recién obtenido y
       // el nombre de la empresa como parámetros de URL.
     } catch {
-      Alert.alert('Error', 'No se pudo abrir el chat con la empresa.');
+      Alert.alert(t('error_generico'), t('feed_alert_chat_error'));
     }
-  }, [user, userProfile, router]);
+  }, [user, userProfile, router, t]);
 
   // ── Empty state (parametrizable: se reutiliza en los 3 estados del feed) ──
   const EmptyState = ({
     icon = 'briefcase-outline',
-    titulo = 'Sin resultados',
-    desc = 'Prueba cambiando el filtro o la búsqueda.',
+    titulo = t('feed_empty_titulo'),
+    desc = t('feed_empty_desc'),
   }: { icon?: keyof typeof Ionicons.glyphMap; titulo?: string; desc?: string }) => (
     <View style={styles.empty}>
       <Ionicons name={icon} size={56} color={COLORS.border} />
@@ -909,19 +935,29 @@ export default function FeedVacantes() {
         {/* Saludo */}
         <View style={styles.greetingRow}>
           <View>
-            <Text style={styles.greeting}>Hola, {nombre}! 👋</Text>
+            <Text style={styles.greeting} noTranslate>{t('feed_saludo', { nombre })}</Text>
+            {/* noTranslate: el texto ya viene traducido por t(), y además
+                lleva dentro un NOMBRE PROPIO — sin esto, AutoText lo
+                mandaría al traductor y podría devolver el nombre del
+                estudiante "traducido". */}
             <Animated.Text style={[styles.phrase, { opacity: phraseOpacity }]}>
-              {useAutoText(FRASES[phraseIdx])}
-              {/* useAutoText(texto) — la versión "hook" de AutoText, para
-                  usar cuando el elemento que dibuja el texto NO es un
-                  <Text> normal sino, como aquí, un <Animated.Text>
-                  (necesario para poder animar su opacidad). Devuelve
-                  directamente el STRING ya traducido, en vez de un
-                  componente. */}
+              {t(FRASES[phraseIdx])}
+              {/* Antes esto era useAutoText(FRASES[idx]): la frase estaba
+                  escrita en español y se traducía por red. Ahora FRASES
+                  guarda CLAVES y t() devuelve el texto ya traducido, sin
+                  parpadeo. Se sigue usando <Animated.Text> (y no <Text>)
+                  porque su opacidad se anima en cada rotación. */}
             </Animated.Text>
           </View>
           <Text style={styles.fecha}>{fecha}</Text>
         </View>
+
+        {/* Universidad y grupo del estudiante (variante de una línea). */}
+        <MiInstitucionCard
+          universidadId={perfilEstudiante?.universidad_id ?? (userProfile as any)?.universidad_id}
+          grupoId={perfilEstudiante?.grupo_id}
+          variant="compacta"
+        />
 
         {/* Búsqueda y filtros: hay algo que buscar en los 3 estados del feed
             (vacantes, vacantes en modo lectura, o pasantías de autoservicio) —
@@ -935,7 +971,7 @@ export default function FeedVacantes() {
             style={styles.searchInput}
             value={searchInput}
             onChangeText={handleSearch}
-            placeholder="Buscar vacantes..."
+            placeholder={t('feed_buscar_placeholder')}
             placeholderTextColor={COLORS.textMuted}
             autoCapitalize="none"
             selectionColor={COLORS.primary}
@@ -993,7 +1029,7 @@ export default function FeedVacantes() {
                   styles.filtroChipText,
                   filtroActivo === f.key && styles.filtroChipTextActive,
                 ]}>
-                  {f.label}
+                  {t(f.labelKey)}
                 </Text>
               </JellyButton>
             ))}
@@ -1053,7 +1089,7 @@ export default function FeedVacantes() {
             // Un componente que se dibuja UNA vez, arriba de toda la
             // lista (no se repite por cada elemento) — aquí, el banner
             // explicativo.
-            <EstadoBanner texto="Ya culminaste tu práctica o pasantía: puedes aplicar directamente a cualquier vacante disponible." />
+            <EstadoBanner texto={t('feed_banner_graduado')} />
           }
           ListEmptyComponent={<EmptyState />}
           // Se dibuja SOLO si `data` está vacío, en vez de ListHeaderComponent.
@@ -1086,7 +1122,7 @@ export default function FeedVacantes() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100, maxWidth: 640, alignSelf: 'center', width: '100%', flexGrow: 1 }}
           ListHeaderComponent={
             <>
-              <EstadoBanner texto="Estás en tu pasantía activa. Puedes ver el mercado de vacantes para ubicarte, pero solo podrás aplicar cuando la culmines o te gradúes." />
+              <EstadoBanner texto={t('feed_banner_pasantia_activa')} />
               <MercadoLaboralStats vacantes={vacantes} />
             </>
           }
@@ -1117,7 +1153,7 @@ export default function FeedVacantes() {
           ListHeaderComponent={
             <>
               {!zonaRoja && (
-                <EstadoBanner texto="Todavía no inicias tu pasantía. Debajo verás los cupos que tu universidad ya te aseguró y pasantías de otras empresas a las que puedes aplicar por tu cuenta." />
+                <EstadoBanner texto={t('feed_banner_sin_pasantia')} />
               )}
               {user?.uid && (
                 <TableroCupos
@@ -1128,7 +1164,7 @@ export default function FeedVacantes() {
                 />
               )}
               {!zonaRoja && (
-                <Text style={styles.pasantiasSectionLabel}>Otras pasantías para tu carrera</Text>
+                <Text style={styles.pasantiasSectionLabel}>{t('feed_otras_pasantias')}</Text>
               )}
             </>
           }
@@ -1136,13 +1172,13 @@ export default function FeedVacantes() {
             zonaRoja ? (
               <EmptyState
                 icon="shield-checkmark-outline"
-                titulo={avisoZonaRoja?.titulo ?? 'Gestionado por tu universidad'}
-                desc={avisoZonaRoja?.cuerpo ?? 'Tu carrera requiere que la práctica la gestione tu universidad.'}
+                titulo={avisoZonaRoja?.titulo ?? t('feed_zona_roja_titulo')}
+                desc={avisoZonaRoja?.cuerpo ?? t('feed_zona_roja_desc')}
               />
             ) : (
               <EmptyState
-                titulo="Sin pasantías disponibles todavía"
-                desc="Aún no hay pasantías afines a tu carrera para autoservicio. Vuelve pronto, o espera a que tu universidad te asegure un cupo."
+                titulo={t('feed_empty_pasantias_titulo')}
+                desc={t('feed_empty_pasantias_desc')}
               />
             )
           }
@@ -1153,7 +1189,7 @@ export default function FeedVacantes() {
       {/* ── TOAST ── */}
       <Animated.View style={[styles.toast, { opacity: toastOpacity, transform: [{ translateY: toastY }] }]}>
         <Ionicons name="checkmark-circle" size={18} color={COLORS.success} />
-        <Text style={styles.toastText}>¡Aplicación enviada!</Text>
+        <Text style={styles.toastText}>{t('feed_toast_aplicacion')}</Text>
       </Animated.View>
 
       {/* ── Detalle de vacante ── */}
@@ -1161,6 +1197,9 @@ export default function FeedVacantes() {
         visible={!!vacanteDetalle}
         vacante={vacanteDetalle}
         onClose={() => setVacanteDetalle(null)}
+        carreraEstudiante={miCarrera}
+        // Solo el feed del estudiante manda esto: es lo que enciende el bloque
+        // de "afín a tu carrera" y el conteo de postulantes dentro del modal.
         onContactarEmpresa={
           vacanteDetalle && vacanteDetalle.id in aplicaciones
             ? () => handleContactarEmpresa(vacanteDetalle)

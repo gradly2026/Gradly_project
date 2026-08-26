@@ -4,7 +4,7 @@
 // app/iniciosesion.tsx. La diferencia es el MOTIVO del cambio: los
 // estudiantes nunca tuvieron un "dashboard" de pantalla completa como
 // empresa/universidad — su experiencia vive dentro del grupo de pestañas
-// app/(tabs)/ (Inicio, Progreso, Mensajes, Academia, Perfil). Este
+// app/(tabs)/ (Inicio, Progreso, Mi institución, Mensajes, Perfil). Este
 // archivo existe solo por si algo viejo (un link, una notificación
 // antigua) todavía apunta a "/dashboard-estudiante".
 // ════════════════════════════════════════════════════════════════════════

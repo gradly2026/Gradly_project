@@ -36,6 +36,7 @@ import { ActivityIndicator, Modal, View } from 'react-native';
 // Modal y View: contenedores ya vistos en FloatingTopBar.tsx.
 
 import { db } from '../config/firebaseConfig';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import VacanteDetailModal, { type VacanteDetalle } from './VacanteDetailModal';
 // Importa el componente "hermano" que sabe dibujar el detalle completo de
@@ -54,7 +55,16 @@ interface Props {
 
 export default function VacanteDetailByIdModal({ visible, vacanteId, onClose }: Props) {
   const { colors } = useTheme();
+  const { user, rol } = useAuth();
   const [vacante, setVacante] = useState<VacanteDetalle | null>(null);
+  const [carrera, setCarrera] = useState<string | null>(null);
+  // Carrera del estudiante, para que el detalle abierto DESDE UNA
+  // NOTIFICACIÓN muestre el mismo bloque de "afín a tu carrera" y de
+  // postulantes que el abierto desde el feed. Se resuelve aquí dentro y no
+  // como prop porque este wrapper lo usan 3 pantallas distintas
+  // (FloatingTopBar, AplicacionGrupoDetailModal, ReclamoDetailModal) y
+  // ninguna tiene ese dato a mano: enhebrarlo por las tres sería peor.
+  // Para empresa y universidad la consulta ni siquiera se dispara.
   // Estado: la vacante ya cargada desde Firestore (o null mientras no se
   // ha cargado nada, o si no se encontró).
   const [loading, setLoading] = useState(false);
@@ -112,6 +122,17 @@ export default function VacanteDetailByIdModal({ visible, vacanteId, onClose }: 
     // vuelve a ejecutar o el componente se desmonta antes de terminar.
   }, [visible, vacanteId]);
 
+  useEffect(() => {
+    if (!visible || rol !== 'estudiante' || !user?.uid) { setCarrera(null); return; }
+    let cancel = false;
+    getDoc(doc(db, 'perfiles_estudiantes', user.uid))
+      .then(snap => { if (!cancel) setCarrera(String(snap.data()?.carrera ?? '') || null); })
+      .catch(() => { if (!cancel) setCarrera(null); });
+      // Si falla, el bloque de afinidad simplemente no se dibuja: es
+      // información adicional, no puede impedir ver la vacante.
+    return () => { cancel = true; };
+  }, [visible, rol, user?.uid]);
+
   if (!visible) return null;
   // Si el modal no debe mostrarse, el componente no dibuja absolutamente
   // nada (devolver `null` en un componente de React es válido: significa
@@ -158,7 +179,14 @@ export default function VacanteDetailByIdModal({ visible, vacanteId, onClose }: 
     );
   }
 
-  return <VacanteDetailModal visible={visible} vacante={vacante} onClose={onClose} />;
+  return (
+    <VacanteDetailModal
+      visible={visible}
+      vacante={vacante}
+      onClose={onClose}
+      carreraEstudiante={carrera}
+    />
+  );
   // Tercer estado (el "camino feliz"): si ya terminó de cargar Y sí se
   // encontró la vacante, se delega el dibujo completo al componente
   // especializado VacanteDetailModal, pasándole los datos ya listos.
