@@ -93,7 +93,19 @@ const tsToIso = (v: any): string => {
 // Las 10 "páginas" internas del panel — no son rutas de Expo Router, solo
 // valores del useState `page` que decide qué renderX() se muestra (ver
 // renderBody() al final del componente).
-type AdminPage = "resumen" | "aprobaciones" | "usuarios" | "reportes" | "incidencias" | "vacantes" | "suscripciones" | "notificaciones" | "roles" | "logs" | "config";
+type AdminPage =
+  | "resumen"
+  | "aprobaciones"
+  | "usuarios"
+  | "reportes"
+  | "incidencias"
+  | "pasantias"
+  | "vacantes"
+  | "suscripciones"
+  | "notificaciones"
+  | "roles"
+  | "logs"
+  | "config";
 type Role = "admin" | "universidad" | "empresa" | "estudiante";
 type PermissionRole = Exclude<Role, "estudiante">;
 type Status = "active" | "pending" | "inactive";
@@ -257,7 +269,14 @@ type AdminSuscripcionPago = {
 // Qué sección de datos tuvo un error de lectura (permisos, índice faltante,
 // etc.) — alimenta el banner "Avisos de datos y permisos" que se ve arriba
 // del contenido cuando algo no cargó. Ver setDataIssue/dataIssueList.
-type DataIssueKey = "usuarios" | "metricas" | "logs" | "notificaciones" | "permisos" | "suscripciones";
+type DataIssueKey =
+  | "usuarios"
+  | "metricas"
+  | "pasantias"
+  | "logs"
+  | "notificaciones"
+  | "permisos"
+  | "suscripciones";
 
 const MESES_ADMIN = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
@@ -586,6 +605,32 @@ export default function AdminPreview() {
     accion: "deshabilitar" | "eliminar";
   } | null>(null);
   const [vacanteConfirmReason, setVacanteConfirmReason] = useState("");
+
+  // ── Pasantías (vista admin) ────────────────────────────────────────
+  // Refleja el módulo de pasantías del producto en el panel admin: muestra
+  // pasantías de GRUPO (colección `solicitudes_practicas`) y pasantías
+  // INDIVIDUALES (ciclo de vida en `aplicaciones`).
+  type AdminSolicitudPractica = { id: string } & Record<string, any>;
+  type AdminAplicacionPasantia = { id: string } & Record<string, any>;
+
+  const [pasantiasLoading, setPasantiasLoading] = useState(false);
+  const [pasantiasAttempted, setPasantiasAttempted] = useState(false);
+  const [solicitudesPractica, setSolicitudesPractica] = useState<AdminSolicitudPractica[]>([]);
+  const [aplicacionesPasantia, setAplicacionesPasantia] = useState<AdminAplicacionPasantia[]>([]);
+  const [pasantiasOrigenFilter, setPasantiasOrigenFilter] = useState<"todas" | "grupo" | "individual">("todas");
+  const [pasantiasEstadoFilter, setPasantiasEstadoFilter] = useState<"todas" | "activas" | "finalizadas">("activas");
+  const [pasantiasSearch, setPasantiasSearch] = useState("");
+
+  // Mapas de nombres para que el admin vea etiquetas humanas (no solo IDs).
+  const [empresaNames, setEmpresaNames] = useState<Record<string, string>>({});
+  const [universidadNames, setUniversidadNames] = useState<Record<string, string>>({});
+
+  type PasantiaDetailState =
+    | { kind: "grupo"; item: AdminSolicitudPractica }
+    | { kind: "individual"; item: AdminAplicacionPasantia }
+    | null;
+  const [pasantiaDetail, setPasantiaDetail] = useState<PasantiaDetailState>(null);
+  const [pasantiaDetailOpen, setPasantiaDetailOpen] = useState(false);
 
   // Modal de confirmación genérico para acciones sensibles (banear, inactivar,
   // eliminar). NO usar Alert.alert aquí: react-native-web no implementa
@@ -1120,6 +1165,84 @@ export default function AdminPreview() {
       setDataIssue("notificaciones", adminDataErrorMessage(error, "las notificaciones administrativas"));
     } finally {
       setNotificationsLoading(false);
+    }
+  }, [setDataIssue]);
+
+  const fetchPasantias = useCallback(async () => {
+    setPasantiasLoading(true);
+    setPasantiasAttempted(true);
+    try {
+      let solSnap;
+      let appSnap;
+      try {
+        solSnap = await getDocs(
+          query(collection(db, "solicitudes_practicas"), orderBy("createdAt", "desc"), limit(200)),
+        );
+      } catch (error: any) {
+        if (String(error?.code ?? "") !== "failed-precondition") throw error;
+        solSnap = await getDocs(query(collection(db, "solicitudes_practicas"), limit(200)));
+      }
+      try {
+        appSnap = await getDocs(
+          query(collection(db, "aplicaciones"), orderBy("fecha_aplicacion", "desc"), limit(200)),
+        );
+      } catch (error: any) {
+        if (String(error?.code ?? "") !== "failed-precondition") throw error;
+        appSnap = await getDocs(query(collection(db, "aplicaciones"), limit(200)));
+      }
+
+      const sols = solSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      const apps = appSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      setSolicitudesPractica(sols);
+      setAplicacionesPasantia(apps);
+
+      // Resolver nombres (empresa/universidad) en segundo plano, sin romper si falta permiso.
+      const empresaIds = Array.from(new Set([
+        ...sols.map((s: any) => String(s.empresaId ?? "")).filter(Boolean),
+        ...apps.map((a: any) => String(a.empresa_id ?? "")).filter(Boolean),
+      ])).slice(0, 80);
+      const uniIds = Array.from(new Set(sols.map((s: any) => String(s.universidadId ?? "")).filter(Boolean))).slice(0, 80);
+
+      const [empresaRes, uniRes] = await Promise.allSettled([
+        Promise.allSettled(
+          empresaIds.map(async (id) => {
+            const snap = await getDoc(doc(db, "perfiles_empresas", id));
+            const data: any = snap.exists() ? snap.data() : null;
+            return { id, nombre: String(data?.nombre_empresa ?? data?.nombre ?? "").trim() };
+          }),
+        ),
+        Promise.allSettled(
+          uniIds.map(async (id) => {
+            const snap = await getDoc(doc(db, "perfiles_universidades", id));
+            const data: any = snap.exists() ? snap.data() : null;
+            return { id, nombre: String(data?.nombre_universidad ?? data?.nombre ?? "").trim() };
+          }),
+        ),
+      ]);
+
+      if (empresaRes.status === "fulfilled") {
+        const map: Record<string, string> = {};
+        empresaRes.value.forEach((r) => {
+          if (r.status !== "fulfilled") return;
+          if (r.value.nombre) map[r.value.id] = r.value.nombre;
+        });
+        if (Object.keys(map).length) setEmpresaNames((prev) => ({ ...prev, ...map }));
+      }
+      if (uniRes.status === "fulfilled") {
+        const map: Record<string, string> = {};
+        uniRes.value.forEach((r) => {
+          if (r.status !== "fulfilled") return;
+          if (r.value.nombre) map[r.value.id] = r.value.nombre;
+        });
+        if (Object.keys(map).length) setUniversidadNames((prev) => ({ ...prev, ...map }));
+      }
+      setDataIssue("pasantias", null);
+    } catch (error) {
+      setSolicitudesPractica([]);
+      setAplicacionesPasantia([]);
+      setDataIssue("pasantias", adminDataErrorMessage(error, "las pasantías de la plataforma"));
+    } finally {
+      setPasantiasLoading(false);
     }
   }, [setDataIssue]);
 
@@ -1831,6 +1954,7 @@ export default function AdminPreview() {
   useEffect(() => {
     if (page === "logs" && !logsAttempted && !logsLoading) fetchLogs();
     if (page === "notificaciones" && !notificationsAttempted && !notificationsLoading) fetchNotifications();
+    if (page === "pasantias" && !pasantiasAttempted && !pasantiasLoading) fetchPasantias();
     if (page === "suscripciones" && !suscripcionesAttempted && !suscripcionesLoading) fetchSuscripciones();
     if (page === "roles" && !permissionsLoading) {
       if (roleTab === "estudiante") {
@@ -1844,12 +1968,15 @@ export default function AdminPreview() {
   }, [
     fetchLogs,
     fetchNotifications,
+    fetchPasantias,
     fetchPermissions,
     fetchSuscripciones,
     logsAttempted,
     logsLoading,
     notificationsAttempted,
     notificationsLoading,
+    pasantiasAttempted,
+    pasantiasLoading,
     page,
     permissionsLoadedRole,
     permissionsLoading,
@@ -1896,6 +2023,41 @@ export default function AdminPreview() {
     });
   }, [vacanteEstadoFilter, vacanteSearch, vacanteTipoFilter, vacantesList]);
 
+  const filteredSolicitudesPractica = useMemo(() => {
+    if (pasantiasOrigenFilter === "individual") return [];
+    const q = pasantiasSearch.trim().toLowerCase();
+    return solicitudesPractica.filter((s) => {
+      const estado = s.certificacion === "certificada" ? "certificada" : String(s.estado ?? "");
+      const esFinal = estado === "finalizado" || estado === "certificada";
+      if (pasantiasEstadoFilter === "activas" && esFinal) return false;
+      if (pasantiasEstadoFilter === "finalizadas" && !esFinal) return false;
+      if (!q) return true;
+      const haystack =
+        `${s.grupoNombre ?? ""} ${s.grupoId ?? ""} ${s.empresaId ?? ""} ${s.universidadId ?? ""} ${s.carrera ?? ""} ${s.estado ?? ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [pasantiasEstadoFilter, pasantiasOrigenFilter, pasantiasSearch, solicitudesPractica]);
+
+  const filteredAplicacionesPasantia = useMemo(() => {
+    if (pasantiasOrigenFilter === "grupo") return [];
+    const q = pasantiasSearch.trim().toLowerCase();
+    return aplicacionesPasantia.filter((a) => {
+      const estado = String(a.estado ?? "");
+      const esFinal = estado === "finalizado" || estado === "finalizado_pendiente_firma";
+      const esActiva = estado === "contratado";
+      if (pasantiasEstadoFilter === "activas" && !esActiva) return false;
+      if (pasantiasEstadoFilter === "finalizadas" && !esFinal) return false;
+      if (pasantiasEstadoFilter === "todas") {
+        // Filtramos a lo que forma parte del ciclo de vida de pasantía (no entrevistas, etc.).
+        if (!esActiva && !esFinal) return false;
+      }
+      if (!q) return true;
+      const haystack =
+        `${a.estudiante_nombre ?? ""} ${a.estudiante_id ?? ""} ${a.empresa_id ?? ""} ${a.vacante_id ?? ""} ${a.estado ?? ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [aplicacionesPasantia, pasantiasEstadoFilter, pasantiasOrigenFilter, pasantiasSearch]);
+
   const approvalQueue = useMemo(() => {
     return users
       .filter((u) => roleRequiresApproval(u.role))
@@ -1931,6 +2093,7 @@ export default function AdminPreview() {
     { key: "usuarios", label: "Usuarios", icon: "people-outline" },
     { key: "reportes", label: "Reportes", icon: "bar-chart-outline" },
     { key: "incidencias", label: "Incidencias", icon: "flag-outline" },
+    { key: "pasantias", label: "Pasantías", icon: "school-outline" },
     { key: "notificaciones", label: "Inbox", icon: "notifications-outline" },
     { key: "roles", label: "Permisos", icon: "key-outline" },
     { key: "logs", label: "Logs", icon: "receipt-outline" },
@@ -3272,6 +3435,218 @@ export default function AdminPreview() {
     );
   };
 
+  const renderPasantias = () => {
+    const labelEmpresa = (id?: string | null) => {
+      if (!id) return "—";
+      return empresaNames[id] || `${String(id).slice(0, 10)}…`;
+    };
+    const labelUni = (id?: string | null) => {
+      if (!id) return "—";
+      return universidadNames[id] || `${String(id).slice(0, 10)}…`;
+    };
+
+    const labelSolicitud = (s: any) => {
+      const estado = s?.certificacion === "certificada" ? "certificada" : String(s?.estado ?? "");
+      if (estado === "pendiente") return { label: "Pendiente", type: "pending" as const };
+      if (estado === "finalizado" || estado === "certificada") return { label: estado === "certificada" ? "Certificada" : "Finalizada", type: "inactive" as const };
+      if (estado === "rechazada") return { label: "Rechazada", type: "inactive" as const };
+      // aprobado / revisando / etc.
+      return { label: estado ? estado[0].toUpperCase() + estado.slice(1) : "Activa", type: "active" as const };
+    };
+
+    const labelAplicacion = (a: any) => {
+      const estado = String(a?.estado ?? "");
+      if (estado === "finalizado_pendiente_firma") return { label: "Pend. firma", type: "pending" as const };
+      if (estado === "finalizado") return { label: "Finalizada", type: "inactive" as const };
+      if (estado === "contratado") return { label: "Activa", type: "active" as const };
+      return { label: estado || "—", type: "pending" as const };
+    };
+
+    return (
+      <ScrollView
+        showsVerticalScrollIndicator
+        refreshControl={<RefreshControl refreshing={pasantiasLoading} onRefresh={fetchPasantias} tintColor={C.accent70} />}
+      >
+        <View style={s.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.kicker}>Operación</Text>
+            <Text style={s.pageTitle}>Pasantías</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>
+              Visión unificada del flujo de pasantías: grupos (`solicitudes_practicas`) e individuales (`aplicaciones`).
+            </Text>
+          </View>
+          <TouchableOpacity style={s.btnOutline} onPress={fetchPasantias} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Card style={{ marginBottom: 14 }}>
+          <View style={s.searchWrap}>
+            <Ionicons name="search-outline" size={18} color={C.textMuted} />
+            <TextInput
+              style={s.searchInput}
+              placeholder="Buscar por grupo, carrera, estudiante o IDs…"
+              placeholderTextColor={C.textMuted}
+              value={pasantiasSearch}
+              onChangeText={setPasantiasSearch}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8, marginTop: 14 }]}>ORIGEN</Text>
+          <View style={s.chipRow}>
+            {(["todas", "grupo", "individual"] as const).map((tp) => (
+              <Chip
+                key={tp}
+                label={tp === "todas" ? "Todas" : tp === "grupo" ? "Grupo" : "Individual"}
+                active={pasantiasOrigenFilter === tp}
+                onPress={() => setPasantiasOrigenFilter(tp)}
+              />
+            ))}
+          </View>
+
+          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8, marginTop: 14 }]}>ESTADO</Text>
+          <View style={s.chipRow}>
+            {(["activas", "finalizadas", "todas"] as const).map((st) => (
+              <Chip
+                key={st}
+                label={st === "activas" ? "Activas" : st === "finalizadas" ? "Finalizadas" : "Todas"}
+                active={pasantiasEstadoFilter === st}
+                onPress={() => setPasantiasEstadoFilter(st)}
+              />
+            ))}
+          </View>
+        </Card>
+
+        <View style={[s.grid2, { marginBottom: 14 }]}>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Grupos</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Pasantías en `solicitudes_practicas` (según filtros).</Text>
+            <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{filteredSolicitudesPractica.length}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Individuales</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Pasantías individuales (estado en `aplicaciones`).</Text>
+            <Text style={[s.heroMetricValue, { color: C.green, marginTop: 12 }]}>{filteredAplicacionesPasantia.length}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Total</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Suma de ambas vistas.</Text>
+            <Text style={[s.heroMetricValue, { color: C.text, marginTop: 12 }]}>
+              {filteredSolicitudesPractica.length + filteredAplicacionesPasantia.length}
+            </Text>
+          </View>
+        </View>
+
+        <Card style={{ marginBottom: 14 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>Pasantías de grupo</Text>
+            <Text style={s.textMuted}>{filteredSolicitudesPractica.length}</Text>
+          </View>
+
+          {pasantiasLoading && filteredSolicitudesPractica.length === 0 ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : filteredSolicitudesPractica.length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin resultados</Text>
+          ) : (
+            <View style={{ gap: 10 }}>
+              {filteredSolicitudesPractica.slice(0, 80).map((sol) => {
+                const st = labelSolicitud(sol);
+                const fechas = [sol.fechaInicio, sol.fechaFin].filter(Boolean).join(" → ");
+                return (
+                  <TouchableOpacity
+                    key={sol.id}
+                    style={[s.listItem, isPhone && s.listItemStack]}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setPasantiaDetail({ kind: "grupo", item: sol });
+                      setPasantiaDetailOpen(true);
+                    }}
+                  >
+                    <View style={s.avatar}>
+                      <Ionicons name="people-outline" size={18} color={C.accent70} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.itemTitle} numberOfLines={1}>
+                            {sol.grupoNombre ?? `Grupo ${String(sol.grupoId ?? "").slice(0, 8)}`}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={2}>
+                            {(sol.carrera ?? "Sin carrera") + (fechas ? ` · ${fechas}` : "")}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
+                            Empresa: {labelEmpresa(sol.empresaId)} · Universidad: {labelUni(sol.universidadId)}
+                          </Text>
+                        </View>
+                        <Badge label={st.label} type={st.type} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </Card>
+
+        <Card style={{ marginBottom: 24 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>Pasantías individuales</Text>
+            <Text style={s.textMuted}>{filteredAplicacionesPasantia.length}</Text>
+          </View>
+
+          {pasantiasLoading && filteredAplicacionesPasantia.length === 0 ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : filteredAplicacionesPasantia.length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin resultados</Text>
+          ) : (
+            <View style={{ gap: 10 }}>
+              {filteredAplicacionesPasantia.slice(0, 80).map((app) => {
+                const st = labelAplicacion(app);
+                const horas = typeof app.horas_completadas === "number" ? app.horas_completadas : Number(app.horas_completadas ?? 0);
+                return (
+                  <TouchableOpacity
+                    key={app.id}
+                    style={[s.listItem, isPhone && s.listItemStack]}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setPasantiaDetail({ kind: "individual", item: app });
+                      setPasantiaDetailOpen(true);
+                    }}
+                  >
+                    <View style={s.avatar}>
+                      <Ionicons name="briefcase-outline" size={18} color={C.accent70} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.itemTitle} numberOfLines={1}>
+                            {app.estudiante_nombre ?? "Estudiante"}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={2}>
+                            Empresa: {labelEmpresa(app.empresa_id)} · Vacante: {app.vacante_id ?? "—"}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={1}>
+                            Horas completadas: {horas}
+                          </Text>
+                        </View>
+                        <Badge label={st.label} type={st.type} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </Card>
+      </ScrollView>
+    );
+  };
+
   // renderNotificaciones: bandeja de `admin_notifications` (alertas internas
   // del sistema, no las notificaciones in-app de usuarios finales — esas
   // viven en `notificaciones_app`, ver project_notificaciones_app).
@@ -3932,6 +4307,116 @@ export default function AdminPreview() {
     ) : null}
     </>
   );
+
+  const PasantiaDetailModal = () => {
+    const detail = pasantiaDetail;
+    if (!detail) return null;
+    const empresaId = detail.kind === "grupo" ? String(detail.item.empresaId ?? "") : String(detail.item.empresa_id ?? "");
+    const uniId = detail.kind === "grupo" ? String(detail.item.universidadId ?? "") : "";
+    const empresaLabel = empresaId ? (empresaNames[empresaId] ?? `${empresaId.slice(0, 10)}…`) : "—";
+    const uniLabel = uniId ? (universidadNames[uniId] ?? `${uniId.slice(0, 10)}…`) : "—";
+
+    const headerTitle = detail.kind === "grupo" ? "Pasantía (grupo)" : "Pasantía (individual)";
+    const primaryTitle =
+      detail.kind === "grupo"
+        ? (detail.item.grupoNombre ?? `Grupo ${String(detail.item.grupoId ?? "").slice(0, 8)}`)
+        : (detail.item.estudiante_nombre ?? "Estudiante");
+
+    const estadoLabel =
+      detail.kind === "grupo"
+        ? (detail.item.certificacion === "certificada" ? "Certificada" : String(detail.item.estado ?? "—"))
+        : String(detail.item.estado ?? "—");
+
+    const estadoType: Status =
+      detail.kind === "grupo"
+        ? (estadoLabel === "pendiente" ? "pending" : estadoLabel === "finalizado" || estadoLabel === "Certificada" ? "inactive" : "active")
+        : (estadoLabel === "contratado" ? "active" : estadoLabel === "finalizado_pendiente_firma" ? "pending" : estadoLabel === "finalizado" ? "inactive" : "pending");
+
+    const raw = detail.item as any;
+    const rawKeys = Object.keys(raw || {}).filter((k) => k !== "raw").sort().slice(0, 36);
+
+    return (
+      <Modal
+        visible={pasantiaDetailOpen}
+        transparent
+        animationType="none"
+        onRequestClose={() => {
+          setPasantiaDetailOpen(false);
+          setPasantiaDetail(null);
+        }}
+      >
+        <View style={s.modalOverlay}>
+          <View style={[s.modal, isPhone && s.modalCompact]}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>{headerTitle}</Text>
+              <TouchableOpacity
+                style={[s.iconBtn, { width: 38, height: 38 }]}
+                onPress={() => {
+                  setPasantiaDetailOpen(false);
+                  setPasantiaDetail(null);
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="close" size={20} color={C.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator>
+              <Card>
+                <View style={[s.row, { justifyContent: "space-between", marginBottom: 10, gap: 10, flexWrap: "wrap" }]}>
+                  <Text style={s.cardTitle}>{primaryTitle}</Text>
+                  <Badge label={estadoLabel} type={estadoType} />
+                </View>
+
+                {detail.kind === "grupo" ? (
+                  <>
+                    <Text style={s.textMuted}>Carrera: {detail.item.carrera ?? "—"}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Fechas: {(detail.item.fechaInicio ?? "—")} → {(detail.item.fechaFin ?? "—")}
+                    </Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>Empresa: {empresaLabel}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>Universidad: {uniLabel}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID solicitud: {detail.item.id}</Text>
+                    {detail.item.grupoId ? <Text style={[s.textMuted, { marginTop: 6 }]}>ID grupo: {detail.item.grupoId}</Text> : null}
+                    {Array.isArray(detail.item.estudianteIds) ? (
+                      <Text style={[s.textMuted, { marginTop: 6 }]}>
+                        Estudiantes: {detail.item.estudianteIds.length}
+                      </Text>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <Text style={s.textMuted}>Empresa: {empresaLabel}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID empresa: {empresaId || "—"}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID vacante: {detail.item.vacante_id ?? "—"}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID estudiante: {detail.item.estudiante_id ?? "—"}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Horas completadas: {typeof detail.item.horas_completadas === "number" ? detail.item.horas_completadas : Number(detail.item.horas_completadas ?? 0)}
+                    </Text>
+                  </>
+                )}
+              </Card>
+
+              <Card style={{ marginTop: 12 }}>
+                <Text style={s.cardTitle}>Datos (raw)</Text>
+                <Text style={[s.textMuted, { marginTop: 6 }]}>
+                  Vista técnica para depuración. Si falta algún campo, me dices cuál y lo agrego.
+                </Text>
+                <View style={{ marginTop: 12, gap: 10 }}>
+                  {rawKeys.map((k) => (
+                    <View key={k}>
+                      <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.6 }]}>{k.toUpperCase()}</Text>
+                      <Text style={[s.itemSub, { marginTop: 4 }]}>{formatRawValue(raw[k])}</Text>
+                    </View>
+                  ))}
+                </View>
+              </Card>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   const EditModal = () => (
     <Modal visible={editOpen} transparent animationType="none" onRequestClose={() => setEditOpen(false)}>
@@ -4782,6 +5267,8 @@ export default function AdminPreview() {
         return renderReportes();
       case "incidencias":
         return renderIncidencias();
+      case "pasantias":
+        return renderPasantias();
       case "vacantes":
         return renderVacantes();
       case "suscripciones":
@@ -4949,6 +5436,7 @@ export default function AdminPreview() {
       </View>
 
       {DetailModal()}
+      {PasantiaDetailModal()}
       {EditModal()}
       {ReportDetailModal()}
       {IncidenciaDetailModal()}
