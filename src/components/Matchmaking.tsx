@@ -44,15 +44,14 @@ import {
   textoHorario,
   type DisponibilidadHoraria,
   type HorarioPasantia,
-  type ResumenCompatibilidad,
 } from '../data/disponibilidad';
 import {
   evaluarGrupoPorEmpresa,
-  postularGrupoAVacante,
   respuestaFinalUniversidad,
   type AplicacionGrupo,
   type EstadoAplicacionGrupo,
 } from '../services/pasantiaService';
+import ReportarPasantiaModal from './ReportarPasantiaModal';
 
 // ─────────────────────────────────────────────
 // TIPOS LOCALES
@@ -60,6 +59,7 @@ import {
 interface Vacante {
   id: string;
   titulo?: string;
+  empresa_id?: string;
   nombre_empresa?: string;
   area?: string;
   modalidad?: string;
@@ -90,15 +90,6 @@ interface Grupo {
   carrera?: string;
   total_horas?: number;
   estudiantes_count?: number;
-}
-
-/** Pasantía de grupo ya aprobada (colección `solicitudes_practicas`). Solo
- * se usa aquí para saber qué grupos ya están en pasantía activa y no deben
- * postularse a otra vacante en paralelo. */
-interface SolicitudPractica {
-  id: string;
-  grupoId?: string;
-  estado?: string;
 }
 
 // ─────────────────────────────────────────────
@@ -134,7 +125,6 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
   const [vacantes, setVacantes] = useState<Vacante[]>([]);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [postulaciones, setPostulaciones] = useState<AplicacionGrupo[]>([]);
-  const [solicitudesPracticas, setSolicitudesPracticas] = useState<SolicitudPractica[]>([]);
   const [estudiantes, setEstudiantes] = useState<EstudianteDisp[]>([]);
 
   // Reclamo de cupos por lote
@@ -145,16 +135,10 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
   const [reclamando, setReclamando] = useState(false);
   const [nombreUniversidad, setNombreUniversidad] = useState('');
 
-  // Modal de postulación
-  const [vacanteSel, setVacanteSel] = useState<Vacante | null>(null);
-  const [grupoSel, setGrupoSel] = useState<string | null>(null);
-  const [enviando, setEnviando] = useState(false);
-  // Modal de confirmación: se abre al tocar un grupo elegible (evita depender
-  // del botón "Enviar postulación", que en iOS quedaba fuera de la vista).
-  const [grupoConfirmar, setGrupoConfirmar] = useState<Grupo | null>(null);
-
   // Modal de detalle de vacante
   const [detalleVac, setDetalleVac] = useState<VacanteDetalle | null>(null);
+  // Modal de "Reportar pasantía" (reemplazó al de postular un grupo)
+  const [reportarVac, setReportarVac] = useState<Vacante | null>(null);
 
   // Respuesta final
   const [rechazoApp, setRechazoApp] = useState<AplicacionGrupo | null>(null);
@@ -190,18 +174,6 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
       query(collection(db, 'aplicaciones_grupos'), where('universidadId', '==', universidadId)),
       snap => setPostulaciones(snap.docs.map(d => ({ id: d.id, ...d.data() } as AplicacionGrupo))),
       error => console.warn('Error en listener (postulaciones grupos):', error),
-    );
-    return unsub;
-  }, [universidadId]);
-
-  // Pasantías de grupo ya aprobadas: mientras estén 'aprobado' (activas, sin
-  // finalizar aún) el grupo no debe postularse a otra vacante en paralelo.
-  useEffect(() => {
-    if (!universidadId) return;
-    const unsub = onSnapshot(
-      query(collection(db, 'solicitudes_practicas'), where('universidadId', '==', universidadId)),
-      snap => setSolicitudesPracticas(snap.docs.map(d => ({ id: d.id, ...d.data() } as SolicitudPractica))),
-      error => console.warn('Error en listener (solicitudes_practicas matchmaking):', error),
     );
     return unsub;
   }, [universidadId]);
@@ -244,31 +216,19 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
   /** Alumnos aún sin cupo asegurado — guía cuántos reclamar. */
   const faltantesPorCubrir = Math.max(0, estudiantes.length - asegurados);
 
+  /** Carreras distintas de los grupos de la universidad — para que el detalle
+   *  de vacante muestre a qué carrera(s) es afín (o no) esta pasantía. */
+  const carrerasDeGrupos = useMemo(
+    () => Array.from(new Set(grupos.map(g => (g.carrera ?? '').trim()).filter(Boolean))),
+    [grupos],
+  );
+
   /** Cupos ya asegurados SOLO para un grupo (reclamos con ese grupoId). */
   const cuposAseguradosDeGrupo = (grupoId: string): number =>
     cuposAsegurados(reclamos.filter(r => r.grupoId === grupoId));
 
   /** Grupo que ya tiene cupo para todos sus estudiantes — no necesita más. */
   const [grupoCubierto, setGrupoCubierto] = useState<Grupo | null>(null);
-
-  /** Compatibilidad de un grupo con el horario de la vacante seleccionada. */
-  const compatibilidadGrupo = (grupoId: string): ResumenCompatibilidad | null => {
-    const horario = normalizarHorario(vacanteSel?.horario);
-    if (!horario) return null; // vacante legada, sin horario declarado
-    const delGrupo = estudiantes.filter(e => e.grupo_id === grupoId);
-    if (delGrupo.length === 0) return null;
-    return contarCompatibilidad(delGrupo, horario);
-  };
-
-  // Set de grupoId con una pasantía aprobada y aún no finalizada.
-  const gruposEnPasantiaActiva = useMemo(
-    () => new Set(
-      solicitudesPracticas
-        .filter(s => s.estado === 'aprobado' && s.grupoId)
-        .map(s => s.grupoId as string),
-    ),
-    [solicitudesPracticas],
-  );
 
   const vacantesOrdenadas = useMemo(
     () => vacantes
@@ -279,16 +239,6 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
       .sort((a, b) => fechaMs(b.fecha_publicacion) - fechaMs(a.fecha_publicacion)),
     [vacantes],
   );
-
-  // Postulaciones activas (no rechazadas) por vacante, para el límite de 2
-  const postulacionesActivasPorVacante = (vacanteId: string) =>
-    postulaciones.filter(p => p.vacanteId === vacanteId && p.estado !== 'rechazada');
-
-  const abrirPostular = (v: Vacante) => {
-    setVacanteSel(v);
-    setGrupoSel(null);
-    setGrupoConfirmar(null);
-  };
 
   // ── Reclamo de cupos por lote ──────────────────────────────────────
   const abrirReclamo = (v: Vacante) => {
@@ -301,6 +251,10 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
 
   const confirmarReclamo = async () => {
     if (!reclamoVac) return;
+    // El grupo destino es obligatorio: reservar cupos es siempre PARA un grupo
+    // concreto de estudiantes. El botón ya está deshabilitado sin grupo, pero
+    // se revalida aquí por si acaso.
+    if (!reclamoGrupo) { void showAlert('Selecciona un grupo', 'Elige a qué grupo de estudiantes asignarás estos cupos.'); return; }
     const n = Number(reclamoCant);
     const libres = cuposDisponibles(reclamoVac) ?? 0;
     if (!Number.isFinite(n) || n < 1) { void showAlert('Cantidad inválida', 'Indica cuántos cupos necesitas.'); return; }
@@ -340,23 +294,6 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
     }
   };
 
-  const confirmarPostular = async () => {
-    if (!vacanteSel || !grupoSel) { void showAlert('Selecciona un grupo'); return; }
-    setEnviando(true);
-    try {
-      await postularGrupoAVacante(universidadId, vacanteSel.id, grupoSel);
-      void showAlert('¡Postulación enviada!', 'La empresa revisará a tu grupo.');
-      setGrupoConfirmar(null);
-      setVacanteSel(null);
-      setGrupoSel(null);
-    } catch (e: any) {
-      void showAlert('No se pudo postular', e?.message ?? 'Intenta de nuevo.');
-      setGrupoConfirmar(null);
-    } finally {
-      setEnviando(false);
-    }
-  };
-
   const responderFinal = async (app: AplicacionGrupo, decision: 'aceptar' | 'rechazar', motivo?: string) => {
     setErrorAccion(null);
     try {
@@ -374,14 +311,6 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
       void showAlert('Error', mensaje);
     }
   };
-
-  const gruposDisponibles = vacanteSel ? grupos : [];
-  const yaPostulados = vacanteSel
-    ? postulacionesActivasPorVacante(vacanteSel.id).map(p => p.grupoId)
-    : [];
-  const limiteAlcanzado = vacanteSel
-    ? postulacionesActivasPorVacante(vacanteSel.id).length >= 2
-    : false;
 
   return (
     <View style={{ gap: 12 }}>
@@ -498,21 +427,21 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                 </TouchableOpacity>
                 {/* Botones siempre al pie de la tarjeta, repartidos en todo el ancho. */}
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                  <TouchableOpacity
-                    style={[styles.cta, !hayCupos(v) && styles.ctaDisabled, styles.ctaFull]}
-                    onPress={() => abrirPostular(v)}
-                    disabled={!hayCupos(v)}
-                  >
-                    <Ionicons name="people-outline" size={15} color="#fff" />
-                    <Text style={styles.ctaText}>{hayCupos(v) ? 'Postular grupo' : 'Sin cupos'}</Text>
-                  </TouchableOpacity>
-                  {/* Reclamar por lote: solo en vacantes que declaran cupos. */}
+                  {/* Reservar cupos por lote: solo en vacantes que declaran cupos. */}
                   {cuposDisponibles(v) !== null && hayCupos(v) && (
-                    <TouchableOpacity style={[styles.ctaAlt, styles.ctaFull]} onPress={() => abrirReclamo(v)}>
-                      <Ionicons name="bookmark-outline" size={15} color={colors.primaryLight} />
-                      <Text style={styles.ctaAltText}>Reservar cupos</Text>
+                    <TouchableOpacity style={[styles.cta, styles.ctaFull]} onPress={() => abrirReclamo(v)}>
+                      <Ionicons name="bookmark-outline" size={15} color="#fff" />
+                      <Text style={styles.ctaText}>Reservar cupos</Text>
                     </TouchableOpacity>
                   )}
+                  {/* Reportar la pasantía al admin (reemplazó a "Postular grupo"). */}
+                  <TouchableOpacity
+                    style={[styles.ctaAlt, styles.ctaFull, { borderColor: colors.error }]}
+                    onPress={() => setReportarVac(v)}
+                  >
+                    <Ionicons name="flag-outline" size={15} color={colors.error} />
+                    <Text style={[styles.ctaAltText, { color: colors.error }]}>Reportar Pasantía</Text>
+                  </TouchableOpacity>
                 </View>
               </GlassCard>
             </View>
@@ -577,158 +506,6 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
         </>
       )}
 
-      {/* ── Modal: postular un grupo (un solo <Modal> con dos pasos internos) ──
-          IMPORTANTE: en nativo (iOS/Android) NO se pueden tener dos <Modal>
-          visibles a la vez de forma confiable — cada uno monta una ventana/
-          overlay nativa real, y apilar dos deja el segundo sin mostrarse (o el
-          primero sin poder cerrarse bien) hasta recargar la app. En web, el
-          <Modal> de react-native-web es solo una View posicionada, por eso ahí
-          "funcionaba" apilando dos. La solución es UN solo <Modal> que cambia
-          de contenido (lista → confirmación) según `grupoConfirmar`. */}
-      <Modal
-        visible={!!vacanteSel}
-        transparent
-        animationType="none"
-        onRequestClose={() => {
-          if (enviando) return;
-          if (grupoConfirmar) { setGrupoConfirmar(null); setGrupoSel(null); return; }
-          setVacanteSel(null);
-        }}
-      >
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
-            {grupoConfirmar ? (
-              <>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.sheetTitle}>Confirmar postulación</Text>
-                  <TouchableOpacity
-                    onPress={() => { setGrupoConfirmar(null); setGrupoSel(null); }}
-                    disabled={enviando}
-                    hitSlop={10}
-                  >
-                    <Ionicons name="close" size={22} color={colors.textMuted} />
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.cardMeta}>
-                  Vas a postular al grupo “{grupoConfirmar.nombre ?? 'Grupo'}” para la vacante “{vacanteSel?.titulo ?? ''}”.
-                </Text>
-                <Text style={styles.note}>
-                  La empresa revisará esta postulación y podrás seguir su estado en “Mis postulaciones”.
-                </Text>
-                <View style={styles.actionsRow}>
-                  <TouchableOpacity
-                    style={styles.cancelBtn}
-                    onPress={() => { setGrupoConfirmar(null); setGrupoSel(null); }}
-                    disabled={enviando}
-                  >
-                    <Text style={styles.cancelText}>Cancelar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.acceptBtn, { marginTop: 0 }, enviando && { opacity: 0.6 }]}
-                    onPress={confirmarPostular}
-                    disabled={enviando}
-                  >
-                    {enviando
-                      ? <ActivityIndicator color="#fff" />
-                      : <Text style={styles.acceptText}>Confirmar</Text>}
-                  </TouchableOpacity>
-                </View>
-              </>
-            ) : (
-              <>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.sheetTitle}>Postular un grupo</Text>
-                  <TouchableOpacity onPress={() => setVacanteSel(null)} hitSlop={10}>
-                    <Ionicons name="close" size={22} color={colors.textMuted} />
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.cardMeta}>{vacanteSel?.titulo} · {vacanteSel?.nombre_empresa}</Text>
-                <Text style={styles.sheetHint}>
-                  Máximo 2 grupos por vacante. Postulados: {vacanteSel ? postulacionesActivasPorVacante(vacanteSel.id).length : 0}/2
-                </Text>
-
-                {limiteAlcanzado ? (
-                  <Text style={[styles.sheetHint, { color: colors.error }]}>Límite de 2 grupos alcanzado para esta vacante.</Text>
-                ) : (
-                  <Text style={styles.note}>Toca un grupo para postularlo (se pedirá confirmación).</Text>
-                )}
-
-                <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-                  {gruposDisponibles.length === 0 ? (
-                    <Text style={styles.empty}>No tienes grupos creados todavía.</Text>
-                  ) : (
-                    gruposDisponibles.map(g => {
-                      const yaPost = yaPostulados.includes(g.id);
-                      const enPasantia = gruposEnPasantiaActiva.has(g.id);
-                      // 'ninguna' es la única de las 3 afinidades que bloquea — 'posible'
-                      // (dato faltante: vacante legada, área "Otra" o carrera fuera del
-                      // catálogo) NUNCA quita la oportunidad, mismo criterio que el resto
-                      // de la app (ver areas.ts).
-                      const noAfin = afinidadCarreraVacante(g.carrera, vacanteSel) === 'ninguna';
-                      const bloqueado = yaPost || enPasantia || limiteAlcanzado || noAfin;
-                      return (
-                        <TouchableOpacity
-                          key={g.id}
-                          disabled={bloqueado}
-                          style={[styles.grupoRow, bloqueado && { opacity: 0.5 }]}
-                          onPress={() => {
-                            setGrupoSel(g.id);
-                            setGrupoConfirmar(g);
-                          }}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.cardTitle} numberOfLines={1}>{g.nombre ?? 'Grupo'}</Text>
-                            <Text style={styles.cardMeta} numberOfLines={1}>
-                              {g.carrera ?? '—'} · {g.estudiantes_count ?? 0} estudiantes · {g.total_horas ?? 0}h
-                            </Text>
-                            {enPasantia && !yaPost && (
-                              <Text style={[styles.cardMeta, { color: colors.warning, marginTop: 2 }]}>
-                                Ya está en una pasantía activa
-                              </Text>
-                            )}
-                            {/* Bloquea la selección: el área de la vacante no
-                                corresponde a la carrera del grupo. */}
-                            {noAfin && (
-                              <Text style={[styles.cardMeta, { color: colors.error, marginTop: 2 }]}>
-                                ⚠ Área no afín a {g.carrera} — no se puede postular
-                              </Text>
-                            )}
-                            {/* Compatibilidad con el horario declarado en la vacante.
-                                Los "desconocidos" (alumnos sin disponibilidad marcada)
-                                se muestran aparte: NO se cuentan como que pueden. */}
-                            {(() => {
-                              const comp = compatibilidadGrupo(g.id);
-                              if (!comp) return null;
-                              const todos = comp.compatibles === comp.total;
-                              return (
-                                <Text
-                                  style={[
-                                    styles.cardMeta,
-                                    { marginTop: 2, color: todos ? colors.success : colors.warning },
-                                  ]}
-                                >
-                                  {comp.compatibles}/{comp.total} pueden con este horario
-                                  {comp.desconocidos > 0 ? ` · ${comp.desconocidos} sin disponibilidad marcada` : ''}
-                                </Text>
-                              );
-                            })()}
-                          </View>
-                          <Ionicons
-                            name={yaPost ? 'checkmark-done' : enPasantia ? 'briefcase' : 'chevron-forward'}
-                            size={20}
-                            color={colors.textMuted}
-                          />
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
-                </ScrollView>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
-
       {/* ── Modal: reservar cupos por lote ── */}
       <Modal
         visible={!!reclamoVac}
@@ -772,16 +549,20 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
               selectionColor={colors.primary}
             />
 
-            <Text style={styles.campoLabel}>Grupo destino (opcional)</Text>
+            <Text style={styles.campoLabel}>Grupo destino</Text>
             <ScrollView style={{ maxHeight: 150 }} showsVerticalScrollIndicator={false}>
               {grupos.length === 0 ? (
                 <Text style={styles.empty}>No tienes grupos creados.</Text>
               ) : (
                 grupos.map(g => {
                   const sel = reclamoGrupo === g.id;
-                  // 'ninguna' es la única afinidad que bloquea (ver el mismo criterio
-                  // aplicado arriba, en "Postular un grupo").
-                  const noAfin = afinidadCarreraVacante(g.carrera, reclamoVac) === 'ninguna';
+                  // El área de la vacante puede no coincidir con la carrera del
+                  // grupo. Antes eso BLOQUEABA la selección; ahora solo se
+                  // advierte: el área declarada de una vacante no siempre
+                  // refleja su necesidad real (una empresa de "comercio" puede
+                  // necesitar un técnico de redes), así que la universidad
+                  // decide. Ver afinidadCarreraVacante en data/areas.ts.
+                  const areaDistinta = afinidadCarreraVacante(g.carrera, reclamoVac) === 'ninguna';
                   const comp = normalizarHorario(reclamoVac?.horario)
                     ? contarCompatibilidad(
                         estudiantes.filter(e => e.grupo_id === g.id),
@@ -791,8 +572,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                   return (
                     <TouchableOpacity
                       key={g.id}
-                      disabled={noAfin}
-                      style={[styles.grupoRow, sel && styles.grupoRowSel, noAfin && { opacity: 0.5 }]}
+                      style={[styles.grupoRow, sel && styles.grupoRowSel]}
                       onPress={() => {
                         if (sel) { setReclamoGrupo(null); return; }
                         // Grupo ya cubierto (cupo asegurado para todos sus
@@ -810,11 +590,11 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                         <Text style={styles.cardMeta} numberOfLines={1}>
                           {g.carrera ?? '—'} · {g.estudiantes_count ?? 0} estudiantes
                         </Text>
-                        {/* Bloquea la selección: el área de la vacante no
-                            corresponde a la carrera del grupo. */}
-                        {noAfin && (
-                          <Text style={[styles.cardMeta, { color: colors.error }]}>
-                            ⚠ Área no afín a {g.carrera} — no se puede reservar para este grupo
+                        {/* Aviso, NO bloqueo: el área declarada de la vacante no
+                            coincide con la carrera del grupo. */}
+                        {areaDistinta && (
+                          <Text style={[styles.cardMeta, { color: colors.warning }]}>
+                            El área de la vacante no coincide con la carrera de este grupo. Puedes reservar igual.
                           </Text>
                         )}
                         {comp && comp.total > 0 && (
@@ -848,9 +628,9 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                 <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.acceptBtn, reclamando && { opacity: 0.6 }]}
+                style={[styles.acceptBtn, (reclamando || !reclamoGrupo) && { opacity: 0.5 }]}
                 onPress={confirmarReclamo}
-                disabled={reclamando}
+                disabled={reclamando || !reclamoGrupo}
               >
                 {reclamando
                   ? <ActivityIndicator size="small" color="#fff" />
@@ -942,6 +722,17 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
         visible={!!detalleVac}
         vacante={detalleVac}
         onClose={() => setDetalleVac(null)}
+        carrerasAfinidad={carrerasDeGrupos}
+      />
+
+      {/* ── Modal: reportar pasantía al admin ── */}
+      <ReportarPasantiaModal
+        visible={!!reportarVac}
+        vacanteId={reportarVac?.id}
+        vacanteTitulo={reportarVac?.titulo}
+        empresaId={reportarVac?.empresa_id}
+        empresaNombre={reportarVac?.nombre_empresa}
+        onClose={() => setReportarVac(null)}
       />
     </View>
   );

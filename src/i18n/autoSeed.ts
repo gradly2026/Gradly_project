@@ -1025,6 +1025,39 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Motivo requerido": "Reason required",
   "Grupo rechazado.": "Group rejected.",
   "No se pudo procesar.": "Couldn't process.",
+
+  // ── "Reportar pasantía" (Matchmaking universidad → reporte al admin) +
+  //    bloque "Afinidad con tus carreras" del detalle de vacante + grupo
+  //    destino obligatorio al reservar cupos. 'Fraude o estafa', 'Otro',
+  //    'Reporte enviado', 'Cerrar', 'Motivo', 'Descripción (opcional)',
+  //    'Enviar reporte', 'Cancelar', 'Selecciona un motivo.', 'No se pudo
+  //    enviar el reporte.' y 'Selecciona un grupo' ya están sembradas.
+  "Información falsa o engañosa": "False or misleading information",
+  "Contenido inapropiado u ofensivo": "Inappropriate or offensive content",
+  "Requisitos o condiciones abusivas": "Abusive requirements or terms",
+  "Empresa sospechosa o no verificable": "Suspicious or unverifiable company",
+  "Publicación duplicada o spam": "Duplicate posting or spam",
+  "Reportar pasantía": "Report internship",
+  "Reportar Pasantía": "Report Internship",
+  "Gracias. Nuestro equipo administrativo revisará esta pasantía.":
+    "Thank you. Our admin team will review this internship.",
+  "Describe brevemente el problema con esta pasantía…":
+    "Briefly describe the problem with this internship…",
+  "No se pudo identificar la pasantía.": "Couldn't identify the internship.",
+  "Pasantía a reportar no válida.": "Invalid internship to report.",
+  "Sesión no válida.": "Invalid session.",
+  "Afinidad con tus carreras": "Fit with your majors",
+  "sin especificar": "not specified",
+  "Afín": "Related",
+  "Puede encajar": "May fit",
+  "Sin relación aparente": "No apparent relation",
+  "El área es lo que declaró la empresa y no siempre refleja su necesidad exacta. Puedes reservar cupos para el grupo que consideres, aunque el área no coincida.":
+    "The area is what the company declared and doesn't always reflect its exact need. You can reserve slots for whichever group you see fit, even if the area doesn't match.",
+  "Grupo destino": "Target group",
+  "El área de la vacante no coincide con la carrera de este grupo. Puedes reservar igual.":
+    "The job's area doesn't match this group's major. You can reserve anyway.",
+  "Elige a qué grupo de estudiantes asignarás estos cupos.":
+    "Choose which student group you'll assign these slots to.",
 };
 
 // ── Onboarding de dirección del estudiante (UbicacionSelector,

@@ -75,6 +75,14 @@ interface Props {
    * simplemente no se dibuja para ellos.
    */
   carreraEstudiante?: string | null;
+  /**
+   * Carreras de los grupos de la universidad que está mirando. Solo la manda
+   * el Matchmaking (vista universidad): dibuja un bloque "Afinidad con tus
+   * carreras" con el área/roles que busca la vacante y, por cada carrera, si
+   * es afín — así la universidad ve por qué una vacante encaja (o no) antes de
+   * reservarle cupos, en vez de que el sistema decida por ella.
+   */
+  carrerasAfinidad?: string[];
 }
 
 const C = {
@@ -114,7 +122,7 @@ function normalizarUrl(v: string): string {
 }
 
 export default function VacanteDetailModal({
-  visible, vacante, onClose, onContactarEmpresa, carreraEstudiante,
+  visible, vacante, onClose, onContactarEmpresa, carreraEstudiante, carrerasAfinidad,
 }: Props) {
   const { t } = useTranslation();
   const [empresa, setEmpresa] = useState<Record<string, any> | null>(null);
@@ -234,6 +242,44 @@ export default function VacanteDetailModal({
                 </View>
               )}
             </View>
+
+            {/* ── Afinidad con las carreras de la universidad ──
+                Solo para la universidad (ver la prop `carrerasAfinidad`). No
+                bloquea nada: informa para que la universidad decida a qué grupo
+                reservarle cupos. */}
+            {carrerasAfinidad && carrerasAfinidad.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Afinidad con tus carreras</Text>
+                <Text style={[styles.bodyText, { marginBottom: 10 }]}>
+                  Área de la vacante: {vacante.area || "sin especificar"}
+                  {vacante.tags && vacante.tags.length > 0 ? ` · ${vacante.tags.join(", ")}` : ""}
+                </Text>
+                {Array.from(new Set(carrerasAfinidad.filter(Boolean))).map((c) => {
+                  const af = afinidadCarreraVacante(c, vacante);
+                  const color = af === "alta" ? C.green : af === "posible" ? C.purple : C.muted;
+                  return (
+                    <View key={c} style={styles.afinCarreraRow}>
+                      <Ionicons
+                        name={
+                          af === "alta" ? "checkmark-circle"
+                          : af === "posible" ? "help-circle-outline"
+                          : "remove-circle-outline"
+                        }
+                        size={16}
+                        color={color}
+                      />
+                      <Text style={styles.afinCarreraTxt} numberOfLines={1} noTranslate>{c}</Text>
+                      <Text style={[styles.afinCarreraVerdict, { color }]}>
+                        {af === "alta" ? "Afín" : af === "posible" ? "Puede encajar" : "Sin relación aparente"}
+                      </Text>
+                    </View>
+                  );
+                })}
+                <Text style={styles.afinNota}>
+                  El área es lo que declaró la empresa y no siempre refleja su necesidad exacta. Puedes reservar cupos para el grupo que consideres, aunque el área no coincida.
+                </Text>
+              </View>
+            )}
 
             {/* ── ¿Encaja conmigo y contra cuántos compito? ──
                 Solo para el estudiante (ver la prop `carreraEstudiante`). */}
@@ -453,6 +499,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: C.border, paddingTop: 9,
   },
   competenciaTxt: { flex: 1, fontSize: 12, color: C.textSub },
+  afinCarreraRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingVertical: 7,
+    borderTopWidth: 1, borderTopColor: C.border,
+  },
+  afinCarreraTxt: { flex: 1, fontSize: 13, color: C.text, fontWeight: "600" },
+  afinCarreraVerdict: { fontSize: 12, fontWeight: "700" },
+  afinNota: { fontSize: 11.5, color: C.muted, lineHeight: 16, marginTop: 10 },
   horarioBox: {
     marginTop: 16,
     backgroundColor: C.surface,
