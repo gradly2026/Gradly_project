@@ -90,6 +90,20 @@ const tsToIso = (v: any): string => {
   return "";
 };
 
+// Milisegundos comparables desde un Timestamp de Firestore / string ISO / número
+// epoch / Date; 0 si el campo no existe. Sirve para ordenar listas en el cliente
+// SIN un orderBy de Firestore — un orderBy descarta del resultado los documentos
+// que no tienen el campo, y para una vista de auditoría del admin eso significaría
+// "esconder" pasantías viejas creadas antes de que existiera ese campo de fecha.
+const tsToMillis = (v: any): number => {
+  if (!v) return 0;
+  if (typeof v?.toDate === "function") { const t = v.toDate().getTime(); return Number.isFinite(t) ? t : 0; }
+  if (typeof v === "string") { const t = Date.parse(v); return Number.isFinite(t) ? t : 0; }
+  if (typeof v === "number") return v;
+  if (v instanceof Date) { const t = v.getTime(); return Number.isFinite(t) ? t : 0; }
+  return 0;
+};
+
 // Las 10 "páginas" internas del panel — no son rutas de Expo Router, solo
 // valores del useState `page` que decide qué renderX() se muestra (ver
 // renderBody() al final del componente).
@@ -1172,27 +1186,23 @@ export default function AdminPreview() {
     setPasantiasLoading(true);
     setPasantiasAttempted(true);
     try {
-      let solSnap;
-      let appSnap;
-      try {
-        solSnap = await getDocs(
-          query(collection(db, "solicitudes_practicas"), orderBy("createdAt", "desc"), limit(200)),
-        );
-      } catch (error: any) {
-        if (String(error?.code ?? "") !== "failed-precondition") throw error;
-        solSnap = await getDocs(query(collection(db, "solicitudes_practicas"), limit(200)));
-      }
-      try {
-        appSnap = await getDocs(
-          query(collection(db, "aplicaciones"), orderBy("fecha_aplicacion", "desc"), limit(200)),
-        );
-      } catch (error: any) {
-        if (String(error?.code ?? "") !== "failed-precondition") throw error;
-        appSnap = await getDocs(query(collection(db, "aplicaciones"), limit(200)));
-      }
+      // Sin orderBy: se traen hasta 200 documentos de cada colección y se ordenan
+      // por fecha EN EL CLIENTE (ver tsToMillis). Así una pasantía sin `createdAt`
+      // / `fecha_aplicacion` sigue apareciendo (al final) en vez de desaparecer
+      // del listado como haría un orderBy de Firestore. El tope de 200 es una
+      // cota simple para el MVP; si alguna colección lo supera hará falta
+      // paginación de verdad.
+      const [solSnap, appSnap] = await Promise.all([
+        getDocs(query(collection(db, "solicitudes_practicas"), limit(200))),
+        getDocs(query(collection(db, "aplicaciones"), limit(200))),
+      ]);
 
-      const sols = solSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      const apps = appSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      const sols = solSnap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .sort((a: any, b: any) => tsToMillis(b.createdAt) - tsToMillis(a.createdAt));
+      const apps = appSnap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .sort((a: any, b: any) => tsToMillis(b.fecha_aplicacion) - tsToMillis(a.fecha_aplicacion));
       setSolicitudesPractica(sols);
       setAplicacionesPasantia(apps);
 
@@ -4398,9 +4408,9 @@ export default function AdminPreview() {
               </Card>
 
               <Card style={{ marginTop: 12 }}>
-                <Text style={s.cardTitle}>Datos (raw)</Text>
+                <Text style={s.cardTitle}>Detalle técnico</Text>
                 <Text style={[s.textMuted, { marginTop: 6 }]}>
-                  Vista técnica para depuración. Si falta algún campo, me dices cuál y lo agrego.
+                  Todos los campos del documento, tal como están guardados en la base de datos.
                 </Text>
                 <View style={{ marginTop: 12, gap: 10 }}>
                   {rawKeys.map((k) => (

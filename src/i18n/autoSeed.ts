@@ -742,6 +742,34 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "No pudimos cerrar la sesión": "We couldn't sign you out",
   "Sigues dentro del panel. Vuelve a tocar el botón; si insiste, cierra la pestaña y vuelve a entrar.":
     "You're still inside the panel. Tap the button again; if it persists, close the tab and log back in.",
+  // ── Sección "Pasantías" (vista admin) — textos estáticos NO interpolados.
+  //    Las etiquetas con valor dinámico ("Empresa: {nombre}", "Fechas: {a→b}",
+  //    "Horas completadas: {n}") no se pueden sembrar como par fijo y quedan
+  //    en la vía async normal. Las que ya vivían en otros bloques ('Grupo',
+  //    'Grupos', 'Pasantía', 'Actualizar', 'Sin resultados', 'Certificada',
+  //    'Finalizada', 'Pendiente', 'Rechazada', 'Activa(s)', 'Estudiante',
+  //    'Sin carrera', 'Pasantías de grupo', 'ESTADO', 'Todas') no se repiten.
+  "Pasantías": "Internships",
+  "Operación": "Operations",
+  "Visión unificada del flujo de pasantías: grupos (`solicitudes_practicas`) e individuales (`aplicaciones`).":
+    "Unified view of the internship flow: group (`solicitudes_practicas`) and individual (`aplicaciones`).",
+  "Buscar por grupo, carrera, estudiante o IDs…": "Search by group, major, student or IDs…",
+  "ORIGEN": "SOURCE",
+  "Individual": "Individual",
+  "Individuales": "Individual",
+  "Finalizadas": "Completed",
+  "Pasantías en `solicitudes_practicas` (según filtros).": "Internships in `solicitudes_practicas` (per filters).",
+  "Pasantías individuales (estado en `aplicaciones`).": "Individual internships (status in `aplicaciones`).",
+  "Total": "Total",
+  "Suma de ambas vistas.": "Sum of both views.",
+  "Pasantías individuales": "Individual internships",
+  "Estudiantes": "Students",
+  "Pend. firma": "Pending signature",
+  "Pasantía (grupo)": "Internship (group)",
+  "Pasantía (individual)": "Internship (individual)",
+  "Detalle técnico": "Technical details",
+  "Todos los campos del documento, tal como están guardados en la base de datos.":
+    "All the document's fields, exactly as stored in the database.",
 };
 
 /**
