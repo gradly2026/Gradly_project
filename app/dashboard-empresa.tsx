@@ -2114,10 +2114,17 @@ export default function DashboardEmpresa() {
   // ─────────────────────────────────────────────
   const nombreEmpresa = perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa';
   // Traducido aquí (hook, siempre se ejecuta) en vez de dejar que AutoText
-  // traduzca el string ya compuesto (`subtitle`, "Plan Básico · Nombre"): ese
+  // traduzca el string ya compuesto (`subtitle`, "Plan Gratuito · Nombre"): ese
   // string combinado es distinto para cada empresa y nunca podría sembrarse
   // en autoSeed.ts, quedando a merced de la traducción async.
-  const planBadgeLabel = useAutoText(perfil?.premium ? '⭐ Premium' : 'Plan Básico');
+  // El rótulo sale del `plan` real, no del flag binario `premium`: 'gratuito'
+  // es "Plan Gratuito", 'mensual' es el "Plan Básico" del catálogo comercial y
+  // 'premium' su estrella. Antes todo lo no-premium caía en "Plan Básico", así
+  // que una empresa del plan gratuito se veía rotulada como si pagara.
+  const planKeyBadge = (perfil?.plan ?? 'gratuito') as 'gratuito' | 'mensual' | 'premium';
+  const planBadgeLabel = useAutoText(
+    planKeyBadge === 'premium' ? '⭐ Premium' : planKeyBadge === 'mensual' ? 'Plan Básico' : 'Plan Gratuito',
+  );
 
   // ── Guard de ciclo de vida: evita render/crasheos con UID null ──
   // (todos los hooks ya se ejecutaron arriba, así que es seguro retornar aquí)
@@ -3246,7 +3253,13 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
   vacantes: Vacante[]; solicitudesGrupo: SolicitudGrupo[]; onVerPerfil: (estudianteId: string) => void;
 }) {
   const { s } = useThemedStyles();
-  const planBadgeLabel = useAutoText(perfil?.premium ? '⭐ Premium' : 'Plan Básico');
+  // Mismo criterio que el badge del encabezado: el rótulo depende del `plan`
+  // real ('gratuito' → "Plan Gratuito", 'mensual' → "Plan Básico", 'premium' →
+  // "⭐ Premium"), no del flag binario `premium`.
+  const planKeyBadge = (perfil?.plan ?? 'gratuito') as 'gratuito' | 'mensual' | 'premium';
+  const planBadgeLabel = useAutoText(
+    planKeyBadge === 'premium' ? '⭐ Premium' : planKeyBadge === 'mensual' ? 'Plan Básico' : 'Plan Gratuito',
+  );
   const recientes = [...apps].sort((a, b) => {
     const ta = a.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
     const tb = b.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;

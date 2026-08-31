@@ -451,7 +451,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Información</Text>
                 <InfoRow icon="business-outline" label="Industria" value={data.industria || '—'} colors={colors} styles={styles} />
-                <InfoRow icon="star-outline" label="Plan" value={data.premium ? 'Premium' : 'Básico'} colors={colors} styles={styles} />
+                <InfoRow icon="star-outline" label="Plan" value={(data.plan === 'premium' || data.premium) ? 'Premium' : data.plan === 'mensual' ? 'Básico' : 'Gratuito'} colors={colors} styles={styles} />
                 <InfoRow icon="shield-checkmark-outline" label="Verificación" value={data.verificado ? 'Empresa verificada' : 'No verificada'} colors={colors} styles={styles} />
               </View>
             )}

@@ -322,6 +322,8 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Ingresos mensuales (últimos 12 meses)": "Monthly revenue (last 12 months)",
   "Planes elegidos": "Plans chosen",
   "Plan Básico": "Basic Plan",
+  "Plan Gratuito": "Free Plan",
+  "Gratuito": "Free",
   "Plan Premium": "Premium Plan",
   "Pagos de planes de Gradly: qué plan eligió cada empresa, cuánto pagó e ingresos totales a la plataforma.":
     "Gradly plan payments: which plan each company chose, how much they paid, and total platform revenue.",

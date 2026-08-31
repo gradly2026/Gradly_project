@@ -43,6 +43,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AutoText as Text } from './AutoText';
 import { db } from '../config/firebaseConfig';
+import { useAuth } from '../context/AuthContext';
 import { areasDeCarrera } from '../data/areas';
 // Función utilitaria: dado el nombre de una carrera, devuelve una lista
 // de "áreas"/categorías asociadas (por ejemplo, "Ingeniería en Sistemas"
@@ -75,7 +76,6 @@ interface GrupoInfo {
   nombre: string;
   carrera: string;
   universidadId: string;
-  docente: string;
   horas: number | null;
   egresado: boolean;
   pasantiaActivaId: string | null;
@@ -84,6 +84,7 @@ interface GrupoInfo {
 export default function GrupoDetailViewerModal({ visible, grupoId, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { user, rol } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(true);
@@ -129,7 +130,6 @@ export default function GrupoDetailViewerModal({ visible, grupoId, onClose }: Pr
           nombre: g.nombre ?? 'Grupo',
           carrera: g.carrera ?? '',
           universidadId: g.universidad_id ?? '',
-          docente: g.docente ?? '',
           horas: g.total_horas ?? g.horasRequeridas ?? null,
           // Dos posibles nombres de campo para las horas totales
           // (`total_horas` es el más común en el proyecto,
@@ -167,13 +167,29 @@ export default function GrupoDetailViewerModal({ visible, grupoId, onClose }: Pr
           );
         }
 
+        // READ: busca TODOS los estudiantes cuyo campo `grupo_id` coincida con
+        // este grupo — así se arma la lista de miembros sin depender de que el
+        // documento del grupo guarde una lista de ids (evita mantener 2 lugares
+        // sincronizados con la misma información).
+        //
+        // Las reglas de `perfiles_estudiantes` dejan a una universidad leer
+        // SOLO a sus propios alumnos (`universidad_id == uid`), así que una
+        // query filtrada únicamente por `grupo_id` Firestore la rechaza ENTERA
+        // para ese rol (no puede probar que todos los resultados sean visibles)
+        // y la lista salía siempre vacía al abrir el modal desde la
+        // notificación "Creaste el grupo". Cuando quien mira es la universidad
+        // se añade `universidad_id == su uid` para que la query sea válida;
+        // empresa y admin pueden leer cualquier perfil, así que su query queda
+        // igual que antes.
+        const miembrosQuery = rol === 'universidad' && user?.uid
+          ? query(
+              collection(db, 'perfiles_estudiantes'),
+              where('grupo_id', '==', grupoId),
+              where('universidad_id', '==', user.uid),
+            )
+          : query(collection(db, 'perfiles_estudiantes'), where('grupo_id', '==', grupoId));
         tareas.push(
-          getDocs(query(collection(db, 'perfiles_estudiantes'), where('grupo_id', '==', grupoId))).then(snap => {
-            // READ: busca TODOS los estudiantes cuyo campo `grupo_id`
-            // coincida con este grupo — así se arma la lista de miembros
-            // sin depender de que el documento del grupo guarde una lista
-            // de ids (evita tener que mantener sincronizados 2 lugares
-            // con la misma información).
+          getDocs(miembrosQuery).then(snap => {
             if (cancel) return;
             setMiembros(
               snap.docs.map(d => {
@@ -226,7 +242,7 @@ export default function GrupoDetailViewerModal({ visible, grupoId, onClose }: Pr
     })();
 
     return () => { cancel = true; };
-  }, [visible, grupoId]);
+  }, [visible, grupoId, rol, user?.uid]);
 
   if (!visible) return null;
 
@@ -317,13 +333,6 @@ export default function GrupoDetailViewerModal({ visible, grupoId, onClose }: Pr
                   styles={styles}
                 />
 
-                {!!grupo.docente && (
-                  <InfoRow icon="person-outline" label="Docente encargado" value={grupo.docente} colors={colors} styles={styles} noTranslateValue />
-                  // noTranslateValue: el nombre de una persona (el
-                  // docente) tampoco debe traducirse — igual criterio que
-                  // los nombres propios de empresa/universidad/grupo.
-                )}
-
                 <TouchableOpacity
                   style={styles.infoRow}
                   activeOpacity={empresaAliadaId ? 0.7 : 1}
@@ -402,20 +411,15 @@ export default function GrupoDetailViewerModal({ visible, grupoId, onClose }: Pr
   );
 }
 
-function InfoRow({ icon, label, value, colors, styles, noTranslateValue }: {
+function InfoRow({ icon, label, value, colors, styles }: {
   icon: keyof typeof Ionicons.glyphMap; label: string; value: string; colors: GradlyColors; styles: any;
-  noTranslateValue?: boolean;
-  // Este InfoRow tiene una prop EXTRA respecto a los de los otros 2
-  // modales (`noTranslateValue`, opcional), para poder pasarle
-  // `noTranslate` al <Text> del valor cuando haga falta (por ejemplo,
-  // para el nombre del docente).
 }) {
   return (
     <View style={styles.infoRow}>
       <Ionicons name={icon} size={18} color={colors.primaryLight} style={{ width: 26 }} />
       <View style={{ flex: 1 }}>
         <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue} numberOfLines={1} noTranslate={noTranslateValue}>{value}</Text>
+        <Text style={styles.infoValue} numberOfLines={1}>{value}</Text>
       </View>
     </View>
   );
