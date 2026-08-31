@@ -14,7 +14,6 @@ import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/fire
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -24,6 +23,7 @@ import {
   View,
 } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
+import { showAlert } from "./AppAlert";
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import type { AcuerdoData } from '../types/chat';
@@ -303,8 +303,8 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
     if (!reclamoVac) return;
     const n = Number(reclamoCant);
     const libres = cuposDisponibles(reclamoVac) ?? 0;
-    if (!Number.isFinite(n) || n < 1) { Alert.alert('Cantidad inválida', 'Indica cuántos cupos necesitas.'); return; }
-    if (n > libres) { Alert.alert('Sin suficientes cupos', `Solo quedan ${libres} disponible(s).`); return; }
+    if (!Number.isFinite(n) || n < 1) { void showAlert('Cantidad inválida', 'Indica cuántos cupos necesitas.'); return; }
+    if (n > libres) { void showAlert('Sin suficientes cupos', `Solo quedan ${libres} disponible(s).`); return; }
 
     setReclamando(true);
     try {
@@ -317,7 +317,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
         grupoNombre: grupo?.nombre,
         universidadNombre: nombreUniversidad,
       });
-      Alert.alert(
+      void showAlert(
         estado === 'aceptado' ? '¡Cupos reservados!' : 'Solicitud enviada',
         estado === 'aceptado'
           ? `Reservaste ${n} cupo(s). Ya puedes asignarlos a tus estudiantes.`
@@ -325,7 +325,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
       );
       setReclamoVac(null);
     } catch (e: any) {
-      Alert.alert('No se pudo reservar', e?.message ?? 'Intenta de nuevo.');
+      void showAlert('No se pudo reservar', e?.message ?? 'Intenta de nuevo.');
     } finally {
       setReclamando(false);
     }
@@ -334,23 +334,23 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
   const liberar = async (r: ReclamoCupos) => {
     try {
       await liberarCupos(r.id, r.cantidad);
-      Alert.alert('Cupos liberados', 'Vuelven a estar disponibles y se avisó a la empresa.');
+      void showAlert('Cupos liberados', 'Vuelven a estar disponibles y se avisó a la empresa.');
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'No se pudo liberar.');
+      void showAlert('Error', e?.message ?? 'No se pudo liberar.');
     }
   };
 
   const confirmarPostular = async () => {
-    if (!vacanteSel || !grupoSel) { Alert.alert('Selecciona un grupo'); return; }
+    if (!vacanteSel || !grupoSel) { void showAlert('Selecciona un grupo'); return; }
     setEnviando(true);
     try {
       await postularGrupoAVacante(universidadId, vacanteSel.id, grupoSel);
-      Alert.alert('¡Postulación enviada!', 'La empresa revisará a tu grupo.');
+      void showAlert('¡Postulación enviada!', 'La empresa revisará a tu grupo.');
       setGrupoConfirmar(null);
       setVacanteSel(null);
       setGrupoSel(null);
     } catch (e: any) {
-      Alert.alert('No se pudo postular', e?.message ?? 'Intenta de nuevo.');
+      void showAlert('No se pudo postular', e?.message ?? 'Intenta de nuevo.');
       setGrupoConfirmar(null);
     } finally {
       setEnviando(false);
@@ -363,7 +363,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
       await respuestaFinalUniversidad(app.id, decision, motivo);
       setRechazoApp(null);
       setJustif('');
-      Alert.alert(decision === 'aceptar' ? '¡Pasantía confirmada!' : 'Oferta rechazada');
+      void showAlert(decision === 'aceptar' ? '¡Pasantía confirmada!' : 'Oferta rechazada');
     } catch (e: any) {
       // Alert.alert es un no-op en web (no muestra nada): sin este aviso en
       // línea, un rechazo por regla de negocio (p. ej. grupo ya comprometido
@@ -371,7 +371,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
       // "Aceptar oferta" parece no hacer nada.
       const mensaje = e?.message ?? 'No se pudo procesar.';
       setErrorAccion({ id: app.id, mensaje });
-      Alert.alert('Error', mensaje);
+      void showAlert('Error', mensaje);
     }
   };
 
@@ -924,7 +924,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
                 onPress={() => {
                   if (!justif.trim()) {
                     setMotivoVacioErr(true);
-                    Alert.alert('Motivo requerido');
+                    void showAlert('Motivo requerido');
                     return;
                   }
                   if (rechazoApp) responderFinal(rechazoApp, 'rechazar', justif);
@@ -1001,9 +1001,9 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
       await responderReclamo(r.id, decision, motivo);
       setRechazoReclamo(null);
       setMotivoReclamo('');
-      Alert.alert(decision === 'aceptar' ? 'Cupos confirmados' : 'Solicitud rechazada');
+      void showAlert(decision === 'aceptar' ? 'Cupos confirmados' : 'Solicitud rechazada');
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'No se pudo procesar.');
+      void showAlert('Error', e?.message ?? 'No se pudo procesar.');
     }
   };
 
@@ -1043,7 +1043,7 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
     if (!puedeAceptar(sel)) {
       const mensaje = `Tu plan permite ${limiteAlianzas} alianza${limiteAlianzas === 1 ? '' : 's'} con universidades. Mejora tu plan para aliarte con más instituciones.`;
       setErrorSel(mensaje);
-      Alert.alert('Límite de alianzas alcanzado', mensaje);
+      void showAlert('Límite de alianzas alcanzado', mensaje);
       return;
     }
     setShowHorarioModal(true);
@@ -1057,14 +1057,14 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
     setEnviando(true);
     try {
       await evaluarGrupoPorEmpresa(sel.id, 'aceptar', { acuerdo });
-      Alert.alert('Listo', 'Oferta enviada a la universidad.');
+      void showAlert('Listo', 'Oferta enviada a la universidad.');
       setSel(null);
     } catch (e: any) {
       // Alert.alert es un no-op en web: sin este aviso en línea, un rechazo
       // por regla de negocio queda completamente silencioso.
       const mensaje = e?.message ?? 'No se pudo procesar.';
       setErrorSel(mensaje);
-      Alert.alert('Error', mensaje);
+      void showAlert('Error', mensaje);
     } finally {
       setEnviando(false);
     }
@@ -1074,19 +1074,19 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
     if (!sel) return;
     if (!motivo.trim()) {
       setErrorSel('Escribe un motivo antes de rechazar.');
-      Alert.alert('Motivo requerido');
+      void showAlert('Motivo requerido');
       return;
     }
     setErrorSel(null);
     setEnviando(true);
     try {
       await evaluarGrupoPorEmpresa(sel.id, 'rechazar', { justificacionRechazo: motivo });
-      Alert.alert('Listo', 'Grupo rechazado.');
+      void showAlert('Listo', 'Grupo rechazado.');
       setSel(null);
     } catch (e: any) {
       const mensaje = e?.message ?? 'No se pudo procesar.';
       setErrorSel(mensaje);
-      Alert.alert('Error', mensaje);
+      void showAlert('Error', mensaje);
     } finally {
       setEnviando(false);
     }

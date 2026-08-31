@@ -20,7 +20,6 @@ import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   ScrollView,
   StyleSheet,
@@ -29,6 +28,7 @@ import {
   View,
 } from 'react-native';
 import { AutoText as Text } from "../../src/components/AutoText";
+import { showAlert, showConfirm } from "../../src/components/AppAlert";
 import { useAuth } from '../../src/context/AuthContext';
 import { useTranslation } from '../../src/context/TranslationContext';
 import { db } from '../../src/config/firebaseConfig';
@@ -552,43 +552,27 @@ export default function ProgresoTab() {
 
   const handleFinalizar = async (appId: string) => {
     // Se ejecuta al tocar "Notificar finalización" en la tarjeta de
-    // pasantía activa.
+    // pasantía activa. Usa showConfirm (Modal propio) y no Alert.alert:
+    // este último es un no-op en react-native-web y el botón de confirmar
+    // nunca se dispararía en el navegador (memoria "Gotcha Alert.alert en web").
     const app = apps.find(a => a.id === appId);
-    Alert.alert(
-      'Confirmar finalización',
-      '¿Seguro que quieres notificar que has finalizado esta pasantía? La empresa deberá confirmar.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Sí, finalicé',
-          onPress: async () => {
-            try {
-              await estudianteFinalizaProyecto(
-                appId,
-                user!.uid,
-                app?.horas_completadas ?? 0,
-                app?.empresa_id,
-                (userProfile as any)?.nombre_completo,
-              );
-            } catch {
-              Alert.alert('Error', 'No se pudo actualizar el estado.');
-            }
-          },
-        },
-      ],
-    );
-    // NOTA IMPORTANTE para quien programe en este proyecto: Alert.alert
-    // con VARIOS BOTONES (como este, con "Cancelar" y "Sí, finalicé")
-    // depende de que el sistema operativo dibuje una ventana nativa de
-    // confirmación. En react-native-web (la versión que corre en
-    // navegador), Alert.alert con botones es un "no-op": no aparece
-    // NADA, y por lo tanto los botones nunca se pueden tocar — este es un
-    // patrón de bug ya documentado en varias partes del proyecto (ver
-    // memoria "Gotcha Alert.alert en web"), donde la solución encontrada
-    // fue reemplazar Alert.alert con botones por un <Modal> de
-    // confirmación propio. Si esta pantalla se probara en la versión web,
-    // "Notificar finalización" no mostraría ningún diálogo de
-    // confirmación.
+    const ok = await showConfirm({
+      title: 'Confirmar finalización',
+      message: '¿Seguro que quieres notificar que has finalizado esta pasantía? La empresa deberá confirmar.',
+      confirmText: 'Sí, finalicé',
+    });
+    if (!ok) return;
+    try {
+      await estudianteFinalizaProyecto(
+        appId,
+        user!.uid,
+        app?.horas_completadas ?? 0,
+        app?.empresa_id,
+        (userProfile as any)?.nombre_completo,
+      );
+    } catch {
+      void showAlert('Error', 'No se pudo actualizar el estado.');
+    }
   };
 
   if (cargando) {

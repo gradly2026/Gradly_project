@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from './AutoText';
+import { showAlert, showConfirm } from './AppAlert';
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { textoHorario } from '../data/disponibilidad';
@@ -97,37 +98,32 @@ export default function TableroCupos({
     setTomando(r.id);
     try {
       await tomarCupo({ reclamoId: r.id, estudianteId, estudianteNombre });
-      Alert.alert(
+      void showAlert(
         '¡Cupo asegurado!',
         `Harás tu práctica en ${r.empresaNombre || 'la empresa'}. Tu universidad y la empresa ya fueron notificadas.`,
       );
     } catch (e: any) {
-      Alert.alert('No se pudo tomar el cupo', e?.message ?? 'Intenta de nuevo.');
+      void showAlert('No se pudo tomar el cupo', e?.message ?? 'Intenta de nuevo.');
     } finally {
       setTomando(null);
     }
   };
 
-  const cancelar = () => {
+  const cancelar = async () => {
     if (!asignacion) return;
-    Alert.alert(
-      'Cancelar tu cupo',
-      'Volverá a estar disponible para tus compañeros y tendrás que elegir otro. ¿Continuar?',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Sí, cancelar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await cancelarCupo(asignacion.id);
-            } catch (e: any) {
-              Alert.alert('Error', e?.message ?? 'No se pudo cancelar.');
-            }
-          },
-        },
-      ],
-    );
+    const ok = await showConfirm({
+      title: 'Cancelar tu cupo',
+      message: 'Volverá a estar disponible para tus compañeros y tendrás que elegir otro. ¿Continuar?',
+      confirmText: 'Sí, cancelar',
+      cancelText: 'No',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await cancelarCupo(asignacion.id);
+    } catch (e: any) {
+      void showAlert('Error', e?.message ?? 'No se pudo cancelar.');
+    }
   };
 
   // ── Ya eligió ────────────────────────────────────────────────────

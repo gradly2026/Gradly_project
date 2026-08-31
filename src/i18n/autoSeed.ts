@@ -100,6 +100,8 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Aquí aparecerán tus pasantías completadas.": "Your completed internships will appear here.",
   "Avanzar →": "Advance →",
   "Aún no has seleccionado carreras.": "You haven't selected any majors yet.",
+  "Aún no tienes conversaciones.\nUsa el buscador de arriba para iniciar una.":
+    "You don't have any conversations yet.\nUse the search bar above to start one.",
   "Buscar candidatos o vacantes...": "Search candidates or job posts...",
   "Buscar carrera, tipo o modalidad…": "Search major, type or modality…",
   "Buscar vacantes...": "Search job posts...",
@@ -984,6 +986,45 @@ export const CUPOS_SEED_EN: Record<string, string> = {
     "You're in your active internship. You can browse the job market to get a sense of it, but you'll only be able to apply once you finish it or graduate.",
   "Todavía no inicias tu pasantía. Debajo verás los cupos que tu universidad ya te aseguró y pasantías de otras empresas a las que puedes aplicar por tu cuenta.":
     "You haven't started your internship yet. Below you'll see the slots your university already secured for you, plus internships from other companies you can apply to on your own.",
+
+  // ── Avisos y confirmaciones del flujo cupos/matchmaking (AppAlert:
+  //    showAlert / showConfirm). Antes eran Alert.alert, un no-op en web.
+  //    Las que ya vivían en este bloque ('¡Cupo asegurado!', 'No se pudo
+  //    tomar el cupo', 'Cancelar tu cupo', '¡Cupos reservados!', 'Solicitud
+  //    enviada', 'Cupos liberados', 'Cupos confirmados', 'Solicitud
+  //    rechazada', 'Listo') no se repiten. 'Entendido' y 'Cancelar' viven
+  //    en AUTO_SEED_EN.
+  "Confirmar": "Confirm",
+  "Error": "Error",
+  "No": "No",
+  "Intenta de nuevo.": "Try again.",
+  "No se pudo cancelar.": "Couldn't cancel.",
+  "Sí, cancelar": "Yes, cancel",
+  "Volverá a estar disponible para tus compañeros y tendrás que elegir otro. ¿Continuar?":
+    "It'll go back to your classmates and you'll have to pick another one. Continue?",
+  "Confirmar finalización": "Confirm completion",
+  "¿Seguro que quieres notificar que has finalizado esta pasantía? La empresa deberá confirmar.":
+    "Are you sure you want to report that you've finished this internship? The company will have to confirm.",
+  "Sí, finalicé": "Yes, I finished",
+  "No se pudo actualizar el estado.": "Couldn't update the status.",
+  "Cantidad inválida": "Invalid amount",
+  "Indica cuántos cupos necesitas.": "Enter how many spots you need.",
+  "Sin suficientes cupos": "Not enough spots",
+  "No se pudo reservar": "Couldn't reserve",
+  "Vuelven a estar disponibles y se avisó a la empresa.":
+    "They're available again and the company was notified.",
+  "No se pudo liberar.": "Couldn't release.",
+  "Selecciona un grupo": "Select a group",
+  "¡Postulación enviada!": "Application sent!",
+  "La empresa revisará a tu grupo.": "The company will review your group.",
+  "No se pudo postular": "Couldn't apply",
+  "¡Pasantía confirmada!": "Internship confirmed!",
+  "Oferta rechazada": "Offer rejected",
+  "Límite de alianzas alcanzado": "Partnership limit reached",
+  "Oferta enviada a la universidad.": "Offer sent to the university.",
+  "Motivo requerido": "Reason required",
+  "Grupo rechazado.": "Group rejected.",
+  "No se pudo procesar.": "Couldn't process.",
 };
 
 // ── Onboarding de dirección del estudiante (UbicacionSelector,

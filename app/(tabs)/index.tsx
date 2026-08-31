@@ -49,6 +49,7 @@ import {
 // permiten aplicar por cuenta propia a una pasantía, y calculan la
 // elegibilidad.
 import { abrirChatDirectoEmpresaEstudiante } from '../../src/services/chatService';
+import { showAlert } from '../../src/components/AppAlert';
 import { esVacanteAfin, puntuarVacante } from '../../src/data/areas';
 // esVacanteAfin(carrera, vacante) → true/false: ¿esta vacante es del área
 // de la carrera del estudiante?
@@ -59,7 +60,6 @@ import { hayCupos, textoSalario } from '../../src/utils/cupos';
 import { cargarOverridesCarreras, mensajeZonaRoja, zonaDeCarrera } from '../../src/data/carreras';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   FlatList,
   // FlatList: el componente de React Native OPTIMIZADO para listas
@@ -802,9 +802,9 @@ export default function FeedVacantes() {
 
   // ── Aplicar a vacante ────────────────────────────────────────────
   const handleAplicar = useCallback(async (vacante: Vacante) => {
-    if (!user) { Alert.alert(t('feed_alert_sesion')); return; }
+    if (!user) { void showAlert(t('feed_alert_sesion')); return; }
     if (!habilitadoParaVacantes) {
-      Alert.alert(t('feed_alert_no_disp_titulo'), t('feed_alert_no_disp_msg'));
+      void showAlert(t('feed_alert_no_disp_titulo'), t('feed_alert_no_disp_msg'));
       return;
       // Doble verificación de seguridad: aunque el botón ya debería estar
       // deshabilitado visualmente en ese caso, esta comprobación evita
@@ -826,7 +826,7 @@ export default function FeedVacantes() {
       showToast();
     } catch (err: any) {
       if (!err.message?.includes('Ya aplicaste')) {
-        Alert.alert(t('error_generico'), err.message ?? t('feed_alert_error_aplicar'));
+        void showAlert(t('error_generico'), err.message ?? t('feed_alert_error_aplicar'));
         // No muestra un Alert de error si el mensaje es "Ya aplicaste..."
         // — ese caso puede pasar por un doble toque accidental, y no hace
         // falta alarmar al usuario con un Alert por algo tan menor
@@ -839,7 +839,7 @@ export default function FeedVacantes() {
 
   // ── Aplicar a una pasantía por cuenta propia (autoservicio) ──────
   const handleAplicarPasantia = useCallback(async (vacante: Vacante) => {
-    if (!user) { Alert.alert(t('feed_alert_sesion')); return; }
+    if (!user) { void showAlert(t('feed_alert_sesion')); return; }
 
     setApplying(vacante.id);
     try {
@@ -857,7 +857,7 @@ export default function FeedVacantes() {
       showToast();
     } catch (err: any) {
       if (!err.message?.includes('Ya aplicaste')) {
-        Alert.alert(t('error_generico'), err.message ?? t('feed_alert_error_aplicar'));
+        void showAlert(t('error_generico'), err.message ?? t('feed_alert_error_aplicar'));
       }
     } finally {
       setApplying(null);
@@ -867,7 +867,7 @@ export default function FeedVacantes() {
   // ── Contactar empresa (chat directo estudiante↔empresa) ──────────
   const handleContactarEmpresa = useCallback(async (vacante: Vacante) => {
     if (!user?.uid || !vacante.empresa_id) {
-      Alert.alert(t('feed_alert_no_disponible_titulo'), t('feed_alert_chat_sin_empresa'));
+      void showAlert(t('feed_alert_no_disponible_titulo'), t('feed_alert_chat_sin_empresa'));
       return;
     }
     const estudianteNombre = (userProfile as any)?.nombre_completo ?? 'Estudiante';
@@ -886,7 +886,7 @@ export default function FeedVacantes() {
       // Navega a la pantalla de chat, pasándole el ID recién obtenido y
       // el nombre de la empresa como parámetros de URL.
     } catch {
-      Alert.alert(t('error_generico'), t('feed_alert_chat_error'));
+      void showAlert(t('error_generico'), t('feed_alert_chat_error'));
     }
   }, [user, userProfile, router, t]);
 

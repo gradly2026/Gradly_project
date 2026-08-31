@@ -81,6 +81,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 // envolviendo la app, esos hooks no funcionarían.
 
 import NotificationBanner from '../src/components/NotificationBanner';
+import { AppAlertHost } from '../src/components/AppAlert';
+// Avisos/confirmaciones propios (Modal) que SÍ funcionan en web, a diferencia
+// de Alert.alert. Ver src/components/AppAlert.tsx.
 // Un componente distinto a la campanita de FloatingTopBar: dibuja un
 // pequeño "banner" (aviso) que aparece brevemente en la parte superior de
 // la pantalla cuando llega una notificación NUEVA mientras el usuario ya
@@ -223,6 +226,9 @@ export default function RootLayout() {
                     global mientras esa pantalla esté activa. */}
                 {/* Banner flotante — siempre visible sobre cualquier pantalla */}
                 <NotificationBanner />
+                {/* Host de avisos/confirmaciones propios (reemplaza Alert.alert
+                    en los flujos que corren en web). Una sola instancia global. */}
+                <AppAlertHost />
                 {/* Al estar aquí, FUERA del <Stack> pero DENTRO de todos
                     los Providers, este banner puede aparecer flotando
                     sobre CUALQUIER pantalla de la app sin importar en cuál

@@ -215,7 +215,7 @@ export default function InboxList({
             <Text style={styles.emptyText}>
               {loading
                 ? "Cargando conversaciones..."
-                : "Aún no tienes conversaciones.\nSe crean al aceptar una solicitud de prácticas."}
+                : "Aún no tienes conversaciones.\nUsa el buscador de arriba para iniciar una."}
             </Text>
           </View>
         }

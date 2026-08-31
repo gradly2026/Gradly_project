@@ -54,6 +54,10 @@ import { useAuthBackGuard } from '../../src/hooks/useSessionBackGuard';
 
 import { db } from '../../src/config/firebaseConfig';
 import { subscribeUnreadTotal } from '../../src/services/chatService';
+import { useChatPaneOpen } from '../../src/state/chatPaneOpen';
+// Señal "hay un chat abierto en la pestaña Mensajes": mientras sea true, la
+// píldora flotante de abajo se esconde (ChatThread ya trae la suya en su
+// cabecera — mismo criterio que el dashboard de empresa).
 // Función que se suscribe (en vivo, con onSnapshot por dentro) al total
 // de mensajes SIN LEER de todos los chats del usuario, para mostrar ese
 // número como "badge" sobre el ícono de la pestaña Mensajes.
@@ -209,6 +213,11 @@ export default function TabLayout() {
   const [nuevasVacantes, setNuevasVacantes] = useState(0);
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
   const [activeKey, setActiveKey] = useState<TabKey>('index');
+  const chatPaneOpen = useChatPaneOpen();
+  // La pestaña Mensajes ahora usa el master-detail (SeccionMensajes): oculta
+  // el buscador flotante en esa pestaña (como el dashboard de empresa) y la
+  // píldora flotante superior mientras haya un chat abierto.
+  const enMensajes = activeKey === 'mensajes';
   // Aquí, en el componente PADRE, se guarda cuál es la pestaña activa
   // (actualizada por GlassTabBar vía onActiveKeyChange) — se necesita
   // arriba, en este nivel, porque el tour de bienvenida (más abajo)
@@ -277,14 +286,19 @@ export default function TabLayout() {
         <Tabs.Screen name="perfil" />
       </Tabs>
 
-      {/* Botones flotantes superiores (notificaciones · idioma · tema) */}
-      <FloatingTopBar userId={user?.uid} />
+      {/* Botones flotantes superiores (notificaciones · idioma · tema).
+          Se ocultan SOLO cuando el usuario está en la pestaña Mensajes CON un
+          chat abierto: ChatThread ya trae esos 3 botones en su cabecera. En
+          otra pestaña siguen visibles aunque SeccionMensajes quede montada de
+          fondo (las tabs no se desmontan al cambiar). */}
+      {!(chatPaneOpen && enMensajes) && <FloatingTopBar userId={user?.uid} />}
       {/* Al estar aquí, FUERA de <Tabs> pero dentro del mismo Fragment,
           esta barra flota SOBRE cualquiera de las 5 pestañas, sin tener
           que repetirla dentro de cada archivo individual. */}
 
-      {/* Botón flotante de búsqueda global */}
-      <FloatingSearchButton />
+      {/* Botón flotante de búsqueda global — oculto en la pestaña Mensajes,
+          que ya tiene su propio buscador dentro de la lista de chats. */}
+      {!enMensajes && <FloatingSearchButton />}
 
       {/* Formulario obligatorio de experiencia (pasantías finalizadas) */}
       <FeedbackGate />

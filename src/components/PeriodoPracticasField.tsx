@@ -41,6 +41,10 @@ export interface PeriodoValue {
 export const MESES_POR_CICLO = 6;
 export const MAX_CICLOS = 6;
 
+/** Piso de horas de un grupo en modo 'horas'. Un grupo puede durar tan poco
+ *  como 1 hora — no se impone ningún mínimo mayor. */
+export const MIN_HORAS = 1;
+
 export const PERIODO_VACIO: PeriodoValue = {
   modo: "ciclos",
   fechaInicio: null,
@@ -87,7 +91,7 @@ const MESES = [
 export function periodoValido(p: PeriodoValue): boolean {
   if (!p.fechaInicio) return false;
   if (p.modo === "ciclos") return !!p.ciclos && p.ciclos >= 1 && p.ciclos <= MAX_CICLOS;
-  if (p.modo === "horas") return !!p.horas && p.horas > 0;
+  if (p.modo === "horas") return !!p.horas && p.horas >= MIN_HORAS;
   return false;
 }
 
@@ -323,7 +327,7 @@ export default function PeriodoPracticasField({
             value={value.horas ? String(value.horas) : ""}
             onChangeText={(t) => {
               const n = Number(t.replace(/\D/g, "").slice(0, 4));
-              emitir({ horas: n > 0 ? n : null });
+              emitir({ horas: n >= MIN_HORAS ? n : null });
             }}
             placeholder="Ej. 500"
             placeholderTextColor={C.textMuted}

@@ -1,40 +1,32 @@
 // ════════════════════════════════════════════════════════════════════════
 // GUÍA PARA PRINCIPIANTES:
-// Esta es la pantalla que se muestra al tocar la pestaña "Mensajes" en la
-// barra inferior del estudiante (app/(tabs)/). Es un archivo MUY corto a
-// propósito: casi todo el trabajo real de mostrar la lista de
-// conversaciones vive en el componente reutilizable
-// src/components/InboxList.tsx — este archivo solo lo coloca dentro del
-// fondo visual estándar de la app (LiquidBackground) y define el estilo
-// de la barra de estado del sistema operativo.
+// Pantalla de la pestaña "Mensajes" (barra inferior del estudiante).
+// Antes montaba solo la LISTA de conversaciones (InboxList). Ahora monta
+// SeccionMensajes — el MISMO componente "master-detail" que usan los
+// dashboards de empresa y universidad: en pantalla ancha se ven la lista y
+// el chat abierto lado a lado; en pantalla angosta, la lista y, al tocar
+// una conversación, el chat a pantalla completa (sin navegar a otra ruta,
+// solo estado local). Así el estudiante tiene exactamente la misma
+// interfaz de chat que la empresa, sin depender de tener ya una alianza.
+//
+// `onChatOpenChange` avisa al layout de las tabs (app/(tabs)/_layout.tsx)
+// cuando hay un chat abierto, para que este esconda su píldora flotante de
+// notificaciones/idioma/tema — ChatThread ya trae la suya en la cabecera y
+// mostrar las dos a la vez las duplicaría.
 // ════════════════════════════════════════════════════════════════════════
 
 import { StatusBar } from "expo-status-bar";
-// StatusBar: controla la apariencia de la barra de estado del sistema
-// operativo (donde se ve la hora, la batería, el wifi) — aquí solo se
-// usa para elegir si sus íconos se dibujan claros u oscuros.
 
 import { LiquidBackground } from "../../components/ui/liquid-glass/LiquidBackground";
-// Componente propio del proyecto que dibuja el fondo visual decorativo
-// estándar (con efecto "vidrio líquido") detrás del contenido de casi
-// toda pantalla de la app — así todas comparten la misma identidad
-// visual sin que cada una tenga que reimplementar ese fondo.
-
-import InboxList from "../../src/components/InboxList";
-// El componente que de verdad dibuja la lista de conversaciones del
-// usuario (leyendo la colección "chats" de Firestore, mostrando el
-// último mensaje de cada una, etc.) — toda esa lógica vive en
-// src/components/InboxList.tsx, no en este archivo.
+import SeccionMensajes from "../../src/components/SeccionMensajes";
+import { setChatPaneOpen } from "../../src/state/chatPaneOpen";
 
 /** Bandeja de entrada como pestaña inferior (Estudiantes). */
 export default function MensajesTab() {
   return (
     <LiquidBackground>
       <StatusBar style="light" />
-      {/* style="light" → los íconos de la barra de estado (hora, batería)
-          se dibujan en color claro, porque el fondo de esta pantalla es
-          oscuro. */}
-      <InboxList />
+      <SeccionMensajes onChatOpenChange={setChatPaneOpen} />
     </LiquidBackground>
   );
 }
