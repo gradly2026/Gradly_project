@@ -43,6 +43,9 @@ import { progresoPorFechas } from '../../src/utils/progresoPasantia';
 import CalendarioEventos from '../../src/components/CalendarioEventos';
 import TableroCupos from '../../src/components/TableroCupos';
 import MiInstitucionCard from '../../src/components/MiInstitucionCard';
+import { textoHorario } from '../../src/data/disponibilidad';
+import type { AsignacionCupo } from '../../src/services/reclamoCuposService';
+import type { ProgresoMeta } from '../../src/utils/horasPasantia';
 import { useProgresoInscripcion } from '../../src/hooks/useProgresoInscripcion';
 // Libro mayor de horas del reparto de cupos: horas que avanzan solas desde la
 // fecha de presentación que fijó la empresa, sobre la meta del grupo (Fase D).
@@ -318,6 +321,81 @@ function PasantiaActivaCard({ app, onFinalizar }: { app: Aplicacion; onFinalizar
 }
 
 // ─────────────────────────────────────────────
+// TARJETA "MI INSCRIPCIÓN" (pasantía de cupo / autoservicio, Fase D)
+// Muestra el libro mayor de horas: horas que avanzan solas desde el "Día 1"
+// que fijó la empresa, sobre la meta del grupo.
+// ─────────────────────────────────────────────
+function MiInscripcionCard({ asignacion, ledger }: { asignacion: AsignacionCupo; ledger: ProgresoMeta | null }) {
+  const { styles } = useThemedStyles();
+  const horario = textoHorario(asignacion.horario);
+  const sinFecha = !asignacion.fechaPresentacion;
+  const completado = ledger?.completado ?? false;
+  const pct = ledger?.pct ?? 0;
+  const badge = completado
+    ? { label: 'Completada', color: COLORS.gold }
+    : sinFecha
+      ? { label: 'Por iniciar', color: COLORS.primaryLight }
+      : { label: 'Activa', color: COLORS.success };
+
+  return (
+    <GlassCard style={{ marginBottom: 16 }} contentStyle={{ padding: 16, gap: 10 }}>
+      <View style={styles.activaHeader}>
+        <Ionicons name="ribbon-outline" size={22} color={COLORS.primaryLight} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.activaEmpresa} numberOfLines={1} noTranslate>
+            {asignacion.empresaNombre || 'Empresa'}
+          </Text>
+          <Text style={styles.activaVacante} numberOfLines={1} noTranslate>
+            {asignacion.vacanteTitulo || 'Pasantía'}
+          </Text>
+        </View>
+        <View style={[styles.estadoBadge, { borderColor: badge.color + '40', backgroundColor: badge.color + '20' }]}>
+          <Text style={[styles.estadoText, { color: badge.color }]}>{badge.label}</Text>
+        </View>
+      </View>
+
+      {sinFecha ? (
+        <View style={styles.metaBanner}>
+          <Ionicons name="information-circle-outline" size={16} color={COLORS.primaryLight} />
+          <Text style={[styles.metaText, { color: COLORS.primaryLight }]}>
+            Coordina con la empresa tu primer día. El conteo de horas arranca ese día.
+          </Text>
+        </View>
+      ) : ledger ? (
+        <>
+          <View style={styles.diasRow}>
+            <Text style={styles.diasLabel}>{ledger.cumplidas} / {ledger.meta} h</Text>
+            <Text style={[styles.diasPct, completado && { color: COLORS.gold }]}>{pct}%</Text>
+          </View>
+          <View style={styles.barTrack}>
+            <View style={[styles.barFill, { width: `${pct}%` as any, backgroundColor: completado ? COLORS.gold : COLORS.primary }]} />
+          </View>
+          <Text style={styles.horasText}>
+            {completado ? 'Cumpliste todas tus horas de práctica.' : `Te faltan ${ledger.restantes} h`}
+          </Text>
+        </>
+      ) : null}
+
+      {!!horario && (
+        <View style={styles.miPasanRow}>
+          <Ionicons name="time-outline" size={15} color={COLORS.textMuted} />
+          <Text style={styles.miPasanText} numberOfLines={2}>{horario}</Text>
+        </View>
+      )}
+      {!sinFecha && (
+        <View style={styles.miPasanRow}>
+          <Ionicons name="calendar-outline" size={15} color={COLORS.textMuted} />
+          <Text style={styles.miPasanText} noTranslate>
+            Primer día: {asignacion.fechaPresentacion}
+            {ledger?.fechaFin ? `  ·  último ~${ledger.fechaFin.toISOString().slice(0, 10)}` : ''}
+          </Text>
+        </View>
+      )}
+    </GlassCard>
+  );
+}
+
+// ─────────────────────────────────────────────
 // TARJETA "MI PASANTÍA" (acuerdo de grupo aprobado)
 // Línea de tiempo porcentual basada en el periodo acordado.
 // ─────────────────────────────────────────────
@@ -449,7 +527,7 @@ export default function ProgresoTab() {
   // termómetro muestra sus horas REALES avanzando; si no, cae al expediente
   // del perfil (`horas_aprobadas`/`horas_objetivo`, que solo se acreditan al
   // certificar).
-  const { progreso: ledger } = useProgresoInscripcion(user?.uid);
+  const { asignacion: inscripcion, progreso: ledger } = useProgresoInscripcion(user?.uid);
   const horasObjetivo = ledger ? ledger.meta : horasObjetivoPerfil;
   const horasCumplidas = ledger ? ledger.cumplidas : horasAprobadas;
   const horasRestantes = ledger ? ledger.restantes : Math.max(0, horasObjetivoPerfil - horasAprobadas);
@@ -677,7 +755,19 @@ export default function ProgresoTab() {
         {user?.uid && (
           <>
             <Text style={styles.sectionTitle}>Mi calendario</Text>
-            <CalendarioEventos uid={user.uid} rol="estudiante" />
+            <CalendarioEventos
+              uid={user.uid}
+              rol="estudiante"
+              inscripcion={
+                inscripcion
+                  ? {
+                      horario: inscripcion.horario,
+                      fechaPresentacion: inscripcion.fechaPresentacion,
+                      fechaFin: ledger?.fechaFin ?? null,
+                    }
+                  : null
+              }
+            />
           </>
         )}
 
@@ -685,6 +775,8 @@ export default function ProgresoTab() {
         <Text style={styles.sectionTitle}>Pasantía activa</Text>
         {activa ? (
           <PasantiaActivaCard app={activa} onFinalizar={() => handleFinalizar(activa.id)} />
+        ) : inscripcion ? (
+          <MiInscripcionCard asignacion={inscripcion} ledger={ledger} />
         ) : (
           <View style={styles.emptySection}>
             <Ionicons name="briefcase-outline" size={40} color={COLORS.border} />

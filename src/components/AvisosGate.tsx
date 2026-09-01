@@ -3,11 +3,15 @@ import { useAuth } from '../context/AuthContext';
 import { textoHorario } from '../data/disponibilidad';
 import { cuposLibresEnReclamo } from '../utils/cupos';
 import {
+  getAvisoFinalizacionEstudiante,
   getAvisosCuposEstudiante,
+  getAvisosFinalizacionEmpresa,
+  getAvisosFinalizacionUniversidad,
   getAvisosInscripcionesEmpresa,
   getAvisosInscripcionesUniversidad,
   getAvisosReclamosEmpresa,
   marcarCuposAvisadosEstudiante,
+  marcarFinalizacionAvisadaEstudiante,
   marcarInscripcionesAvisadas,
   marcarReclamoVistoEmpresa,
   responderReclamo,
@@ -68,21 +72,25 @@ function AvisosEmpresa() {
   const [indice, setIndice] = useState(0);
   const [inscripciones, setInscripciones] = useState<AsignacionCupo[]>([]);
   const [inscCerrado, setInscCerrado] = useState(false);
+  const [finalizadas, setFinalizadas] = useState<AsignacionCupo[]>([]);
+  const [finCerrado, setFinCerrado] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) {
       setReclamos([]); setIndice(0); setInscripciones([]); setInscCerrado(false);
+      setFinalizadas([]); setFinCerrado(false);
       return;
     }
     let cancelado = false;
-    setInscCerrado(false);
+    setInscCerrado(false); setFinCerrado(false);
     (async () => {
       try {
-        const [avisos, insc] = await Promise.all([
+        const [avisos, insc, fin] = await Promise.all([
           getAvisosReclamosEmpresa(user.uid),
           getAvisosInscripcionesEmpresa(user.uid),
+          getAvisosFinalizacionEmpresa(user.uid),
         ]);
-        if (!cancelado) { setReclamos(avisos); setIndice(0); setInscripciones(insc); }
+        if (!cancelado) { setReclamos(avisos); setIndice(0); setInscripciones(insc); setFinalizadas(fin); }
       } catch (error) {
         console.warn('Error detectando avisos (empresa):', error);
       }
@@ -150,6 +158,23 @@ function AvisosEmpresa() {
     );
   }
 
+  if (!finCerrado && finalizadas.length > 0) {
+    return (
+      <AvisoListaModal
+        icon="checkmark-done-circle-outline"
+        titulo="Estudiantes que culminaron su pasantía"
+        subtitulo="Estos estudiantes cumplieron todas sus horas de práctica."
+        items={finalizadas.map(a => inscripcionAItem(a, 'empresa'))}
+        onCerrar={() => {
+          if (user?.uid) {
+            void marcarInscripcionesAvisadas(user.uid, 'perfiles_empresas', finalizadas.map(a => a.id), 'finalizado').catch(() => {});
+          }
+          setFinCerrado(true);
+        }}
+      />
+    );
+  }
+
   return null;
 }
 
@@ -160,15 +185,23 @@ function AvisosUniversidad() {
   const { user } = useAuth();
   const [inscripciones, setInscripciones] = useState<AsignacionCupo[]>([]);
   const [cerrado, setCerrado] = useState(false);
+  const [finalizadas, setFinalizadas] = useState<AsignacionCupo[]>([]);
+  const [finCerrado, setFinCerrado] = useState(false);
 
   useEffect(() => {
-    if (!user?.uid) { setInscripciones([]); setCerrado(false); return; }
+    if (!user?.uid) {
+      setInscripciones([]); setCerrado(false); setFinalizadas([]); setFinCerrado(false);
+      return;
+    }
     let cancelado = false;
-    setCerrado(false);
+    setCerrado(false); setFinCerrado(false);
     (async () => {
       try {
-        const insc = await getAvisosInscripcionesUniversidad(user.uid);
-        if (!cancelado) setInscripciones(insc);
+        const [insc, fin] = await Promise.all([
+          getAvisosInscripcionesUniversidad(user.uid),
+          getAvisosFinalizacionUniversidad(user.uid),
+        ]);
+        if (!cancelado) { setInscripciones(insc); setFinalizadas(fin); }
       } catch (error) {
         console.warn('Error detectando inscripciones (universidad):', error);
       }
@@ -176,22 +209,41 @@ function AvisosUniversidad() {
     return () => { cancelado = true; };
   }, [user?.uid]);
 
-  if (cerrado || inscripciones.length === 0) return null;
+  if (!cerrado && inscripciones.length > 0) {
+    return (
+      <AvisoListaModal
+        icon="person-add-outline"
+        titulo="Tus estudiantes se inscribieron"
+        subtitulo="Estos estudiantes tomaron un cupo que reservaste. Ya están oficialmente en una pasantía."
+        items={inscripciones.map(a => inscripcionAItem(a, 'universidad'))}
+        onCerrar={() => {
+          if (user?.uid) {
+            void marcarInscripcionesAvisadas(user.uid, 'perfiles_universidades', inscripciones.map(a => a.id)).catch(() => {});
+          }
+          setCerrado(true);
+        }}
+      />
+    );
+  }
 
-  return (
-    <AvisoListaModal
-      icon="person-add-outline"
-      titulo="Tus estudiantes se inscribieron"
-      subtitulo="Estos estudiantes tomaron un cupo que reservaste. Ya están oficialmente en una pasantía."
-      items={inscripciones.map(a => inscripcionAItem(a, 'universidad'))}
-      onCerrar={() => {
-        if (user?.uid) {
-          void marcarInscripcionesAvisadas(user.uid, 'perfiles_universidades', inscripciones.map(a => a.id)).catch(() => {});
-        }
-        setCerrado(true);
-      }}
-    />
-  );
+  if (!finCerrado && finalizadas.length > 0) {
+    return (
+      <AvisoListaModal
+        icon="checkmark-done-circle-outline"
+        titulo="Estudiantes que culminaron su pasantía"
+        subtitulo="Estos estudiantes cumplieron todas sus horas de práctica."
+        items={finalizadas.map(a => inscripcionAItem(a, 'universidad'))}
+        onCerrar={() => {
+          if (user?.uid) {
+            void marcarInscripcionesAvisadas(user.uid, 'perfiles_universidades', finalizadas.map(a => a.id), 'finalizado').catch(() => {});
+          }
+          setFinCerrado(true);
+        }}
+      />
+    );
+  }
+
+  return null;
 }
 
 // ─────────────────────────────────────────────
@@ -201,21 +253,51 @@ function AvisosEstudiante() {
   const { user } = useAuth();
   const [reclamos, setReclamos] = useState<ReclamoCupos[]>([]);
   const [cerrado, setCerrado] = useState(false);
+  const [finalizada, setFinalizada] = useState<AsignacionCupo | null>(null);
+  const [finCerrado, setFinCerrado] = useState(false);
 
   useEffect(() => {
-    if (!user?.uid) { setReclamos([]); setCerrado(false); return; }
+    if (!user?.uid) {
+      setReclamos([]); setCerrado(false); setFinalizada(null); setFinCerrado(false);
+      return;
+    }
     let cancelado = false;
-    setCerrado(false);
+    setCerrado(false); setFinCerrado(false);
     (async () => {
       try {
-        const pendientes = await getAvisosCuposEstudiante(user.uid);
-        if (!cancelado) setReclamos(pendientes);
+        const [pendientes, fin] = await Promise.all([
+          getAvisosCuposEstudiante(user.uid),
+          getAvisoFinalizacionEstudiante(user.uid),
+        ]);
+        if (!cancelado) { setReclamos(pendientes); setFinalizada(fin); }
       } catch (error) {
         console.warn('Error detectando avisos de cupos (estudiante):', error);
       }
     })();
     return () => { cancelado = true; };
   }, [user?.uid]);
+
+  if (!finCerrado && finalizada) {
+    return (
+      <AvisoListaModal
+        icon="checkmark-done-circle-outline"
+        titulo="¡Culminaste tu pasantía!"
+        subtitulo="Cumpliste todas tus horas de práctica. Tu universidad y la empresa ya fueron notificadas."
+        items={[{
+          id: finalizada.id,
+          primary: finalizada.empresaNombre || 'Empresa',
+          secondary: finalizada.vacanteTitulo || 'Pasantía',
+          meta: textoHorario(finalizada.horario) || undefined,
+        }]}
+        onCerrar={() => {
+          if (user?.uid) {
+            void marcarFinalizacionAvisadaEstudiante(user.uid, [finalizada.id]).catch(() => {});
+          }
+          setFinCerrado(true);
+        }}
+      />
+    );
+  }
 
   if (cerrado || reclamos.length === 0) return null;
 

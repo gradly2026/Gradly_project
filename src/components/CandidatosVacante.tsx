@@ -7,6 +7,7 @@ import { db } from "../config/firebaseConfig";
 import { FONTS, useTheme, type GradlyColors } from "../context/ThemeContext";
 import FechaPresentacionModal from "./FechaPresentacionModal";
 import type { AsignacionCupo } from "../services/reclamoCuposService";
+import { progresoPorMeta } from "../utils/horasPasantia";
 
 /** "2026-09-03" → "3 sep" (o "" si no parsea). */
 function fechaCorta(iso?: string | null): string {
@@ -88,6 +89,23 @@ export default function CandidatosVacante({
       }
     }
 
+    // Caché de la meta de horas por grupo (para el libro mayor de horas — Fase D).
+    const cacheMeta = new Map<string, number | null>();
+    async function resolverMeta(grupoId?: string | null): Promise<number | null> {
+      if (!grupoId) return null;
+      if (cacheMeta.has(grupoId)) return cacheMeta.get(grupoId)!;
+      try {
+        const snap = await getDoc(doc(db, "grupos", grupoId));
+        const d = snap.exists() ? (snap.data() as any) : {};
+        const h = Number(d.horasRequeridas ?? d.total_horas ?? 0);
+        const meta = Number.isFinite(h) && h > 0 ? Math.floor(h) : null;
+        cacheMeta.set(grupoId, meta);
+        return meta;
+      } catch {
+        return null;
+      }
+    }
+
     async function armarCandidatos(entradas: { estudianteId: string; asignacion?: AsignacionCupo }[]) {
       // Dedup por estudianteId (por si acaso), conservando la asignación.
       const porId = new Map<string, AsignacionCupo | undefined>();
@@ -113,6 +131,7 @@ export default function CandidatosVacante({
               distrito: d.distrito || d.municipio || "",
               universidadNombre: await resolverUniversidad(d.universidad_id),
               asignacion,
+              metaHoras: asignacion ? await resolverMeta(asignacion.grupoId) : null,
             };
           } catch {
             return null;
@@ -197,6 +216,11 @@ export default function CandidatosVacante({
         <View style={s.lista}>
           {candidatos.map((c) => {
             const primerDia = c.asignacion ? fechaCorta(c.asignacion.fechaPresentacion) : "";
+            // Libro mayor de horas: solo si ya hay fecha de presentación y meta.
+            const ledger =
+              c.asignacion?.fechaPresentacion && c.metaHoras
+                ? progresoPorMeta(c.asignacion.horario, c.asignacion.fechaPresentacion, c.metaHoras)
+                : null;
             return (
               <TouchableOpacity
                 key={c.estudianteId}
@@ -225,6 +249,7 @@ export default function CandidatosVacante({
                   {!!c.asignacion && (
                     <Text style={[s.primerDia, primerDia && { color: colors.success }]}>
                       {primerDia ? `Primer día: ${primerDia}` : "Primer día: por definir"}
+                      {ledger ? `  ·  ${ledger.cumplidas}/${ledger.meta} h (${ledger.pct}%)` : ""}
                     </Text>
                   )}
                 </View>
@@ -256,6 +281,8 @@ interface Candidato {
   universidadNombre: string;
   /** Solo en pasantías de cupo: la asignación, para fijar su "primer día". */
   asignacion?: AsignacionCupo;
+  /** Meta de horas de su grupo (para el libro mayor de horas — Fase D). */
+  metaHoras?: number | null;
 }
 
 const makeStyles = (COLORS: GradlyColors) =>

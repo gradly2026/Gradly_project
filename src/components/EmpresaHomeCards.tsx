@@ -25,6 +25,7 @@ import { AutoText as Text, useAutoText } from "./AutoText";
 import { PieChart } from 'react-native-chart-kit';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { progresoPorFechas } from '../utils/progresoPasantia';
+import type { InscripcionActiva } from '../hooks/useInscripcionesActivas';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 
 const MAX_CARD_W = 640;
@@ -40,9 +41,11 @@ interface Props {
   vacantes: any[];
   apps: any[];
   solicitudesGrupo: any[];
+  /** Inscripciones de cupo activas en sus vacantes, con su libro de horas (Fase D). */
+  inscripciones?: InscripcionActiva[];
 }
 
-export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudesGrupo }: Props) {
+export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudesGrupo, inscripciones = [] }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -248,6 +251,31 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
                   </View>
                 );
               })
+            )}
+
+            {/* Pasantías por cupo (libro de horas — Fase D) */}
+            {inscripciones.length > 0 && (
+              <>
+                <Text style={[styles.blockTitle, { marginTop: 16 }]}>Pasantías por cupo</Text>
+                {inscripciones.map(({ asignacion: a, progreso: p }) => {
+                  const pct = p?.pct ?? 0;
+                  const color = p?.completado ? colors.gold : p ? colors.success : colors.textMuted;
+                  return (
+                    <View key={a.id} style={{ marginBottom: 14 }}>
+                      <View style={styles.progHeader}>
+                        <Text style={styles.barLabel} numberOfLines={1} noTranslate>{a.estudianteNombre || 'Estudiante'}</Text>
+                        <Text style={[styles.barValue, { color, width: 40 }]}>{pct}%</Text>
+                      </View>
+                      <View style={styles.barTrack}>
+                        <View style={[styles.barFill, { width: `${pct}%` as any, backgroundColor: color }]} />
+                      </View>
+                      <Text style={styles.progSub} noTranslate>
+                        {p ? `${p.cumplidas}/${p.meta} h · ${a.vacanteTitulo || ''}` : `Sin fecha de inicio · ${a.vacanteTitulo || ''}`}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </>
             )}
           </GlassCard>
         </View>

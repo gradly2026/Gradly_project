@@ -100,6 +100,7 @@ import { auth, db, storage } from '../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
 import { useAuthBackGuard } from '../src/hooks/useSessionBackGuard';
+import { useInscripcionesActivas } from '../src/hooks/useInscripcionesActivas';
 import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
 import { progresoDeGrupo } from '../src/utils/horasPasantia';
@@ -3276,6 +3277,7 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
   const planBadgeLabel = useAutoText(
     planKeyBadge === 'premium' ? '⭐ Premium' : planKeyBadge === 'mensual' ? 'Plan Básico' : 'Plan Gratuito',
   );
+  const inscripcionesActivas = useInscripcionesActivas('empresaId', empresaId);
   const recientes = [...apps].sort((a, b) => {
     const ta = a.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
     const tb = b.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
@@ -3309,6 +3311,7 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
         vacantes={vacantes}
         apps={apps}
         solicitudesGrupo={solicitudesGrupo}
+        inscripciones={inscripcionesActivas}
       />
 
       {/* ── Matchmaking: solicitudes entrantes de universidades ── */}

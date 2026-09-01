@@ -153,6 +153,15 @@ export interface AsignacionCupo {
   estado: 'tomado' | 'cancelado';
   fechaTomado?: any;
   /**
+   * true = el estudiante ya cumplió la meta de horas y la pasantía se cerró
+   * automáticamente (Fase E). Se deja `estado: 'tomado'` a propósito: así el
+   * tablero, el libro de horas y la lista de candidatos siguen mostrándola
+   * (al 100%), en vez de que desaparezca justo cuando más importa verla.
+   */
+  finalizada?: boolean;
+  /** Cuándo se cerró al cumplir la meta de horas. */
+  finalizadaAt?: any;
+  /**
    * Día en que el estudiante se presenta por primera vez a la empresa — su
    * "Día 1". Lo fija (y puede editar) la empresa. ISO `yyyy-mm-dd`. Mientras
    * sea null/ausente, la pasantía está inscrita pero el conteo de horas aún no
@@ -708,6 +717,37 @@ export async function marcarCuposAvisadosEstudiante(
   });
 }
 
+/**
+ * Inscripción del propio estudiante que se cerró por horas y de la que aún no
+ * se le ha mostrado el modal "¡Culminaste!" (Fase E). El "visto" va en su perfil
+ * (`inscripciones_fin_avisadas`), como el resto de flags de B.2.
+ */
+export async function getAvisoFinalizacionEstudiante(estudianteUid: string): Promise<AsignacionCupo | null> {
+  if (!estudianteUid) return null;
+  const perfilSnap = await getDoc(doc(db, 'perfiles_estudiantes', estudianteUid));
+  const avisadas: string[] = perfilSnap.exists() && Array.isArray((perfilSnap.data() as any).inscripciones_fin_avisadas)
+    ? (perfilSnap.data() as any).inscripciones_fin_avisadas
+    : [];
+  const snap = await getDocs(
+    query(collection(db, COLECCION_ASIGNACIONES), where('estudianteId', '==', estudianteUid), where('estado', '==', 'tomado')),
+  );
+  const a = snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as AsignacionCupo))
+    .find(x => x.finalizada === true && !avisadas.includes(x.id));
+  return a ?? null;
+}
+
+/** Marca que al estudiante ya se le mostró el modal de "culminaste" de estas asignaciones. */
+export async function marcarFinalizacionAvisadaEstudiante(
+  estudianteUid: string,
+  asignacionIds: string[],
+): Promise<void> {
+  if (!estudianteUid || asignacionIds.length === 0) return;
+  await updateDoc(doc(db, 'perfiles_estudiantes', estudianteUid), {
+    inscripciones_fin_avisadas: arrayUnion(...asignacionIds),
+  });
+}
+
 // ─────────────────────────────────────────────
 // Avisos de INSCRIPCIÓN (un estudiante tomó un cupo) → universidad y empresa
 // ─────────────────────────────────────────────
@@ -729,11 +769,13 @@ async function getAvisosInscripciones(
   uid: string,
   campo: 'universidadId' | 'empresaId',
   perfilCol: 'perfiles_universidades' | 'perfiles_empresas',
+  evento: 'inscrito' | 'finalizado' = 'inscrito',
 ): Promise<AsignacionCupo[]> {
   if (!uid) return [];
+  const campoAvisadas = evento === 'finalizado' ? 'asignaciones_fin_avisadas' : 'asignaciones_avisadas';
   const perfilSnap = await getDoc(doc(db, perfilCol, uid));
-  const avisadas: string[] = perfilSnap.exists() && Array.isArray((perfilSnap.data() as any).asignaciones_avisadas)
-    ? (perfilSnap.data() as any).asignaciones_avisadas
+  const avisadas: string[] = perfilSnap.exists() && Array.isArray((perfilSnap.data() as any)[campoAvisadas])
+    ? (perfilSnap.data() as any)[campoAvisadas]
     : [];
   const snap = await getDocs(
     query(collection(db, COLECCION_ASIGNACIONES), where(campo, '==', uid)),
@@ -741,25 +783,72 @@ async function getAvisosInscripciones(
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() } as AsignacionCupo))
     .filter(a => a.estado === 'tomado')
+    .filter(a => (evento === 'finalizado' ? a.finalizada === true : a.finalizada !== true))
     .filter(a => !avisadas.includes(a.id));
 }
 
 export const getAvisosInscripcionesUniversidad = (uid: string) =>
   getAvisosInscripciones(uid, 'universidadId', 'perfiles_universidades');
-
 export const getAvisosInscripcionesEmpresa = (uid: string) =>
   getAvisosInscripciones(uid, 'empresaId', 'perfiles_empresas');
+export const getAvisosFinalizacionUniversidad = (uid: string) =>
+  getAvisosInscripciones(uid, 'universidadId', 'perfiles_universidades', 'finalizado');
+export const getAvisosFinalizacionEmpresa = (uid: string) =>
+  getAvisosInscripciones(uid, 'empresaId', 'perfiles_empresas', 'finalizado');
 
 /** Marca inscripciones como avisadas en el perfil de la universidad o la empresa. */
 export async function marcarInscripcionesAvisadas(
   uid: string,
   perfilCol: 'perfiles_universidades' | 'perfiles_empresas',
   asignacionIds: string[],
+  evento: 'inscrito' | 'finalizado' = 'inscrito',
 ): Promise<void> {
   if (!uid || asignacionIds.length === 0) return;
-  await updateDoc(doc(db, perfilCol, uid), {
-    asignaciones_avisadas: arrayUnion(...asignacionIds),
+  const campo = evento === 'finalizado' ? 'asignaciones_fin_avisadas' : 'asignaciones_avisadas';
+  await updateDoc(doc(db, perfilCol, uid), { [campo]: arrayUnion(...asignacionIds) });
+}
+
+/**
+ * Cierre automático de una inscripción de cupo al cumplir la meta de horas
+ * (Fase E). Lo dispara el cliente del estudiante (su hook `useProgresoInscripcion`
+ * detecta `completado`). Marca `finalizada: true` (deja `estado: 'tomado'`) y
+ * avisa a los 3: universidad, empresa y el propio estudiante — vía notificación
+ * + los modales de `AvisosGate` al iniciar sesión.
+ *
+ * Idempotente: relee dentro de la transacción y no hace nada si ya estaba
+ * finalizada o cancelada.
+ */
+export async function finalizarInscripcionPorHoras(
+  asignacionId: string,
+  datos: { estudianteNombre?: string; universidadId?: string; empresaId?: string; vacanteTitulo?: string; empresaNombre?: string; estudianteId?: string },
+): Promise<boolean> {
+  if (!asignacionId) return false;
+  const ref = doc(db, COLECCION_ASIGNACIONES, asignacionId);
+  const hecho = await runTransaction(db, async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return false;
+    const a = snap.data() as AsignacionCupo;
+    if (a.estado !== 'tomado' || a.finalizada === true) return false;
+    tx.update(ref, { finalizada: true, finalizadaAt: serverTimestamp() });
+    return true;
   });
+  if (!hecho) return false;
+
+  const quien = datos.estudianteNombre || 'Un estudiante';
+  const cual = datos.vacanteTitulo || 'su pasantía';
+  if (datos.estudianteId) {
+    try {
+      await updateDoc(doc(db, 'perfiles_estudiantes', datos.estudianteId), { estado_pasantia: 'finalizada' });
+    } catch { /* no crítico */ }
+    await enviarNotificacion(datos.estudianteId, '¡Culminaste tu pasantía!', `Cumpliste todas tus horas de "${cual}".`, 'success', '/(tabs)/progreso');
+  }
+  if (datos.universidadId) {
+    await enviarNotificacion(datos.universidadId, 'Estudiante culminó su pasantía', `${quien} cumplió sus horas de "${cual}"${datos.empresaNombre ? ` (${datos.empresaNombre})` : ''}.`, 'success', '/dashboard-universidad');
+  }
+  if (datos.empresaId) {
+    await enviarNotificacion(datos.empresaId, 'Estudiante culminó su pasantía', `${quien} cumplió sus horas de "${cual}".`, 'success', '/dashboard-empresa');
+  }
+  return true;
 }
 
 // ─────────────────────────────────────────────

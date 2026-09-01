@@ -131,6 +131,7 @@ import { enviarNotificacion } from '../src/services/notificationService';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
+import { useInscripcionesActivas } from '../src/hooks/useInscripcionesActivas';
 // Hook que verifica que el usuario logueado SÍ tenga el rol esperado
 // ('universidad'); si no, redirige — una "compuerta" de seguridad al
 // entrar a este panel.
@@ -1124,6 +1125,7 @@ function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, so
   // están tipadas como `any` (sin una interface propia) — a diferencia
   // del resto del archivo, que sí define tipos explícitos.
   const { s, colors } = useThemedStyles();
+  const inscripcionesActivas = useInscripcionesActivas('universidadId', uid);
   return (
     <ScrollView contentContainerStyle={s.scroll}>
       {/* ── Estadísticas de la Red Gradly ── */}
@@ -1151,6 +1153,7 @@ function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, so
         estudiantes={estudiantes}
         apps={apps}
         solicitudesGrupo={solicitudesGrupo}
+        inscripciones={inscripcionesActivas}
         metricas={metricas}
       />
 
@@ -1359,6 +1362,26 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
     });
     return map;
   }, [grupos, acuerdoPorGrupo]);
+
+  // ── Progreso POR ESTUDIANTE ──
+  // Un estudiante inscrito a una pasantía de cupo puede tener su propia fecha
+  // de presentación (la fija la empresa), así que su avance de horas puede
+  // diferir del de sus compañeros. Si no tiene inscripción de cupo, cae al
+  // progreso de su grupo.
+  const progresoPorEstudiante = useMemo(() => {
+    const map: Record<string, ReturnType<typeof progresoDeGrupo>> = {};
+    estudiantes.forEach(e => {
+      const asign = asignPorEstudiante[e.id];
+      if (!asign) return;
+      const g = grupos.find(x => x.id === e.grupo_id);
+      map[e.id] = progresoDeGrupo(
+        g ? { horasRequeridas: g.horasRequeridas, fechaInicio: g.fechaInicio, fechaFin: g.fechaFin } : {},
+        e.grupo_id ? acuerdoPorGrupo[e.grupo_id] : null,
+        { horario: asign.horario, fechaPresentacion: asign.fechaPresentacion },
+      );
+    });
+    return map;
+  }, [estudiantes, grupos, asignPorEstudiante, acuerdoPorGrupo]);
 
   const resetForm = () => {
     setGNombre('');
@@ -1949,9 +1972,11 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 110, gap: 8 }}
           renderItem={({ item }) => {
-            // El progreso del estudiante es el de SU grupo (comparten
-            // pasantía): mismo helper y misma prioridad que en "Grupos Creados".
-            const progreso = item.grupo_id ? progresoPorGrupo[item.grupo_id] : undefined;
+            // Si el estudiante tiene una inscripción de cupo con fecha de
+            // presentación, su avance de horas es individual; si no, cae al
+            // progreso de su grupo (mismo helper y prioridad que "Grupos Creados").
+            const progreso = progresoPorEstudiante[item.id]
+              ?? (item.grupo_id ? progresoPorGrupo[item.grupo_id] : undefined);
             return (
               <TouchableOpacity
                 activeOpacity={0.8}

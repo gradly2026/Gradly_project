@@ -1,7 +1,11 @@
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { db } from '../config/firebaseConfig';
-import { COLECCION_ASIGNACIONES, type AsignacionCupo } from '../services/reclamoCuposService';
+import {
+  COLECCION_ASIGNACIONES,
+  finalizarInscripcionPorHoras,
+  type AsignacionCupo,
+} from '../services/reclamoCuposService';
 import { progresoPorMeta, type ProgresoMeta } from '../utils/horasPasantia';
 
 export interface ProgresoInscripcion {
@@ -80,6 +84,31 @@ export function useProgresoInscripcion(estudianteId?: string | null): ProgresoIn
     asignacion && metaHoras
       ? progresoPorMeta(asignacion.horario, asignacion.fechaPresentacion, metaHoras, new Date(ahora))
       : null;
+
+  // ── Cierre automático al cumplir la meta (Fase E) ──
+  // Cuando el libro mayor llega al 100%, el cliente del estudiante marca la
+  // asignación `finalizada` y avisa a los 3 roles. Idempotente en el servicio;
+  // el ref evita reintentar en cada tick del mismo montaje.
+  const finalizando = useRef(false);
+  useEffect(() => {
+    if (
+      !finalizando.current &&
+      asignacion &&
+      asignacion.estado === 'tomado' &&
+      asignacion.finalizada !== true &&
+      progreso?.completado
+    ) {
+      finalizando.current = true;
+      void finalizarInscripcionPorHoras(asignacion.id, {
+        estudianteNombre: asignacion.estudianteNombre,
+        estudianteId: asignacion.estudianteId,
+        universidadId: asignacion.universidadId,
+        empresaId: asignacion.empresaId,
+        empresaNombre: asignacion.empresaNombre,
+        vacanteTitulo: asignacion.vacanteTitulo,
+      }).catch(() => { finalizando.current = false; });
+    }
+  }, [asignacion, progreso?.completado]);
 
   return { asignacion, metaHoras, progreso, cargado };
 }

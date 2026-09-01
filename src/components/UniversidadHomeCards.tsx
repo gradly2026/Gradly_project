@@ -34,6 +34,7 @@ import { PieChart } from 'react-native-chart-kit';
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { progresoPorFechas } from '../utils/progresoPasantia';
+import type { InscripcionActiva } from '../hooks/useInscripcionesActivas';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 
 // Ancho máximo de la tarjeta en pantallas anchas (escritorio/tablet); en móvil
@@ -51,10 +52,12 @@ interface Props {
   estudiantes: any[];
   apps: any[];
   solicitudesGrupo: any[];
+  /** Inscripciones de cupo activas de sus estudiantes, con su libro de horas (Fase D). */
+  inscripciones?: InscripcionActiva[];
   metricas: { totalEstudiantes: number; enPasantia: number; horasAprobadas: number; pendAprobacion: number };
 }
 
-export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitudesGrupo, metricas }: Props) {
+export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitudesGrupo, inscripciones = [], metricas }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -261,10 +264,29 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
 
             {/* Pasantías activas (progreso) */}
             <Text style={[styles.blockTitle, { marginTop: 16 }]}>Pasantías activas</Text>
-            {activas.length === 0 ? (
+            {activas.length === 0 && inscripciones.length === 0 ? (
               <Text style={styles.empty}>No hay pasantías en curso.</Text>
             ) : (
-              activas.map(sg => {
+              <>
+              {inscripciones.map(({ asignacion: a, progreso: p }) => {
+                const pct = p?.pct ?? 0;
+                const color = p?.completado ? colors.gold : p ? colors.success : colors.textMuted;
+                return (
+                  <View key={a.id} style={{ marginBottom: 14 }}>
+                    <View style={styles.progHeader}>
+                      <Text style={styles.barLabel} numberOfLines={1} noTranslate>{a.estudianteNombre || 'Estudiante'}</Text>
+                      <Text style={[styles.barValue, { color, width: 40 }]}>{pct}%</Text>
+                    </View>
+                    <View style={styles.barTrack}>
+                      <View style={[styles.barFill, { width: `${pct}%` as any, backgroundColor: color }]} />
+                    </View>
+                    <Text style={styles.progSub} noTranslate>
+                      {p ? `${p.cumplidas}/${p.meta} h · ${a.empresaNombre || ''}` : `Sin fecha de inicio · ${a.empresaNombre || ''}`}
+                    </Text>
+                  </View>
+                );
+              })}
+              {activas.map(sg => {
                 const prog = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
                 const color = prog.estado === 'completado' ? colors.gold : prog.estado === 'en_curso' ? colors.success : colors.primaryLight;
                 return (
@@ -285,7 +307,8 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
                     </Text>
                   </View>
                 );
-              })
+              })}
+              </>
             )}
           </GlassCard>
         </View>

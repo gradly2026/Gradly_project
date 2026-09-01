@@ -836,6 +836,19 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "No se pudo procesar": "Couldn't process it",
   "Intenta de nuevo desde tus solicitudes de cupos.": "Try again from your spot requests.",
 
+  // ── Tarjetas de Inicio: pasantías por cupo (Fase D) ──
+  "Pasantías por cupo": "Slot-based internships",
+  "Sin fecha de inicio": "No start date yet",
+
+  // ── Cierre automático por horas (Fase E) ──
+  "Día de práctica": "Practice day",
+  "¡Culminaste tu pasantía!": "You finished your internship!",
+  "Cumpliste todas tus horas de práctica. Tu universidad y la empresa ya fueron notificadas.":
+    "You completed all your practice hours. Your university and the company have been notified.",
+  "Estudiantes que culminaron su pasantía": "Students who finished their internship",
+  "Estos estudiantes cumplieron todas sus horas de práctica.": "These students completed all their practice hours.",
+  "Estudiante culminó su pasantía": "Student finished their internship",
+
   // ── Inscripción por autoservicio a una pasantía (estudiante) ──
   "Estudiante inscrito": "Student enrolled",
   "Esta pasantía ya no tiene cupos disponibles.": "This internship has no spots left.",

@@ -39,6 +39,17 @@ interface Evento {
   tipo: TipoEvento;
   titulo: string;
   detalle?: string;
+  /** Solo en 'practica_dia': rango horario de ese día ("07:00 AM - 11:00 AM"). */
+  horas?: string;
+}
+
+/** Horario mínimo de una inscripción de cupo, para pintar sus días en el mes. */
+export interface InscripcionCalendario {
+  horario?: { dias?: string[]; horaInicio?: string; horaFin?: string } | null;
+  /** "Día 1" (ISO yyyy-mm-dd). */
+  fechaPresentacion?: string | null;
+  /** Último día de práctica estimado (del libro mayor de horas). */
+  fechaFin?: Date | null;
 }
 
 const META: Record<TipoEvento, { icon: keyof typeof Ionicons.glyphMap; colorKey: keyof GradlyColors }> = {
@@ -71,7 +82,16 @@ function aFecha(v: any): Date | null {
 const claveDia = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 const mismoDia = (a: Date, b: Date) => claveDia(a) === claveDia(b);
 
-export default function CalendarioEventos({ uid, rol = 'universidad' }: { uid: string; rol?: 'universidad' | 'empresa' | 'estudiante' }) {
+export default function CalendarioEventos({
+  uid,
+  rol = 'universidad',
+  inscripcion,
+}: {
+  uid: string;
+  rol?: 'universidad' | 'empresa' | 'estudiante';
+  /** Estudiante inscrito a una pasantía de cupo: pinta sus días de horario. */
+  inscripcion?: InscripcionCalendario | null;
+}) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { locale } = useTranslation();
@@ -215,21 +235,41 @@ export default function CalendarioEventos({ uid, rol = 'universidad' }: { uid: s
       const dias: string[] = Array.isArray(ac?.dias) ? ac.dias : [];
       const ini = aFecha(ac?.fechaInicio ?? sg.fechaInicio);
       const fin = aFecha(ac?.fechaFin ?? sg.fechaFin);
+      const rango = ac?.horaInicio && ac?.horaFin ? `${ac.horaInicio} - ${ac.horaFin}` : undefined;
       if (dias.length && ini && fin && fin.getTime() >= ini.getTime()) {
         const set = new Set(dias.map(d => DIA_A_JS[d]).filter(n => n !== undefined));
         const cursor = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate());
         const finDia = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate());
         while (cursor.getTime() <= finDia.getTime()) {
           if (set.has(cursor.getDay())) {
-            out.push({ fecha: new Date(cursor), tipo: 'practica_dia', titulo: 'Día de práctica', detalle: sg.grupoNombre });
+            out.push({ fecha: new Date(cursor), tipo: 'practica_dia', titulo: 'Día de práctica', detalle: sg.grupoNombre, horas: rango });
           }
           cursor.setDate(cursor.getDate() + 1);
         }
       }
     });
 
+    // Días de horario de la pasantía de cupo del estudiante (Fase E): desde el
+    // "Día 1" que fijó la empresa hasta el último día estimado del libro mayor.
+    const h = inscripcion?.horario;
+    const diasIns: string[] = Array.isArray(h?.dias) ? h!.dias! : [];
+    const iniIns = aFecha(inscripcion?.fechaPresentacion ?? null);
+    const finIns = inscripcion?.fechaFin ?? null;
+    if (diasIns.length && iniIns && finIns && finIns.getTime() >= iniIns.getTime()) {
+      const set = new Set(diasIns.map(d => DIA_A_JS[d]).filter(n => n !== undefined));
+      const rango = h?.horaInicio && h?.horaFin ? `${h.horaInicio} - ${h.horaFin}` : undefined;
+      const cursor = new Date(iniIns.getFullYear(), iniIns.getMonth(), iniIns.getDate());
+      const finDia = new Date(finIns.getFullYear(), finIns.getMonth(), finIns.getDate());
+      while (cursor.getTime() <= finDia.getTime()) {
+        if (set.has(cursor.getDay())) {
+          out.push({ fecha: new Date(cursor), tipo: 'practica_dia', titulo: 'Día de práctica', horas: rango });
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+
     return out;
-  }, [esEmpresa, esEstudiante, registro, grupos, vacantes, postulaciones, solicitudes]);
+  }, [esEmpresa, esEstudiante, registro, grupos, vacantes, postulaciones, solicitudes, inscripcion]);
 
   // Índice día → eventos.
   const porDia = useMemo(() => {
@@ -295,6 +335,7 @@ export default function CalendarioEventos({ uid, rol = 'universidad' }: { uid: s
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.evTitulo} numberOfLines={1}>{ev.titulo}</Text>
+          {!!ev.horas && <Text style={styles.evDetalle} numberOfLines={1} noTranslate>{ev.horas}</Text>}
           {!!ev.detalle && <Text style={styles.evDetalle} numberOfLines={1}>{ev.detalle}</Text>}
         </View>
         <Text style={styles.evFecha}>{formatoFechaCorta.format(ev.fecha)}</Text>
@@ -335,6 +376,8 @@ export default function CalendarioEventos({ uid, rol = 'universidad' }: { uid: s
             const esHoy = mismoDia(d, hoy);
             const esSel = diaSel && mismoDia(d, diaSel);
             const esPractica = evs.some(e => e.tipo === 'practica_dia');
+            // Día de práctica ya pasado → naranja; el que aún falta → contorno claro.
+            const practicaPasada = esPractica && d.getTime() < new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime();
             return (
               <TouchableOpacity
                 key={i}
@@ -342,7 +385,12 @@ export default function CalendarioEventos({ uid, rol = 'universidad' }: { uid: s
                 onPress={() => setDiaSel(esSel ? null : d)}
                 activeOpacity={0.7}
               >
-                <View style={[styles.dia, esPractica && styles.diaPractica, esHoy && styles.diaHoy, esSel && styles.diaSel]}>
+                <View style={[
+                  styles.dia,
+                  esPractica && (practicaPasada ? styles.diaPracticaPasada : styles.diaPracticaFutura),
+                  esHoy && styles.diaHoy,
+                  esSel && styles.diaSel,
+                ]}>
                   <Text style={[styles.diaTxt, (esHoy || esSel) && styles.diaTxtActivo]}>{d.getDate()}</Text>
                 </View>
                 <View style={styles.puntos}>
@@ -389,7 +437,9 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   dia: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   diaHoy: { backgroundColor: COLORS.primary + '33', borderWidth: 1, borderColor: COLORS.primaryLight },
-  diaPractica: { backgroundColor: COLORS.success + '2E', borderWidth: 1, borderColor: COLORS.success + '66' },
+  // Día de práctica ya cumplido → naranja; el que aún falta → contorno claro.
+  diaPracticaPasada: { backgroundColor: COLORS.warning + '33', borderWidth: 1, borderColor: COLORS.warning + '88' },
+  diaPracticaFutura: { borderWidth: 1, borderColor: COLORS.border },
   diaSel: { backgroundColor: COLORS.primary },
   diaTxt: { fontSize: 13, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
   diaTxtActivo: { color: COLORS.textPrimary, fontFamily: FONTS.interSemiBold },

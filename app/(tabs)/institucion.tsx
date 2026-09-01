@@ -36,6 +36,8 @@ import {
   zonaDeCarrera,
 } from '../../src/data/carreras';
 import { progresoPorFechas } from '../../src/utils/progresoPasantia';
+import { textoHorario } from '../../src/data/disponibilidad';
+import { useProgresoInscripcion } from '../../src/hooks/useProgresoInscripcion';
 import BandejaIncidencias from '../../src/components/BandejaIncidencias';
 import ReportarIncidenciaModal from '../../src/components/ReportarIncidenciaModal';
 
@@ -145,13 +147,16 @@ export default function InstitucionTab() {
   const zona = miCarrera ? zonaDeCarrera(miCarrera) : 'verde';
   const avisoRoja = miCarrera ? mensajeZonaRoja(miCarrera) : null;
 
-  // Avance del período de prácticas del grupo (no de las horas: eso vive en
-  // la pestaña Progreso). Se recalcula en cada render, que es justo lo que
-  // se quiere — el porcentaje depende de la fecha de HOY.
+  // Avance del período de prácticas del grupo (por fechas). Se recalcula en
+  // cada render — el porcentaje depende de la fecha de HOY.
   const periodo = useMemo(
     () => progresoPorFechas(grupo?.fecha_inicio, grupo?.fecha_fin),
     [grupo?.fecha_inicio, grupo?.fecha_fin],
   );
+
+  // Libro mayor de horas del estudiante si está inscrito a una pasantía de cupo
+  // (Fase D). Mismo hook y mismo número que la pestaña Progreso.
+  const { asignacion: inscripcion, progreso: ledger } = useProgresoInscripcion(user?.uid);
 
   // Vías de contacto reales de la universidad, ya filtradas: solo se dibujan
   // las que la institución llenó al registrarse.
@@ -209,6 +214,41 @@ export default function InstitucionTab() {
             <>
               {/* ── Identidad: universidad + grupo ── */}
               <MiInstitucionCard universidadId={universidadId} grupoId={grupoId} />
+
+              {/* ── Tus horas de práctica (pasantía de cupo, Fase D) ── */}
+              {inscripcion && (
+                <>
+                  <Text style={styles.sectionTitle}>Tus horas de práctica</Text>
+                  <GlassCard style={styles.card} contentStyle={{ padding: 16, gap: 10 }}>
+                    <Text style={styles.periodoFecha} noTranslate>
+                      {inscripcion.empresaNombre || 'Empresa'} · {inscripcion.vacanteTitulo || 'Pasantía'}
+                    </Text>
+                    {ledger ? (
+                      <>
+                        <View style={styles.periodoTop}>
+                          <Text style={styles.periodoEstado}>
+                            {ledger.completado ? 'Completaste tus horas' : `${ledger.cumplidas} / ${ledger.meta} h`}
+                          </Text>
+                          <Text style={styles.periodoPct} noTranslate>{ledger.pct}%</Text>
+                        </View>
+                        <View style={styles.barraFondo}>
+                          <View style={[styles.barraLlena, { width: `${Math.min(100, Math.max(0, ledger.pct))}%` }]} />
+                        </View>
+                        {!ledger.completado && (
+                          <Text style={styles.periodoRestante}>Te faltan {ledger.restantes} h</Text>
+                        )}
+                      </>
+                    ) : (
+                      <Text style={styles.periodoRestante}>
+                        Coordina con la empresa tu primer día: el conteo de horas arranca ese día.
+                      </Text>
+                    )}
+                    {!!textoHorario(inscripcion.horario) && (
+                      <Text style={styles.periodoFecha} noTranslate>{textoHorario(inscripcion.horario)}</Text>
+                    )}
+                  </GlassCard>
+                </>
+              )}
 
               {/* ── Período de prácticas del grupo ── */}
               {periodo.diasTotales > 0 && (
