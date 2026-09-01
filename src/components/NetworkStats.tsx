@@ -20,6 +20,7 @@ import PerfilPublicoModal from '../../components/PerfilPublicoModal';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { useInscripcionesActivas } from '../hooks/useInscripcionesActivas';
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -352,27 +353,43 @@ export function PerfilStatsUniversidad({ universidadId }: { universidadId: strin
     if (!universidadId) return;
     const unsub = onSnapshot(
       query(collection(db, 'perfiles_estudiantes'), where('universidad_id', '==', universidadId)),
-      s => setEstudiantes(s.docs.map(d => d.data())),
+      s => setEstudiantes(s.docs.map(d => ({ id: d.id, ...d.data() }))),
       error => console.warn('Error en listener (perfiles_estudiantes universidad):', error),
     );
     return unsub;
   }, [universidadId]);
+
+  // Libro mayor de horas de las inscripciones de cupo activas (Fase D): es el
+  // avance REAL de un estudiante mientras cursa la pasantía. `horas_aprobadas`
+  // solo se llena al CERTIFICAR, así que sin esto todos caían en el bucket 0-25%.
+  const inscripciones = useInscripcionesActivas('universidadId', universidadId);
+  const ledgerPorEstudiante = useMemo(() => {
+    const m: Record<string, { pct: number; enProceso: boolean }> = {};
+    inscripciones.forEach(({ asignacion, progreso }) => {
+      const pct = progreso?.pct ?? 0;
+      m[asignacion.estudianteId] = { pct, enProceso: !progreso?.completado };
+    });
+    return m;
+  }, [inscripciones]);
 
   const resumen = useMemo(() => {
     const buckets = [0, 0, 0, 0, 0];
     let sumaPct = 0, enProceso = 0, egresados = 0;
     estudiantes.forEach(e => {
       const objetivo = Number(e.horas_objetivo) || 500;
-      const pct = Math.max(0, Math.min(100, (Number(e.horas_aprobadas) || 0) / objetivo * 100));
+      const pctCert = Math.max(0, Math.min(100, (Number(e.horas_aprobadas) || 0) / objetivo * 100));
+      const led = ledgerPorEstudiante[e.id];
+      // El mayor de: horas ya certificadas vs avance del libro mayor en curso.
+      const pct = Math.max(pctCert, led?.pct ?? 0);
       const idx = pct >= 100 ? 4 : pct >= 76 ? 3 : pct >= 51 ? 2 : pct >= 26 ? 1 : 0;
       buckets[idx]++;
       sumaPct += pct;
-      if ((Number(e.horas_en_proceso) || 0) > 0) enProceso++;
+      if ((Number(e.horas_en_proceso) || 0) > 0 || led?.enProceso) enProceso++;
       if (e.graduado === true) egresados++;
     });
     const promedio = estudiantes.length ? Math.round(sumaPct / estudiantes.length) : 0;
     return { buckets, promedio, enProceso, egresados };
-  }, [estudiantes]);
+  }, [estudiantes, ledgerPorEstudiante]);
 
   const chartConfig = makeChartConfig(colors, isDark);
   const chartWidth = SCREEN_W - 96;

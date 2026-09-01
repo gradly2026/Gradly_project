@@ -16,6 +16,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import { useRouter } from 'expo-router';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -34,6 +35,7 @@ import { useTranslation } from '../../src/context/TranslationContext';
 import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
 import { estudianteFinalizaProyecto } from '../../src/services/pasantiaService';
+import { abrirChatDirectoEmpresaEstudiante } from '../../src/services/chatService';
 import { progresoPorFechas } from '../../src/utils/progresoPasantia';
 // Función utilitaria: dado un rango de fechas (inicio/fin de una
 // pasantía), calcula en qué punto del tiempo estamos AHORA — devuelve
@@ -327,8 +329,32 @@ function PasantiaActivaCard({ app, onFinalizar }: { app: Aplicacion; onFinalizar
 // ─────────────────────────────────────────────
 function MiInscripcionCard({ asignacion, ledger }: { asignacion: AsignacionCupo; ledger: ProgresoMeta | null }) {
   const { styles } = useThemedStyles();
+  const router = useRouter();
+  const [abriendoChat, setAbriendoChat] = useState(false);
   const horario = textoHorario(asignacion.horario);
   const sinFecha = !asignacion.fechaPresentacion;
+
+  // Chat directo con la empresa para coordinar el primer día. El helper usa un
+  // id determinístico (`direct_{empresaId}_{estudianteId}`): si ya existía la
+  // conversación, la reutiliza — nunca crea una repetida.
+  const chatearConEmpresa = async () => {
+    if (abriendoChat || !asignacion.empresaId || !asignacion.estudianteId) return;
+    setAbriendoChat(true);
+    try {
+      const chatId = await abrirChatDirectoEmpresaEstudiante({
+        empresaId: asignacion.empresaId,
+        empresaNombre: asignacion.empresaNombre || 'Empresa',
+        estudianteId: asignacion.estudianteId,
+        estudianteNombre: asignacion.estudianteNombre || 'Estudiante',
+        contexto: 'candidatura',
+      });
+      router.push({ pathname: '/ChatScreen', params: { chatId, peerName: asignacion.empresaNombre || 'Empresa' } } as any);
+    } catch {
+      void showAlert('Error', 'No se pudo abrir el chat con la empresa.');
+    } finally {
+      setAbriendoChat(false);
+    }
+  };
   const completado = ledger?.completado ?? false;
   const pct = ledger?.pct ?? 0;
   const badge = completado
@@ -357,9 +383,20 @@ function MiInscripcionCard({ asignacion, ledger }: { asignacion: AsignacionCupo;
       {sinFecha ? (
         <View style={styles.metaBanner}>
           <Ionicons name="information-circle-outline" size={16} color={COLORS.primaryLight} />
-          <Text style={[styles.metaText, { color: COLORS.primaryLight }]}>
+          <Text style={[styles.metaText, { color: COLORS.primaryLight, flex: 1 }]}>
             Coordina con la empresa tu primer día. El conteo de horas arranca ese día.
           </Text>
+          <TouchableOpacity
+            style={styles.bannerChatBtn}
+            onPress={chatearConEmpresa}
+            disabled={abriendoChat}
+            hitSlop={8}
+            accessibilityLabel="Chatear con la empresa"
+          >
+            {abriendoChat
+              ? <ActivityIndicator size="small" color={COLORS.primaryLight} />
+              : <Ionicons name="chatbubbles" size={18} color={COLORS.primaryLight} />}
+          </TouchableOpacity>
         </View>
       ) : ledger ? (
         <>
@@ -899,6 +936,10 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     marginTop: 12,
   },
   metaText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.gold },
+  bannerChatBtn: {
+    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.primary12, borderWidth: 1, borderColor: COLORS.primary35,
+  },
 
   // Barras
   barTrack: {

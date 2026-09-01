@@ -197,7 +197,7 @@ export default function MiInstitucionCard({
       <View style={s.filas}>
         <Fila icon="people-outline" label={t('inst_grupo')}   value={nombreGrupo}          s={s} colors={colors} propio />
         <Fila icon="book-outline"   label={t('inst_carrera')} value={grupo?.carrera ?? ''} s={s} colors={colors} propio />
-        <Fila icon="person-outline" label={t('inst_docente')} value={grupo?.docente ?? ''} s={s} colors={colors} propio />
+        {/* Fila "Docente" retirada a pedido del usuario (2026-09-01). */}
         <Fila
           icon="people-circle-outline"
           label={t('inst_companeros')}

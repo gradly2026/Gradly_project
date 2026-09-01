@@ -300,7 +300,11 @@ export default function PerfilPublicoModal({
                       theme={theme}
                     />
                   </View>
-                ) : rol === "talento" || rol === "alumno" ? (
+                ) : null}
+                {/* ── "Certificación Gradly" del estudiante: OCULTA por ahora
+                       (pedido del usuario, 2026-09-01). Descomentar para volver
+                       a mostrarla en el perfil público.
+                {rol === "talento" || rol === "alumno" ? (
                   <View style={{ marginBottom: 12 }}>
                     <CertificadoGradly
                       xp={Number(perfil.puntos_experiencia ?? 0)}
@@ -311,6 +315,7 @@ export default function PerfilPublicoModal({
                     />
                   </View>
                 ) : null}
+                ── */}
 
                 {/* Bandeja de reseñas (estrellas + comentario) — empresa/estudiante
                     tienen reseñas reales vía feedback_pasantias; universidad solo

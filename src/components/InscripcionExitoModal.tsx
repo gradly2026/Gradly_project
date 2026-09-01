@@ -58,10 +58,19 @@ export default function InscripcionExitoModal({
 
   if (!visible) return null;
 
+  // Llevar SIEMPRE a "Mi Progreso" al cerrar: ahí ve su pasantía activa y sus horas.
+  const irAMiProgreso = () => {
+    onClose();
+    router.push('/(tabs)/progreso' as any);
+  };
+
   const coordinarPorChat = async () => {
     if (abriendoChat) return;
     setAbriendoChat(true);
     try {
+      // `abrirChatDirectoEmpresaEstudiante` usa un id determinístico
+      // (`direct_{empresaId}_{estudianteId}`): si ya existía la conversación,
+      // la reutiliza — nunca duplica.
       const chatId = await abrirChatDirectoEmpresaEstudiante({
         empresaId,
         empresaNombre,
@@ -126,8 +135,8 @@ export default function InscripcionExitoModal({
               )}
           </TouchableOpacity>
 
-          <TouchableOpacity style={s.btnGhost} activeOpacity={0.85} onPress={onClose}>
-            <Text style={s.btnGhostTxt}>Ahora no</Text>
+          <TouchableOpacity style={s.btnGhost} activeOpacity={0.85} onPress={irAMiProgreso}>
+            <Text style={s.btnGhostTxt}>Ir a Mi Progreso</Text>
           </TouchableOpacity>
         </View>
       </View>

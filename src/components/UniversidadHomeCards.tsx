@@ -105,7 +105,8 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
   );
 
   // Instituciones afiliadas: empresas con una relación de pasantía real
-  // (solicitudes de grupo aprobadas/finalizadas + estudiantes contratados).
+  // (solicitudes de grupo aprobadas/finalizadas + estudiantes contratados +
+  //  inscripciones de cupo activas — este último flujo antes no contaba).
   const institucionesAfiliadas = useMemo(() => {
     const ids = new Set<string>();
     solicitudesGrupo.forEach(sg => {
@@ -116,8 +117,17 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
         ids.add(a.empresa_id);
       }
     });
+    inscripciones.forEach(({ asignacion }) => {
+      if (asignacion.empresaId) ids.add(asignacion.empresaId);
+    });
     return ids.size;
-  }, [solicitudesGrupo, apps]);
+  }, [solicitudesGrupo, apps, inscripciones]);
+
+  // "En pasantía": estudiantes cursando una práctica AHORA por cualquier vía —
+  // el `metricas.enPasantia` que llega ya suma grupo + individual legado; aquí
+  // se le añaden las inscripciones de cupo activas (`asignaciones_cupo` tomado),
+  // que antes no se contaban en ninguna parte.
+  const enPasantiaTotal = (metricas?.enPasantia ?? 0) + inscripciones.length;
 
   // ── Carreras con más pasantías (reusa la lógica de la vieja "Estadísticas") ──
   const carreras = useMemo(() => {
@@ -187,7 +197,7 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
     { icon: 'school-outline',            label: 'Egresados',            value: egresados,               color: colors.gold },
     { icon: 'business-outline',          label: 'Instituciones afiliadas', value: institucionesAfiliadas, color: colors.accent },
     { icon: 'albums-outline',            label: 'Grupos',               value: gruposCount,             color: colors.primaryLight },
-    { icon: 'briefcase-outline',         label: 'En pasantía',          value: metricas.enPasantia,     color: colors.success },
+    { icon: 'briefcase-outline',         label: 'En pasantía',          value: enPasantiaTotal,         color: colors.success },
     { icon: 'time-outline',              label: 'Horas aprobadas',      value: metricas.horasAprobadas, color: colors.accent },
   ];
 

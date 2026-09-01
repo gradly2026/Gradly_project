@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -46,6 +47,7 @@ export default function TableroCupos({
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
+  const router = useRouter();
 
   // Cupos reservados por su universidad (listener compartido con el feed).
   const reclamos = useReclamosUniversidad(universidadId);
@@ -99,10 +101,12 @@ export default function TableroCupos({
     setTomando(r.id);
     try {
       await tomarCupo({ reclamoId: r.id, estudianteId, estudianteNombre });
-      void showAlert(
+      await showAlert(
         '¡Cupo asegurado!',
         `Harás tu práctica en ${r.empresaNombre || 'la empresa'}. Tu universidad y la empresa ya fueron notificadas.`,
       );
+      // Lo llevamos a "Mi Progreso": ahí ve su pasantía activa y sus horas.
+      router.push('/(tabs)/progreso' as any);
     } catch (e: any) {
       void showAlert('No se pudo tomar el cupo', e?.message ?? 'Intenta de nuevo.');
     } finally {

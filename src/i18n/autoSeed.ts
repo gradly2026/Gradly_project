@@ -860,6 +860,7 @@ export const CUPOS_SEED_EN: Record<string, string> = {
     "Agree with the company on the day you first show up: that day starts your hour count. If you don't reach out, the company will set it.",
   "Escribir a la empresa": "Message the company",
   "Ahora no": "Not now",
+  "Ir a Mi Progreso": "Go to My Progress",
   "No se pudo abrir el chat con la empresa.": "Couldn't open the chat with the company.",
 
   // ── Primer día del estudiante ("Día 1") — lo fija la empresa ──
