@@ -9,7 +9,6 @@
 // pantalla con un formulario obligatorio.
 // ════════════════════════════════════════════════════════════════════════
 
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { Tabs, useRouter } from 'expo-router';
 // Tabs: el componente de navegación de Expo Router especializado en
 // pestañas (a diferencia de Stack, que apila pantallas, Tabs las muestra
@@ -53,7 +52,6 @@ import { useAuthBackGuard } from '../../src/hooks/useSessionBackGuard';
 // Android) para evitar que el usuario logueado termine, sin querer,
 // saliendo de la app o volviendo a una pantalla de login ya inválida.
 
-import { db } from '../../src/config/firebaseConfig';
 import { subscribeUnreadTotal } from '../../src/services/chatService';
 import { useChatPaneOpen } from '../../src/state/chatPaneOpen';
 // Señal "hay un chat abierto en la pestaña Mensajes": mientras sea true, la
@@ -126,10 +124,9 @@ const TOUR_PASOS: Record<TabKey, { titulo: string; texto: string }> = {
 function GlassTabBar({
   state,
   navigation,
-  vacantesBadge,
   mensajesBadge,
   onActiveKeyChange,
-}: BottomTabBarProps & { vacantesBadge: number; mensajesBadge: number; onActiveKeyChange: (key: TabKey) => void }) {
+}: BottomTabBarProps & { mensajesBadge: number; onActiveKeyChange: (key: TabKey) => void }) {
   // GlassTabBar es un COMPONENTE PERSONALIZADO que React Navigation usa
   // EN VEZ de su barra de pestañas por defecto (ver la prop `tabBar` del
   // componente <Tabs> más abajo). Recibe las props estándar de React
@@ -162,16 +159,11 @@ function GlassTabBar({
     // finalmente en el TEXTO real, usando t() — recalculado en cada
     // render, así que si el usuario cambia de idioma, las etiquetas de
     // las pestañas cambian solas.
-    badge:
-      it.key === 'index'
-        ? vacantesBadge
-        : it.key === 'mensajes'
-          ? mensajesBadge
-          : undefined,
-    // Solo 2 de las 5 pestañas muestran un número de "badge" (vacantes
-    // nuevas, mensajes sin leer) — las demás no tienen badge
-    // (`undefined`). Es un ternario ANIDADO: primero pregunta si es
-    // 'index', si no, pregunta si es 'mensajes', si tampoco, `undefined`.
+    // Solo "Mensajes" muestra badge (mensajes sin leer). Antes "Vacantes"
+    // mostraba el TOTAL de vacantes activas de la plataforma, que se veía
+    // como un contador rojo de notificaciones aunque el estudiante no
+    // tuviera ninguna — se quitó.
+    badge: it.key === 'mensajes' ? mensajesBadge : undefined,
   }));
 
   const handleChange = (key: TabKey) => {
@@ -211,7 +203,6 @@ export default function TabLayout() {
   // sincronización nativa. Sigue mostrando el modal de cierre de sesión al
   // agotar el "atrás", solo que sin recorrer pestañas primero.
   const { showLogoutConfirm, confirmLogout, cancelLogout } = useAuthBackGuard();
-  const [nuevasVacantes, setNuevasVacantes] = useState(0);
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
   const [activeKey, setActiveKey] = useState<TabKey>('index');
   const chatPaneOpen = useChatPaneOpen();
@@ -223,17 +214,6 @@ export default function TabLayout() {
   // (actualizada por GlassTabBar vía onActiveKeyChange) — se necesita
   // arriba, en este nivel, porque el tour de bienvenida (más abajo)
   // también depende de saber en qué pestaña está el usuario ahora.
-
-  // Badge: cuenta vacantes activas (solo con sesión activa)
-  useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, 'vacantes'), where('activa', '==', true));
-    const unsub = onSnapshot(q, snap => setNuevasVacantes(snap.size));
-    // READ en vivo: cuenta cuántas vacantes están activas en TODA la
-    // plataforma (snap.size = cantidad de documentos que cumplen la
-    // consulta) y lo muestra como badge en la pestaña "Vacantes".
-    return unsub;
-  }, [user]);
 
   // Badge: total de mensajes no leídos del usuario
   useEffect(() => {
@@ -274,7 +254,6 @@ export default function TabLayout() {
           // como las 3 propias del proyecto.
           <GlassTabBar
             {...props}
-            vacantesBadge={nuevasVacantes}
             mensajesBadge={mensajesNoLeidos}
             onActiveKeyChange={setActiveKey}
           />

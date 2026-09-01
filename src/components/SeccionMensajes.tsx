@@ -150,19 +150,28 @@ export default function SeccionMensajes({
 }
 
 const styles = StyleSheet.create({
+  // `minHeight: 0` (y `minWidth: 0` en los paneles) permiten que el chat con
+  // scroll interno se encoja dentro del flex en web en vez de desbordar y
+  // "romper" el layout de la sección.
   row: {
     flex: 1,
+    minHeight: 0,
     flexDirection: "row",
   },
   leftPane: {
     width: "30%",
     minWidth: 320,
+    minHeight: 0,
   },
   fullPane: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 0,
   },
   rightPane: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 0,
     borderLeftWidth: 1,
   },
   emptyDetail: {

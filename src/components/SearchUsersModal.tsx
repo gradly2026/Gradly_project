@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import { db } from "../config/firebaseConfig";
+import { useTheme, type GradlyColors } from "../context/ThemeContext";
 import { useAuth, type UserRole } from "../context/AuthContext";
 import { useIniciarChat } from "../hooks/useIniciarChat";
 import { crearChatGrupoAdHoc } from "../services/chatService";
@@ -35,16 +36,25 @@ interface EstudianteItem {
   carrera: string;
 }
 
-const C = {
-  surface: "#0d0b1e",
-  surface2: "rgba(255,255,255,0.04)",
-  text: "#ffffff",
-  textMuted: "rgba(255,255,255,0.45)",
-  accent: "#8b5cf6",
-  accent70: "rgba(167,139,250,1)",
-  border: "rgba(139,92,246,0.25)",
-  green: "#34d399",
-};
+/**
+ * Paleta del buscador derivada del tema activo (claro/oscuro) — antes estaba
+ * fija en oscuro, por eso el buscador se veía negro aunque la app estuviera
+ * en modo claro.
+ */
+function makeC(t: GradlyColors) {
+  return {
+    surface: t.backgroundCard,
+    surface2: t.white4,
+    text: t.textPrimary,
+    textMuted: t.textMuted,
+    accent: t.primary,
+    accent70: t.primaryLight,
+    border: t.border,
+    green: t.success,
+    avatarFill: t.primary12,
+  };
+}
+type SearchColors = ReturnType<typeof makeC>;
 
 /** Resultado de búsqueda normalizado (empresa o estudiante). */
 interface UserResult {
@@ -81,6 +91,9 @@ export default function SearchUsersModal({
   const iniciarChat = useIniciarChat();
   const router = useRouter();
   const { user, userProfile } = useAuth();
+  const { colors } = useTheme();
+  const C = useMemo(() => makeC(colors), [colors]);
+  const styles = useMemo(() => makeStyles(C), [C]);
 
   // ── Modo "Chatea con tus estudiantes" (solo universidad) ──
   const [modoEstudiantes, setModoEstudiantes] = useState(false);
@@ -497,7 +510,7 @@ export default function SearchUsersModal({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: SearchColors) => StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(7,5,15,0.75)",
@@ -588,12 +601,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(139,92,246,0.18)",
+    backgroundColor: C.avatarFill,
     borderWidth: 1,
     borderColor: C.border,
   },
   avatarText: {
-    color: "#c4b5fd",
+    color: C.accent70,
     fontSize: 17,
     fontWeight: "800",
   },

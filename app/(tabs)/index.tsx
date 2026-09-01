@@ -1318,7 +1318,14 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.backgroundDark },
 
   // ── Header
+  // La barra del saludo se centra y se topa al mismo ancho que el feed
+  // (640) — antes el fondo se estiraba a todo el ancho de la ventana
+  // mientras el contenido quedaba en una columna angosta, y se veía como
+  // una barra cruzando media pantalla.
   header: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: COLORS.backgroundCard,
     paddingTop: 56,
     paddingBottom: 12,

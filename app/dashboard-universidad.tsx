@@ -485,7 +485,7 @@ export default function DashboardUniversidad() {
   useAuthGuard('universidad');
   const { user, userProfile } = useAuth();
   const router = useRouter();
-  const { styles, colors } = useThemedStyles();
+  const { styles, colors, isDark } = useThemedStyles();
 
   const [seccion,      setSeccion]      = useState<SeccionUni>('inicio');
   // useAuthBackGuard(): controla el botón "atrás" del navegador para que
@@ -971,7 +971,7 @@ export default function DashboardUniversidad() {
               render: () => (
                 <PromedioSimple
                   promedio={(perfil as any)?.calificacion_estudiantes_promedio ?? null}
-                  theme="dark"
+                  theme={isDark ? 'dark' : 'light'}
                 />
               ),
             },
@@ -999,7 +999,7 @@ export default function DashboardUniversidad() {
   return (
     <LiquidBackground>
     <View style={[styles.root, { backgroundColor: 'transparent' }]}>
-      <StatusBar style="light" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
 
       {/* ── CONTENIDO ── */}
       <View style={styles.main}>

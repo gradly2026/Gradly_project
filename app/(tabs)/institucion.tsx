@@ -374,13 +374,17 @@ const makeStyles = (COLORS: GradlyColors) =>
   StyleSheet.create({
     root: { flex: 1, backgroundColor: COLORS.backgroundDark },
 
+    // Cabecera y contenido centrados y topados al mismo ancho (760): un poco
+    // anchos, pero sin estirarse de borde a borde en web/tablet. En móvil
+    // ocupan todo el ancho disponible.
     header: {
+      width: '100%', maxWidth: 760, alignSelf: 'center',
       paddingTop: 56, paddingHorizontal: 20, paddingBottom: 16,
       borderBottomWidth: 1, borderBottomColor: COLORS.border,
     },
     headerTitle: { fontSize: 22, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
 
-    scroll: { padding: 16, paddingBottom: 100 },
+    scroll: { padding: 16, paddingBottom: 100, width: '100%', maxWidth: 760, alignSelf: 'center' },
     sectionTitle: {
       fontSize: 15, fontFamily: FONTS.soraSemiBold,
       color: COLORS.textPrimary, marginBottom: 10, marginTop: 4,

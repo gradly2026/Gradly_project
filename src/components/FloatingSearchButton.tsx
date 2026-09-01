@@ -40,20 +40,28 @@ export default function FloatingSearchButton(_props: FloatingSearchButtonProps) 
   return (
     <>
       <View style={[styles.btnWrap, { bottom: buttonBottom, pointerEvents: 'box-none' }]}>
-        <Pressable onPress={toggle}>
+        {/* El color sólido va en el Pressable, NO en el BlurView: en web
+            expo-blur SOBREESCRIBE el backgroundColor con un tinte
+            blanquecino/negruzco según `tint`, lo que en modo claro dejaba el
+            botón casi blanco y la lupa (blanca) invisible. El BlurView queda
+            detrás solo como efecto decorativo. */}
+        <Pressable
+          onPress={toggle}
+          style={[
+            styles.btn,
+            {
+              backgroundColor: isDark ? 'rgba(124,58,237,0.92)' : '#7C3AED',
+              borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.35)',
+            },
+          ]}
+        >
           <BlurView
-            intensity={40}
+            intensity={24}
             tint={isDark ? 'dark' : 'light'}
-            style={[
-              styles.btn,
-              {
-                backgroundColor: isDark ? 'rgba(124,58,237,0.6)' : 'rgba(124,58,237,0.9)',
-                borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.4)',
-              },
-            ]}
-          >
-            <Ionicons name="search" size={24} color="#fff" />
-          </BlurView>
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          <Ionicons name="search" size={24} color="#fff" />
         </Pressable>
       </View>
 

@@ -313,7 +313,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
   };
 
   return (
-    <View style={{ gap: 12 }}>
+    <View style={styles.uniColumn}>
       {/* ── Cuota de cupos de la universidad ── */}
       {estudiantes.length > 0 && (
         <GlassCard colors={colors} isDark={isDark} column>
@@ -1191,6 +1191,12 @@ const makeStyles = (C: GradlyColors, _isDark: boolean) => {
   const sheet = StyleSheet.create({
     heading: { fontSize: 15, fontFamily: FONTS.soraSemiBold, color: C.textPrimary, marginBottom: 2 },
     empty: { fontSize: 13, fontFamily: FONTS.interRegular, color: C.textMuted, paddingVertical: 12 },
+
+    // Columna general de la vista de Universidad (Cupos asegurados, Mis
+    // reservas, Vacantes disponibles): ocupa el ancho disponible en móvil pero
+    // se topa a un ancho legible y se centra en tablet/escritorio, para que
+    // ningún bloque quede estirado de borde a borde.
+    uniColumn: { gap: 12, width: '100%', maxWidth: 560, alignSelf: 'center' },
 
     // Lista de tarjetas de "Vacantes disponibles": una sola columna (una
     // tarjeta por fila) en todos los tamaños de pantalla, centrada, con un

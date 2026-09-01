@@ -749,12 +749,16 @@ function StatItem({ label, value, color }: { label: string; value: number; color
 // ─────────────────────────────────────────────
 const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.backgroundDark },
+  // La cabecera y el contenido se centran y se topan al mismo ancho (760):
+  // un poco más anchos que el feed de vacantes, pero sin estirarse de borde
+  // a borde en web/tablet. En móvil ocupan todo el ancho disponible.
   header: {
+    width: '100%', maxWidth: 760, alignSelf: 'center',
     paddingTop: 56, paddingHorizontal: 20, paddingBottom: 16,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   headerTitle: { fontSize: 22, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
-  scroll: { padding: 16, paddingBottom: 100 },
+  scroll: { padding: 16, paddingBottom: 100, width: '100%', maxWidth: 760, alignSelf: 'center' },
 
   // Card termómetro
   card: {

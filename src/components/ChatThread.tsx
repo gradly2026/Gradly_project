@@ -1120,6 +1120,48 @@ export default function ChatThread({
       const nombreRemitente =
         group?.participantsInfo?.[sid]?.nombre ?? msg?.user?.name ?? "";
       const mostrarNombre = !esMio && isGroup && !!msg && !esSistema && !!nombreRemitente;
+      // ¿Se muestra la burbuja de acciones al lado del mensaje? Solo en los
+      // mensajes de texto que YO envié, que no son de sistema y que no están
+      // ya eliminados. Es solo un disparador visible del menú que ya existía
+      // en "mantener presionado" (setActionMsg): no cambia ninguna lógica de
+      // editar/eliminar/etc.
+      const esTexto = !msg?.type || msg.type === "text";
+      const mostrarAcciones = esMio && !!msg && !esSistema && esTexto && !msg?.isDeleted;
+      const bubble = (
+        <Bubble
+          {...props}
+          wrapperStyle={{
+            right: {
+              backgroundColor: C.bubbleMine,
+              borderRadius: 18,
+              marginVertical: 2,
+              // El ancho ya lo limita el contenedor externo (maxWidth 82%); sin
+              // este `marginLeft: 0` quedaría el hueco de 60px por defecto de
+              // gifted-chat, que aleja la burbuja del botón de acciones "⋯".
+              marginLeft: 0,
+              paddingHorizontal: 2,
+              paddingVertical: 1,
+            },
+            left: {
+              backgroundColor: C.bubbleOther,
+              borderRadius: 18,
+              marginVertical: 2,
+              marginRight: 0,
+              borderWidth: 1,
+              borderColor: C.border,
+              paddingHorizontal: 2,
+              paddingVertical: 1,
+            },
+          }}
+          textStyle={{
+            // Burbuja propia en el color primario (saturado en ambos temas)
+            // → texto blanco; la de la contraparte usa el texto normal del
+            // tema sobre su superficie de tarjeta.
+            right: { color: C.bubbleMineText, fontSize: 15, lineHeight: 21 },
+            left: { color: C.bubbleOtherText, fontSize: 15, lineHeight: 21 },
+          }}
+        />
+      );
       return (
         // El contenedor lleva el maxWidth (no la burbuja interna): así el ancho
         // se resuelve contra la fila del mensaje y NO se desborda en móvil-web.
@@ -1175,34 +1217,24 @@ export default function ChatThread({
               </View>
             </View>
           ) : null}
-          <Bubble
-            {...props}
-            wrapperStyle={{
-              right: {
-                backgroundColor: C.bubbleMine,
-                borderRadius: 18,
-                marginVertical: 2,
-                paddingHorizontal: 2,
-                paddingVertical: 1,
-              },
-              left: {
-                backgroundColor: C.bubbleOther,
-                borderRadius: 18,
-                marginVertical: 2,
-                borderWidth: 1,
-                borderColor: C.border,
-                paddingHorizontal: 2,
-                paddingVertical: 1,
-              },
-            }}
-            textStyle={{
-              // Burbuja propia en el color primario (saturado en ambos temas)
-              // → texto blanco; la de la contraparte usa el texto normal del
-              // tema sobre su superficie de tarjeta.
-              right: { color: C.bubbleMineText, fontSize: 15, lineHeight: 21 },
-              left: { color: C.bubbleOtherText, fontSize: 15, lineHeight: 21 },
-            }}
-          />
+          {mostrarAcciones ? (
+            <View style={styles.myBubbleRow}>
+              {/* Burbuja de acciones: abre el MISMO menú de "mantener
+                  presionado" (Editar / Eliminar / Copiar / Responder /
+                  Reenviar), solo que siempre visible junto al mensaje. */}
+              <TouchableOpacity
+                onPress={() => msg && setActionMsg(msg)}
+                hitSlop={8}
+                style={styles.msgActionBtn}
+                accessibilityLabel="Acciones del mensaje"
+              >
+                <Ionicons name="ellipsis-horizontal" size={15} color={C.textMuted} />
+              </TouchableOpacity>
+              <View style={{ flexShrink: 1 }}>{bubble}</View>
+            </View>
+          ) : (
+            bubble
+          )}
           {/* Recibo "Enviado / Visto" bajo cada mensaje propio (no de sistema). */}
           {esMio && msg && !esSistema ? (
             <Text style={styles.recibo}>{reciboTexto(msg, peerLeido)}</Text>
@@ -1253,15 +1285,33 @@ export default function ChatThread({
   );
 
   // ── Botón de enviar redondo con el ícono de acento ──
+  // Se combina con `alwaysShowSend` en <GiftedChat/> para que el botón esté
+  // SIEMPRE visible (no solo cuando ya hay texto escrito).
   const renderSend = useCallback(
     (props: ComponentProps<typeof Send>) => (
-      <Send {...props} containerStyle={styles.sendContainer}>
-        <View style={styles.sendBtn}>
+      <Send
+        {...props}
+        alwaysShowSend
+        disabled={!inputText.trim()}
+        containerStyle={styles.sendContainer}
+      >
+        <View style={[styles.sendBtn, !inputText.trim() && styles.sendBtnIdle]}>
           <Ionicons name="send" size={18} color="#fff" />
         </View>
       </Send>
     ),
-    [styles],
+    [styles, inputText],
+  );
+
+  // ── Botón flotante "bajar al último mensaje" (aparece al hacer scroll hacia
+  // arriba) — hace el hilo más navegable en conversaciones largas. ──
+  const renderScrollToBottom = useCallback(
+    () => (
+      <View style={styles.scrollBottomBtn}>
+        <Ionicons name="chevron-down" size={20} color={C.text} />
+      </View>
+    ),
+    [C, styles],
   );
 
   // ── Envío de una propuesta de acuerdo estructurada ──
@@ -1980,30 +2030,41 @@ export default function ChatThread({
   const body = (
     <>
       {header}
-      <GiftedChat<ChatMessage>
-        messages={mensajesVisibles}
-        onSend={(msgs) => onSend(msgs)}
-        user={giftedUser}
-        text={inputText}
-        locale={language === "en" ? "en" : "es"}
-        dateFormatCalendar={language === "en" ? undefined : CALENDARIO_ES}
-        onLongPress={onLongPressMessage}
-        renderBubble={renderBubble}
-        renderSend={renderSend}
-        renderAvatar={renderAvatar}
-        renderCustomView={renderCustomView}
-        renderMessageText={renderMessageText}
-        renderChatFooter={renderChatFooter}
-        renderFooter={renderFooterTecleo}
-        renderInputToolbar={inputBloqueado ? renderInputBloqueado : renderInputToolbarStyled}
-        renderComposer={renderComposerStyled}
-        textInputProps={{
-          placeholder: editing ? "Edita tu mensaje..." : "Escribe un mensaje...",
-          onChangeText: (t: string) => { setInputText(t); avisarTecleo(t); },
-          placeholderTextColor: C.textMuted,
-          keyboardAppearance: isDark ? "dark" : "light",
-        }}
-      />
+      {/* `minHeight: 0` es clave en web: sin él, este contenedor flex no se
+          "encoge" y la lista de mensajes de GiftedChat deja de hacer scroll y
+          empuja el input fuera de pantalla. */}
+      <View style={styles.chatArea}>
+        <GiftedChat<ChatMessage>
+          messages={mensajesVisibles}
+          onSend={(msgs) => onSend(msgs)}
+          user={giftedUser}
+          text={inputText}
+          locale={language === "en" ? "en" : "es"}
+          dateFormatCalendar={language === "en" ? undefined : CALENDARIO_ES}
+          onLongPress={onLongPressMessage}
+          alwaysShowSend
+          isScrollToBottomEnabled
+          scrollToBottomComponent={renderScrollToBottom}
+          scrollToBottomStyle={styles.scrollBottomWrap}
+          minInputToolbarHeight={56}
+          keyboardShouldPersistTaps="handled"
+          renderBubble={renderBubble}
+          renderSend={renderSend}
+          renderAvatar={renderAvatar}
+          renderCustomView={renderCustomView}
+          renderMessageText={renderMessageText}
+          renderChatFooter={renderChatFooter}
+          renderFooter={renderFooterTecleo}
+          renderInputToolbar={inputBloqueado ? renderInputBloqueado : renderInputToolbarStyled}
+          renderComposer={renderComposerStyled}
+          textInputProps={{
+            placeholder: editing ? "Edita tu mensaje..." : "Escribe un mensaje...",
+            onChangeText: (t: string) => { setInputText(t); avisarTecleo(t); },
+            placeholderTextColor: C.textMuted,
+            keyboardAppearance: isDark ? "dark" : "light",
+          }}
+        />
+      </View>
 
       {/* Renegociación: se oculta el pago (no se toca en un cambio de horario;
           `modificarAcuerdo` conserva el pactado) y cambian los textos. */}
@@ -2605,6 +2666,40 @@ export default function ChatThread({
 
 const makeStyles = (C: ChatColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
+  // Contenedor de la lista de mensajes + input. `minHeight: 0` permite que el
+  // hijo con scroll (la FlatList de GiftedChat) se encoja dentro del flex y
+  // haga scroll de verdad en web, sin empujar el input fuera de la pantalla.
+  chatArea: { flex: 1, minHeight: 0 },
+  // ── Burbuja de acciones junto a un mensaje propio ──
+  myBubbleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-end",
+    gap: 3,
+  },
+  msgActionBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.subtleFill,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  // ── Botón flotante "bajar al último mensaje" ──
+  scrollBottomWrap: { right: 12, bottom: 12 },
+  scrollBottomBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    ...shadow({ color: "#000", y: 2, blur: 6, opacity: 0.18, elevation: 4 }),
+  },
   // ── Barra de entrada (aspecto flotante) ──
   inputToolbar: {
     backgroundColor: C.surface,
@@ -2627,6 +2722,9 @@ const makeStyles = (C: ChatColors) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // Botón de enviar cuando aún no hay texto: sigue visible (para que se vea
+  // dónde tocar) pero atenuado, ya que `disabled` impide el envío en vacío.
+  sendBtnIdle: { opacity: 0.45 },
   // Recibo "Enviado / Visto" bajo cada mensaje propio.
   recibo: {
     fontSize: 10,

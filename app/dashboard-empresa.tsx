@@ -161,10 +161,10 @@ const PRECIOS_PLAN: Record<'mensual' | 'premium', Record<'mensual' | 'anual', nu
 // `styles` (makeStyles, para el layout general/modales) y `s` (makeS, para
 // las secciones internas Inicio/Vacantes/Kanban/Activas).
 function useThemedStyles() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   return useMemo(
-    () => ({ colors, styles: makeStyles(colors), s: makeS(colors) }),
-    [colors],
+    () => ({ colors, isDark, styles: makeStyles(colors), s: makeS(colors) }),
+    [colors, isDark],
   );
 }
 
@@ -328,20 +328,22 @@ const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
 
 const MODALIDADES = ['Presencial', 'Remoto', 'Híbrido'];
 
-// Estilos del bloque de mapa (estética Liquid Glass: fondo oscuro translúcido, bordes violetas)
-const mapStyles = StyleSheet.create({
+// Estilos del bloque de mapa (estética Liquid Glass) — ahora dependen del tema
+// activo (antes fijos en oscuro: fondo casi negro y texto blanco, que sobre la
+// tarjeta clara del modal se veía como un recuadro negro).
+const makeMapStyles = (c: GradlyColors) => StyleSheet.create({
   glassBox: {
     marginBottom: 14,
     padding: 14,
     borderRadius: 18,
-    backgroundColor: 'rgba(26,22,43,0.6)',
+    backgroundColor: c.backgroundSurface,
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.4)',
+    borderColor: c.border,
   },
-  glassTitle: { color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 15, marginBottom: 4 },
-  glassHint:  { color: 'rgba(255,255,255,0.6)', fontFamily: FONTS.interRegular, fontSize: 12, marginBottom: 12 },
+  glassTitle: { color: c.textPrimary, fontFamily: FONTS.interSemiBold, fontSize: 15, marginBottom: 4 },
+  glassHint:  { color: c.textMuted, fontFamily: FONTS.interRegular, fontSize: 12, marginBottom: 12 },
   primaryBtn: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: c.primary,
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
@@ -353,20 +355,20 @@ const mapStyles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.3)',
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderColor: c.border,
+    backgroundColor: c.backgroundSurface,
   },
   detailBox: {
     marginTop: 12,
     padding: 12,
     borderRadius: 12,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: c.white4,
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.2)',
+    borderColor: c.border,
     gap: 4,
   },
-  detailLine:  { color: 'rgba(255,255,255,0.85)', fontFamily: FONTS.interRegular, fontSize: 13 },
-  detailLabel: { color: COLORS.primaryLight, fontFamily: FONTS.interSemiBold },
+  detailLine:  { color: c.textPrimary, fontFamily: FONTS.interRegular, fontSize: 13 },
+  detailLabel: { color: c.primaryLight, fontFamily: FONTS.interSemiBold },
 });
 // El fork real del sistema: 'Pasantía' enruta por matchmaking universidad↔
 // empresa (con cupos reclamables por lote); 'Vacante' es aplicación individual
@@ -503,7 +505,8 @@ export default function DashboardEmpresa() {
   useAuthGuard('empresa');
   const { user, userProfile } = useAuth();
   const router = useRouter();
-  const { styles, colors, s } = useThemedStyles();
+  const { styles, colors, s, isDark } = useThemedStyles();
+  const mapStyles = useMemo(() => makeMapStyles(colors), [colors]);
   const [showPerfil, setShowPerfil] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -1976,7 +1979,7 @@ export default function DashboardEmpresa() {
                 calificacion={Number((perfil as any)?.calificacion_promedio ?? 0)}
                 pasantias={Number((perfil as any)?.pasantias_completadas ?? 0)}
                 rol="empresa"
-                theme="dark"
+                theme={isDark ? 'dark' : 'light'}
               />
             ),
           },
@@ -1987,7 +1990,7 @@ export default function DashboardEmpresa() {
             icon: 'chatbox-ellipses-outline',
             tone: 'purple',
             render: () => (
-              <ResenasFeedback entidadId={user?.uid ?? ''} entidadRol="empresa" theme="dark" />
+              <ResenasFeedback entidadId={user?.uid ?? ''} entidadRol="empresa" theme={isDark ? 'dark' : 'light'} />
             ),
           },
           {
@@ -1997,7 +2000,7 @@ export default function DashboardEmpresa() {
             icon: 'star-outline',
             tone: 'purple',
             render: () => (
-              <BlurView intensity={30} tint="dark" style={styles.planBox}>
+              <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={styles.planBox}>
                 <View style={styles.planBoxHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Ionicons name="ribbon-outline" size={18} color={colors.primaryLight} />
@@ -2132,7 +2135,7 @@ export default function DashboardEmpresa() {
   if (!user || !user.uid) {
     return (
       <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -2146,7 +2149,7 @@ export default function DashboardEmpresa() {
   return (
     <LiquidBackground>
     <View style={[styles.root, { backgroundColor: 'transparent' }]}>
-      <StatusBar style="light" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
 
       {/* ── CONTENIDO ── */}
       <View style={styles.main}>
@@ -2254,12 +2257,12 @@ export default function DashboardEmpresa() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <Text style={styles.modalTitle}>Detalles de Vacante</Text>
               <TouchableOpacity onPress={() => setVacanteSeleccionada(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="close" size={24} color={COLORS.textMuted} />
+                <Ionicons name="close" size={24} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
-              <AutoText style={{ color: '#fff', fontFamily: FONTS.soraBold, fontSize: 18 }}>{vacanteSeleccionada?.titulo}</AutoText>
+              <AutoText style={{ color: colors.textPrimary, fontFamily: FONTS.soraBold, fontSize: 18 }}>{vacanteSeleccionada?.titulo}</AutoText>
 
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {/* Un solo chip de tipo: antes `categoria` y `tipo` mostraban el
@@ -2283,7 +2286,7 @@ export default function DashboardEmpresa() {
                 <View style={styles.pickerChip}><Text style={styles.pickerText}>{vacanteSeleccionada?.modalidad}</Text></View>
                 {/* Roles concretos dentro del área (p. ej. "Desarrollo web"). */}
                 {(vacanteSeleccionada?.tags ?? []).map((t: string, i: number) => (
-                  <View key={`tag-${i}`} style={[styles.pickerChip, { backgroundColor: COLORS.backgroundSurface }]}>
+                  <View key={`tag-${i}`} style={[styles.pickerChip, { backgroundColor: colors.backgroundSurface }]}>
                     <Text style={styles.pickerText}>{t}</Text>
                   </View>
                 ))}
@@ -2314,7 +2317,7 @@ export default function DashboardEmpresa() {
                     {textoSalario(vacanteSeleccionada?.salario_min, vacanteSeleccionada?.salario_max)}
                   </Text>
                   <View style={s.avisoEdicion}>
-                    <Ionicons name="information-circle-outline" size={14} color={COLORS.textMuted} />
+                    <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
                     <Text style={s.avisoEdicionTxt}>
                       Informativo. La negociación final se realiza de forma privada entre la
                       empresa y el postulante, fuera de Gradly.
@@ -2374,7 +2377,7 @@ export default function DashboardEmpresa() {
         userId={perfilCandidatoId ?? ''}
         rol="talento"
         viewerUserId={user?.uid ?? ''}
-        theme="dark"
+        theme={isDark ? 'dark' : 'light'}
       />
 
       {/* ── MODAL: Nueva Vacante ── el formulario grande: reutiliza los
@@ -2395,7 +2398,7 @@ export default function DashboardEmpresa() {
             {/* Aviso al editar algo que ya tiene compromisos con universidades. */}
             {vacanteEditando && cuposComprometidos > 0 && (
               <View style={s.avisoEdicion}>
-                <Ionicons name="information-circle-outline" size={16} color={COLORS.warning} />
+                <Ionicons name="information-circle-outline" size={16} color={colors.warning} />
                 <Text style={s.avisoEdicionTxt}>
                   Esta publicación ya tiene {cuposComprometidos} cupo(s) comprometido(s). No puedes
                   reducir el total por debajo de esa cifra, y cambiar el horario no altera las
@@ -2431,7 +2434,7 @@ export default function DashboardEmpresa() {
 
                   {procesandoUbicacion && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <ActivityIndicator color={COLORS.primaryLight} size="small" />
+                      <ActivityIndicator color={colors.primaryLight} size="small" />
                       <Text style={mapStyles.glassHint}>Procesando ubicación...</Text>
                     </View>
                   )}
@@ -2552,7 +2555,7 @@ export default function DashboardEmpresa() {
                   </View>
                   {!!nvErrors.salario && <Text style={styles.fieldError}>{nvErrors.salario}</Text>}
                   <View style={s.avisoEdicion}>
-                    <Ionicons name="information-circle-outline" size={16} color={COLORS.textMuted} />
+                    <Ionicons name="information-circle-outline" size={16} color={colors.textMuted} />
                     <Text style={s.avisoEdicionTxt}>
                       El salario es informativo y queda a discreción tuya publicarlo. La negociación
                       final de las condiciones económicas se realiza de forma privada entre la
@@ -2599,7 +2602,7 @@ export default function DashboardEmpresa() {
                 disabled={savingVac || !formularioValido}
               >
                 {savingVac
-                  ? <ActivityIndicator color={COLORS.textPrimary} />
+                  ? <ActivityIndicator color="#fff" />
                   : <Text style={styles.modalSaveText}>{vacanteEditando ? 'Guardar cambios' : 'Publicar'}</Text>}
               </TouchableOpacity>
             </View>
@@ -2659,7 +2662,7 @@ export default function DashboardEmpresa() {
                 </View>
 
                 <View style={styles.payNote}>
-                  <Ionicons name="lock-closed" size={12} color={COLORS.textMuted} />
+                  <Ionicons name="lock-closed" size={12} color={colors.textMuted} />
                   <Text style={styles.payNoteText}>Por seguridad solo guardamos los últimos 4 dígitos.</Text>
                 </View>
 
@@ -2692,8 +2695,8 @@ export default function DashboardEmpresa() {
                 <Text style={styles.fieldLabel}>Número de tarjeta</Text>
                 <TextInput style={[styles.modalInput, cardErrs.numero && styles.inputErr]} value={cardNumero}
                   onChangeText={t => { const v = maskTarjeta(t); setCardNumero(v); setCardErr('numero', valTarjetaNum(v)); }}
-                  placeholder="1234 5678 9012 3456" placeholderTextColor={COLORS.textMuted}
-                  keyboardType="number-pad" maxLength={19} selectionColor={COLORS.primary} />
+                  placeholder="1234 5678 9012 3456" placeholderTextColor={colors.textMuted}
+                  keyboardType="number-pad" maxLength={19} selectionColor={colors.primary} />
                 {!!cardErrs.numero && <Text style={styles.inputErrText}>{cardErrs.numero}</Text>}
 
                 <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -2701,16 +2704,16 @@ export default function DashboardEmpresa() {
                     <Text style={styles.fieldLabel}>Vencimiento (MM/AA)</Text>
                     <TextInput style={[styles.modalInput, cardErrs.exp && styles.inputErr]} value={cardExp}
                       onChangeText={t => { const v = maskExp(t); setCardExp(v); setCardErr('exp', valExp(v)); }}
-                      placeholder="MM/AA" placeholderTextColor={COLORS.textMuted}
-                      keyboardType="number-pad" maxLength={5} selectionColor={COLORS.primary} />
+                      placeholder="MM/AA" placeholderTextColor={colors.textMuted}
+                      keyboardType="number-pad" maxLength={5} selectionColor={colors.primary} />
                     {!!cardErrs.exp && <Text style={styles.inputErrText}>{cardErrs.exp}</Text>}
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.fieldLabel}>CVV</Text>
                     <TextInput style={[styles.modalInput, cardErrs.cvv && styles.inputErr]} value={cardCvv}
                       onChangeText={t => { const v = t.replace(/\D/g, '').slice(0, 4); setCardCvv(v); setCardErr('cvv', valCvv(v)); }}
-                      placeholder="123" placeholderTextColor={COLORS.textMuted}
-                      keyboardType="number-pad" maxLength={4} selectionColor={COLORS.primary} />
+                      placeholder="123" placeholderTextColor={colors.textMuted}
+                      keyboardType="number-pad" maxLength={4} selectionColor={colors.primary} />
                     {!!cardErrs.cvv && <Text style={styles.inputErrText}>{cardErrs.cvv}</Text>}
                   </View>
                 </View>
@@ -2718,12 +2721,12 @@ export default function DashboardEmpresa() {
                 <Text style={styles.fieldLabel}>Nombre del titular</Text>
                 <TextInput style={[styles.modalInput, cardErrs.titular && styles.inputErr]} value={cardTitular}
                   onChangeText={t => { const v = t.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, ''); setCardTitular(v); setCardErr('titular', valTitular(v)); }}
-                  placeholder="Como aparece en la tarjeta" placeholderTextColor={COLORS.textMuted}
-                  autoCapitalize="words" selectionColor={COLORS.primary} />
+                  placeholder="Como aparece en la tarjeta" placeholderTextColor={colors.textMuted}
+                  autoCapitalize="words" selectionColor={colors.primary} />
                 {!!cardErrs.titular && <Text style={styles.inputErrText}>{cardErrs.titular}</Text>}
 
                 <View style={styles.payNote}>
-                  <Ionicons name="lock-closed" size={12} color={COLORS.textMuted} />
+                  <Ionicons name="lock-closed" size={12} color={colors.textMuted} />
                   <Text style={styles.payNoteText}>Pago simulado. No se realiza ningún cargo real.</Text>
                 </View>
 
@@ -2736,7 +2739,7 @@ export default function DashboardEmpresa() {
                     <Text style={styles.modalCancelText}>Cancelar</Text>
                   </TouchableOpacity>
                   <JellyButton style={[styles.modalSave, cardSaving && { opacity: 0.6 }]} contentStyle={{ paddingVertical: 0 }} onPress={cardSaving ? undefined : handleGuardarTarjeta}>
-                    {cardSaving ? <ActivityIndicator color={COLORS.textPrimary} /> : <Text style={styles.modalSaveText}>Guardar tarjeta</Text>}
+                    {cardSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalSaveText}>Guardar tarjeta</Text>}
                   </JellyButton>
                 </View>
               </>
@@ -2757,7 +2760,7 @@ export default function DashboardEmpresa() {
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Text style={styles.modalTitle}>Plan {info.nombre}</Text>
                     <TouchableOpacity onPress={() => setShowPlanDetail(false)} hitSlop={8}>
-                      <Ionicons name="close" size={22} color={COLORS.textMuted} />
+                      <Ionicons name="close" size={22} color={colors.textMuted} />
                     </TouchableOpacity>
                   </View>
                   <Text style={[styles.modalDesc, { marginBottom: 6 }]}>{info.precio}</Text>
@@ -2864,22 +2867,27 @@ export default function DashboardEmpresa() {
           makeStyles) porque este flujo se escribió antes que el resto del
           archivo migrara al sistema de tema; funciona igual mientras el
           dashboard sea de tema oscuro fijo, pero no reacciona a claro/oscuro. */}
-      {/* ── MODAL 1: SELECCIÓN DE PLAN (Mejorar) ── */}
+      {/* ── MODAL 1: SELECCIÓN DE PLAN (Mejorar) ──
+          Todo este flujo de 4 modales tiene un diseño oscuro propio (texto
+          blanco sobre superficies moradas translúcidas). Los modales 2-4 ya
+          fijan su tarjeta en oscuro (`#1a162b`); aquí se hace lo mismo para
+          que en modo claro el texto blanco no quede invisible sobre la
+          tarjeta clara del tema. */}
       <Modal visible={showPlanUpgradeModal} transparent animationType="none">
         <View style={styles.modalOverlay}>
-          <View style={[styles.sheetCard, { padding: 24, flex: 0.9 }]}>
+          <View style={[styles.sheetCard, { padding: 24, flex: 0.9, backgroundColor: '#1a162b', borderColor: 'rgba(139,92,246,0.3)' }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
               <TouchableOpacity onPress={() => setShowPlanUpgradeModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
+                <Ionicons name="arrow-back" size={24} color="#fff" />
               </TouchableOpacity>
-              <Text style={[styles.modalTitle, { marginLeft: 16, marginBottom: 0 }]}>Planes y Facturación</Text>
+              <Text style={[styles.modalTitle, { marginLeft: 16, marginBottom: 0, color: '#fff' }]}>Planes y Facturación</Text>
             </View>
 
             <TouchableOpacity style={s.changeTarjetaBtn} onPress={() => { setShowPlanUpgradeModal(false); abrirCardModal(); }}>
-              <Text style={[s.changeTarjetaText, { textAlign: 'center', fontSize: 13, paddingVertical: 4 }]}>Ver credenciales de pago</Text>
+              <Text style={[s.changeTarjetaText, { textAlign: 'center', fontSize: 13, paddingVertical: 4, color: '#a78bfa' }]}>Ver credenciales de pago</Text>
             </TouchableOpacity>
 
-            <Text style={[styles.fieldLabel, { marginTop: 20, marginBottom: 10 }]}>Elige un nuevo plan</Text>
+            <Text style={[styles.fieldLabel, { marginTop: 20, marginBottom: 10, color: 'rgba(255,255,255,0.7)' }]}>Elige un nuevo plan</Text>
 
             {/* Selector de período Mensual / Anual */}
             <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
@@ -3118,7 +3126,10 @@ export default function DashboardEmpresa() {
           escriben los estilos en el resto del archivo. */}
       <Modal visible={!!candidatoSeleccionado && !showRechazoModal} transparent animationType="none">
         <View style={styles.modalOverlay}>
-          <View style={[styles.sheetCard, { padding: 0, overflow: 'hidden' }]}>
+          {/* Contenido con texto blanco hardcodeado → tarjeta fija en oscuro
+              para que sea legible también en modo claro (mismo criterio que
+              el flujo de planes). */}
+          <View style={[styles.sheetCard, { padding: 0, overflow: 'hidden', backgroundColor: '#1a162b', borderColor: 'rgba(139,92,246,0.3)' }]}>
             <ScrollView showsVerticalScrollIndicator={false}>
               {/* INFO VACANTE */}
               <View style={{ padding: 20, backgroundColor: 'rgba(139,92,246,0.1)' }}>
@@ -3257,7 +3268,7 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
   metricas: any; apps: Aplicacion[]; perfil: PerfilEmpresa | null; empresaId: string;
   vacantes: Vacante[]; solicitudesGrupo: SolicitudGrupo[]; onVerPerfil: (estudianteId: string) => void;
 }) {
-  const { s } = useThemedStyles();
+  const { s, colors } = useThemedStyles();
   // Mismo criterio que el badge del encabezado: el rótulo depende del `plan`
   // real ('gratuito' → "Plan Gratuito", 'mensual' → "Plan Básico", 'premium' →
   // "⭐ Premium"), no del flag binario `premium`.
@@ -3282,8 +3293,8 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
           <Text style={s.bannerTitle}>Panel de control</Text>
           <Text style={s.bannerSub}>Gestiona tu empresa desde aquí</Text>
         </View>
-        <View style={[s.planBadge, perfil?.premium && { borderColor: COLORS.gold + '44', backgroundColor: COLORS.gold + '11' }]}>
-          <Text style={[s.planText, perfil?.premium && { color: COLORS.gold }]} noTranslate>
+        <View style={[s.planBadge, perfil?.premium && { borderColor: colors.gold + '44', backgroundColor: colors.gold + '11' }]}>
+          <Text style={[s.planText, perfil?.premium && { color: colors.gold }]} noTranslate>
             {planBadgeLabel}
           </Text>
         </View>
@@ -3352,31 +3363,32 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
   plan?: 'gratuito' | 'mensual' | 'premium';
   onMejorarPlan: () => void;
 }) {
-  const { s } = useThemedStyles();
+  const { s, colors } = useThemedStyles();
   const ilimitado = limiteVacantes >= 9999;
   return (
-    <View style={{ flex: 1 }}>
+    <View style={s.vacantesWrap}>
       <View style={s.vacantesHeader}>
         <JellyButton
           style={[s.nuevaBtn, !puedeCrear && { opacity: 0.45 }]}
           contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 0, paddingHorizontal: 18 }}
           onPress={puedeCrear ? onNueva : undefined}
         >
-          <Ionicons name={puedeCrear ? 'add-circle-outline' : 'lock-closed-outline'} size={18} color={COLORS.textPrimary} />
+          {/* Botón morado sólido en ambos temas → ícono/texto siempre blancos. */}
+          <Ionicons name={puedeCrear ? 'add-circle-outline' : 'lock-closed-outline'} size={18} color="#fff" />
           <Text style={s.nuevaBtnText}>Publicar nueva pasantía</Text>
         </JellyButton>
       </View>
 
       {/* Cupo del plan */}
       <View style={s.cupoRow}>
-        <Ionicons name={puedeCrear ? 'information-circle-outline' : 'alert-circle-outline'} size={14} color={puedeCrear ? COLORS.textMuted : COLORS.warning} />
+        <Ionicons name={puedeCrear ? 'information-circle-outline' : 'alert-circle-outline'} size={14} color={puedeCrear ? colors.textMuted : colors.warning} />
         {puedeCrear || ilimitado ? (
            <Text style={s.cupoText}>
              {ilimitado ? 'Plan Premium · vacantes ilimitadas' : `Te quedan ${vacantesRestantes} de ${limiteVacantes} vacantes activas en tu plan`}
            </Text>
         ) : (
            <TouchableOpacity onPress={onMejorarPlan} activeOpacity={0.7} style={{ flex: 1 }}>
-             <Text style={[s.cupoText, { color: COLORS.warning, textDecorationLine: 'underline' }]}>
+             <Text style={[s.cupoText, { color: colors.warning, textDecorationLine: 'underline' }]}>
                Límite alcanzado ({limiteVacantes} activas). Pausa una o mejora tu plan.
              </Text>
            </TouchableOpacity>
@@ -3416,8 +3428,8 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
               </TouchableOpacity>
               {deshabilitadaPorAdmin ? (
                 <View style={{ alignItems: 'flex-end', maxWidth: 110, gap: 3 }}>
-                  <Ionicons name="lock-closed-outline" size={16} color={COLORS.error} />
-                  <Text style={{ fontSize: 10, fontFamily: FONTS.interSemiBold, color: COLORS.error, textAlign: 'right' }}>
+                  <Ionicons name="lock-closed-outline" size={16} color={colors.error} />
+                  <Text style={{ fontSize: 10, fontFamily: FONTS.interSemiBold, color: colors.error, textAlign: 'right' }}>
                     Deshabilitada por admin
                   </Text>
                 </View>
@@ -3429,7 +3441,7 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
                     hitSlop={8}
                     accessibilityLabel="Editar publicación"
                   >
-                    <Ionicons name="create-outline" size={17} color={COLORS.primaryLight} />
+                    <Ionicons name="create-outline" size={17} color={colors.primaryLight} />
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={s.editarBtn}
@@ -3437,13 +3449,13 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
                     hitSlop={8}
                     accessibilityLabel="Eliminar publicación"
                   >
-                    <Ionicons name="trash-outline" size={17} color={COLORS.error} />
+                    <Ionicons name="trash-outline" size={17} color={colors.error} />
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[s.toggleBtn, item.activa ? s.toggleBtnOn : s.toggleBtnOff]}
                     onPress={() => onToggle(item)}
                   >
-                    <Text style={{ fontSize: 11, fontFamily: FONTS.interSemiBold, color: item.activa ? COLORS.success : COLORS.textMuted }}>
+                    <Text style={{ fontSize: 11, fontFamily: FONTS.interSemiBold, color: item.activa ? colors.success : colors.textMuted }}>
                       {item.activa ? 'Activa' : 'Inactiva'}
                     </Text>
                   </TouchableOpacity>
@@ -3465,7 +3477,7 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
 // tarjeta para mover al candidato de una etapa a la siguiente/anterior.
 // ─────────────────────────────────────────────
 function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; onMover: (a: Aplicacion, s: string) => void; onSeleccionar: (a: Aplicacion) => void }) {
-  const { s } = useThemedStyles();
+  const { s, colors } = useThemedStyles();
   // ORDEN: secuencia real de estados en Firestore (se conserva para mover ←/→)
   const ORDEN = ['pendiente', 'en_revision', 'entrevista', 'contratado'];
 
@@ -3491,17 +3503,17 @@ function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; o
   return (
     <View style={{ flex: 1, padding: 16, paddingBottom: 110 }}>
       {/* ── Barra de pestañas horizontales ── */}
-      <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(139,92,246,0.15)', gap: 4 }}>
+      <View style={{ flexDirection: 'row', backgroundColor: colors.white4, borderRadius: 14, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: colors.border, gap: 4 }}>
         {TABS.map(tab => {
           const count = apps.filter(a => a.estado === tab.id).length;
           const isActive = estadoTab === tab.id;
           return (
             <TouchableOpacity
               key={tab.id}
-              style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: isActive ? COLORS.primary : 'transparent' }}
+              style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: isActive ? colors.primary : 'transparent' }}
               onPress={() => setEstadoTab(tab.id as any)}
             >
-              <Text style={{ color: isActive ? '#fff' : COLORS.textMuted, fontFamily: FONTS.interSemiBold, fontSize: 12, textAlign: 'center' }}>
+              <Text style={{ color: isActive ? '#fff' : colors.textMuted, fontFamily: FONTS.interSemiBold, fontSize: 12, textAlign: 'center' }}>
                 {tab.label}{count > 0 ? ` (${count})` : ''}
               </Text>
             </TouchableOpacity>
@@ -3530,16 +3542,16 @@ function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; o
                       contentStyle={{ paddingHorizontal: 10, paddingVertical: 5 }}
                       onPress={() => onMover(app, ORDEN[idx - 1])}
                     >
-                      <Ionicons name="chevron-back" size={14} color={COLORS.textMuted} />
+                      <Ionicons name="chevron-back" size={14} color={colors.textMuted} />
                     </JellyButton>
                   )}
                   {idx < ORDEN.length - 1 && (
                     <JellyButton
-                      style={[s.kanbanMoveBtn, { backgroundColor: COLORS.primary12 }]}
+                      style={[s.kanbanMoveBtn, { backgroundColor: colors.primary12 }]}
                       contentStyle={{ paddingHorizontal: 10, paddingVertical: 5 }}
                       onPress={() => onMover(app, ORDEN[idx + 1])}
                     >
-                      <Text style={{ fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight }}>
+                      <Text style={{ fontSize: 11, fontFamily: FONTS.interSemiBold, color: colors.primaryLight }}>
                         Avanzar →
                       </Text>
                     </JellyButton>
@@ -3566,7 +3578,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
   onVerPerfil: (estudianteId: string) => void;
   empresaId: string; empresaNombre: string;
 }) {
-  const { s } = useThemedStyles();
+  const { s, colors } = useThemedStyles();
   const { t } = useTranslation();
   const activos    = apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado');
   const pendFirma  = apps.filter(a => a.estado === 'finalizado');
@@ -3596,7 +3608,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
         // ambos vean el mismo avance de una misma pasantía.
         const progreso = progresoDeGrupo({}, sg.acuerdo);
         const pct = progreso.visible ? progreso.pct : prog.pct;
-        const color = prog.estado === 'completado' ? COLORS.gold : prog.estado === 'en_curso' ? COLORS.success : COLORS.primaryLight;
+        const color = prog.estado === 'completado' ? colors.gold : prog.estado === 'en_curso' ? colors.success : colors.primaryLight;
         const conPago = sg.pago?.tipo === 'con_pago';
         return (
           <GlassCard key={sg.id} style={{ marginBottom: 8 }} contentStyle={{ padding: 16, gap: 8 }}>
@@ -3609,7 +3621,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
               </View>
               <Text style={[s.activaNombre, { color }]}>{pct}%</Text>
             </View>
-            <View style={{ height: 6, backgroundColor: COLORS.backgroundSurface, borderRadius: 3, overflow: 'hidden' }}>
+            <View style={{ height: 6, backgroundColor: colors.backgroundSurface, borderRadius: 3, overflow: 'hidden' }}>
               <View style={{ height: '100%', width: `${pct}%` as any, backgroundColor: color, borderRadius: 3 }} />
             </View>
             <Text style={s.activaMeta}>
@@ -3619,7 +3631,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
                   ? `Inicia ${sg.fechaInicio}`
                   : `Día ${prog.diasTranscurridos} de ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
             </Text>
-            <Text style={[s.activaMeta, conPago && { color: COLORS.success }]}>
+            <Text style={[s.activaMeta, conPago && { color: colors.success }]}>
               {conPago ? `Pago: $${Number(sg.pago?.monto ?? 0).toFixed(2)} / estudiante` : 'Sin pago'}
             </Text>
           </GlassCard>
@@ -3657,7 +3669,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
               </View>
               {necesitaFirma && (
                 <JellyButton style={s.firmarBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 }} onPress={() => onFirmar(item)}>
-                  <Ionicons name="pencil-outline" size={14} color={COLORS.textPrimary} />
+                  <Ionicons name="pencil-outline" size={14} color="#fff" />
                   <Text style={s.firmarText}>Firmar constancia</Text>
                 </JellyButton>
               )}
@@ -3921,11 +3933,16 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderRadius: 20, padding: 20,
     borderWidth: 1, borderColor: COLORS.border,
     maxHeight: '90%',
+    // Centrado y con ancho máximo: en escritorio el modal deja de estirarse a
+    // todo lo ancho; en móvil el `padding: 20` del overlay evita que toque los
+    // bordes.
+    width: '100%', maxWidth: 480, alignSelf: 'center',
   },
   modalCard: {
     backgroundColor: COLORS.backgroundCard,
     borderRadius: 20, padding: 24,
     borderWidth: 1, borderColor: COLORS.border, gap: 12,
+    width: '100%', maxWidth: 460, alignSelf: 'center',
   },
   modalTitle: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
   modalDesc: {
@@ -3962,7 +3979,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     flex: 1, height: 44, borderRadius: 12,
     backgroundColor: COLORS.primaryDark, alignItems: 'center', justifyContent: 'center',
   },
-  modalSaveText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  modalSaveText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: '#fff' },
 
   // Picker inline
   pickerChip: {
@@ -4031,6 +4048,9 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
   emptyText: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, textAlign: 'center', padding: 24 },
 
   // Vacantes
+  // Columna centrada con ancho máximo: en escritorio/tablet la sección ya no
+  // se estira de borde a borde; en móvil ocupa todo el ancho disponible.
+  vacantesWrap: { flex: 1, width: '100%', maxWidth: 820, alignSelf: 'center' },
   vacantesHeader: { padding: 16 },
   nuevaBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -4038,7 +4058,7 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
     borderRadius: 14, height: 48, paddingHorizontal: 18,
     ...shadow({ color: COLORS.btnShadow, y: 4, blur: 12, opacity: 1, elevation: 6 }),
   },
-  nuevaBtnText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  nuevaBtnText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: '#fff' },
   cupoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingBottom: 8 },
   cupoText: { flex: 1, fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
   vacanteRow: {
@@ -4131,7 +4151,7 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
     backgroundColor: COLORS.primaryDark,
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
   },
-  firmarText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  firmarText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: '#fff' },
 
   // Método de pago (Mi Perfil / modal de plan)
   changeTarjetaBtn: {
