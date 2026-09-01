@@ -36,6 +36,7 @@ import FloatingSearchButton from '../../src/components/FloatingSearchButton';
 import FloatingTopBar from '../../src/components/FloatingTopBar';
 import SalirSesionModal from '../../src/components/SalirSesionModal';
 import OnboardingDireccionGate from '../../src/components/OnboardingDireccionGate';
+import AvisosGate from '../../src/components/AvisosGate';
 // Otra "compuerta": si al estudiante le falta completar su
 // departamento/distrito (dirección), bloquea la pantalla con ese
 // formulario obligatorio antes de dejarlo continuar.
@@ -305,6 +306,9 @@ export default function TabLayout() {
 
       {/* Compuerta obligatoria: departamento/distrito si el perfil no los tiene */}
       <OnboardingDireccionGate />
+
+      {/* Aviso al iniciar sesión: cupos que la universidad reservó para el estudiante */}
+      <AvisosGate />
 
       {/* Recorrido de bienvenida (primer login) */}
       <OnboardingBubble

@@ -823,6 +823,62 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "¡Cupos reservados!": "Spots reserved!",
   "Solicitud enviada": "Request sent",
 
+  // ── Aviso de reserva al iniciar sesión (empresa) ──
+  "Aceptar reserva": "Accept reservation",
+  "Confirmar rechazo": "Confirm rejection",
+  "Explica por qué no puedes recibir estos cupos": "Explain why you can't take these spots",
+  "Esta reserva se aceptó automáticamente porque tu vacante admite reservas al instante. No necesitas hacer nada.":
+    "This reservation was accepted automatically because your posting allows instant reservations. You don't need to do anything.",
+  "Reserva confirmada": "Reservation confirmed",
+  "Reserva rechazada": "Reservation rejected",
+  "La universidad ya puede asignar estos cupos a sus estudiantes.": "The university can now assign these spots to its students.",
+  "Se avisó a la universidad con tu motivo.": "The university was notified with your reason.",
+  "No se pudo procesar": "Couldn't process it",
+  "Intenta de nuevo desde tus solicitudes de cupos.": "Try again from your spot requests.",
+
+  // ── Inscripción por autoservicio a una pasantía (estudiante) ──
+  "Estudiante inscrito": "Student enrolled",
+  "Esta pasantía ya no tiene cupos disponibles.": "This internship has no spots left.",
+  "Esta pasantía ya no está activa.": "This internship is no longer active.",
+  "¡Ya estás en la pasantía!": "You're in the internship!",
+  "Quedaste inscrito oficialmente. Tu universidad y la empresa ya fueron notificadas.":
+    "You're officially enrolled. Your university and the company have been notified.",
+  "Coordina con la empresa el día en que te presentas por primera vez: ese día arranca el conteo de tus horas. Si no escribes tú, la empresa lo fijará.":
+    "Agree with the company on the day you first show up: that day starts your hour count. If you don't reach out, the company will set it.",
+  "Escribir a la empresa": "Message the company",
+  "Ahora no": "Not now",
+  "No se pudo abrir el chat con la empresa.": "Couldn't open the chat with the company.",
+
+  // ── Primer día del estudiante ("Día 1") — lo fija la empresa ──
+  "El día que se presente por primera vez a la empresa cuenta como el Día 1. Desde ahí se cuentan sus horas de práctica.":
+    "The day they first show up at the company counts as Day 1. Their practice hours are counted from there.",
+  "Sin definir todavía": "Not set yet",
+  "Establecer primer día": "Set first day",
+  "Editar primer día": "Edit first day",
+  "Coordinar por chat con el estudiante": "Coordinate by chat with the student",
+  "Ver perfil del estudiante": "View student profile",
+  "Primer día del estudiante": "Student's first day",
+  "Primer día guardado": "First day saved",
+  "No se pudo guardar": "Couldn't save",
+  "Formato de fecha inválido (se espera aaaa-mm-dd).": "Invalid date format (expected yyyy-mm-dd).",
+  "Primer día: por definir": "First day: to be set",
+
+  // ── Aviso de inscripción al iniciar sesión (universidad / empresa) ──
+  "Un estudiante": "A student",
+  "Tus estudiantes se inscribieron": "Your students enrolled",
+  "Estos estudiantes tomaron un cupo que reservaste. Ya están oficialmente en una pasantía.":
+    "These students took a spot you reserved. They're now officially in an internship.",
+  "Nuevos estudiantes en tus pasantías": "New students in your internships",
+  "Estos estudiantes tomaron un cupo de tus vacantes. Ya cuentan como parte de tu pasantía.":
+    "These students took a spot from your postings. They now count as part of your internship.",
+
+  // ── Aviso de cupos al iniciar sesión (estudiante) ──
+  "Tu universidad te reservó cupos": "Your university reserved spots for you",
+  "Reservó estas plazas para tu grupo. Elige una desde tu tablero antes de que venza el plazo; si no eliges, el cupo pasa a otro compañero.":
+    "It reserved these spots for your group. Choose one from your board before the deadline; if you don't, the spot goes to a classmate.",
+  "Queda 1 cupo": "1 spot left",
+  "Práctica": "Placement",
+
   // ── Tablero de selección (estudiante) ──
   "Cupos que tu universidad aseguró para ti": "Spots your university secured for you",
   "Tu práctica asignada": "Your assigned placement",
@@ -832,6 +888,11 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "¡Cupo asegurado!": "Spot secured!",
   "No se pudo tomar el cupo": "Couldn't take the spot",
   "Vencido": "Expired",
+  "Cupos de tu universidad": "Spots from your university",
+  "Tu universidad reservó cupos para tu grupo, pero el plazo para elegir venció o tus compañeros ya los tomaron. Puedes buscar una pasantía por tu cuenta más abajo.":
+    "Your university reserved spots for your group, but the selection window closed or your classmates already took them. You can look for an internship on your own below.",
+  "Tu universidad tiene cupos reservados, pero asignados a otros grupos. Puedes buscar una pasantía por tu cuenta más abajo.":
+    "Your university has reserved spots, but assigned to other groups. You can look for an internship on your own below.",
 
   // ── Editor de publicación (empresa) ──
   "Editar publicación": "Edit posting",

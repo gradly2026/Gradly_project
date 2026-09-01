@@ -109,7 +109,7 @@ import {
 //   - MENSAJE_GRUPO_COMPROMETIDO    → el texto de error estándar a
 //     mostrar cuando un grupo ya está comprometido.
 
-import { cuposDisponibles } from '../utils/cupos';
+import { cuposDisponibles, hayCupos } from '../utils/cupos';
 // Función utilitaria que calcula cuántos cupos LIBRES quedan en una
 // vacante (comparando el total contra los ya ocupados).
 
@@ -199,18 +199,16 @@ type PerfilParaAplicar = { nombre_completo: string; foto_url?: string; universid
 // registrar una aplicación (no todo su perfil completo).
 
 /**
- * Cuerpo compartido de "crear una aplicación": lo usan tanto `aplicarAVacante`
- * (vacante individual, exige graduación) como `aplicarAPasantiaIndependiente`
- * (autoservicio a pasantías) — ambas terminan en el mismo documento de
- * `aplicaciones` y el mismo incremento de `aplicantes_count`. Cada llamador
- * hace su propia validación de elegibilidad ANTES de invocar esto.
+ * Cuerpo compartido de "crear una aplicación": hoy lo usa `aplicarAVacante`
+ * (vacante individual, exige graduación) — crea el documento en `aplicaciones`
+ * en estado `pendiente` e incrementa `aplicantes_count`. El autoservicio a
+ * pasantías YA NO pasa por aquí: ahora inscribe al instante
+ * (`inscribirseAPasantiaIndependiente`, en `asignaciones_cupo`).
  */
 async function crearAplicacion(
   // Función INTERNA (no se exporta) que hace el trabajo real de CREAR una
-  // aplicación en Firestore. Las dos funciones públicas de más abajo
-  // (aplicarAVacante y aplicarAPasantiaIndependiente) validan reglas
-  // DISTINTAS según el caso, pero ambas terminan llamando a esta misma
-  // función para no repetir el código de guardado.
+  // aplicación en Firestore (colección `aplicaciones`). Quien la llama hace
+  // su propia validación de elegibilidad ANTES de invocarla.
   estudianteId: string,
   vacanteId: string,
   empresaId: string,
@@ -342,50 +340,46 @@ export async function aplicarAVacante(
 }
 
 // ─────────────────────────────────────────────
-// 1b. ESTUDIANTE APLICA A UNA PASANTÍA POR SU CUENTA (autoservicio)
+// 1b. ESTUDIANTE SE INSCRIBE A UNA PASANTÍA POR SU CUENTA (autoservicio)
 // ─────────────────────────────────────────────
 /**
- * Camino alterno a `aplicarAVacante`: para estudiantes que TODAVÍA no
- * culminan su práctica, pero tampoco tienen ninguna pasantía activa en
- * curso. Antes, la ÚNICA forma de conseguir pasantía era que la universidad
- * reservara cupos por lote (`reclamoCuposService.ts`) — esto abre un segundo
- * camino de autoservicio (ej. si al estudiante se le venció el plazo de 48h
- * para tomar un cupo ya asegurado, o su universidad no reservó nada afín a
- * su carrera).
+ * Camino alterno al reparto de cupos de la universidad: para estudiantes que
+ * TODAVÍA no culminan su práctica y no tienen ninguna pasantía activa. Antes,
+ * la única vía era que la universidad reservara cupos por lote; esto abre el
+ * autoservicio (p. ej. si al estudiante se le venció el plazo de 48 h para
+ * tomar un cupo asegurado, o su universidad no reservó nada afín a su carrera).
+ *
+ * **La inscripción es INMEDIATA** (decisión de producto: "todo por cupo
+ * individual"): en vez de crear una `aplicaciones` en estado `pendiente` que la
+ * empresa debe aceptar, se crea directamente un documento en `asignaciones_cupo`
+ * (`estado: 'tomado'`, `origen: 'autoservicio'`, `reclamoId: null`) — el mismo
+ * modelo que `tomarCupo`, para que todo lo que ya lee `asignaciones_cupo`
+ * (progreso, candidatos, feedback, "pasantía activa", avisos al iniciar sesión)
+ * funcione sin cambios. NO hay reclamo intermedio: el cupo se aparta directo en
+ * la vacante (`cupos_reclamados`), y `cancelarCupo` lo devuelve ahí.
  *
  * Zona Roja (Salud/Educación/Derecho) queda excluida por completo: esos
- * estudiantes siguen dependiendo 100% de su universidad, sin excepción
- * (decisión de producto explícita).
+ * estudiantes siguen dependiendo 100% de su universidad, sin excepción.
  *
- * Re-verifica TODO del lado del cliente (mismo nivel de confianza que
- * `aplicarAVacante` — no hay Cloud Function detrás de ninguna de las dos):
- * no confía en lo que ya calculó la pantalla, vuelve a leer.
+ * Re-verifica TODO del lado del cliente (no hay Cloud Function detrás): no
+ * confía en lo que calculó la pantalla, vuelve a leer.
  */
-export async function aplicarAPasantiaIndependiente(
+export async function inscribirseAPasantiaIndependiente(
   estudianteId: string,
   vacanteId: string,
   empresaId: string,
-  estudiantePerfil: PerfilParaAplicar & { carrera?: string },
-  // "PerfilParaAplicar & { carrera?: string }" combina (con "&", tipo
-  // "intersección") el tipo PerfilParaAplicar con un campo extra
-  // `carrera`, opcional, que se necesita para validar la Zona Roja.
+  estudiantePerfil: PerfilParaAplicar & { carrera?: string; grupo_id?: string | null },
 ): Promise<string> {
   const vacSnap = await getDoc(doc(db, 'vacantes', vacanteId));
-  // READ: trae la vacante completa para validarla.
   if (!vacSnap.exists()) throw new Error('Esta pasantía ya no está disponible.');
   const vacData: any = vacSnap.data();
   const esPasantia = vacData.categoria === 'pasantia' || (!vacData.categoria && vacData.tipo === 'Pasantía');
-  // Comprueba que la vacante sea realmente de categoría "pasantia" (con
-  // compatibilidad hacia atrás: si una vacante antigua no tiene el campo
-  // `categoria`, se acepta si su `tipo` es exactamente "Pasantía").
   if (!esPasantia) throw new Error('Esta publicación no es una pasantía.');
+  if (vacData.activa === false) throw new Error('Esta pasantía ya no está activa.');
 
   if (estudiantePerfil.carrera && zonaDeCarrera(estudiantePerfil.carrera) === 'roja') {
     throw new Error('Tu carrera requiere que la práctica la gestione tu universidad.');
   }
-  // Bloquea el autoservicio para carreras de Zona Roja (Salud, Educación,
-  // Derecho), sin excepción — regla legal explicada en la memoria del
-  // proyecto, no es un capricho de diseño.
 
   // No debe tener ya una pasantía activa por ninguna de las 3 vías posibles.
   const [contratadoSnap, acuerdoSnap, cupoSnap] = await Promise.all([
@@ -399,30 +393,79 @@ export async function aplicarAPasantiaIndependiente(
       where('estudianteIds', 'array-contains', estudianteId),
       where('estado', '==', 'aprobado'),
     )),
-    // 'array-contains' es OTRO tipo de condición `where`: en vez de
-    // "el campo es igual a X", significa "el campo es una LISTA que
-    // contiene X entre sus elementos". Aquí busca solicitudes de práctica
-    // de GRUPO donde este estudiante esté dentro de la lista
-    // `estudianteIds`.
     getDocs(query(
       collection(db, 'asignaciones_cupo'),
       where('estudianteId', '==', estudianteId),
       where('estado', '==', 'tomado'),
     )),
   ]);
-  // Promise.all([...]) ejecuta las 3 búsquedas EN PARALELO (al mismo
-  // tiempo) en vez de una después de otra — más rápido, porque no hay que
-  // esperar a que termine la primera para empezar la segunda. El
-  // resultado es un array con las 3 respuestas, en el mismo orden en que
-  // se pidieron, y se reparten con destructuring a
-  // [contratadoSnap, acuerdoSnap, cupoSnap].
   if (!contratadoSnap.empty || !acuerdoSnap.empty || !cupoSnap.empty) {
     throw new Error('Ya tienes una pasantía activa.');
   }
-  // Si CUALQUIERA de las 3 búsquedas encontró algo, el estudiante ya
-  // tiene un compromiso activo por alguna vía y no puede aplicar de nuevo.
 
-  return crearAplicacion(estudianteId, vacanteId, empresaId, estudiantePerfil);
+  // Aparta 1 cupo en la vacante, de forma atómica (releer dentro de la
+  // transacción evita que dos inscripciones simultáneas sobrevendan la plaza).
+  await runTransaction(db, async tx => {
+    const vRef = doc(db, 'vacantes', vacanteId);
+    const vSnap = await tx.get(vRef);
+    if (!vSnap.exists()) throw new Error('Esta pasantía ya no está disponible.');
+    const v = vSnap.data() as any;
+    if (v.activa === false) throw new Error('Esta pasantía ya no está activa.');
+    if (!hayCupos(v)) throw new Error('Esta pasantía ya no tiene cupos disponibles.');
+    tx.update(vRef, { cupos_reclamados: increment(1) });
+    // El estudiante puede tocar `cupos_reclamados` (regla `vacantes.update`
+    // con hasOnly(['cupos_reclamados','aplicantes_count'])).
+  });
+
+  // El documento de la asignación se crea FUERA de la transacción, igual que en
+  // `tomarCupo`: la reserva del cupo ya es definitiva y esta escritura, si
+  // fallara, sería recuperable a mano.
+  const ref = await addDoc(collection(db, 'asignaciones_cupo'), {
+    reclamoId: null,
+    origen: 'autoservicio',
+    estudianteId,
+    estudianteNombre: estudiantePerfil.nombre_completo ?? '',
+    universidadId: estudiantePerfil.universidad_id ?? '',
+    empresaId,
+    vacanteId,
+    grupoId: estudiantePerfil.grupo_id ?? null,
+    vacanteTitulo: vacData.titulo ?? '',
+    empresaNombre: vacData.nombre_empresa ?? '',
+    horario: vacData.horario ?? null,
+    carrera: estudiantePerfil.carrera ?? '',
+    estado: 'tomado' as const,
+    fechaTomado: serverTimestamp(),
+  });
+
+  // Estado de pasantía autoreportado (perfil público) — el estudiante escribe
+  // su propio perfil, siempre permitido.
+  try {
+    await updateDoc(doc(db, 'perfiles_estudiantes', estudianteId), { estado_pasantia: 'en_proceso' });
+  } catch {
+    /* no crítico */
+  }
+
+  // Avisos a universidad y empresa — alimentan la campana y los modales de
+  // "se inscribió el estudiante X" al iniciar sesión (AvisosGate).
+  const quien = estudiantePerfil.nombre_completo || 'Un estudiante';
+  if (estudiantePerfil.universidad_id) {
+    await enviarNotificacion(
+      estudiantePerfil.universidad_id,
+      'Estudiante inscrito',
+      `${quien} se inscribió en "${vacData.titulo}" (${vacData.nombre_empresa}).`,
+      'success',
+      '/dashboard-universidad',
+    );
+  }
+  await enviarNotificacion(
+    empresaId,
+    'Estudiante inscrito',
+    `${quien} se inscribió en "${vacData.titulo}".`,
+    'info',
+    '/dashboard-empresa',
+  );
+
+  return ref.id;
 }
 
 // ─────────────────────────────────────────────
@@ -736,7 +779,7 @@ export async function postularGrupoAVacante(
     getDoc(doc(db, 'perfiles_universidades', universidadId)),
   ]);
   // 3 lecturas en paralelo (Promise.all), igual técnica que vimos en
-  // aplicarAPasantiaIndependiente.
+  // inscribirseAPasantiaIndependiente.
   if (!grupoSnap.exists())   throw new Error('El grupo seleccionado no existe.');
   if (!vacanteSnap.exists()) throw new Error('La vacante ya no está disponible.');
 

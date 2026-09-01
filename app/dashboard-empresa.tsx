@@ -77,6 +77,7 @@ import BandejaIncidencias from '../src/components/BandejaIncidencias';
 // estudiante y la universidad; la prop `rol` decide qué puede hacer cada uno.
 import FeedbackGate from '../src/components/FeedbackGate';
 import ModeracionVacanteGate from '../src/components/ModeracionVacanteGate';
+import AvisosGate from '../src/components/AvisosGate';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import EmpresaHomeCards from '../src/components/EmpresaHomeCards';
@@ -2223,6 +2224,9 @@ export default function DashboardEmpresa() {
       {/* ── AVISO DE MODERACIÓN (vacantes deshabilitadas/eliminadas por admin) ── */}
       <ModeracionVacanteGate />
 
+      {/* ── AVISOS AL INICIAR SESIÓN (reservas de cupos por confirmar/informativas) ── */}
+      <AvisosGate />
+
       {/* ── MENÚ FLOTANTE (Glassmorphism) ──
           Oculto en "Mensajes": la sección de chat debe verse limpia, sin
           menú inferior superpuesto sobre la conversación. */}
@@ -2326,6 +2330,7 @@ export default function DashboardEmpresa() {
                   <CandidatosVacante
                     vacanteId={vacanteSeleccionada.id}
                     empresaId={user?.uid ?? ''}
+                    empresaNombre={nombreEmpresa}
                     categoria={vacanteSeleccionada.categoria}
                     cupos={vacanteSeleccionada.cupos}
                     onVerPerfil={setPerfilCandidatoId}

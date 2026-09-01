@@ -37,7 +37,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AutoText as Text } from './AutoText';
+import { AutoText as Text, AutoTextInput as TextInput } from './AutoText';
 import { db } from '../config/firebaseConfig';
 import { textoHorario } from '../data/disponibilidad';
 // Función utilitaria que convierte un objeto de horario estructurado (día,
@@ -62,6 +62,19 @@ interface Props {
   visible: boolean;
   reclamoId: string | null;
   onClose: () => void;
+  /**
+   * Modo "aviso al iniciar sesión" (empresa): si se pasa y el reclamo está
+   * `pendiente`, se dibuja al pie un bloque para Aceptar o Rechazar (con
+   * motivo). Quien lo pasa se encarga de llamar a `responderReclamo` y de
+   * cerrar/avanzar. Sin esta prop, el modal es solo de lectura (uso desde la
+   * campana de notificaciones).
+   */
+  onResponder?: (decision: 'aceptar' | 'rechazar', motivo?: string) => Promise<void>;
+  /**
+   * true = el reclamo se auto-aceptó (la vacante acepta reservas al instante);
+   * el pie es solo informativo, sin botones de acción.
+   */
+  soloInformativo?: boolean;
 }
 
 const ESTADO_META: Record<EstadoReclamo, { label: string; color: (c: GradlyColors) => string }> = {
@@ -95,13 +108,17 @@ function formatFecha(ts: any, locale: string): string {
   return d.toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export default function ReclamoDetailModal({ visible, reclamoId, onClose }: Props) {
+export default function ReclamoDetailModal({ visible, reclamoId, onClose, onResponder, soloInformativo }: Props) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(true);
   const [r, setR] = useState<ReclamoCupos | null>(null);
+  // ── Estado del bloque de acción (solo modo "aviso", reclamo pendiente) ──
+  const [respondiendo, setRespondiendo] = useState<null | 'aceptar' | 'rechazar'>(null);
+  const [mostrarRechazo, setMostrarRechazo] = useState(false);
+  const [motivo, setMotivo] = useState('');
   // `r` (de "reclamo") guarda el documento completo ya leído.
   const [universidadNombre, setUniversidadNombre] = useState('');
   // Estado separado para el nombre de la universidad — se explica en el
@@ -120,6 +137,9 @@ export default function ReclamoDetailModal({ visible, reclamoId, onClose }: Prop
     setLoading(true);
     setR(null);
     setUniversidadNombre('');
+    setRespondiendo(null);
+    setMostrarRechazo(false);
+    setMotivo('');
     // Limpia el estado anterior antes de cargar el nuevo reclamo — evita
     // mostrar por un instante los datos del reclamo PREVIO mientras carga
     // el nuevo.
@@ -167,6 +187,23 @@ export default function ReclamoDetailModal({ visible, reclamoId, onClose }: Prop
   // Prioriza mostrar la fecha de RESPUESTA (cuando la empresa/universidad
   // ya reaccionó); si todavía no hay respuesta, cae en la fecha del
   // reclamo original.
+
+  // Solo hay bloque de acción si quien abre el modal lo pidió (`onResponder`),
+  // el reclamo sigue pendiente y no es el caso auto-aceptado (informativo).
+  const conAcciones = !!onResponder && !soloInformativo && r?.estado === 'pendiente';
+
+  const responder = async (decision: 'aceptar' | 'rechazar') => {
+    if (!onResponder || respondiendo) return;
+    if (decision === 'rechazar' && !motivo.trim()) return;
+    setRespondiendo(decision);
+    try {
+      await onResponder(decision, decision === 'rechazar' ? motivo.trim() : undefined);
+      // El padre (AvisosGate) cierra/avanza al terminar; no tocamos nada más aquí.
+    } catch {
+      setRespondiendo(null);
+      // El padre muestra el error; solo reactivamos los botones.
+    }
+  };
 
   return (
     <>
@@ -303,6 +340,77 @@ export default function ReclamoDetailModal({ visible, reclamoId, onClose }: Prop
                   <Text style={styles.verVacanteText}>Ver vacante completa</Text>
                 </TouchableOpacity>
               )}
+
+              {/* ── Aviso informativo: la reserva se auto-aceptó ── */}
+              {soloInformativo && r.estado === 'aceptado' && (
+                <View style={styles.infoAviso}>
+                  <Ionicons name="flash-outline" size={16} color={colors.success} />
+                  <Text style={styles.infoAvisoText}>
+                    Esta reserva se aceptó automáticamente porque tu vacante admite reservas al instante. No necesitas hacer nada.
+                  </Text>
+                </View>
+              )}
+
+              {/* ── Bloque de acción: Aceptar / Rechazar (reclamo pendiente) ── */}
+              {conAcciones && (
+                <View style={styles.accionBox}>
+                  {!mostrarRechazo ? (
+                    <View style={styles.accionRow}>
+                      <TouchableOpacity
+                        style={[styles.btnRechazar, respondiendo && { opacity: 0.5 }]}
+                        activeOpacity={0.85}
+                        disabled={!!respondiendo}
+                        onPress={() => setMostrarRechazo(true)}
+                      >
+                        <Text style={styles.btnRechazarText}>Rechazar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.btnAceptar, respondiendo && { opacity: 0.6 }]}
+                        activeOpacity={0.85}
+                        disabled={!!respondiendo}
+                        onPress={() => responder('aceptar')}
+                      >
+                        {respondiendo === 'aceptar'
+                          ? <ActivityIndicator size="small" color="#fff" />
+                          : <Text style={styles.btnAceptarText}>Aceptar reserva</Text>}
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 10 }}>
+                      <Text style={styles.rechazoLabel}>Motivo del rechazo</Text>
+                      <TextInput
+                        style={styles.rechazoInput}
+                        value={motivo}
+                        onChangeText={setMotivo}
+                        placeholder="Explica por qué no puedes recibir estos cupos"
+                        placeholderTextColor={colors.textMuted}
+                        multiline
+                        selectionColor={colors.primary}
+                      />
+                      <View style={styles.accionRow}>
+                        <TouchableOpacity
+                          style={styles.btnRechazar}
+                          activeOpacity={0.85}
+                          disabled={!!respondiendo}
+                          onPress={() => { setMostrarRechazo(false); setMotivo(''); }}
+                        >
+                          <Text style={styles.btnRechazarText}>Volver</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.btnAceptar, styles.btnConfirmarRechazo, (!motivo.trim() || respondiendo) && { opacity: 0.5 }]}
+                          activeOpacity={0.85}
+                          disabled={!motivo.trim() || !!respondiendo}
+                          onPress={() => responder('rechazar')}
+                        >
+                          {respondiendo === 'rechazar'
+                            ? <ActivityIndicator size="small" color="#fff" />
+                            : <Text style={styles.btnAceptarText}>Confirmar rechazo</Text>}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
             </ScrollView>
           )}
         </View>
@@ -374,4 +482,36 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     marginHorizontal: 16, marginBottom: 12,
   },
   verVacanteText: { color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 15 },
+
+  // ── Aviso informativo (reserva auto-aceptada) ──
+  infoAviso: {
+    flexDirection: 'row', gap: 10, alignItems: 'flex-start',
+    marginHorizontal: 16, marginBottom: 16, padding: 14, borderRadius: 14,
+    backgroundColor: `${COLORS.success}14`, borderWidth: 1, borderColor: `${COLORS.success}55`,
+  },
+  infoAvisoText: { flex: 1, fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textPrimary, lineHeight: 18 },
+
+  // ── Bloque de acción (Aceptar / Rechazar) ──
+  accionBox: {
+    marginHorizontal: 16, marginBottom: 20, padding: 14, borderRadius: 16,
+    backgroundColor: COLORS.backgroundCard, borderWidth: 1, borderColor: COLORS.border,
+  },
+  accionRow: { flexDirection: 'row', gap: 10 },
+  btnRechazar: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 13,
+    borderRadius: 14, borderWidth: 1, borderColor: COLORS.error,
+  },
+  btnRechazarText: { color: COLORS.error, fontFamily: FONTS.interSemiBold, fontSize: 14 },
+  btnAceptar: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 13,
+    borderRadius: 14, backgroundColor: COLORS.success,
+  },
+  btnConfirmarRechazo: { backgroundColor: COLORS.error },
+  btnAceptarText: { color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 14 },
+  rechazoLabel: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted },
+  rechazoInput: {
+    minHeight: 70, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.backgroundSurface, padding: 12, textAlignVertical: 'top',
+    fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textPrimary,
+  },
 });

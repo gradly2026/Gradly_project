@@ -45,6 +45,7 @@ import {
   cuposTotales,
   expiroSeleccion,
   PLAZO_SELECCION_HORAS,
+  sePuedeTomar,
 } from '../utils/cupos';
 // Funciones utilitarias de src/utils/cupos.ts (no comentado en detalle en
 // esta sesión, pero sus nombres son bastante descriptivos):
@@ -120,18 +121,25 @@ export interface ReclamoCupos {
   motivoRechazo?: string;
   fechaReclamo?: any;
   fechaRespuesta?: any;
+  /** true = a la empresa ya se le mostró el aviso de este reclamo al iniciar
+   *  sesión (solo aplica al caso auto-aceptado, meramente informativo — los
+   *  pendientes se muestran hasta que la empresa responda). Ver AvisosGate. */
+  visto_empresa?: boolean;
 }
 
 export const COLECCION_ASIGNACIONES = 'asignaciones_cupo';
 
-/** Cupo que un estudiante concreto tomó del lote reservado por su universidad. */
+/** Cupo que un estudiante concreto tomó (del lote de su universidad, o por autoservicio). */
 export interface AsignacionCupo {
   // Mientras `ReclamoCupos` representa el LOTE completo reservado por la
-  // universidad, `AsignacionCupo` representa UN cupo individual dentro de
-  // ese lote, ya tomado por un estudiante específico — la relación es
-  // "1 reclamo → muchas asignaciones" (hasta `cantidad` de ellas).
+  // universidad, `AsignacionCupo` representa UN cupo individual ya tomado por
+  // un estudiante. Normalmente pertenece a un reclamo ("1 reclamo → muchas
+  // asignaciones"); en el autoservicio (`origen: 'autoservicio'`) NO hay
+  // reclamo — el cupo se apartó directo en la vacante y `reclamoId` es null.
   id: string;
-  reclamoId: string;
+  reclamoId: string | null;
+  /** 'autoservicio' = el estudiante se inscribió por su cuenta (sin reclamo). */
+  origen?: 'autoservicio';
   estudianteId: string;
   estudianteNombre?: string;
   universidadId: string;
@@ -141,8 +149,17 @@ export interface AsignacionCupo {
   vacanteTitulo?: string;
   empresaNombre?: string;
   horario?: HorarioPasantia | null;
+  carrera?: string;
   estado: 'tomado' | 'cancelado';
   fechaTomado?: any;
+  /**
+   * Día en que el estudiante se presenta por primera vez a la empresa — su
+   * "Día 1". Lo fija (y puede editar) la empresa. ISO `yyyy-mm-dd`. Mientras
+   * sea null/ausente, la pasantía está inscrita pero el conteo de horas aún no
+   * arranca (ver Fase D). */
+  fechaPresentacion?: string | null;
+  /** Cuándo la empresa fijó/editó `fechaPresentacion` (serverTimestamp). */
+  fechaPresentacionAt?: any;
 }
 
 /** Datos que la UI pasa al reclamar. */
@@ -573,11 +590,17 @@ export async function cancelarCupo(asignacionId: string): Promise<void> {
     const a = snap.data() as AsignacionCupo;
     if (a.estado !== 'tomado') throw new Error('Este cupo ya fue liberado.');
 
-    tx.update(doc(db, COLECCION_RECLAMOS, a.reclamoId), { tomados: increment(-1) });
-    // El cupo vuelve a estar disponible DENTRO del mismo reclamo (resta 1
-    // a `tomados`) — importante notar que NO se toca `cupos_reclamados`
-    // de la vacante: ese cupo sigue "reservado" para la universidad, solo
-    // que ahora otro estudiante de la misma universidad puede tomarlo.
+    if (a.reclamoId) {
+      // Cupo de un reclamo: vuelve a estar disponible DENTRO del mismo reclamo
+      // (resta 1 a `tomados`). NO se toca `cupos_reclamados` de la vacante: ese
+      // cupo sigue "reservado" para la universidad, solo que ahora otro alumno
+      // de la misma universidad puede tomarlo.
+      tx.update(doc(db, COLECCION_RECLAMOS, a.reclamoId), { tomados: increment(-1) });
+    } else if (a.vacanteId) {
+      // Autoservicio (sin reclamo): el cupo se había apartado directo en la
+      // vacante, así que ahí se devuelve — vuelve al mercado general.
+      tx.update(doc(db, 'vacantes', a.vacanteId), { cupos_reclamados: increment(-1) });
+    }
     tx.update(asigRef, { estado: 'cancelado' as const });
     return a.estudianteId;
   });
@@ -600,4 +623,170 @@ export async function obtenerReclamo(reclamoId: string): Promise<ReclamoCupos | 
   // de negocio adicional.
   const snap = await getDoc(doc(db, COLECCION_RECLAMOS, reclamoId));
   return snap.exists() ? ({ id: snap.id, ...snap.data() } as ReclamoCupos) : null;
+}
+
+/** Un reclamo que la empresa debería ver al iniciar sesión (ver AvisosGate). */
+export interface AvisoReclamoEmpresa {
+  reclamoId: string;
+  /** 'accion' = pendiente, exige Aceptar/Rechazar. 'info' = ya se auto-aceptó. */
+  modo: 'accion' | 'info';
+}
+
+/**
+ * Reclamos de cupos que la empresa aún no ha "visto" al entrar a su panel:
+ *   · `pendiente`  → necesita que confirme o rechace (se muestra hasta que lo
+ *                    haga; ignora `visto_empresa`).
+ *   · `aceptado` sin `fechaRespuesta` → se auto-aceptó (la vacante acepta
+ *                    reservas al instante); aviso informativo una sola vez.
+ *
+ * Una sola lectura al entrar (no un listener), igual que `getModeracionesPendientes`.
+ * La query filtra solo por `empresaId` (lo que permiten las reglas) y el estado
+ * se filtra en memoria — sin índice compuesto.
+ */
+export async function getAvisosReclamosEmpresa(empresaUid: string): Promise<AvisoReclamoEmpresa[]> {
+  if (!empresaUid) return [];
+  const snap = await getDocs(
+    query(collection(db, COLECCION_RECLAMOS), where('empresaId', '==', empresaUid)),
+  );
+  const avisos: AvisoReclamoEmpresa[] = [];
+  snap.forEach(d => {
+    const r = d.data() as ReclamoCupos;
+    if (r.estado === 'pendiente') {
+      avisos.push({ reclamoId: d.id, modo: 'accion' });
+    } else if (r.estado === 'aceptado' && !r.fechaRespuesta && r.visto_empresa !== true) {
+      avisos.push({ reclamoId: d.id, modo: 'info' });
+    }
+  });
+  return avisos;
+}
+
+/** Marca que a la empresa ya se le mostró el aviso informativo de un reclamo. */
+export async function marcarReclamoVistoEmpresa(reclamoId: string): Promise<void> {
+  if (!reclamoId) return;
+  await updateDoc(doc(db, COLECCION_RECLAMOS, reclamoId), { visto_empresa: true });
+}
+
+/**
+ * Reclamos de cupos que el estudiante aún no ha "acusado" al entrar a la app:
+ * los que su universidad reservó para su grupo (o sin grupo fijado), que
+ * todavía puede tomar (`sePuedeTomar`) y cuyo id no está en
+ * `perfiles_estudiantes/{uid}.reclamos_avisados`.
+ *
+ * Una sola lectura al montar (no un listener). La query filtra por
+ * `universidadId` (lo que permiten las reglas vía `esEstudianteDe`) y el resto
+ * se filtra en memoria — sin índice compuesto.
+ */
+export async function getAvisosCuposEstudiante(estudianteUid: string): Promise<ReclamoCupos[]> {
+  if (!estudianteUid) return [];
+  const perfilSnap = await getDoc(doc(db, 'perfiles_estudiantes', estudianteUid));
+  if (!perfilSnap.exists()) return [];
+  const p = perfilSnap.data() as any;
+  const universidadId: string | undefined = p.universidad_id;
+  const miGrupo: string | undefined = p.grupo_id;
+  const avisados: string[] = Array.isArray(p.reclamos_avisados) ? p.reclamos_avisados : [];
+  if (!universidadId) return [];
+
+  const snap = await getDocs(
+    query(collection(db, COLECCION_RECLAMOS), where('universidadId', '==', universidadId)),
+  );
+  const ahora = Date.now();
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as ReclamoCupos))
+    .filter(r => !r.grupoId || r.grupoId === miGrupo)
+    .filter(r => sePuedeTomar(r, ahora))
+    .filter(r => !avisados.includes(r.id));
+}
+
+/** Guarda en el perfil del estudiante que ya se le avisó de estos reclamos. */
+export async function marcarCuposAvisadosEstudiante(
+  estudianteUid: string,
+  reclamoIds: string[],
+): Promise<void> {
+  if (!estudianteUid || reclamoIds.length === 0) return;
+  await updateDoc(doc(db, 'perfiles_estudiantes', estudianteUid), {
+    reclamos_avisados: arrayUnion(...reclamoIds),
+  });
+}
+
+// ─────────────────────────────────────────────
+// Avisos de INSCRIPCIÓN (un estudiante tomó un cupo) → universidad y empresa
+// ─────────────────────────────────────────────
+// El "ya visto" se guarda en el perfil de quien mira (`perfiles_universidades`
+// / `perfiles_empresas`, campo `asignaciones_avisadas: string[]`), igual que el
+// estudiante en B.2 — así NO hace falta tocar las reglas de `asignaciones_cupo`
+// (cuyo `update` no admite a la empresa). El dueño de su propio perfil lo puede
+// actualizar sin restricción de campos.
+
+/**
+ * Inscripciones (`asignaciones_cupo` en estado `tomado`) que este rol aún no ha
+ * acusado al entrar. `campo` = 'universidadId' | 'empresaId' según quién mira;
+ * `perfilCol` = la colección de su perfil.
+ *
+ * La query filtra solo por ese campo (lo que permiten las reglas) y el estado
+ * se filtra en memoria — sin índice compuesto.
+ */
+async function getAvisosInscripciones(
+  uid: string,
+  campo: 'universidadId' | 'empresaId',
+  perfilCol: 'perfiles_universidades' | 'perfiles_empresas',
+): Promise<AsignacionCupo[]> {
+  if (!uid) return [];
+  const perfilSnap = await getDoc(doc(db, perfilCol, uid));
+  const avisadas: string[] = perfilSnap.exists() && Array.isArray((perfilSnap.data() as any).asignaciones_avisadas)
+    ? (perfilSnap.data() as any).asignaciones_avisadas
+    : [];
+  const snap = await getDocs(
+    query(collection(db, COLECCION_ASIGNACIONES), where(campo, '==', uid)),
+  );
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as AsignacionCupo))
+    .filter(a => a.estado === 'tomado')
+    .filter(a => !avisadas.includes(a.id));
+}
+
+export const getAvisosInscripcionesUniversidad = (uid: string) =>
+  getAvisosInscripciones(uid, 'universidadId', 'perfiles_universidades');
+
+export const getAvisosInscripcionesEmpresa = (uid: string) =>
+  getAvisosInscripciones(uid, 'empresaId', 'perfiles_empresas');
+
+/** Marca inscripciones como avisadas en el perfil de la universidad o la empresa. */
+export async function marcarInscripcionesAvisadas(
+  uid: string,
+  perfilCol: 'perfiles_universidades' | 'perfiles_empresas',
+  asignacionIds: string[],
+): Promise<void> {
+  if (!uid || asignacionIds.length === 0) return;
+  await updateDoc(doc(db, perfilCol, uid), {
+    asignaciones_avisadas: arrayUnion(...asignacionIds),
+  });
+}
+
+// ─────────────────────────────────────────────
+// Fecha de presentación ("Día 1") — la fija la empresa por estudiante
+// ─────────────────────────────────────────────
+
+const RE_FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * La empresa fija (o edita, o borra pasando null) el día en que el estudiante
+ * debe presentarse por primera vez. Ese día es el "Día 1" desde el que la
+ * Fase D contará las horas.
+ *
+ * `fechaISO` debe ser `yyyy-mm-dd` (o null para quitarla). Las reglas dejan a
+ * la empresa dueña tocar SOLO `fechaPresentacion`/`fechaPresentacionAt` de la
+ * asignación (`hasOnly`), nada más.
+ */
+export async function fijarFechaPresentacion(
+  asignacionId: string,
+  fechaISO: string | null,
+): Promise<void> {
+  if (!asignacionId) throw new Error('Asignación inválida.');
+  if (fechaISO !== null && !RE_FECHA_ISO.test(fechaISO)) {
+    throw new Error('Formato de fecha inválido (se espera aaaa-mm-dd).');
+  }
+  await updateDoc(doc(db, COLECCION_ASIGNACIONES, asignacionId), {
+    fechaPresentacion: fechaISO,
+    fechaPresentacionAt: serverTimestamp(),
+  });
 }

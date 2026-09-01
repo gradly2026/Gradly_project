@@ -43,6 +43,9 @@ import { progresoPorFechas } from '../../src/utils/progresoPasantia';
 import CalendarioEventos from '../../src/components/CalendarioEventos';
 import TableroCupos from '../../src/components/TableroCupos';
 import MiInstitucionCard from '../../src/components/MiInstitucionCard';
+import { useProgresoInscripcion } from '../../src/hooks/useProgresoInscripcion';
+// Libro mayor de horas del reparto de cupos: horas que avanzan solas desde la
+// fecha de presentación que fijó la empresa, sobre la meta del grupo (Fase D).
 // Ficha completa de la universidad y el grupo del estudiante. Va primero
 // en esta pantalla porque es el CONTEXTO de todo lo demás: las horas, el
 // calendario y el período de prácticas los define su grupo.
@@ -437,10 +440,22 @@ export default function ProgresoTab() {
   // combina datos de 4 colecciones diferentes de Firestore, todas
   // relacionadas con el mismo estudiante, para armar una vista unificada.
 
-  const horasObjetivo   = perfil?.horas_objetivo   ?? 500;
-  const horasAprobadas  = perfil?.horas_aprobadas  ?? 0;
-  const horasEnProceso  = perfil?.horas_en_proceso ?? 0;
-  const pct = Math.min(100, Math.round((horasAprobadas / horasObjetivo) * 100));
+  const horasObjetivoPerfil = perfil?.horas_objetivo   ?? 500;
+  const horasAprobadas      = perfil?.horas_aprobadas  ?? 0;
+  const horasEnProceso      = perfil?.horas_en_proceso ?? 0;
+
+  // Libro mayor de horas del reparto de cupos (Fase D). Si el estudiante está
+  // inscrito a una pasantía de cupo con fecha de presentación fijada, el
+  // termómetro muestra sus horas REALES avanzando; si no, cae al expediente
+  // del perfil (`horas_aprobadas`/`horas_objetivo`, que solo se acreditan al
+  // certificar).
+  const { progreso: ledger } = useProgresoInscripcion(user?.uid);
+  const horasObjetivo = ledger ? ledger.meta : horasObjetivoPerfil;
+  const horasCumplidas = ledger ? ledger.cumplidas : horasAprobadas;
+  const horasRestantes = ledger ? ledger.restantes : Math.max(0, horasObjetivoPerfil - horasAprobadas);
+  const pct = ledger
+    ? ledger.pct
+    : Math.min(100, Math.round((horasAprobadas / horasObjetivoPerfil) * 100));
 
   const activa    = apps.find(a => a.estado === 'contratado');
   // .find() devuelve el PRIMER elemento que cumple la condición (o
@@ -615,22 +630,27 @@ export default function ProgresoTab() {
           <Text style={styles.sectionLabel}>Horas de práctica</Text>
 
           <View style={styles.circleRow}>
-            <CircleProgress pct={pct} aprobadas={horasAprobadas} objetivo={horasObjetivo} />
+            <CircleProgress pct={pct} aprobadas={Math.round(horasCumplidas)} objetivo={horasObjetivo} />
 
             <View style={styles.statsCol}>
-              <StatItem label="Aprobadas"   value={horasAprobadas}  color={COLORS.success} />
+              <StatItem label={ledger ? 'Cumplidas' : 'Aprobadas'} value={Math.round(horasCumplidas)} color={COLORS.success} />
               <StatItem label="En proceso"  value={horasEnProceso}  color={COLORS.warning} />
-              <StatItem label="Restantes"   value={Math.max(0, horasObjetivo - horasAprobadas)} color={COLORS.textMuted} />
+              <StatItem label="Restantes"   value={Math.round(horasRestantes)} color={COLORS.textMuted} />
               <StatItem label="Objetivo"    value={horasObjetivo}   color={COLORS.primaryLight} />
             </View>
           </View>
 
-          {pct >= 100 && (
+          {ledger?.completado ? (
+            <View style={styles.metaBanner}>
+              <Ionicons name="checkmark-done-circle" size={18} color={COLORS.success} />
+              <Text style={styles.metaText}>Completaste tus horas de práctica.</Text>
+            </View>
+          ) : pct >= 100 ? (
             <View style={styles.metaBanner}>
               <Ionicons name="trophy" size={18} color={COLORS.gold} />
               <Text style={styles.metaText}>¡Meta alcanzada! Eres un Graduado.</Text>
             </View>
-          )}
+          ) : null}
         </GlassCard>
 
         {/* ── Cupos que su universidad le aseguró (tablero de selección) ──

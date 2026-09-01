@@ -1,7 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  Modal,
   StyleSheet,
 
 
@@ -10,6 +9,7 @@ import {
 } from "react-native";
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import { useTheme, type GradlyColors } from "../context/ThemeContext";
+import CalendarPickerModal from "./CalendarPickerModal";
 
 // ════════════════════════════════════════════════════════════════════
 //  PeriodoPracticasField
@@ -41,6 +41,16 @@ export interface PeriodoValue {
 export const MESES_POR_CICLO = 6;
 export const MAX_CICLOS = 6;
 
+/**
+ * Horas de práctica que equivale un ciclo universitario completo. Es el piso
+ * del rango de inmersión a tiempo completo en El Salvador (700–1056 h; el
+ * servicio social de ley —500 h— es aparte y NO es lo que gestiona Gradly).
+ * Se usa como valor por defecto al medir "por ciclos"; el usuario puede
+ * ajustarlo (varía por facultad: part-time 300–400, UES ley 940–1056,
+ * Salud/Internado 2000+).
+ */
+export const HORAS_POR_CICLO = 700;
+
 /** Piso de horas de un grupo en modo 'horas'. Un grupo puede durar tan poco
  *  como 1 hora — no se impone ningún mínimo mayor. */
 export const MIN_HORAS = 1;
@@ -51,7 +61,7 @@ export const PERIODO_VACIO: PeriodoValue = {
   fechaFin: null,
   ciclos: 1,
   meses: MESES_POR_CICLO,
-  horas: null,
+  horas: HORAS_POR_CICLO,
 };
 
 // ── Utilidades de fecha ──────────────────────────────────────────────
@@ -63,11 +73,6 @@ const addMonths = (d: Date, m: number) => {
   x.setMonth(x.getMonth() + m);
   return x;
 };
-
-const sameDay = (a: Date, b: Date) =>
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
 
 const formatFecha = (d: Date | null) =>
   d
@@ -81,129 +86,17 @@ const formatFecha = (d: Date | null) =>
 const mesesEntre = (a: Date, b: Date) =>
   Math.max(1, Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24 * 30)));
 
-const DIAS_SEMANA = ["D", "L", "M", "M", "J", "V", "S"];
-const MESES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
-
 /** True si el período tiene los datos mínimos para guardarse. */
 export function periodoValido(p: PeriodoValue): boolean {
   if (!p.fechaInicio) return false;
-  if (p.modo === "ciclos") return !!p.ciclos && p.ciclos >= 1 && p.ciclos <= MAX_CICLOS;
+  if (p.modo === "ciclos") {
+    return !!p.ciclos && p.ciclos >= 1 && p.ciclos <= MAX_CICLOS
+      && !!p.horas && p.horas >= MIN_HORAS;
+  }
   if (p.modo === "horas") return !!p.horas && p.horas >= MIN_HORAS;
   return false;
 }
 
-// ════════════════════════════════════════════════════════════════════
-//  Calendario interno (sin dependencias nativas)
-// ════════════════════════════════════════════════════════════════════
-function CalendarModal({
-  visible,
-  value,
-  minimumDate,
-  maximumDate,
-  title,
-  onSelect,
-  onClose,
-  C,
-}: {
-  visible: boolean;
-  value: Date | null;
-  minimumDate: Date;
-  maximumDate: Date;
-  title: string;
-  onSelect: (d: Date) => void;
-  onClose: () => void;
-  C: GradlyColors;
-}) {
-  const styles = useMemo(() => makeStyles(C), [C]);
-  const base = value ?? minimumDate;
-  const [viewYear, setViewYear] = useState(base.getFullYear());
-  const [viewMonth, setViewMonth] = useState(base.getMonth());
-
-  useEffect(() => {
-    if (visible) {
-      const b = value ?? minimumDate;
-      setViewYear(b.getFullYear());
-      setViewMonth(b.getMonth());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-
-  const minDay = startOfDay(minimumDate);
-  const maxDay = startOfDay(maximumDate);
-  const firstWeekday = new Date(viewYear, viewMonth, 1).getDay();
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-
-  const cells: (Date | null)[] = [];
-  for (let i = 0; i < firstWeekday; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(viewYear, viewMonth, d));
-
-  const monthStart = startOfDay(new Date(viewYear, viewMonth, 1));
-  const canPrev = monthStart > startOfDay(new Date(minDay.getFullYear(), minDay.getMonth(), 1));
-  const canNext = monthStart < startOfDay(new Date(maxDay.getFullYear(), maxDay.getMonth(), 1));
-
-  const goPrev = () => {
-    if (!canPrev) return;
-    if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1); }
-    else setViewMonth((m) => m - 1);
-  };
-  const goNext = () => {
-    if (!canNext) return;
-    if (viewMonth === 11) { setViewMonth(0); setViewYear((y) => y + 1); }
-    else setViewMonth((m) => m + 1);
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.calBackdrop} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity style={styles.calContainer} activeOpacity={1} onPress={() => {}}>
-          <View style={styles.calHeader}>
-            <Text style={styles.calTitle}>{title}</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={22} color={C.textMuted} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.calNav}>
-            <TouchableOpacity onPress={goPrev} disabled={!canPrev} style={{ opacity: canPrev ? 1 : 0.3, padding: 6 }}>
-              <Ionicons name="chevron-back" size={22} color={C.textPrimary} />
-            </TouchableOpacity>
-            <Text style={styles.calMonthLabel}>{MESES[viewMonth]} {viewYear}</Text>
-            <TouchableOpacity onPress={goNext} disabled={!canNext} style={{ opacity: canNext ? 1 : 0.3, padding: 6 }}>
-              <Ionicons name="chevron-forward" size={22} color={C.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.calWeekRow}>
-            {DIAS_SEMANA.map((d, i) => (
-              <Text key={i} style={styles.calWeekday}>{d}</Text>
-            ))}
-          </View>
-
-          <View style={styles.calGrid}>
-            {cells.map((cell, idx) => {
-              if (!cell) return <View key={idx} style={styles.calCell} />;
-              const day = startOfDay(cell);
-              const disabled = day < minDay || day > maxDay;
-              const selected = value ? sameDay(day, value) : false;
-              return (
-                <TouchableOpacity key={idx} style={styles.calCell} disabled={disabled} activeOpacity={0.7} onPress={() => onSelect(day)}>
-                  <View style={[styles.calDay, selected && styles.calDaySelected]}>
-                    <Text style={[styles.calDayText, disabled && styles.calDayTextDisabled, selected && styles.calDayTextSelected]}>
-                      {cell.getDate()}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
 
 // ════════════════════════════════════════════════════════════════════
 //  Campo principal
@@ -219,17 +112,24 @@ export default function PeriodoPracticasField({
   const styles = useMemo(() => makeStyles(C), [C]);
   // Sin el modo "fecha" manual, el único selector es la fecha de inicio.
   const [picker, setPicker] = useState<"inicio" | null>(null);
+  // En modo 'ciclos' las horas se derivan del nº de ciclos (× HORAS_POR_CICLO)
+  // salvo que el usuario las haya ajustado a mano — ahí se congelan.
+  const [horasCicloTocado, setHorasCicloTocado] = useState(false);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const maxDate = useMemo(() => addMonths(today, 48), [today]); // hasta 4 años
 
-  // Recalcula fechaFin/meses según el modo cuando cambian inicio o ciclos.
+  // Recalcula fechaFin/meses/horas según el modo cuando cambian inicio o ciclos.
   const emitir = (parcial: Partial<PeriodoValue>) => {
     const next: PeriodoValue = { ...value, ...parcial };
-    if (next.modo === "ciclos" && next.fechaInicio && next.ciclos) {
-      next.meses = next.ciclos * MESES_POR_CICLO;
-      next.fechaFin = addMonths(next.fechaInicio, next.meses);
-      next.horas = null;
+    if (next.modo === "ciclos") {
+      const n = next.ciclos ?? 1;
+      next.meses = n * MESES_POR_CICLO;
+      if (next.fechaInicio) next.fechaFin = addMonths(next.fechaInicio, next.meses);
+      // Horas estimadas del ciclo; se dejan de auto-derivar si el usuario las tocó.
+      if (parcial.horas === undefined && !horasCicloTocado) {
+        next.horas = n * HORAS_POR_CICLO;
+      }
     } else if (next.modo === "horas") {
       next.ciclos = null;
       next.fechaFin = null;
@@ -246,6 +146,18 @@ export default function PeriodoPracticasField({
   const setCiclos = (n: number) => {
     const clamped = Math.min(MAX_CICLOS, Math.max(1, n));
     emitir({ ciclos: clamped });
+  };
+
+  const cambiarModo = (key: ModoPeriodo) => {
+    // Al volver a 'ciclos', las horas vuelven a derivarse solas.
+    if (key === "ciclos") setHorasCicloTocado(false);
+    emitir({ modo: key });
+  };
+
+  const editarHorasCiclo = (t: string) => {
+    setHorasCicloTocado(true);
+    const n = Number(t.replace(/\D/g, "").slice(0, 5));
+    emitir({ horas: n >= MIN_HORAS ? n : null });
   };
 
   const MODOS: { key: ModoPeriodo; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -277,7 +189,7 @@ export default function PeriodoPracticasField({
             <TouchableOpacity
               key={m.key}
               style={[styles.segmentBtn, activo && styles.segmentBtnActive]}
-              onPress={() => emitir({ modo: m.key })}
+              onPress={() => cambiarModo(m.key)}
               activeOpacity={0.85}
             >
               <Ionicons name={m.icon} size={15} color={activo ? "#fff" : C.textMuted} />
@@ -315,6 +227,23 @@ export default function PeriodoPracticasField({
               <Ionicons name="add" size={20} color={(value.ciclos ?? 1) >= MAX_CICLOS ? C.textMuted : "#fff"} />
             </TouchableOpacity>
           </View>
+
+          {/* Horas estimadas del ciclo (prellenadas, editables) */}
+          <Text style={[styles.label, { marginTop: 14 }]}>HORAS DE PRÁCTICA A CUMPLIR *</Text>
+          <TextInput
+            style={[styles.input, value.horas ? styles.inputOk : null, { color: C.textPrimary }]}
+            value={value.horas ? String(value.horas) : ""}
+            onChangeText={editarHorasCiclo}
+            placeholder={`Ej. ${HORAS_POR_CICLO}`}
+            placeholderTextColor={C.textMuted}
+            keyboardType="number-pad"
+            selectionColor={C.primary}
+          />
+          <Text style={styles.hint}>
+            {horasCicloTocado
+              ? "Ajustaste el total. Cambiar de ciclos ya no lo recalcula."
+              : `Estimado: ${(value.ciclos ?? 1) * HORAS_POR_CICLO} h (${HORAS_POR_CICLO} h por ciclo). Puedes ajustarlo si tu facultad exige otro total.`}
+          </Text>
         </View>
       )}
 
@@ -343,7 +272,7 @@ export default function PeriodoPracticasField({
         <Text style={styles.resumenText}>{describirPeriodo(value)}</Text>
       </View>
 
-      <CalendarModal
+      <CalendarPickerModal
         visible={picker !== null}
         value={value.fechaInicio}
         minimumDate={today}
@@ -351,7 +280,6 @@ export default function PeriodoPracticasField({
         title="Fecha de inicio"
         onSelect={seleccionarFecha}
         onClose={() => setPicker(null)}
-        C={C}
       />
     </View>
   );
@@ -371,7 +299,8 @@ function describirPeriodo(p: PeriodoValue): string {
     p.modo === "ciclos" && p.ciclos
       ? `${p.ciclos} ${p.ciclos === 1 ? "ciclo" : "ciclos"} · `
       : "";
-  return `${ciclosTxt}${meses} ${meses === 1 ? "mes" : "meses"}: del ${formatFecha(p.fechaInicio)} al ${formatFecha(p.fechaFin)}.`;
+  const horasTxt = p.modo === "ciclos" && p.horas ? ` · ${p.horas} h de práctica` : "";
+  return `${ciclosTxt}${meses} ${meses === 1 ? "mes" : "meses"}${horasTxt}: del ${formatFecha(p.fechaInicio)} al ${formatFecha(p.fechaFin)}.`;
 }
 
 const makeStyles = (C: GradlyColors) =>
@@ -382,6 +311,12 @@ const makeStyles = (C: GradlyColors) =>
       fontWeight: "700",
       letterSpacing: 0.3,
       marginBottom: 8,
+    },
+    hint: {
+      color: C.textMuted,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 6,
     },
     input: {
       backgroundColor: C.white4,
@@ -478,87 +413,5 @@ const makeStyles = (C: GradlyColors) =>
       color: C.textPrimary,
       fontSize: 12,
       lineHeight: 18,
-    },
-    // ── Calendario ──
-    calBackdrop: {
-      flex: 1,
-      backgroundColor: "rgba(7,5,15,0.75)",
-      justifyContent: "center",
-      alignItems: "center",
-      padding: 20,
-    },
-    calContainer: {
-      width: "100%",
-      maxWidth: 360,
-      backgroundColor: C.backgroundCard,
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: C.border,
-      padding: 20,
-    },
-    calHeader: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 12,
-    },
-    calTitle: {
-      color: C.textPrimary,
-      fontSize: 16,
-      fontWeight: "700",
-    },
-    calNav: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: 12,
-    },
-    calMonthLabel: {
-      color: C.textPrimary,
-      fontSize: 15,
-      fontWeight: "700",
-    },
-    calWeekRow: {
-      flexDirection: "row",
-      marginBottom: 6,
-    },
-    calWeekday: {
-      flex: 1,
-      textAlign: "center",
-      color: C.textMuted,
-      fontSize: 12,
-      fontWeight: "600",
-    },
-    calGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-    },
-    calCell: {
-      width: `${100 / 7}%`,
-      aspectRatio: 1,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    calDay: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    calDaySelected: {
-      backgroundColor: C.primary,
-    },
-    calDayText: {
-      color: C.textPrimary,
-      fontSize: 13,
-    },
-    calDayTextDisabled: {
-      color: C.textMuted,
-      opacity: 0.4,
-    },
-    calDayTextSelected: {
-      color: "#fff",
-      fontWeight: "700",
     },
   });

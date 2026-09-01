@@ -265,11 +265,23 @@ service cloud.firestore {
         && request.auth.uid == request.resource.data.estudianteId
         && request.resource.data.estado == 'tomado';
       // Cancelar: el dueño o su universidad. Nunca se reasigna a otro alumno.
+      // 🆕 La EMPRESA dueña puede fijar/editar SOLO el día de presentación del
+      //    estudiante (`fechaPresentacion` — el "Día 1" desde el que se cuentan
+      //    sus horas). El `hasOnly` impide que toque estado/horario/etc.
       allow update: if request.auth != null
-        && (request.auth.uid == resource.data.estudianteId
-            || request.auth.uid == resource.data.universidadId
-            || esAdmin())
-        && request.resource.data.estudianteId == resource.data.estudianteId;
+        && (
+          (
+            (request.auth.uid == resource.data.estudianteId
+              || request.auth.uid == resource.data.universidadId
+              || esAdmin())
+            && request.resource.data.estudianteId == resource.data.estudianteId
+          )
+          || (
+            request.auth.uid == resource.data.empresaId
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['fechaPresentacion', 'fechaPresentacionAt'])
+          )
+        );
       allow delete: if esAdmin();
     }
 

@@ -5,6 +5,16 @@ import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from "react-nat
 import { AutoText as Text } from "./AutoText";
 import { db } from "../config/firebaseConfig";
 import { FONTS, useTheme, type GradlyColors } from "../context/ThemeContext";
+import FechaPresentacionModal from "./FechaPresentacionModal";
+import type { AsignacionCupo } from "../services/reclamoCuposService";
+
+/** "2026-09-03" → "3 sep" (o "" si no parsea). */
+function fechaCorta(iso?: string | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? "").trim());
+  if (!m) return "";
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString("es-SV", { day: "numeric", month: "short" });
+}
 
 /**
  * Candidatos que ya ocupan un cupo de esta vacante, con conteo y lista.
@@ -26,6 +36,7 @@ import { FONTS, useTheme, type GradlyColors } from "../context/ThemeContext";
 export default function CandidatosVacante({
   vacanteId,
   empresaId,
+  empresaNombre,
   categoria,
   cupos,
   onVerPerfil,
@@ -40,6 +51,9 @@ export default function CandidatosVacante({
    * lectura falla con `permission-denied`, no solo devuelve de más.
    */
   empresaId: string;
+  /** Nombre de la empresa dueña — para abrir el chat con el estudiante desde
+   *  el modal de "primer día". */
+  empresaNombre: string;
   categoria?: "pasantia" | "vacante";
   /** Total de cupos declarado. `null`/ausente = vacante legada, sin total conocido. */
   cupos?: number | null;
@@ -50,6 +64,8 @@ export default function CandidatosVacante({
 
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [cargando, setCargando] = useState(true);
+  // Modal de "primer día" (solo para pasantías de cupo, que tienen asignación).
+  const [asignSel, setAsignSel] = useState<AsignacionCupo | null>(null);
 
   useEffect(() => {
     if (!vacanteId || !empresaId) return;
@@ -72,10 +88,14 @@ export default function CandidatosVacante({
       }
     }
 
-    async function armarCandidatos(estudianteIds: string[]) {
-      const unicos = Array.from(new Set(estudianteIds.filter(Boolean)));
+    async function armarCandidatos(entradas: { estudianteId: string; asignacion?: AsignacionCupo }[]) {
+      // Dedup por estudianteId (por si acaso), conservando la asignación.
+      const porId = new Map<string, AsignacionCupo | undefined>();
+      for (const e of entradas) {
+        if (e.estudianteId && !porId.has(e.estudianteId)) porId.set(e.estudianteId, e.asignacion);
+      }
       const resueltos = await Promise.all(
-        unicos.map(async (id): Promise<Candidato | null> => {
+        Array.from(porId.entries()).map(async ([id, asignacion]): Promise<Candidato | null> => {
           try {
             const snap = await getDoc(doc(db, "perfiles_estudiantes", id));
             if (!snap.exists()) return null;
@@ -92,6 +112,7 @@ export default function CandidatosVacante({
               // perfiles guardados antes del cambio de nombre municipio→distrito.
               distrito: d.distrito || d.municipio || "",
               universidadNombre: await resolverUniversidad(d.universidad_id),
+              asignacion,
             };
           } catch {
             return null;
@@ -126,11 +147,14 @@ export default function CandidatosVacante({
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const ids =
+        const entradas =
           categoria === "pasantia"
-            ? snap.docs.map((d) => (d.data() as any).estudianteId)
-            : snap.docs.map((d) => (d.data() as any).estudiante_id);
-        void armarCandidatos(ids);
+            ? snap.docs.map((d) => ({
+                estudianteId: (d.data() as any).estudianteId,
+                asignacion: { id: d.id, ...d.data() } as AsignacionCupo,
+              }))
+            : snap.docs.map((d) => ({ estudianteId: (d.data() as any).estudiante_id }));
+        void armarCandidatos(entradas);
       },
       () => {
         if (!cancelado) setCargando(false);
@@ -171,37 +195,54 @@ export default function CandidatosVacante({
         <Text style={s.vacio}>Todavía no hay candidatos admitidos.</Text>
       ) : (
         <View style={s.lista}>
-          {candidatos.map((c) => (
-            <TouchableOpacity
-              key={c.estudianteId}
-              style={s.fila}
-              onPress={() => onVerPerfil(c.estudianteId)}
-              activeOpacity={0.7}
-            >
-              <View style={s.avatarFallback}>
-                <Ionicons name="person" size={16} color={colors.primaryLight} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.nombre} numberOfLines={1}>{c.nombre}</Text>
-                {!!c.correo && (
-                  <Text style={s.detalle} numberOfLines={1}>{c.correo}</Text>
-                )}
-                <Text style={s.detalle} numberOfLines={1}>
-                  {c.departamento || c.distrito
-                    ? [c.departamento, c.distrito].filter(Boolean).join(", ")
-                    : "Dirección no especificada"}
-                </Text>
-                {!!c.universidadNombre && (
-                  <Text style={s.universidad} numberOfLines={1} noTranslate>
-                    {c.universidadNombre}
+          {candidatos.map((c) => {
+            const primerDia = c.asignacion ? fechaCorta(c.asignacion.fechaPresentacion) : "";
+            return (
+              <TouchableOpacity
+                key={c.estudianteId}
+                style={s.fila}
+                onPress={() => (c.asignacion ? setAsignSel(c.asignacion) : onVerPerfil(c.estudianteId))}
+                activeOpacity={0.7}
+              >
+                <View style={s.avatarFallback}>
+                  <Ionicons name="person" size={16} color={colors.primaryLight} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.nombre} numberOfLines={1}>{c.nombre}</Text>
+                  {!!c.correo && (
+                    <Text style={s.detalle} numberOfLines={1}>{c.correo}</Text>
+                  )}
+                  <Text style={s.detalle} numberOfLines={1}>
+                    {c.departamento || c.distrito
+                      ? [c.departamento, c.distrito].filter(Boolean).join(", ")
+                      : "Dirección no especificada"}
                   </Text>
-                )}
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-          ))}
+                  {!!c.universidadNombre && (
+                    <Text style={s.universidad} numberOfLines={1} noTranslate>
+                      {c.universidadNombre}
+                    </Text>
+                  )}
+                  {!!c.asignacion && (
+                    <Text style={[s.primerDia, primerDia && { color: colors.success }]}>
+                      {primerDia ? `Primer día: ${primerDia}` : "Primer día: por definir"}
+                    </Text>
+                  )}
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
+
+      <FechaPresentacionModal
+        visible={!!asignSel}
+        asignacion={asignSel}
+        empresaId={empresaId}
+        empresaNombre={empresaNombre}
+        onClose={() => setAsignSel(null)}
+        onVerPerfil={onVerPerfil}
+      />
     </View>
   );
 }
@@ -213,6 +254,8 @@ interface Candidato {
   departamento: string;
   distrito: string;
   universidadNombre: string;
+  /** Solo en pasantías de cupo: la asignación, para fijar su "primer día". */
+  asignacion?: AsignacionCupo;
 }
 
 const makeStyles = (COLORS: GradlyColors) =>
@@ -254,4 +297,5 @@ const makeStyles = (COLORS: GradlyColors) =>
     nombre: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
     detalle: { fontSize: 11.5, color: COLORS.textMuted, marginTop: 1 },
     universidad: { fontSize: 11.5, color: COLORS.primaryLight, marginTop: 2, fontFamily: FONTS.interSemiBold },
+    primerDia: { fontSize: 11.5, color: COLORS.textMuted, marginTop: 3, fontFamily: FONTS.interSemiBold },
   });

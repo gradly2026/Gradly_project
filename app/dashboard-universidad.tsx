@@ -75,6 +75,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import FloatingTopBar from '../src/components/FloatingTopBar';
+import AvisosGate from '../src/components/AvisosGate';
 import SalirSesionModal from '../src/components/SalirSesionModal';
 import PeriodoPracticasField, {
   PERIODO_VACIO,
@@ -1057,6 +1058,9 @@ export default function DashboardUniversidad() {
         <FloatingTopBar userId={user?.uid} />
       )}
 
+      {/* ── AVISOS AL INICIAR SESIÓN (estudiantes que se inscribieron a un cupo) ── */}
+      <AvisosGate />
+
       {/* ── BÚSQUEDA FLOTANTE (oculta en "Mis Estudiantes", "Mi Perfil" y "Mensajes") ── */}
       {seccion !== 'estudiantes' && seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
 
@@ -1290,6 +1294,27 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
         setGrupos(lista);
       },
       error => console.warn('Error en listener (grupos):', error),
+    );
+    return unsub;
+  }, [uid]);
+
+  // ── Inscripciones de cupo activas de esta universidad (para el libro mayor
+  //    de horas por estudiante — Fase D). ──
+  const [asignPorEstudiante, setAsignPorEstudiante] = useState<Record<string, any>>({});
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = onSnapshot(
+      query(
+        collection(db, 'asignaciones_cupo'),
+        where('universidadId', '==', uid),
+        where('estado', '==', 'tomado'),
+      ),
+      snap => {
+        const map: Record<string, any> = {};
+        snap.docs.forEach(d => { map[(d.data() as any).estudianteId] = { id: d.id, ...d.data() }; });
+        setAsignPorEstudiante(map);
+      },
+      error => console.warn('Error en listener (asignaciones universidad):', error),
     );
     return unsub;
   }, [uid]);
@@ -1617,9 +1642,11 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
     // (agrega un "0" adelante si hace falta: "5" → "05") — necesario
     // porque d.getMonth() devuelve 0-11 (enero es 0) y d.getDate() podría
     // dar un solo dígito para los primeros 9 días del mes.
-    // En modo 'horas' las horas son explícitas; en modos por fecha/ciclos no
-    // medimos en horas (0 → el perfil del estudiante usa el objetivo por defecto).
-    const horasGrupo = periodo.modo === 'horas' ? periodo.horas ?? 0 : 0;
+    // Ambos modos ('horas' y 'ciclos') producen ahora un total de horas: en
+    // 'horas' lo escribe el usuario; en 'ciclos' se deriva de ciclos ×
+    // HORAS_POR_CICLO (editable). Es la META de horas del grupo — el avance por
+    // estudiante se calcula desde su fecha de presentación (ver Fase D).
+    const horasGrupo = periodo.horas ?? 0;
 
     try {
       // 1) Guardamos el grupo y obtenemos su ID.

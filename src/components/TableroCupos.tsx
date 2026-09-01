@@ -7,9 +7,9 @@ import { showAlert, showConfirm } from './AppAlert';
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { textoHorario } from '../data/disponibilidad';
+import { useReclamosUniversidad } from '../hooks/useReclamosUniversidad';
 import {
   COLECCION_ASIGNACIONES,
-  COLECCION_RECLAMOS,
   cancelarCupo,
   tomarCupo,
   type AsignacionCupo,
@@ -47,7 +47,8 @@ export default function TableroCupos({
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const [reclamos, setReclamos] = useState<ReclamoCupos[]>([]);
+  // Cupos reservados por su universidad (listener compartido con el feed).
+  const reclamos = useReclamosUniversidad(universidadId);
   const [asignacion, setAsignacion] = useState<AsignacionCupo | null>(null);
   const [tomando, setTomando] = useState<string | null>(null);
   // Tick de 1 min para que el contador de tiempo restante avance sin recargar.
@@ -57,17 +58,6 @@ export default function TableroCupos({
     const t = setInterval(() => setAhora(Date.now()), 60000);
     return () => clearInterval(t);
   }, []);
-
-  // Cupos reservados por su universidad.
-  useEffect(() => {
-    if (!universidadId) return;
-    const unsub = onSnapshot(
-      query(collection(db, COLECCION_RECLAMOS), where('universidadId', '==', universidadId)),
-      snap => setReclamos(snap.docs.map(d => ({ id: d.id, ...d.data() } as ReclamoCupos))),
-      e => console.warn('Error en listener (tablero cupos):', e),
-    );
-    return unsub;
-  }, [universidadId]);
 
   // ¿Ya tomó un cupo?
   useEffect(() => {
@@ -86,13 +76,24 @@ export default function TableroCupos({
     return unsub;
   }, [estudianteId]);
 
+  const paraMiGrupo = (r: ReclamoCupos) => !r.grupoId || r.grupoId === grupoId;
+
   /** Ofertas vigentes para este alumno: las de su grupo o las sin grupo fijado. */
   const disponibles = useMemo(
     () => reclamos
-      .filter(r => !r.grupoId || r.grupoId === grupoId)
+      .filter(paraMiGrupo)
       .filter(r => sePuedeTomar(r, ahora)),
     [reclamos, grupoId, ahora],
   );
+
+  // Reservas de su universidad que existen pero que este alumno NO puede tomar
+  // ahora: para su grupo pero vencidas/agotadas, o dirigidas a otro grupo.
+  // Sirve para no dejar la pantalla en blanco cuando la universidad SÍ reservó
+  // algo (antes el tablero simplemente no se dibujaba y parecía que no había
+  // pasado nada).
+  const activos = reclamos.filter(r => r.estado === 'pendiente' || r.estado === 'aceptado');
+  const reservaMiGrupoNoDisponible = activos.some(r => paraMiGrupo(r) && !disponibles.includes(r));
+  const reservaOtroGrupo = activos.some(r => !paraMiGrupo(r));
 
   const elegir = async (r: ReclamoCupos) => {
     setTomando(r.id);
@@ -152,8 +153,27 @@ export default function TableroCupos({
     );
   }
 
-  // Sin ofertas vigentes no se ocupa espacio en la pantalla.
-  if (disponibles.length === 0) return null;
+  // Sin ofertas vigentes: si la universidad igual reservó algo (para otro grupo,
+  // o para el suyo pero ya vencido/agotado), se explica en una línea en vez de
+  // no dibujar nada. Si no hay ninguna reserva, el tablero no ocupa espacio.
+  if (disponibles.length === 0) {
+    if (!reservaMiGrupoNoDisponible && !reservaOtroGrupo) return null;
+    return (
+      <View style={s.wrap}>
+        <Text style={s.heading}>Cupos de tu universidad</Text>
+        <View style={s.card}>
+          <View style={s.rowTop}>
+            <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} />
+            <Text style={[s.sub, { flex: 1 }]}>
+              {reservaMiGrupoNoDisponible
+                ? 'Tu universidad reservó cupos para tu grupo, pero el plazo para elegir venció o tus compañeros ya los tomaron. Puedes buscar una pasantía por tu cuenta más abajo.'
+                : 'Tu universidad tiene cupos reservados, pero asignados a otros grupos. Puedes buscar una pasantía por tu cuenta más abajo.'}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   // ── Tablero de selección ─────────────────────────────────────────
   return (
