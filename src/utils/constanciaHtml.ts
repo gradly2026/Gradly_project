@@ -1,9 +1,9 @@
 // ════════════════════════════════════════════════════════════════════════
-// constanciaHtml.ts — HTML de una página para la CONSTANCIA DE FINALIZACIÓN
-// de una pasantía por cupo. Se lo pasa a `expo-print` (Print.printAsync /
-// printToFileAsync) para que la empresa la descargue/imprima como PDF.
+// constanciaHtml.ts — HTML de la CONSTANCIA DE FINALIZACIÓN de una pasantía
+// por cupo, con formato de documento formal (carta membretada). Se lo pasa a
+// `expo-print` (Print.printAsync) para descargarla/imprimirla como PDF.
 //
-// Es solo presentación: los datos salen de `construirDatosConstancia`
+// Solo presentación: los datos salen de `construirDatosConstancia`
 // (comprobanteService.ts) y ya están en la BD cuando se envía.
 // ════════════════════════════════════════════════════════════════════════
 
@@ -23,58 +23,82 @@ export function fmtFechaLarga(iso: string): string {
   return `${d} de ${MESES[m - 1]} de ${y}`;
 }
 
-function escapeHtml(s: unknown): string {
+function esc(s: unknown): string {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string),
   );
 }
 
-/** HTML A4 de la constancia de finalización de pasantía. */
-export function constanciaHtml(
-  d: DatosConstancia,
-  extra?: { area?: string; supervisor?: string },
-): string {
+export interface ConstanciaExtra {
+  area?: string;
+  supervisor?: string;
+  nota?: string;
+}
+
+/** HTML A4 de la constancia de finalización de pasantía (documento formal). */
+export function constanciaHtml(d: DatosConstancia, extra?: ConstanciaExtra): string {
   const hoy = fmtFechaLarga(new Date().toISOString().slice(0, 10));
   const horario = textoHorario(d.horario as any) || '';
   const area = extra?.area?.trim();
   const supervisor = extra?.supervisor?.trim();
+  const nota = extra?.nota?.trim();
+  const empresa = esc(d.empresaNombre || 'La empresa');
+
+  const fila = (k: string, v: string) =>
+    `<tr><td class="k">${esc(k)}</td><td class="v">${esc(v)}</td></tr>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-    * { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1b1430; box-sizing: border-box; }
-    body { margin: 0; padding: 56px 60px; }
-    .brand { font-size: 12px; letter-spacing: 2px; color: #6b7280; font-weight: 700; }
-    h1 { font-size: 21px; margin: 26px 0 6px; text-align: center; letter-spacing: 1px; }
-    .rule { height: 3px; background: #8b5cf6; width: 68px; margin: 0 auto 30px; border-radius: 2px; }
-    p { font-size: 14px; line-height: 1.9; text-align: justify; }
-    .datos { margin: 22px 0; font-size: 14px; line-height: 2; }
-    .datos b { display: inline-block; min-width: 180px; color: #6b7280; font-weight: 600; }
-    .firma { margin-top: 66px; text-align: center; font-size: 13px; }
-    .firma .linea { border-top: 1px solid #1b1430; width: 240px; margin: 0 auto 6px; }
-    .pie { margin-top: 44px; font-size: 11px; color: #9ca3af; text-align: center; }
+    @page { size: A4; margin: 26mm 24mm 22mm; }
+    * { font-family: 'Times New Roman', Georgia, serif; color: #14121c; box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    .pagenum { position: fixed; bottom: 8mm; right: 0; font: 10pt Arial, sans-serif; color: #666; }
+    h1 { font-size: 15pt; text-align: center; text-transform: uppercase; letter-spacing: .6px; margin: 0 0 3pt; }
+    .brand { text-align: center; font: 700 9.5pt Arial, sans-serif; letter-spacing: 3px; color: #6b7280; margin-bottom: 30pt; }
+    .lugar { font-size: 11pt; margin-bottom: 18pt; }
+    p { font-size: 12pt; line-height: 1.85; text-align: justify; margin: 0 0 14pt; }
+    .detalle { margin: 6pt 0 16pt; }
+    .detalle .lbl { font-size: 11.5pt; font-weight: bold; margin-bottom: 6pt; }
+    table.d { border-collapse: collapse; font-size: 11.5pt; }
+    table.d td { padding: 3.5pt 0; vertical-align: top; }
+    table.d td.k { color: #555; padding-right: 18pt; white-space: nowrap; }
+    .firma { margin-top: 54pt; text-align: center; font-size: 11pt; }
+    .firma .line { border-top: 1px solid #14121c; width: 62mm; margin: 0 auto 6pt; }
+    .firma .name { font-weight: bold; }
   </style></head><body>
-    <div class="brand">CONSTANCIA &middot; GRADLY</div>
-    <h1>CONSTANCIA DE FINALIZACIÓN DE PASANTÍA</h1>
-    <div class="rule"></div>
-    <p>Por medio de la presente, <b>${escapeHtml(d.empresaNombre || 'la empresa')}</b> hace constar que
-    el/la estudiante <b>${escapeHtml(d.estudianteNombre || '—')}</b>${d.carrera ? `, de la carrera de ${escapeHtml(d.carrera)}` : ''},
-    de <b>${escapeHtml(d.universidadNombre || 'su universidad')}</b>, realizó y <b>culminó satisfactoriamente</b>
-    su pasantía / práctica profesional en nuestra organización${d.vacanteTitulo ? ` desempeñándose como <b>${escapeHtml(d.vacanteTitulo)}</b>` : ''}.</p>
-    <div class="datos">
-      <div><b>Período:</b> del ${fmtFechaLarga(d.fechaInicio)} al ${fmtFechaLarga(d.fechaFin)}</div>
-      <div><b>Total de horas cumplidas:</b> ${escapeHtml(d.horasCumplidas)} horas</div>
-      ${horario ? `<div><b>Horario:</b> ${escapeHtml(horario)}</div>` : ''}
-      ${area ? `<div><b>Área / departamento:</b> ${escapeHtml(area)}</div>` : ''}
-      ${supervisor ? `<div><b>Supervisor:</b> ${escapeHtml(supervisor)}</div>` : ''}
+    <h1>Constancia de finalización de pasantía</h1>
+    <div class="brand">GRADLY</div>
+
+    <div class="lugar">San Salvador, El Salvador, a ${hoy}.</div>
+
+    <p>Por medio de la presente, <b>${empresa}</b> hace constar que el/la estudiante
+    <b>${esc(d.estudianteNombre || '—')}</b>${d.carrera ? `, de la carrera de ${esc(d.carrera)}` : ''}, de
+    <b>${esc(d.universidadNombre || 'su universidad')}</b>, realizó y <b>culminó satisfactoriamente</b> su
+    pasantía o práctica profesional en nuestra organización${d.vacanteTitulo ? `, desempeñándose como <b>${esc(d.vacanteTitulo)}</b>` : ''}.</p>
+
+    <div class="detalle">
+      <div class="lbl">Detalle de la práctica</div>
+      <table class="d">
+        ${fila('Período', `del ${fmtFechaLarga(d.fechaInicio)} al ${fmtFechaLarga(d.fechaFin)}`)}
+        ${fila('Total de horas cumplidas', `${d.horasCumplidas} horas`)}
+        ${horario ? fila('Horario', horario) : ''}
+        ${area ? fila('Área o departamento', area) : ''}
+        ${supervisor ? fila('Supervisor', supervisor) : ''}
+      </table>
     </div>
-    <p>El/la estudiante cumplió con las horas y compromisos establecidos para su práctica. Se extiende la
-    presente a solicitud de la parte interesada, para los fines académicos que estime convenientes, y se agradece
-    a la universidad por el vínculo entre la academia y el mundo laboral.</p>
+
+    ${nota ? `<p>${esc(nota)}</p>` : ''}
+
+    <p>El/la estudiante cumplió con las horas y los compromisos establecidos para su práctica. Se
+    extiende la presente a solicitud de la parte interesada, para los fines académicos que estime
+    convenientes.</p>
+
     <div class="firma">
-      <div class="linea"></div>
-      ${escapeHtml(d.empresaNombre || 'La empresa')}<br/>
-      ${supervisor ? escapeHtml(supervisor) + '<br/>' : ''}
-      ${hoy}
+      <div class="line"></div>
+      <div class="name">${empresa}</div>
+      ${supervisor ? `<div>${esc(supervisor)}</div>` : ''}
+      <div>${hoy}</div>
     </div>
-    <div class="pie">Documento generado por Gradly &middot; El Salvador &middot; ${hoy}</div>
+
+    <div class="pagenum">1</div>
   </body></html>`;
 }

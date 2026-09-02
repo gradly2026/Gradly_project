@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import { doc, getDoc } from 'firebase/firestore';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Print from 'expo-print';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { db } from '../config/firebaseConfig';
 import { textoHorario } from '../data/disponibilidad';
 import {
   construirDatosConstancia,
@@ -25,6 +27,11 @@ const C = {
   muted: 'rgba(255,255,255,0.40)',
   accent: '#8b5cf6',
   green: '#34d399',
+  // Colores del "papel" (documento formal).
+  paper: '#fbfaf7',
+  ink: '#1b1730',
+  inkSub: '#5b5570',
+  hair: 'rgba(27,23,48,0.14)',
 };
 
 const toISO = (d: Date | null): string => (d ? d.toISOString().slice(0, 10) : '');
@@ -37,29 +44,12 @@ interface Props {
 
 /**
  * Pantalla de la EMPRESA para generar y enviar el comprobante de finalización
- * de una pasantía por cupo. Muestra la constancia auto-generada con los datos
- * de la BD; la empresa puede descargarla como PDF, adjuntar su propia versión
- * en papel membretado, y enviarla a la universidad para que la valide.
+ * de una pasantía por cupo. Muestra la constancia con formato de documento
+ * formal (los datos salen de la BD); la empresa puede completar área/supervisor,
+ * descargarla como PDF, adjuntar su propia versión en papel membretado, y
+ * enviarla a la universidad para que la valide.
  */
 export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) {
-  const prog = useMemo(
-    () =>
-      progresoPorMeta(
-        asignacion.horario,
-        asignacion.fechaPresentacion ?? '',
-        asignacion.horasCumplidas ?? 0,
-      ),
-    [asignacion],
-  );
-
-  const datos = useMemo(() => {
-    const horas = asignacion.horasCumplidas ?? prog.meta ?? 0;
-    return construirDatosConstancia(asignacion, {
-      fechaFin: toISO(prog.fechaFin),
-      horasCumplidas: horas,
-    });
-  }, [asignacion, prog]);
-
   const [area, setArea] = useState('');
   const [supervisor, setSupervisor] = useState('');
   const [nota, setNota] = useState('');
@@ -67,9 +57,74 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
   const [subiendo, setSubiendo] = useState(false);
   const [enviando, setEnviando] = useState(false);
 
+  // ── Meta de horas del grupo + nombre de la universidad ──
+  // El total lo define el GRUPO (`horasRequeridas`/`total_horas`), no la
+  // asignación: si el cupo se cerró sin escribir `horasCumplidas`, hay que
+  // leerlo del grupo o el comprobante saldría con "0 h".
+  const [metaGrupo, setMetaGrupo] = useState<number | null>(null);
+  const [uniNombre, setUniNombre] = useState('');
+  const [cargandoDatos, setCargandoDatos] = useState(true);
+
+  useEffect(() => {
+    let cancel = false;
+    setCargandoDatos(true);
+    (async () => {
+      const tareas: Promise<any>[] = [];
+      if (asignacion.grupoId) {
+        tareas.push(
+          getDoc(doc(db, 'grupos', asignacion.grupoId))
+            .then(g => {
+              if (cancel) return;
+              const dd = g.exists() ? (g.data() as any) : {};
+              const h = Number(dd.horasRequeridas ?? dd.total_horas ?? 0);
+              setMetaGrupo(Number.isFinite(h) && h > 0 ? Math.round(h) : null);
+            })
+            .catch(() => { if (!cancel) setMetaGrupo(null); }),
+        );
+      } else {
+        setMetaGrupo(null);
+      }
+      if (asignacion.universidadId) {
+        tareas.push(
+          getDoc(doc(db, 'perfiles_universidades', asignacion.universidadId))
+            .then(u => { if (!cancel) setUniNombre((u.data() as any)?.nombre_universidad ?? ''); })
+            .catch(() => { if (!cancel) setUniNombre(''); }),
+        );
+      }
+      await Promise.allSettled(tareas);
+      if (!cancel) setCargandoDatos(false);
+    })();
+    return () => { cancel = true; };
+  }, [asignacion.grupoId, asignacion.universidadId]);
+
+  // Horas de la práctica: lo cumplido guardado, o la meta del grupo (quien
+  // culminó por horas cumplió exactamente la meta).
+  const horas = Math.round(
+    Number(asignacion.horasCumplidas) > 0
+      ? Number(asignacion.horasCumplidas)
+      : Number(metaGrupo) || 0,
+  );
+
+  const prog = useMemo(
+    () => progresoPorMeta(asignacion.horario, asignacion.fechaPresentacion ?? '', horas),
+    [asignacion, horas],
+  );
+
+  const datos = useMemo(
+    () =>
+      construirDatosConstancia(asignacion, {
+        fechaFin: toISO(prog.fechaFin),
+        horasCumplidas: horas,
+        universidadNombre: uniNombre,
+      }),
+    [asignacion, prog, horas, uniNombre],
+  );
+
+  const listoParaEnviar = !cargandoDatos && horas > 0 && !enviando && !subiendo;
+
   const verPdf = async () => {
     try {
-      await Print.printAsync({ html: constanciaHtml(datos, { area, supervisor }) });
+      await Print.printAsync({ html: constanciaHtml(datos, { area, supervisor, nota }) });
     } catch (e: any) {
       showAlert('No se pudo generar el PDF', e?.message ?? 'Inténtalo de nuevo.');
     }
@@ -93,15 +148,10 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
   };
 
   const enviar = async () => {
-    if (enviando) return;
+    if (!listoParaEnviar) return;
     setEnviando(true);
     try {
-      await enviarComprobante(datos, {
-        archivoUrl,
-        notaEmpresa: nota,
-        area,
-        supervisor,
-      });
+      await enviarComprobante(datos, { archivoUrl, notaEmpresa: nota, area, supervisor });
       showAlert(
         'Comprobante enviado',
         'Tu universidad ya puede revisarlo y validarlo. Al validarlo, el proceso queda 100% culminado.',
@@ -113,41 +163,72 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
     }
   };
 
-  const horario = textoHorario(asignacion.horario) || '—';
+  const horario = textoHorario(asignacion.horario) || '';
+  const hoy = fmtFechaLarga(new Date().toISOString().slice(0, 10));
+  const empresa = datos.empresaNombre || 'La empresa';
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onListo}>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.headerBadge}>
-            <Ionicons name="document-text" size={18} color={C.accent} />
+            <Ionicons name="document-text" size={16} color={C.accent} />
             <Text style={styles.headerBadgeText}>Comprobante de finalización</Text>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Text style={styles.titulo} noTranslate>
-              {datos.estudianteNombre || 'Estudiante'}
-            </Text>
-            <Text style={styles.sub}>
-              Revisa la constancia. Puedes enviarla tal cual o adjuntar tu propio PDF en papel
-              membretado.
-            </Text>
+            {/* ── El "papel": constancia con formato de documento formal ── */}
+            <View style={styles.paper}>
+              <Text style={styles.pTitulo}>Constancia de finalización de pasantía</Text>
+              <Text style={styles.pBrand}>GRADLY</Text>
+              <View style={styles.pRule} />
 
-            {/* Vista previa de la constancia */}
-            <View style={styles.preview}>
-              <Text style={styles.pvBrand}>CONSTANCIA · GRADLY</Text>
-              <Text style={styles.pvTitle}>Constancia de finalización de pasantía</Text>
-              <Row k="Estudiante" v={datos.estudianteNombre || '—'} />
-              {!!datos.carrera && <Row k="Carrera" v={datos.carrera} />}
-              <Row k="Empresa" v={datos.empresaNombre || '—'} />
-              {!!datos.vacanteTitulo && <Row k="Rol" v={datos.vacanteTitulo} />}
-              <Row k="Período" v={`${fmtFechaLarga(datos.fechaInicio)} — ${fmtFechaLarga(datos.fechaFin)}`} />
-              <Row k="Horas cumplidas" v={`${datos.horasCumplidas} h`} />
-              <Row k="Horario" v={horario} />
+              <Text style={styles.pLugar} noTranslate>
+                San Salvador, El Salvador, a {hoy}.
+              </Text>
+
+              <Text style={styles.pBody}>
+                Por medio de la presente,{' '}
+                <Text style={styles.pStrong} noTranslate>{empresa}</Text> hace constar que el/la
+                estudiante <Text style={styles.pStrong} noTranslate>{datos.estudianteNombre || '—'}</Text>
+                {datos.carrera ? (
+                  <Text noTranslate>, de la carrera de {datos.carrera}</Text>
+                ) : null}
+                , de <Text style={styles.pStrong} noTranslate>{datos.universidadNombre || 'su universidad'}</Text>,
+                realizó y culminó satisfactoriamente su pasantía o práctica profesional en nuestra
+                organización
+                {datos.vacanteTitulo ? (
+                  <Text noTranslate>, desempeñándose como {datos.vacanteTitulo}</Text>
+                ) : null}
+                .
+              </Text>
+
+              <Text style={styles.pSubtitulo}>Detalle de la práctica</Text>
+              <PRow k="Período" v={`${fmtFechaLarga(datos.fechaInicio)} — ${fmtFechaLarga(datos.fechaFin)}`} />
+              <PRow k="Total de horas cumplidas" v={cargandoDatos && horas === 0 ? 'Calculando…' : `${horas} horas`} />
+              {!!horario && <PRow k="Horario" v={horario} />}
+              {!!area.trim() && <PRow k="Área o departamento" v={area.trim()} />}
+              {!!supervisor.trim() && <PRow k="Supervisor" v={supervisor.trim()} />}
+
+              {!!nota.trim() && <Text style={[styles.pBody, { marginTop: 12 }]} noTranslate>{nota.trim()}</Text>}
+
+              <Text style={[styles.pBody, { marginTop: 12 }]}>
+                El/la estudiante cumplió con las horas y los compromisos establecidos para su
+                práctica. Se extiende la presente a solicitud de la parte interesada, para los fines
+                académicos que estime convenientes.
+              </Text>
+
+              <View style={styles.pFirma}>
+                <View style={styles.pFirmaLine} />
+                <Text style={styles.pFirmaName} noTranslate>{empresa}</Text>
+                {!!supervisor.trim() && <Text style={styles.pFirmaSub} noTranslate>{supervisor.trim()}</Text>}
+                <Text style={styles.pFirmaSub} noTranslate>{hoy}</Text>
+              </View>
             </View>
 
-            {/* Campos opcionales */}
-            <Text style={styles.label}>Área / departamento (opcional)</Text>
+            {/* ── Campos que la empresa completa ── */}
+            <Text style={styles.seccion}>Completa la constancia (opcional)</Text>
+            <Text style={styles.label}>Área o departamento</Text>
             <TextInput
               style={styles.input}
               value={area}
@@ -155,7 +236,7 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
               placeholder="Ej. Desarrollo de software"
               placeholderTextColor={C.muted}
             />
-            <Text style={styles.label}>Supervisor (opcional)</Text>
+            <Text style={styles.label}>Supervisor</Text>
             <TextInput
               style={styles.input}
               value={supervisor}
@@ -163,9 +244,9 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
               placeholder="Nombre de quien acompañó al estudiante"
               placeholderTextColor={C.muted}
             />
-            <Text style={styles.label}>Nota para la universidad (opcional)</Text>
+            <Text style={styles.label}>Nota para la universidad</Text>
             <TextInput
-              style={[styles.input, { minHeight: 64, textAlignVertical: 'top' }]}
+              style={[styles.input, { minHeight: 68, textAlignVertical: 'top' }]}
               value={nota}
               onChangeText={setNota}
               placeholder="Comentario breve sobre el desempeño"
@@ -173,7 +254,7 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
               multiline
             />
 
-            {/* Acciones de documento */}
+            {/* ── Documento ── */}
             <View style={styles.docRow}>
               <TouchableOpacity style={styles.docBtn} onPress={verPdf} activeOpacity={0.85}>
                 <Ionicons name="download-outline" size={16} color={C.text} />
@@ -200,9 +281,9 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
             ) : null}
 
             <TouchableOpacity
-              style={[styles.enviarBtn, enviando && { opacity: 0.5 }]}
+              style={[styles.enviarBtn, !listoParaEnviar && { opacity: 0.5 }]}
               onPress={enviar}
-              disabled={enviando}
+              disabled={!listoParaEnviar}
               activeOpacity={0.9}
             >
               {enviando ? (
@@ -214,6 +295,12 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
                 </>
               )}
             </TouchableOpacity>
+            {!cargandoDatos && horas === 0 ? (
+              <Text style={styles.hint}>
+                No se pudieron calcular las horas de la práctica. Revisa el grupo del estudiante
+                antes de enviar.
+              </Text>
+            ) : null}
             <TouchableOpacity style={styles.laterBtn} onPress={onListo} activeOpacity={0.7}>
               <Text style={styles.laterText}>Enviar más tarde</Text>
             </TouchableOpacity>
@@ -224,24 +311,24 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
   );
 }
 
-function Row({ k, v }: { k: string; v: string }) {
+function PRow({ k, v }: { k: string; v: string }) {
   return (
-    <View style={styles.pvRow}>
-      <Text style={styles.pvK}>{k}</Text>
-      <Text style={styles.pvV} noTranslate>{v}</Text>
+    <View style={styles.pDetRow}>
+      <Text style={styles.pDetK}>{k}</Text>
+      <Text style={styles.pDetV} noTranslate>{v}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'center', padding: 18 },
+  overlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'center', padding: 16 },
   sheet: {
     backgroundColor: C.surface,
-    borderRadius: 24,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: C.border,
-    padding: 22,
-    maxHeight: '90%',
+    padding: 18,
+    maxHeight: '92%',
   },
   headerBadge: {
     flexDirection: 'row',
@@ -249,35 +336,67 @@ const styles = StyleSheet.create({
     gap: 8,
     alignSelf: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 14,
+    paddingVertical: 7,
+    borderRadius: 13,
     backgroundColor: 'rgba(139,92,246,0.12)',
     borderWidth: 1,
     borderColor: C.border,
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  headerBadgeText: { color: C.accent, fontSize: 13, fontWeight: '800' },
-  titulo: { color: C.text, fontSize: 18, fontWeight: '800', textAlign: 'center' },
-  sub: {
-    color: C.textSub,
-    fontSize: 12.5,
+  headerBadgeText: { color: C.accent, fontSize: 12.5, fontWeight: '800' },
+
+  // ── Papel ──
+  paper: {
+    backgroundColor: C.paper,
+    borderRadius: 6,
+    paddingVertical: 26,
+    paddingHorizontal: 24,
+    marginBottom: 18,
+  },
+  pTitulo: {
+    color: C.ink,
+    fontSize: 15,
+    fontWeight: '800',
     textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 16,
-    lineHeight: 18,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
-  preview: {
-    backgroundColor: '#f7f5ff',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
+  pBrand: {
+    color: C.inkSub,
+    fontSize: 9.5,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 3,
+    marginTop: 4,
   },
-  pvBrand: { color: '#6b7280', fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
-  pvTitle: { color: '#1b1430', fontSize: 15, fontWeight: '800', marginTop: 4, marginBottom: 10 },
-  pvRow: { flexDirection: 'row', marginTop: 5 },
-  pvK: { color: '#6b7280', fontSize: 12, fontWeight: '600', width: 118 },
-  pvV: { color: '#1b1430', fontSize: 12.5, fontWeight: '600', flex: 1 },
-  label: { color: C.text, fontSize: 13, fontWeight: '700', marginTop: 12, marginBottom: 6 },
+  pRule: {
+    height: 1,
+    backgroundColor: C.hair,
+    marginTop: 14,
+    marginBottom: 18,
+  },
+  pLugar: { color: C.ink, fontSize: 12.5, marginBottom: 14 },
+  pBody: { color: C.ink, fontSize: 12.5, lineHeight: 21, textAlign: 'justify' },
+  pStrong: { fontWeight: '800' },
+  pSubtitulo: { color: C.ink, fontSize: 12.5, fontWeight: '800', marginTop: 16, marginBottom: 6 },
+  pDetRow: { flexDirection: 'row', marginTop: 4 },
+  pDetK: { color: C.inkSub, fontSize: 12, width: 150 },
+  pDetV: { color: C.ink, fontSize: 12, fontWeight: '600', flex: 1 },
+  pFirma: { alignItems: 'center', marginTop: 40 },
+  pFirmaLine: { height: 1, backgroundColor: C.ink, width: 200, marginBottom: 6 },
+  pFirmaName: { color: C.ink, fontSize: 12, fontWeight: '800' },
+  pFirmaSub: { color: C.inkSub, fontSize: 11.5, marginTop: 2 },
+
+  // ── Campos ──
+  seccion: {
+    color: C.textSub,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  label: { color: C.text, fontSize: 12.5, fontWeight: '700', marginTop: 10, marginBottom: 5 },
   input: {
     backgroundColor: C.card,
     borderWidth: 1,
@@ -287,6 +406,7 @@ const styles = StyleSheet.create({
     color: C.text,
     fontSize: 13.5,
   },
+
   docRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
   docBtn: {
     flex: 1,
@@ -313,6 +433,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   enviarText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  hint: { color: C.muted, fontSize: 11.5, textAlign: 'center', marginTop: 10, lineHeight: 16 },
   laterBtn: { marginTop: 10, paddingVertical: 8, alignItems: 'center' },
   laterText: { color: C.muted, fontSize: 12.5, fontWeight: '700' },
 });

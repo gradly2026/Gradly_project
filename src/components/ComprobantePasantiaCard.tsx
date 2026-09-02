@@ -95,7 +95,11 @@ export default function ComprobantePasantiaCard({ rol, uid }: { rol: Rol; uid: s
         await Linking.openURL(comp.archivoUrl);
       } else {
         await Print.printAsync({
-          html: constanciaHtml(comp, { area: comp.area, supervisor: comp.supervisor }),
+          html: constanciaHtml(comp, {
+            area: comp.area,
+            supervisor: comp.supervisor,
+            nota: comp.notaEmpresa,
+          }),
         });
       }
     } catch (e: any) {

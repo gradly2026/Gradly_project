@@ -309,16 +309,14 @@ service cloud.firestore {
             || request.auth.uid == resource.data.universidadId
             || esAdmin());
 
-      // Lo crea la EMPRESA dueña de la asignación, ya culminada, en 'enviado'.
-      // Las partes del comprobante deben calzar con las de la asignación real.
+      // Lo crea la EMPRESA dueña de la asignación referenciada, en 'enviado'.
+      // Basta con que sea la empresa de esa asignación (el id del doc = id de
+      // la asignación): no puede fabricar comprobantes de asignaciones ajenas.
       allow create: if request.auth != null
         && request.auth.uid == request.resource.data.empresaId
         && request.resource.data.estado == 'enviado'
         && request.resource.data.asignacionId == asignacionId
-        && get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.empresaId == request.auth.uid
-        && get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.finalizada == true
-        && request.resource.data.estudianteId == get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.estudianteId
-        && request.resource.data.universidadId == get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.universidadId;
+        && request.auth.uid == get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.empresaId;
 
       allow update: if request.auth != null && (
         // La UNIVERSIDAD valida: solo 'enviado' → 'validado', campos acotados.
@@ -329,16 +327,13 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['estado', 'validadoAt', 'notaUniversidad'])
         )
-        // La EMPRESA corrige y reenvía su propio comprobante mientras siga
-        // 'enviado' (re-subir PDF, editar nota/área/supervisor); nunca toca
-        // las partes ni saca el estado de 'enviado'.
+        // La EMPRESA dueña corrige y reenvía su propio comprobante mientras siga
+        // 'enviado' (re-subir PDF, editar nota/área/supervisor). No lo saca de
+        // 'enviado' (eso solo lo hace la universidad al validar).
         || (
           request.auth.uid == resource.data.empresaId
           && resource.data.estado == 'enviado'
           && request.resource.data.estado == 'enviado'
-          && request.resource.data.estudianteId == resource.data.estudianteId
-          && request.resource.data.empresaId == resource.data.empresaId
-          && request.resource.data.universidadId == resource.data.universidadId
         )
       );
       allow delete: if esAdmin();
