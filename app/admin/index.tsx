@@ -1,23 +1,3 @@
-// ═════════════════════════════════════════════════════════════════
-// PANEL ADMIN — pantalla única y gigante (rol "admin") que reemplaza al
-// antiguo panel operativo. Un solo componente `AdminPreview` controla TODAS
-// las secciones (Resumen, Aprobaciones, Usuarios, Reportes, Incidencias, Vacantes,
-// Suscripciones, Notificaciones, Roles, Logs, Config) mediante el estado
-// `page`, en vez de usar rutas separadas — así el sidebar/drawer/topbar no
-// se desmontan al cambiar de sección.
-//
-// Ya viste en dashboard-empresa.tsx y dashboard-universidad.tsx el patrón
-// general (useState + onSnapshot/getDocs + JSX con Card/listItem/Chip); aquí
-// solo se explica a fondo lo que es distinto: las funciones `set*Action` que
-// vienen de src/services/adminService.ts (llaman a Cloud Functions con
-// privilegios de admin, en vez de escribir directo con el SDK del cliente),
-// el sistema de confirmación propio (ConfirmDialog/ConfirmOverlay — ya que
-// Alert.alert con botones no funciona en la web, gotcha visto en varios
-// archivos), y la lectura "cruda" de un documento completo para la ficha
-// técnica del detalle de vacante (formatRawValue). Los bloques de JSX
-// repetidos (tarjetas Card, filas listItem, chips de filtro) que ya viste en
-// perfil.tsx/index.tsx/los dashboards solo llevan una nota corta.
-// ═════════════════════════════════════════════════════════════════
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -72,9 +52,6 @@ import {
   cambiarEstadoIncidencia,
   responderIncidencia,
 } from "../../src/services/incidenciaService";
-// El MISMO servicio que usan estudiante, empresa y universidad. El admin no
-// escribe a Firestore por su cuenta: si el ciclo de vida de una incidencia
-// cambia, cambia en un solo archivo.
 import { translateSync } from "../../src/services/translationService";
 import { useAdminTheme } from "../../src/styles/adminStyles";
 import { textoHorario } from "../../src/data/disponibilidad";
@@ -82,9 +59,6 @@ import { textoCupos, textoSalario } from "../../src/utils/cupos";
 import { certificarPasantia } from "../../src/services/solicitudPracticaService";
 import { validarComprobante } from "../../src/services/comprobanteService";
 
-// Convierte un Timestamp de Firestore (o string) a ISO para los tipos del panel.
-// `v?.toDate === "function"` detecta un Timestamp real de Firestore (tiene
-// ese método); si ya viene como string se devuelve tal cual.
 const tsToIso = (v: any): string => {
   if (!v) return "";
   if (typeof v?.toDate === "function") return v.toDate().toISOString();
@@ -92,11 +66,6 @@ const tsToIso = (v: any): string => {
   return "";
 };
 
-// Milisegundos comparables desde un Timestamp de Firestore / string ISO / número
-// epoch / Date; 0 si el campo no existe. Sirve para ordenar listas en el cliente
-// SIN un orderBy de Firestore — un orderBy descarta del resultado los documentos
-// que no tienen el campo, y para una vista de auditoría del admin eso significaría
-// "esconder" pasantías viejas creadas antes de que existiera ese campo de fecha.
 const tsToMillis = (v: any): number => {
   if (!v) return 0;
   if (typeof v?.toDate === "function") { const t = v.toDate().getTime(); return Number.isFinite(t) ? t : 0; }
@@ -389,36 +358,6 @@ function adminDetailedErrorMessage(error: any, subject: string): string {
   return extras ? `${base}\n\nDetalle: ${extras}` : base;
 }
 
-// Convierte cualquier valor crudo de Firestore (Timestamp, arreglo, objeto,
-// booleano...) a texto legible para la "ficha técnica completa" del detalle
-// de vacante — garantiza que TODO campo del documento se pueda mostrar, sin
-// importar su tipo.
-function formatRawValue(value: any): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (typeof value?.toDate === "function") {
-    try {
-      return value.toDate().toLocaleString();
-    } catch {
-      return String(value);
-    }
-  }
-  if (typeof value === "boolean") return value ? "Sí" : "No";
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "—";
-    return value
-      .map((item) => (item && typeof item === "object" ? JSON.stringify(item) : String(item)))
-      .join(", ");
-  }
-  if (typeof value === "object") {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
-}
-
 // Este archivo NO usa Alert.alert para NADA: ni para confirmaciones de dos
 // botones (el gotcha ya visto en otros archivos: es un no-op en
 // react-native-web) ni para avisos de un solo botón. Las confirmaciones las
@@ -513,6 +452,76 @@ export default function AdminPreview() {
   const isWide = width >= 900;
   const isDesktop = width >= 1200;
   const isTablet = width >= 768 && width < 1200;
+  const webAdminScrollbarStyle = useMemo(
+    () =>
+      Platform.OS === "web"
+        ? ({
+            scrollbarWidth: "thin",
+            scrollbarColor: `${C.accent70} ${C.accent10}`,
+          } as any)
+        : undefined,
+    [C.accent10, C.accent70],
+  );
+  const menuScrollProps = Platform.OS === "web"
+    ? ({ testID: "admin-menu-scroll", style: webAdminScrollbarStyle } as const)
+    : ({} as const);
+  const pageScrollProps = Platform.OS === "web"
+    ? ({ testID: "admin-page-scroll", style: webAdminScrollbarStyle } as const)
+    : ({} as const);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+
+    const styleId = "gradly-admin-scrollbar-style";
+    let styleTag = document.getElementById(styleId) as HTMLStyleElement | null;
+
+    if (!styleTag) {
+      styleTag = document.createElement("style");
+      styleTag.id = styleId;
+      document.head.appendChild(styleTag);
+    }
+
+    styleTag.textContent = `
+      [data-testid="admin-menu-scroll"],
+      [data-testid="admin-page-scroll"] {
+        scrollbar-width: thin;
+        scrollbar-color: ${C.accent70} ${C.accent10};
+      }
+
+      [data-testid="admin-menu-scroll"]::-webkit-scrollbar,
+      [data-testid="admin-page-scroll"]::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+
+      [data-testid="admin-menu-scroll"]::-webkit-scrollbar-track,
+      [data-testid="admin-page-scroll"]::-webkit-scrollbar-track {
+        background: transparent;
+        border-radius: 999px;
+      }
+
+      [data-testid="admin-menu-scroll"]::-webkit-scrollbar-thumb,
+      [data-testid="admin-page-scroll"]::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, ${C.accent70}, ${C.accent});
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      [data-testid="admin-menu-scroll"]::-webkit-scrollbar-thumb:hover,
+      [data-testid="admin-page-scroll"]::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, ${C.accent}, ${C.accent70});
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+    `;
+
+    return () => {
+      styleTag?.remove();
+    };
+  }, [C.accent, C.accent10, C.accent70]);
+
   // ── Estado local ──────────────────────────────────────────────
   // Bloque grande de useState: qué "página" está activa, los datos de cada
   // sección (users/vacantesList/reportCases/suscripciones/logs/
@@ -2442,7 +2451,7 @@ export default function AdminPreview() {
   const railExpanded = !isDesktop || sidebarExpanded;
 
   const SidebarItems = ({ onNavigate }: { onNavigate?: () => void }) => (
-    <ScrollView showsVerticalScrollIndicator contentContainerStyle={s.sidebarBody}>
+    <ScrollView {...menuScrollProps} showsVerticalScrollIndicator contentContainerStyle={s.sidebarBody}>
       {navItems.map((it) => {
         const active = page === it.key;
         return (
@@ -2551,6 +2560,7 @@ export default function AdminPreview() {
     const cardMinWidth = isDesktop ? "23%" : width >= 700 ? "48%" : "100%";
     return (
       <ScrollView
+        {...pageScrollProps}
         showsVerticalScrollIndicator
         refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshOverview} tintColor={C.accent70} />}
       >
@@ -2589,7 +2599,7 @@ export default function AdminPreview() {
             <View style={s.heroMetricCard}>
               <Text style={s.heroMetricValue}>{users.length}</Text>
               <Text style={s.heroMetricLabel}>Perfiles visibles</Text>
-              <Text style={s.heroMetricHint}>Usuarios sincronizados desde Firestore.</Text>
+              <Text style={s.heroMetricHint}>Cuentas disponibles para revisar desde el panel.</Text>
             </View>
             <View style={s.heroMetricCard}>
               <Text style={[s.heroMetricValue, { color: C.yellow }]}>
@@ -2667,7 +2677,7 @@ export default function AdminPreview() {
           <View style={[s.row, { justifyContent: "space-between", marginBottom: 12 }]}>
             <View style={{ flex: 1 }}>
               <Text style={s.cardTitleLg}>Operación de plataforma</Text>
-              <Text style={[s.textMuted, { marginTop: 6 }]}>Métricas migradas del panel operativo anterior.</Text>
+              <Text style={[s.textMuted, { marginTop: 6 }]}>Un resumen rápido para ver cómo va la plataforma.</Text>
             </View>
             <TouchableOpacity style={s.btnOutline} onPress={refreshOverview} activeOpacity={0.8}>
               <Text style={s.btnOutlineText}>Actualizar</Text>
@@ -2916,6 +2926,7 @@ export default function AdminPreview() {
 
     return (
       <ScrollView
+        {...pageScrollProps}
         showsVerticalScrollIndicator
         refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshOverview} tintColor={C.accent70} />}
       >
@@ -3063,7 +3074,7 @@ export default function AdminPreview() {
       <View style={{ flex: 1 }}>
         <Text style={s.kicker}>Administración</Text>
         <Text style={s.pageTitle}>{labelRole(roleTab)}</Text>
-        <Text style={[s.textMuted, { marginTop: 6 }]}>Gestión sobre la colección `usuarios`.</Text>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>Aquí puedes revisar cuentas, estados y datos principales.</Text>
       </View>
       <TouchableOpacity style={s.btnOutline} onPress={refreshUsers} activeOpacity={0.8}>
         <Text style={s.btnOutlineText}>Actualizar</Text>
@@ -3071,94 +3082,189 @@ export default function AdminPreview() {
     </View>
   );
 
+  const resetUserListFilters = () => {
+    setSearch("");
+    setStatusFilter("todos");
+  };
+
+  const resetVacanteFilters = () => {
+    setVacanteSearch("");
+    setVacanteTipoFilter("todos");
+    setVacanteEstadoFilter("todos");
+  };
+
+  const resetPasantiaFilters = () => {
+    setPasantiasSearch("");
+    setPasantiasOrigenFilter("todas");
+    setPasantiasEstadoFilter("activas");
+  };
+
+  const resetPermissionsFilters = () => {
+    setPermissionsSearch("");
+    setPermissionsRoleFilter("todos");
+  };
+
+  const FilterHelperCard = ({
+    message,
+    meta,
+    actionLabel,
+    onAction,
+  }: {
+    message: string;
+    meta?: string;
+    actionLabel?: string;
+    onAction?: () => void;
+  }) => (
+    <View style={s.helperCard}>
+      <Text style={s.helperText}>{message}</Text>
+      <View style={s.helperActionRow}>
+        <Text style={s.helperMeta}>{meta ?? "Usa los filtros para llegar más rápido a lo que necesitas revisar."}</Text>
+        {onAction && actionLabel ? (
+          <TouchableOpacity style={[s.btnOutline, s.btnSm]} onPress={onAction} activeOpacity={0.85}>
+            <Text style={[s.btnOutlineText, s.btnSmText]}>{actionLabel}</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    </View>
+  );
+
+  const EmptyResultsState = ({
+    icon,
+    title,
+    message,
+    actionLabel = "Limpiar filtros",
+    onAction,
+  }: {
+    icon: string;
+    title: string;
+    message: string;
+    actionLabel?: string;
+    onAction?: () => void;
+  }) => (
+    <View style={s.emptyStateCard}>
+      <View style={s.emptyStateIcon}>
+        <Ionicons name={icon as any} size={20} color={C.accent70} />
+      </View>
+      <Text style={s.emptyStateTitle}>{title}</Text>
+      <Text style={s.emptyStateText}>{message}</Text>
+      {onAction ? (
+        <TouchableOpacity style={[s.btnOutline, s.btnSm, { marginTop: 14 }]} onPress={onAction} activeOpacity={0.85}>
+          <Text style={[s.btnOutlineText, s.btnSmText]}>{actionLabel}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+
   // renderUsuarios: listado general de la colección `usuarios`, filtrable
   // por rol (chips ROLE_ORDER) y estado, con buscador de texto libre. Tocar
   // una fila abre DetailModal.
-  const renderUsuarios = () => (
-    <ScrollView
-      showsVerticalScrollIndicator
-      refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshUsers} tintColor={C.accent70} />}
-    >
-      <RoleHeader />
+  const renderUsuarios = () => {
+    const totalByRole = users.filter((u) => u.role === roleTab).length;
+    const hasUserFilters = statusFilter !== "todos" || !!search.trim();
 
-      <Card style={{ marginBottom: 14 }}>
-        <View style={s.searchWrap}>
-          <Ionicons name="search-outline" size={18} color={C.textMuted} />
-          <TextInput
-            style={s.searchInput}
-            placeholder="Buscar por nombre, email, username…"
-            placeholderTextColor={C.textMuted}
-            value={search}
-            onChangeText={setSearch}
-            autoCapitalize="none"
-          />
-        </View>
-      </Card>
+    return (
+      <ScrollView
+        {...pageScrollProps}
+        showsVerticalScrollIndicator
+        refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshUsers} tintColor={C.accent70} />}
+      >
+        <RoleHeader />
 
-      <View style={{ marginBottom: 14 }}>
-        <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8 }]}>ROL</Text>
-        <View style={s.chipRow}>
-          {ROLE_ORDER.map((r) => (
-            <Chip
-              key={r}
-              label={labelRole(r)}
-              active={roleTab === r}
-              onPress={() => {
-                setRoleTab(r);
-                setSearch("");
-              }}
+        <Card style={{ marginBottom: 14 }}>
+          <View style={s.searchWrap}>
+            <Ionicons name="search-outline" size={18} color={C.textMuted} />
+            <TextInput
+              style={s.searchInput}
+              placeholder="Buscar por nombre, email o usuario…"
+              placeholderTextColor={C.textMuted}
+              value={search}
+              onChangeText={setSearch}
+              autoCapitalize="none"
             />
-          ))}
-        </View>
-      </View>
-
-      <View style={{ marginBottom: 10 }}>
-        <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8 }]}>ESTADO</Text>
-        <View style={s.chipRow}>
-          {(["todos", "active", "pending", "inactive"] as Array<Status | "todos">).map((st) => (
-            <Chip key={st} label={labelStatus(st)} active={statusFilter === st} onPress={() => setStatusFilter(st)} />
-          ))}
-        </View>
-      </View>
-
-      <Card style={{ marginBottom: 24 }}>
-        <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
-          <Text style={s.cardTitle}>Listado</Text>
-          <Text style={s.textMuted}>{filtered.length} resultado(s)</Text>
-        </View>
-
-        {usersLoading ? (
-          <View style={{ paddingVertical: 26, alignItems: "center" }}>
-            <ActivityIndicator color={C.accent70} />
           </View>
-        ) : filtered.length === 0 ? (
-          <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin resultados</Text>
-        ) : (
-          filtered.map((u) => (
-            <TouchableOpacity
-              key={u.id}
-              style={[s.listItem, isPhone && s.listItemStack]}
-              onPress={() => openDetail(u)}
-              activeOpacity={0.8}
-            >
-              <View style={s.avatar}>
-                <Text style={s.avatarText}>{(u.nombre || u.email).trim().charAt(0).toUpperCase()}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.itemTitle}>{u.nombre}</Text>
-                <Text style={s.itemSub}>{u.email}</Text>
-                <Text style={[s.itemSub, { marginTop: 4 }]}>{u.username}</Text>
-              </View>
-              <View style={[!isPhone ? { alignItems: "flex-end", gap: 6 } : s.listItemAsideCompact]}>
-                <Badge label={statusBadgeLabel(u.status)} type={u.status} />
-                <Ionicons name="chevron-forward-outline" size={16} color={C.textMuted} />
-              </View>
-            </TouchableOpacity>
-          ))
-        )}
-      </Card>
-    </ScrollView>
-  );
+        </Card>
+
+        <View style={{ marginBottom: 14 }}>
+          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8 }]}>ROL</Text>
+          <View style={s.chipRow}>
+            {ROLE_ORDER.map((r) => (
+              <Chip
+                key={r}
+                label={labelRole(r)}
+                active={roleTab === r}
+                onPress={() => {
+                  setRoleTab(r);
+                  setSearch("");
+                }}
+              />
+            ))}
+          </View>
+        </View>
+
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8 }]}>ESTADO</Text>
+          <View style={s.chipRow}>
+            {(["todos", "active", "pending", "inactive"] as Array<Status | "todos">).map((st) => (
+              <Chip key={st} label={labelStatus(st)} active={statusFilter === st} onPress={() => setStatusFilter(st)} />
+            ))}
+          </View>
+        </View>
+
+        <FilterHelperCard
+          message={
+            hasUserFilters
+              ? `Mostrando ${filtered.length} cuenta(s) dentro de ${labelRole(roleTab)} con los filtros actuales.`
+              : `Tienes ${totalByRole} cuenta(s) de ${labelRole(roleTab)} listas para revisar.`
+          }
+          meta={`Estado: ${labelStatus(statusFilter)}${search.trim() ? ` · Búsqueda: “${search.trim()}”` : ""}`}
+          actionLabel="Limpiar filtros"
+          onAction={hasUserFilters ? resetUserListFilters : undefined}
+        />
+
+        <Card style={{ marginBottom: 24 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>Listado</Text>
+            <Text style={s.textMuted}>{filtered.length} cuenta(s)</Text>
+          </View>
+
+          {usersLoading ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : filtered.length === 0 ? (
+            <EmptyResultsState
+              icon="people-outline"
+              title="No encontramos cuentas con ese filtro"
+              message="Puedes probar con otro estado o limpiar la búsqueda para volver al listado completo de este rol."
+              onAction={hasUserFilters ? resetUserListFilters : undefined}
+            />
+          ) : (
+            filtered.map((u) => (
+              <TouchableOpacity
+                key={u.id}
+                style={[s.listItem, isPhone && s.listItemStack]}
+                onPress={() => openDetail(u)}
+                activeOpacity={0.8}
+              >
+                <View style={s.avatar}>
+                  <Text style={s.avatarText}>{(u.nombre || u.email).trim().charAt(0).toUpperCase()}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.itemTitle}>{u.nombre}</Text>
+                  <Text style={s.itemSub}>{u.email}</Text>
+                  <Text style={[s.itemSub, { marginTop: 4 }]}>{u.username}</Text>
+                </View>
+                <View style={[!isPhone ? { alignItems: "flex-end", gap: 6 } : s.listItemAsideCompact]}>
+                  <Badge label={statusBadgeLabel(u.status)} type={u.status} />
+                  <Ionicons name="chevron-forward-outline" size={16} color={C.textMuted} />
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+        </Card>
+      </ScrollView>
+    );
+  };
 
   // ── Incidencias escaladas ─────────────────────────────────────────
   // Etiqueta, color y tipo de badge por estado. Se declaran fuera del render
@@ -3272,7 +3378,7 @@ export default function AdminPreview() {
       incidencias.filter((item) => item.estado === estado).length;
 
     return (
-      <ScrollView showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshOverview} />}>
+      <ScrollView {...pageScrollProps} showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshOverview} />}>
         <View style={s.sectionHeader}>
           <View style={{ flex: 1 }}>
             <Text style={s.kicker}>Prácticas</Text>
@@ -3429,12 +3535,12 @@ export default function AdminPreview() {
     const reportStatusColor = (status: ReportCaseStatus) =>
       status === "resuelto" ? C.green : status === "en_investigacion" ? C.yellow : C.red;
     return (
-      <ScrollView showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshOverview} />}>
+      <ScrollView {...pageScrollProps} showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshOverview} />}>
         <View style={s.sectionHeader}>
           <View style={{ flex: 1 }}>
             <Text style={s.kicker}>Incidencias</Text>
             <Text style={s.pageTitle}>Reportes</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Listado real de casos desde la colección `reportes`.</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Consulta los casos abiertos, revisa el contexto y decide cómo resolverlos.</Text>
           </View>
           <TouchableOpacity style={s.btnOutline} onPress={refreshOverview} activeOpacity={0.8}>
             <Text style={s.btnOutlineText}>Actualizar</Text>
@@ -3543,6 +3649,8 @@ export default function AdminPreview() {
     const totalVacantes = vacantesList.length;
     const activasCount = vacantesList.filter((v) => v.activa).length;
     const inactivasCount = totalVacantes - activasCount;
+    const hasVacanteFilters =
+      !!vacanteSearch.trim() || vacanteTipoFilter !== "todos" || vacanteEstadoFilter !== "todos";
 
     const tipoIcon = (tipo: string) => (tipo === "Pasantía" ? "school-outline" : "briefcase-outline");
 
@@ -3593,6 +3701,7 @@ export default function AdminPreview() {
 
     return (
       <ScrollView
+        {...pageScrollProps}
         showsVerticalScrollIndicator
         refreshControl={<RefreshControl refreshing={usersRefreshing} onRefresh={refreshOverview} tintColor={C.accent70} />}
       >
@@ -3601,7 +3710,7 @@ export default function AdminPreview() {
             <Text style={s.kicker}>Publicaciones</Text>
             <Text style={s.pageTitle}>Vacantes y pasantías</Text>
             <Text style={[s.textMuted, { marginTop: 6 }]}>
-              Listado real de publicaciones desde la colección `vacantes`.
+              Revisa las publicaciones activas, su estado y la información más importante.
             </Text>
           </View>
           <TouchableOpacity style={s.btnOutline} onPress={refreshOverview} activeOpacity={0.8}>
@@ -3612,7 +3721,7 @@ export default function AdminPreview() {
         <View style={[s.grid2, { marginBottom: 14 }]}>
           <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
             <Text style={s.itemTitle}>Total publicadas</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Vacantes y pasantías en la colección.</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Todas las publicaciones disponibles en el panel.</Text>
             <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{totalVacantes}</Text>
           </View>
           <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
@@ -3665,6 +3774,19 @@ export default function AdminPreview() {
           </View>
         </Card>
 
+        <FilterHelperCard
+          message={
+            hasVacanteFilters
+              ? `Quedaron ${filteredVacantes.length} publicación(es) con la combinación actual de filtros.`
+              : `Aquí ves las ${totalVacantes} publicaciones cargadas en el panel con su estado actual.`
+          }
+          meta={`Tipo: ${vacanteTipoFilter === "todos" ? "Todos" : vacanteTipoFilter} · Estado: ${
+            vacanteEstadoFilter === "todos" ? "Todos" : vacanteEstadoFilter === "activa" ? "Activas" : "Inactivas"
+          }${vacanteSearch.trim() ? ` · Búsqueda: “${vacanteSearch.trim()}”` : ""}`}
+          actionLabel="Restablecer"
+          onAction={hasVacanteFilters ? resetVacanteFilters : undefined}
+        />
+
         <Card style={{ marginBottom: 24 }}>
           <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
             <Text style={s.cardTitle}>Publicaciones</Text>
@@ -3676,7 +3798,13 @@ export default function AdminPreview() {
               <ActivityIndicator color={C.accent70} />
             </View>
           ) : filteredVacantes.length === 0 ? (
-            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin vacantes para este filtro</Text>
+            <EmptyResultsState
+              icon="briefcase-outline"
+              title="No hay publicaciones con ese cruce"
+              message="Prueba otro tipo, cambia el estado o limpia la búsqueda para volver a ver todo el catálogo."
+              actionLabel="Restablecer filtros"
+              onAction={hasVacanteFilters ? resetVacanteFilters : undefined}
+            />
           ) : isDesktop ? (
             <View style={s.grid2}>
               {filteredVacantes.map((v) => (
@@ -3730,11 +3858,11 @@ export default function AdminPreview() {
   const renderPasantias = () => {
     const labelEmpresa = (id?: string | null) => {
       if (!id) return "—";
-      return empresaNames[id] || `${String(id).slice(0, 10)}…`;
+      return empresaNames[id] || "Empresa no disponible";
     };
     const labelUni = (id?: string | null) => {
       if (!id) return "—";
-      return universidadNames[id] || `${String(id).slice(0, 10)}…`;
+      return universidadNames[id] || "Universidad no disponible";
     };
 
     const labelSolicitud = (s: any) => {
@@ -3770,8 +3898,14 @@ export default function AdminPreview() {
       return { label: "Tomado", type: "active" as const };
     };
 
+    const totalPasantias =
+      filteredSolicitudesPractica.length + filteredAplicacionesPasantia.length + filteredAsignacionesCupo.length;
+    const hasPasantiaFilters =
+      !!pasantiasSearch.trim() || pasantiasOrigenFilter !== "todas" || pasantiasEstadoFilter !== "activas";
+
     return (
       <ScrollView
+        {...pageScrollProps}
         showsVerticalScrollIndicator
         refreshControl={<RefreshControl refreshing={pasantiasLoading} onRefresh={fetchPasantias} tintColor={C.accent70} />}
       >
@@ -3780,7 +3914,7 @@ export default function AdminPreview() {
             <Text style={s.kicker}>Operación</Text>
             <Text style={s.pageTitle}>Pasantías</Text>
             <Text style={[s.textMuted, { marginTop: 6 }]}>
-              Visión unificada del flujo de pasantías: grupos, individuales y cupos con su cierre por comprobante.
+              Aquí puedes seguir el avance de cada pasantía y ver cómo va cerrando cada proceso.
             </Text>
           </View>
           <TouchableOpacity style={s.btnOutline} onPress={fetchPasantias} activeOpacity={0.8}>
@@ -3793,7 +3927,7 @@ export default function AdminPreview() {
             <Ionicons name="search-outline" size={18} color={C.textMuted} />
             <TextInput
               style={s.searchInput}
-              placeholder="Buscar por grupo, carrera, estudiante o IDs…"
+              placeholder="Buscar por grupo, carrera, estudiante o empresa…"
               placeholderTextColor={C.textMuted}
               value={pasantiasSearch}
               onChangeText={setPasantiasSearch}
@@ -3826,28 +3960,47 @@ export default function AdminPreview() {
           </View>
         </Card>
 
+        <FilterHelperCard
+          message={
+            hasPasantiaFilters
+              ? `Ahora mismo estás viendo ${totalPasantias} pasantía(s) con los filtros activos.`
+              : "El panel abre priorizando las pasantías activas para que sea más fácil revisar cierres y pendientes."
+          }
+          meta={`Origen: ${
+            pasantiasOrigenFilter === "todas"
+              ? "Todas"
+              : pasantiasOrigenFilter === "grupo"
+                ? "Grupo"
+                : pasantiasOrigenFilter === "individual"
+                  ? "Individual"
+                  : "Cupo"
+          } · Estado: ${pasantiasEstadoFilter === "activas" ? "Activas" : pasantiasEstadoFilter === "finalizadas" ? "Finalizadas" : "Todas"}${
+            pasantiasSearch.trim() ? ` · Búsqueda: “${pasantiasSearch.trim()}”` : ""
+          }`}
+          actionLabel="Volver al filtro base"
+          onAction={hasPasantiaFilters ? resetPasantiaFilters : undefined}
+        />
+
         <View style={[s.grid2, { marginBottom: 14 }]}>
           <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
             <Text style={s.itemTitle}>Grupos</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Pasantías en `solicitudes_practicas` (según filtros).</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Procesos grupales según los filtros elegidos.</Text>
             <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{filteredSolicitudesPractica.length}</Text>
           </View>
           <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
             <Text style={s.itemTitle}>Individuales</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Pasantías individuales (estado en `aplicaciones`).</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Procesos individuales que siguen activos o ya cerraron.</Text>
             <Text style={[s.heroMetricValue, { color: C.green, marginTop: 12 }]}>{filteredAplicacionesPasantia.length}</Text>
           </View>
           <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
             <Text style={s.itemTitle}>Por cupo</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Asignaciones en `asignaciones_cupo` y su comprobante.</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Pasantías tomadas por cupo y su cierre con comprobante.</Text>
             <Text style={[s.heroMetricValue, { color: C.yellow, marginTop: 12 }]}>{filteredAsignacionesCupo.length}</Text>
           </View>
           <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
             <Text style={s.itemTitle}>Total</Text>
             <Text style={[s.textMuted, { marginTop: 6 }]}>Suma de los tres flujos.</Text>
-            <Text style={[s.heroMetricValue, { color: C.text, marginTop: 12 }]}>
-              {filteredSolicitudesPractica.length + filteredAplicacionesPasantia.length + filteredAsignacionesCupo.length}
-            </Text>
+            <Text style={[s.heroMetricValue, { color: C.text, marginTop: 12 }]}>{totalPasantias}</Text>
           </View>
         </View>
 
@@ -3862,7 +4015,13 @@ export default function AdminPreview() {
               <ActivityIndicator color={C.accent70} />
             </View>
           ) : filteredSolicitudesPractica.length === 0 ? (
-            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin resultados</Text>
+            <EmptyResultsState
+              icon="people-outline"
+              title="No hay pasantías grupales para mostrar"
+              message="Con estos filtros no apareció ningún grupo. Puedes volver al filtro base para revisar el flujo completo."
+              actionLabel="Ver activas"
+              onAction={hasPasantiaFilters ? resetPasantiaFilters : undefined}
+            />
           ) : (
             <View style={{ gap: 10 }}>
               {filteredSolicitudesPractica.slice(0, 80).map((sol) => {
@@ -3921,7 +4080,13 @@ export default function AdminPreview() {
               <ActivityIndicator color={C.accent70} />
             </View>
           ) : filteredAplicacionesPasantia.length === 0 ? (
-            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin resultados</Text>
+            <EmptyResultsState
+              icon="person-outline"
+              title="No hay pasantías individuales con este filtro"
+              message="Cambia el origen, el estado o la búsqueda para recuperar procesos individuales."
+              actionLabel="Ver activas"
+              onAction={hasPasantiaFilters ? resetPasantiaFilters : undefined}
+            />
           ) : (
             <View style={{ gap: 10 }}>
               {filteredAplicacionesPasantia.slice(0, 80).map((app) => {
@@ -3981,7 +4146,13 @@ export default function AdminPreview() {
               <ActivityIndicator color={C.accent70} />
             </View>
           ) : filteredAsignacionesCupo.length === 0 ? (
-            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin resultados</Text>
+            <EmptyResultsState
+              icon="school-outline"
+              title="No hay pasantías por cupo con este filtro"
+              message="Si quieres revisar cierres o comprobantes, vuelve al filtro base o prueba con otro estado."
+              actionLabel="Ver activas"
+              onAction={hasPasantiaFilters ? resetPasantiaFilters : undefined}
+            />
           ) : (
             <View style={{ gap: 10 }}>
               {filteredAsignacionesCupo.slice(0, 80).map((asig) => {
@@ -4037,7 +4208,7 @@ export default function AdminPreview() {
   // del sistema, no las notificaciones in-app de usuarios finales — esas
   // viven en `notificaciones_app`, ver project_notificaciones_app).
   const renderNotificaciones = () => (
-    <ScrollView showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={notificationsLoading} onRefresh={fetchNotifications} />}>
+    <ScrollView {...pageScrollProps} showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={notificationsLoading} onRefresh={fetchNotifications} />}>
       <View style={s.sectionHeader}>
         <View style={{ flex: 1 }}>
           <Text style={s.kicker}>Inbox</Text>
@@ -4119,6 +4290,7 @@ export default function AdminPreview() {
 
     return (
       <ScrollView
+        {...pageScrollProps}
         showsVerticalScrollIndicator
         refreshControl={
           <RefreshControl
@@ -4133,7 +4305,7 @@ export default function AdminPreview() {
           <View style={{ flex: 1 }}>
             <Text style={s.kicker}>Control</Text>
             <Text style={s.pageTitle}>Permisos</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Usuarios del panel con su rol y los permisos efectivos de ese rol.</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Usuarios del panel con su rol y la información necesaria para revisarlos.</Text>
           </View>
           <TouchableOpacity style={s.btnOutline} onPress={() => void Promise.all([refreshUsers(), fetchPermissionsOverview()])} activeOpacity={0.8}>
             <Text style={s.btnOutlineText}>Actualizar</Text>
@@ -4166,16 +4338,24 @@ export default function AdminPreview() {
           </View>
         </Card>
 
+        <FilterHelperCard
+          message={
+            permissionsRoleFilter === "todos" && !permissionsSearch.trim()
+              ? `Aquí tienes ${filteredPermissionUsers.length} usuario(s) con su rol y permisos visibles para revisión rápida.`
+              : `Mostrando ${filteredPermissionUsers.length} usuario(s) según el filtro actual de permisos.`
+          }
+          meta={`Rol: ${permissionsRoleFilter === "todos" ? "Todos" : labelRole(permissionsRoleFilter)}${
+            permissionsSearch.trim() ? ` · Búsqueda: “${permissionsSearch.trim()}”` : ""
+          }`}
+          actionLabel="Limpiar filtros"
+          onAction={permissionsRoleFilter !== "todos" || !!permissionsSearch.trim() ? resetPermissionsFilters : undefined}
+        />
+
         <View style={[s.grid2, { marginBottom: 14 }]}>
           {ROLE_ORDER.map((role) => (
             <View key={role} style={[s.card, { flex: 1, minWidth: isDesktop ? "23%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
               <Text style={s.itemTitle}>{labelRole(role)}</Text>
               <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 10 }]}>{countByRole[role]}</Text>
-              <Text style={[s.textMuted, { marginTop: 6 }]}>
-                {role === "estudiante"
-                  ? "Sin permisos administrables."
-                  : `${rolePermissionLabels(role).length} permiso(s) configurado(s).`}
-              </Text>
             </View>
           ))}
         </View>
@@ -4187,10 +4367,12 @@ export default function AdminPreview() {
           </View>
         ) : filteredPermissionUsers.length === 0 ? (
           <Card style={{ marginBottom: 24 }}>
-            <Text style={s.cardTitle}>Sin resultados</Text>
-            <Text style={[s.textMuted, { marginTop: 10, lineHeight: 20 }]}>
-              No encontramos usuarios con ese filtro.
-            </Text>
+            <EmptyResultsState
+              icon="shield-checkmark-outline"
+              title="No encontramos usuarios con ese filtro"
+              message="Prueba con otro rol o limpia la búsqueda para volver a ver todos los permisos disponibles."
+              onAction={permissionsRoleFilter !== "todos" || !!permissionsSearch.trim() ? resetPermissionsFilters : undefined}
+            />
           </Card>
         ) : (
           <Card style={{ marginBottom: 24 }}>
@@ -4224,7 +4406,6 @@ export default function AdminPreview() {
                         <Badge label={statusBadgeLabel(u.status)} type={u.status} />
                       </View>
                       <View style={{ marginTop: 10 }}>
-                        <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8 }]}>PERMISOS EFECTIVOS</Text>
                         {u.role === "estudiante" ? (
                           <Text style={[s.itemSub, { marginTop: 6 }]}>Este rol no tiene permisos administrables en esta sección.</Text>
                         ) : effectivePermissions.length === 0 ? (
@@ -4318,7 +4499,7 @@ export default function AdminPreview() {
     };
 
     return (
-      <ScrollView showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={suscripcionesLoading} onRefresh={fetchSuscripciones} tintColor={C.accent70} />}>
+      <ScrollView {...pageScrollProps} showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={suscripcionesLoading} onRefresh={fetchSuscripciones} tintColor={C.accent70} />}>
         <View style={s.sectionHeader}>
           <View style={{ flex: 1 }}>
             <Text style={s.kicker}>Ingresos</Text>
@@ -4427,7 +4608,7 @@ export default function AdminPreview() {
   // renderLogs: bitácora de `audit_logs` (lo que escribe logAction en cada
   // acción sensible) — solo lectura, sin acciones, para trazabilidad.
   const renderLogs = () => (
-    <ScrollView showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={logsLoading} onRefresh={fetchLogs} />}>
+    <ScrollView {...pageScrollProps} showsVerticalScrollIndicator refreshControl={<RefreshControl refreshing={logsLoading} onRefresh={fetchLogs} />}>
       <View style={s.sectionHeader}>
         <View style={{ flex: 1 }}>
           <Text style={s.kicker}>Auditoría</Text>
@@ -4473,7 +4654,7 @@ export default function AdminPreview() {
   // "Recalcular alianzas y calificaciones" (runBackfillAlianzas, con su
   // propio modal de confirmación RecalcularConfirmModal) y cerrar sesión.
   const renderConfig = () => (
-    <ScrollView showsVerticalScrollIndicator>
+    <ScrollView {...pageScrollProps} showsVerticalScrollIndicator>
       <View style={s.sectionHeader}>
         <View style={{ flex: 1 }}>
           <Text style={s.kicker}>Sistema</Text>
@@ -4808,9 +4989,6 @@ export default function AdminPreview() {
             ? (comprobante ? getComprobanteEstado(comprobante).type : "inactive")
             : "active";
 
-    const raw = detail.item as any;
-    const rawKeys = Object.keys(raw || {}).filter((k) => k !== "raw").sort().slice(0, 36);
-
     return (
       <Modal
         visible={pasantiaDetailOpen}
@@ -4852,8 +5030,6 @@ export default function AdminPreview() {
                     </Text>
                     <Text style={[s.textMuted, { marginTop: 6 }]}>Empresa: {empresaLabel}</Text>
                     <Text style={[s.textMuted, { marginTop: 6 }]}>Universidad: {uniLabel}</Text>
-                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID solicitud: {detail.item.id}</Text>
-                    {detail.item.grupoId ? <Text style={[s.textMuted, { marginTop: 6 }]}>ID grupo: {detail.item.grupoId}</Text> : null}
                     {Array.isArray(detail.item.estudianteIds) ? (
                       <Text style={[s.textMuted, { marginTop: 6 }]}>
                         Estudiantes: {detail.item.estudianteIds.length}
@@ -4866,12 +5042,9 @@ export default function AdminPreview() {
                 ) : detail.kind === "individual" ? (
                   <>
                     <Text style={s.textMuted}>Empresa: {empresaLabel}</Text>
-                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID empresa: {empresaId || "—"}</Text>
                     <Text style={[s.textMuted, { marginTop: 6 }]}>
                       Vacante: {vacanteRelacionada?.titulo ?? detail.item.vacante_id ?? "—"}
                     </Text>
-                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID vacante: {detail.item.vacante_id ?? "—"}</Text>
-                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID estudiante: {detail.item.estudiante_id ?? "—"}</Text>
                     <Text style={[s.textMuted, { marginTop: 6 }]}>
                       Horas completadas: {typeof detail.item.horas_completadas === "number" ? detail.item.horas_completadas : Number(detail.item.horas_completadas ?? 0)}
                     </Text>
@@ -4888,8 +5061,6 @@ export default function AdminPreview() {
                     <Text style={[s.textMuted, { marginTop: 6 }]}>
                       Vacante: {vacanteRelacionada?.titulo ?? detail.item.vacanteTitulo ?? detail.item.vacanteId ?? "—"}
                     </Text>
-                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID asignación: {detail.item.id}</Text>
-                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID estudiante: {detail.item.estudianteId ?? "—"}</Text>
                     <Text style={[s.textMuted, { marginTop: 6 }]}>
                       Origen: {detail.item.origen === "autoservicio" ? "Autoservicio" : "Reserva universitaria"}
                     </Text>
@@ -4919,8 +5090,7 @@ export default function AdminPreview() {
                           <View style={{ flex: 1 }}>
                             <Text style={s.itemTitle}>{al.nombre}</Text>
                             <Text style={[s.itemSub, { marginTop: 4 }]}>
-                              ID: {al.id}
-                              {al.horas_aprobadas !== null ? ` · Horas aprobadas: ${al.horas_aprobadas}` : ""}
+                              {al.horas_aprobadas !== null ? `Horas aprobadas: ${al.horas_aprobadas}` : "Horas aprobadas pendientes"}
                               {al.horas_objetivo !== null ? `/${al.horas_objetivo}` : ""}
                             </Text>
                           </View>
@@ -5061,20 +5231,6 @@ export default function AdminPreview() {
                 )}
               </Card>
 
-              <Card style={{ marginTop: 12 }}>
-                <Text style={s.cardTitle}>Detalle técnico</Text>
-                <Text style={[s.textMuted, { marginTop: 6 }]}>
-                  Todos los campos del documento, tal como están guardados en la base de datos.
-                </Text>
-                <View style={{ marginTop: 12, gap: 10 }}>
-                  {rawKeys.map((k) => (
-                    <View key={k}>
-                      <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.6 }]}>{k.toUpperCase()}</Text>
-                      <Text style={[s.itemSub, { marginTop: 4 }]}>{formatRawValue(raw[k])}</Text>
-                    </View>
-                  ))}
-                </View>
-              </Card>
             </ScrollView>
             {AvisoOverlay()}
           </View>
@@ -5618,12 +5774,6 @@ export default function AdminPreview() {
     );
   };
 
-  // VacanteDetailAdminModal: ficha completa de una vacante, terminando en
-  // una "Ficha técnica completa" que recorre TODOS los campos del documento
-  // crudo (v.raw) con formatRawValue — así el admin puede inspeccionar
-  // cualquier campo nuevo o legado sin que este archivo tenga que conocerlo
-  // de antemano (a diferencia del resto de la UI, que sí lista campos
-  // específicos a mano).
   const VacanteDetailAdminModal = () => {
     const v = selectedVacante;
 
@@ -5750,11 +5900,6 @@ export default function AdminPreview() {
                   <Card style={{ marginTop: 12 }}>
                     <Text style={s.cardTitle}>Ubicación</Text>
                     {ubicacionTexto ? <Text style={[s.textMuted, { marginTop: 10 }]}>{ubicacionTexto}</Text> : null}
-                    {v.raw?.ubicacion_coords ? (
-                      <Text style={[s.textMuted, { marginTop: 6 }]}>
-                        Coordenadas: {v.raw.ubicacion_coords.latitude}, {v.raw.ubicacion_coords.longitude}
-                      </Text>
-                    ) : null}
                   </Card>
                 ) : null}
 
@@ -5812,16 +5957,10 @@ export default function AdminPreview() {
                 </Card>
 
                 <Card style={{ marginTop: 12, marginBottom: 20 }}>
-                  <Text style={s.cardTitle}>Ficha técnica completa</Text>
-                  <Text style={[s.textMuted, { marginTop: 10 }]}>ID del documento: {v.id}</Text>
-                  {Object.keys(v.raw ?? {})
-                    .sort()
-                    .map((key) => (
-                      <View key={key} style={{ marginTop: 10 }}>
-                        <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.4 }]}>{key}</Text>
-                        <Text style={[s.itemTitle, { marginTop: 2 }]}>{formatRawValue(v.raw[key])}</Text>
-                      </View>
-                    ))}
+                  <Text style={s.cardTitle}>Resumen</Text>
+                  <Text style={[s.textMuted, { marginTop: 10 }]}>
+                    Esta vista muestra solo la información necesaria para revisar y moderar la publicación.
+                  </Text>
                 </Card>
               </ScrollView>
             ) : null}
