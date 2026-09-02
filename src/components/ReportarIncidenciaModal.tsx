@@ -65,21 +65,32 @@ export default function ReportarIncidenciaModal({
   const listo = !!categoria && !!motivo && descripcion.trim().length >= 15;
 
   const enviar = async () => {
+    if (enviando) return;
     setEnviando(true); setError('');
     try {
-      await crearIncidencia({
-        estudianteNombre,
-        universidadId: universidadId ?? '',
-        empresaId,
-        empresaNombre,
-        categoria: categoria!,
-        motivo,
-        descripcion,
-      });
+      // `Promise.race` con un tope: si por lo que sea la escritura se cuelga
+      // (red caída a medias, etc.), el botón no se queda girando para siempre.
+      await Promise.race([
+        crearIncidencia({
+          estudianteNombre,
+          universidadId: universidadId ?? '',
+          empresaId,
+          empresaNombre,
+          categoria: categoria!,
+          motivo,
+          descripcion,
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('La solicitud tardó demasiado. Revisa tu conexión e inténtalo de nuevo.')), 15000)),
+      ]);
       onCreada?.();
       onClose();
     } catch (e: any) {
-      setError(e?.message ?? t('error_generico'));
+      const msg = String(e?.message ?? '');
+      setError(
+        msg.includes('insufficient permissions')
+          ? 'No se pudo registrar la incidencia (permisos). Inténtalo de nuevo en un momento.'
+          : msg || t('error_generico'),
+      );
     } finally {
       setEnviando(false);
     }

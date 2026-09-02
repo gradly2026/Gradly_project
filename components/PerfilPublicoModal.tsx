@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -380,6 +381,33 @@ export default function PerfilPublicoModal({
                         </View>
                       ))}
                     </View>
+                  </View>
+                )}
+
+                {/* Currículum del estudiante */}
+                {(rol === "talento" || rol === "alumno") && (
+                  <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
+                    <Text style={[styles.sectionLabel, { color: C.muted }]}>Currículum</Text>
+                    {perfil.cv_url ? (
+                      <View style={styles.tagsRow}>
+                        <TouchableOpacity
+                          style={[styles.tag, { backgroundColor: C.purpleDim, borderColor: C.border, flexDirection: "row", alignItems: "center", gap: 5 }]}
+                          onPress={() => Linking.openURL(String(perfil.cv_url)).catch(() => {})}
+                        >
+                          <Ionicons name="document-text-outline" size={13} color={C.purple} />
+                          <Text style={{ color: C.purple, fontSize: 11 }}>Ver CV</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.tag, { backgroundColor: C.purpleDim, borderColor: C.border, flexDirection: "row", alignItems: "center", gap: 5 }]}
+                          onPress={() => Linking.openURL(String(perfil.cv_url)).catch(() => {})}
+                        >
+                          <Ionicons name="download-outline" size={13} color={C.purple} />
+                          <Text style={{ color: C.purple, fontSize: 11 }}>Descargar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <Text style={{ color: C.textSub, fontSize: 12 }}>Sin currículum adjunto.</Text>
+                    )}
                   </View>
                 )}
 

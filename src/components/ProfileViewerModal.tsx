@@ -395,6 +395,25 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                   </View>
                 )}
 
+                {/* Currículum */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Currículum</Text>
+                  {data.cv_url ? (
+                    <View style={styles.redesRow}>
+                      <TouchableOpacity style={styles.redBtn} onPress={() => abrirLink(data.cv_url)}>
+                        <Ionicons name="document-text-outline" size={18} color={colors.primaryLight} />
+                        <Text style={styles.redText}>Ver CV</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.redBtn} onPress={() => abrirLink(data.cv_url)}>
+                        <Ionicons name="download-outline" size={18} color={colors.primaryLight} />
+                        <Text style={styles.redText}>Descargar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <Text style={styles.progressLabel}>Sin currículum adjunto.</Text>
+                  )}
+                </View>
+
                 {/* Módulo de calificación — solo empresa */}
                 {esEmpresaActiva && (
                   <View style={styles.section}>

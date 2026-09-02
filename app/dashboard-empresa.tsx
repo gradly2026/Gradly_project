@@ -3591,6 +3591,23 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
   const pendFirma  = apps.filter(a => a.estado === 'finalizado');
   const grupoActivas = solicitudesGrupo.filter(sg => sg.estado === 'aprobado' && sg.fechaInicio);
 
+  // Pasantes por CUPO en curso (`asignaciones_cupo` tomado y NO finalizado) —
+  // el flujo nuevo, que esta sección no contemplaba (solo veía `aplicaciones`).
+  const [cuposActivos, setCuposActivos] = useState<any[]>([]);
+  useEffect(() => {
+    if (!empresaId) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'asignaciones_cupo'), where('empresaId', '==', empresaId)),
+      snap => setCuposActivos(
+        snap.docs
+          .map(d => ({ id: d.id, ...(d.data() as any) }))
+          .filter(c => c.estado === 'tomado' && c.finalizada !== true),
+      ),
+      e => console.warn('Error en listener (cupos activos empresa):', e),
+    );
+    return unsub;
+  }, [empresaId]);
+
   // Bandeja de incidencias: va en ESTA sección y no en Inicio porque una
   // incidencia siempre habla de una pasantía en curso — es el mismo contexto.
   // Se dibuja aunque esté vacía: si solo apareciera cuando hay problemas, la
@@ -3648,7 +3665,29 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
     </View>
   );
 
-  const Header = <>{Incidencias}{Grupos}</>;
+  const PasantesCupo = cuposActivos.length === 0 ? null : (
+    <View style={{ marginBottom: 16 }}>
+      <Text style={[s.activaNombre, { marginBottom: 10 }]}>Pasantes por cupo</Text>
+      {cuposActivos.map(c => (
+        <TouchableOpacity
+          key={c.id}
+          activeOpacity={0.85}
+          disabled={!c.estudianteId}
+          onPress={() => c.estudianteId && onVerPerfil(c.estudianteId)}
+        >
+          <GlassCard style={{ marginBottom: 8 }} contentStyle={{ padding: 16, gap: 4 }}>
+            <Text style={s.activaNombre} numberOfLines={1} noTranslate>{c.estudianteNombre ?? 'Estudiante'}</Text>
+            {!!c.vacanteTitulo && <Text style={s.activaMeta} numberOfLines={1} noTranslate>{c.vacanteTitulo}</Text>}
+            <Text style={s.activaMeta}>
+              {c.fechaPresentacion ? `Día 1: ${c.fechaPresentacion}` : 'Primer día por definir'}
+            </Text>
+          </GlassCard>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const Header = <>{Incidencias}{Grupos}{PasantesCupo}</>;
 
   return (
     <FlatList
@@ -3684,7 +3723,11 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
           </TouchableOpacity>
         );
       }}
-      ListEmptyComponent={<Text style={s.emptyText}>Sin pasantes activos.</Text>}
+      ListEmptyComponent={
+        cuposActivos.length > 0 || grupoActivas.length > 0
+          ? null
+          : <Text style={s.emptyText}>Sin pasantes activos.</Text>
+      }
     />
   );
 }

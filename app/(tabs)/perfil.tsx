@@ -602,25 +602,22 @@ export default function PerfilTab() {
               />
             ),
           },
+          /* ── "Mi disponibilidad" OCULTA a pedido del usuario (2026-09-02).
+             El estudiante ya no fija sus horarios aquí; el horario de la
+             práctica lo define la empresa/universidad al inscribirlo. Para
+             volver a mostrarla, descomentar este bloque (y quitar el aviso
+             de más abajo si se agregó).
           {
             id: 'disponibilidad',
             title: t('disp_titulo'),
             subtitle: resumenDisponibilidad(dispDraft) ?? t('disp_sin_definir'),
             icon: 'time-outline',
             tone: contarBloques(dispDraft) > 0 ? 'green' : 'orange',
-            // El "tone" (color) de la sección cambia dinámicamente: verde
-            // si ya hay al menos un bloque de disponibilidad definido,
-            // ámbar si todavía está vacío — una pista visual rápida de
-            // "esto necesita tu atención" sin tener que abrir la sección.
             render: () => (
               <View style={{ gap: 12 }}>
                 <DisponibilidadSelector
                   value={dispDraft}
                   onChange={next => { setDispDraft(next); setDispDirty(true); }}
-                  // Cada vez que el usuario toca una casilla, se actualiza
-                  // el BORRADOR local y se marca "sucio" — sin tocar
-                  // Firestore todavía (ver la explicación del patrón
-                  // arriba).
                 />
                 {dispDirty && (
                   <TouchableOpacity
@@ -637,6 +634,7 @@ export default function PerfilTab() {
               </View>
             ),
           },
+          ── */
           {
             id: 'ubicacion',
             title: t('ubicacion_titulo'),

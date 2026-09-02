@@ -843,7 +843,19 @@ export const CUPOS_SEED_EN: Record<string, string> = {
 
   // ── Tarjetas de Inicio: pasantías por cupo (Fase D) ──
   "Pasantías por cupo": "Slot-based internships",
+  "Pasantes por cupo": "Slot-based interns",
   "Sin fecha de inicio": "No start date yet",
+  "Primer día por definir": "First day not set yet",
+  // ── Currículum en el vistazo del perfil del estudiante ──
+  "Currículum": "Résumé",
+  "Ver CV": "View CV",
+  "Descargar": "Download",
+  "Sin currículum adjunto.": "No résumé attached.",
+  // ── Errores del modal de incidencia ──
+  "No se pudo registrar la incidencia (permisos). Inténtalo de nuevo en un momento.":
+    "The incident couldn't be recorded (permissions). Try again in a moment.",
+  "La solicitud tardó demasiado. Revisa tu conexión e inténtalo de nuevo.":
+    "The request took too long. Check your connection and try again.",
 
   // ── Cierre automático por horas (Fase E) ──
   "Día de práctica": "Practice day",

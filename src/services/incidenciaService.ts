@@ -126,14 +126,17 @@ export async function crearIncidencia(p: CrearIncidenciaParams): Promise<string>
     // incidencia sin contexto solo genera un ida y vuelta extra.
     throw new Error('Cuenta un poco más: al menos 15 caracteres.');
   }
-  if (!p.universidadId) throw new Error('Tu cuenta no está vinculada a una universidad.');
 
+  // OJO: NO se aborta si el estudiante no tiene universidad vinculada — antes
+  // esto lanzaba un error que dejaba el modal "sin enviar". Se guarda con
+  // `universidad_id: ''` y la incidencia igual llega al admin (más abajo).
+  const universidadId = p.universidadId ?? '';
   const esSobreEmpresa = p.categoria === 'empresa' && !!p.empresaId;
 
   const ref = await addDoc(collection(db, COLECCION_INCIDENCIAS), {
     estudiante_id: uid,
     estudiante_nombre: p.estudianteNombre ?? '',
-    universidad_id: p.universidadId,
+    universidad_id: universidadId,
     // El id de empresa se guarda SIEMPRE que se conozca, aunque la incidencia
     // no sea sobre ella: es el contexto de la práctica. Lo que decide quién
     // recibe el aviso es `categoria`, no este campo.
@@ -149,14 +152,29 @@ export async function crearIncidencia(p: CrearIncidenciaParams): Promise<string>
     fecha_actualizacion: serverTimestamp(),
   });
 
-  // Los avisos son best-effort: si fallan, la incidencia ya quedó registrada y
-  // el destinatario la verá igual en su bandeja.
+  // Avisos best-effort: la incidencia YA quedó registrada. `allSettled` para
+  // que ningún fallo/lentitud de una notificación bloquee el retorno.
   const titulo = 'Nueva incidencia reportada';
   const mensaje = `${p.estudianteNombre || 'Un estudiante'} reportó: ${p.motivo.trim()}`;
-  try { await enviarNotificacion(p.universidadId, titulo, mensaje, 'warning'); } catch { /* no-op */ }
-  if (esSobreEmpresa) {
-    try { await enviarNotificacion(p.empresaId!, titulo, mensaje, 'warning'); } catch { /* no-op */ }
-  }
+  const avisos: Promise<any>[] = [];
+  if (universidadId) avisos.push(enviarNotificacion(universidadId, titulo, mensaje, 'warning'));
+  if (esSobreEmpresa) avisos.push(enviarNotificacion(p.empresaId!, titulo, mensaje, 'warning'));
+  // El admin ve TODA incidencia nueva (no solo las escaladas), vía la misma
+  // cola que usa el panel — `escalarIncidencia`. Best-effort: si las reglas no
+  // dejan a un estudiante escribir ahí, la incidencia sigue visible en la
+  // bandeja de la universidad/empresa.
+  avisos.push(
+    addDoc(collection(db, 'admin_notifications'), {
+      title: `Nueva incidencia: ${p.motivo.trim()}`,
+      is_read: false,
+      tipo: 'incidencia',
+      incidencia_id: ref.id,
+      estudiante_id: uid,
+      estudiante_nombre: p.estudianteNombre ?? '',
+      created_at: serverTimestamp(),
+    }),
+  );
+  await Promise.allSettled(avisos);
 
   return ref.id;
 }

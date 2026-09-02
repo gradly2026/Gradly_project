@@ -2,6 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -70,14 +72,16 @@ interface Props {
 }
 
 /**
- * Historial de Pasantes (Empresa): estudiantes que terminaron pasantías
- * (`solicitudes_practicas` con `estado: 'finalizado'`). Permite re-contactar
+ * Historial de Pasantes (Empresa): estudiantes que terminaron pasantías, por
+ * los dos flujos — grupo (`solicitudes_practicas` con `estado: 'finalizado'`) y
+ * cupo (`asignaciones_cupo` con `finalizada === true`). Permite re-contactar
  * abriendo un chat directo y ver el perfil público destacando rango y puntuación.
  */
 export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
   const router = useRouter();
 
   const [solicitudes, setSolicitudes] = useState<any[]>([]);
+  const [cuposFin, setCuposFin] = useState<any[]>([]);
   const [items, setItems] = useState<PasanteItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [resolviendo, setResolviendo] = useState<string | null>(null);
@@ -109,7 +113,22 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
         setLoading(false);
       },
     );
-    return unsub;
+    // Pasantías por CUPO ya culminadas (`asignaciones_cupo` con
+    // `finalizada === true`) — el flujo nuevo, que el historial de grupo no ve.
+    const unsubCupos = onSnapshot(
+      query(collection(db, "asignaciones_cupo"), where("empresaId", "==", empresaId)),
+      (snap) =>
+        setCuposFin(
+          snap.docs
+            .map((d) => ({ id: d.id, ...(d.data() as any) }))
+            .filter((c) => c.finalizada === true && c.estado !== "cancelado"),
+        ),
+      (error) => console.warn("Error en listener (historial cupos):", error),
+    );
+    return () => {
+      unsub();
+      unsubCupos();
+    };
   }, [empresaId]);
 
   // ── Resuelve uid real + rango de cada alumno vía perfiles_estudiantes ──
@@ -166,6 +185,39 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
         });
       });
 
+      // ── Pasantes por CUPO culminados ──
+      // `estudianteId` ya es un uid real; se lee su perfil para foto/rango.
+      const cupoIds = [...new Set(cuposFin.map((c) => c.estudianteId).filter(Boolean))];
+      const perfilCupo: Record<string, any> = {};
+      await Promise.all(
+        cupoIds.map(async (id) => {
+          try {
+            const d = await getDoc(doc(db, "perfiles_estudiantes", id));
+            perfilCupo[id] = d.exists() ? d.data() : {};
+          } catch {
+            perfilCupo[id] = {};
+          }
+        }),
+      );
+      if (cancelado) return;
+      cuposFin.forEach((c) => {
+        const pf = perfilCupo[c.estudianteId] ?? {};
+        const horas = Number(c.horasCumplidas ?? pf.horas_aprobadas ?? 0);
+        lista.push({
+          key: `cupo-${c.id}`,
+          solicitudId: c.id,
+          nombre: c.estudianteNombre || pf.nombre_completo || "Estudiante",
+          carrera: c.carrera || pf.carrera || "Sin carrera",
+          fechaInicio: c.fechaPresentacion ?? "",
+          fechaFin: "",
+          estudianteUid: c.estudianteId ?? null,
+          foto: pf.foto_url ?? null,
+          nivel: calcularNivelEstudiante(horas, horas || 1),
+          puntuacion: Number(pf.calificacion_promedio ?? 0),
+          horasAprobadas: horas,
+        });
+      });
+
       lista.sort((a, b) => a.nombre.localeCompare(b.nombre));
       setItems(lista);
     })();
@@ -173,7 +225,7 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
     return () => {
       cancelado = true;
     };
-  }, [solicitudes]);
+  }, [solicitudes, cuposFin]);
 
   const perfilViewer = useMemo(() => empresaId, [empresaId]);
 
