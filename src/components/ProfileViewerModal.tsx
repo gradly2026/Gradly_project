@@ -43,7 +43,7 @@ import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { useIniciarChat } from '../hooks/useIniciarChat';
 import { subscribeUserChats, type ChatListItem } from '../services/chatService';
 import StorageAvatar from './StorageAvatar';
-import ResenasFeedback, { PromedioSimple } from './ResenasFeedback';
+import { ResenasResumen } from './ResenasFeedback';
 
 export type ProfileTipo = 'estudiante' | 'empresa' | 'universidad';
 
@@ -333,18 +333,11 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                 ResenasFeedback.tsx para el porqué de dejarlos separados). */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Reseñas</Text>
-              {tipo === 'universidad' ? (
-                <PromedioSimple
-                  promedio={Number(data.calificacion_estudiantes_promedio ?? 0)}
-                  theme={isDark ? 'dark' : 'light'}
-                />
-              ) : (
-                <ResenasFeedback
-                  entidadId={profileId}
-                  entidadRol={tipo === 'empresa' ? 'empresa' : 'estudiante'}
-                  theme={isDark ? 'dark' : 'light'}
-                />
-              )}
+              <ResenasResumen
+                entidadId={profileId}
+                entidadRol={tipo}
+                theme={isDark ? 'dark' : 'light'}
+              />
             </View>
 
             {tipo === 'estudiante' && (

@@ -408,7 +408,12 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Aún no hay reseñas.": "No reviews yet.",
   "De una empresa": "From a company",
   "De un estudiante": "From a student",
+  "De una universidad": "From a university",
+  "Ver más": "See more",
   "Sin datos aún": "No data yet",
+  "Lo que estudiantes y empresas opinan de tu universidad":
+    "What students and companies think of your university",
+  "Aún sin estudiantes trabajando.": "No students working yet.",
   "Promedio de calificación de tus estudiantes en sus pasantías.":
     "Average rating of your students in their internships.",
   "Calificación y comentarios recibidos": "Rating and comments received",

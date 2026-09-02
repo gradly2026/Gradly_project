@@ -15,7 +15,7 @@ import { collection, doc, documentId, getDoc, getDocs, query, where } from "fire
 import { db } from "../src/config/firebaseConfig";
 import CertificadoGradly from "../src/components/CertificadoGradly";
 import RangoCard from "../src/components/RangoCard";
-import ResenasFeedback, { PromedioSimple } from "../src/components/ResenasFeedback";
+import { ResenasResumen } from "../src/components/ResenasFeedback";
 import SelloEmpresa from "../src/components/SelloEmpresa";
 import { calcularRango } from "../src/services/feedbackService";
 import ReportarModal from "./ReportarModal";
@@ -317,22 +317,21 @@ export default function PerfilPublicoModal({
                 ) : null}
                 ── */}
 
-                {/* Bandeja de reseñas (estrellas + comentario) — empresa/estudiante
-                    tienen reseñas reales vía feedback_pasantias; universidad solo
-                    un promedio derivado, sin lista de comentarios. */}
+                {/* Vistazo de reseñas: promedio + "Ver más" → modal con la lista
+                    completa (feedback_pasantias). Los 3 roles reciben reseñas
+                    reales desde que la evaluación es a 3 bandas. */}
                 <View style={{ marginBottom: 12 }}>
-                  {rol === "empresa" || rol === "talento" || rol === "alumno" ? (
-                    <ResenasFeedback
-                      entidadId={userId}
-                      entidadRol={rol === "empresa" ? "empresa" : "estudiante"}
-                      theme={theme}
-                    />
-                  ) : (
-                    <PromedioSimple
-                      promedio={Number(perfil.calificacion_estudiantes_promedio ?? 0)}
-                      theme={theme}
-                    />
-                  )}
+                  <ResenasResumen
+                    entidadId={userId}
+                    entidadRol={
+                      rol === "empresa"
+                        ? "empresa"
+                        : rol === "universidad"
+                        ? "universidad"
+                        : "estudiante"
+                    }
+                    theme={theme}
+                  />
                 </View>
 
                 {/* Descripción */}

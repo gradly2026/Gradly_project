@@ -5,7 +5,7 @@
  *  - <RedGradlyBanner />            → carrusel "Estadísticas de la Red Gradly"
  *                                     (Top empresas / universidades) para el Inicio.
  *  - <PerfilStatsEmpresa empresaId />     → panel de Mi Perfil (Empresa):
- *      BarChart de pagos + listas de universidades aliadas y estudiantes.
+ *      listas de universidades aliadas y estudiantes trabajando (datos reales).
  *  - <PerfilStatsUniversidad universidadId /> → panel de Mi Perfil (Universidad):
  *      PieChart del estado de las postulaciones de sus grupos.
  */
@@ -197,106 +197,92 @@ export function RedGradlyBanner() {
 // ═════════════════════════════════════════════
 export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
   const [verPerfilId, setVerPerfilId] = useState<string | null>(null);
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [trans, setTrans] = useState<any[]>([]);
+  // Marca durable de alianzas: `perfiles_empresas.aliados_universidades_ids`
+  // (arrayUnion al aprobar una pasantía de grupo o reservar un cupo). No se
+  // borra aunque la pasantía termine — es el "ya trabajamos con esta uni".
+  const [aliadosIds, setAliadosIds] = useState<string[]>([]);
   const [grupoApps, setGrupoApps] = useState<any[]>([]);
   const [contratados, setContratados] = useState<any[]>([]);
-  const [unisAliadas, setUnisAliadas] = useState<string[]>([]);
+  const [cupos, setCupos] = useState<any[]>([]);
+  const [unisAliadas, setUnisAliadas] = useState<{ id: string; nombre: string }[]>([]);
+
+  const inscripcionesCupo = useInscripcionesActivas('empresaId', empresaId);
 
   useEffect(() => {
     if (!empresaId) return;
     const unsubs = [
-      onSnapshot(query(collection(db, 'transacciones'), where('empresa_id', '==', empresaId)),
-        s => setTrans(s.docs.map(d => d.data())),
-        error => console.warn('Error en listener (transacciones):', error)),
+      onSnapshot(doc(db, 'perfiles_empresas', empresaId),
+        s => setAliadosIds(Array.isArray((s.data() as any)?.aliados_universidades_ids) ? (s.data() as any).aliados_universidades_ids : []),
+        error => console.warn('Error en listener (perfil empresa):', error)),
       onSnapshot(query(collection(db, 'aplicaciones_grupos'), where('empresaId', '==', empresaId)),
         s => setGrupoApps(s.docs.map(d => d.data())),
         error => console.warn('Error en listener (aplicaciones_grupos):', error)),
       onSnapshot(query(collection(db, 'aplicaciones'), where('empresa_id', '==', empresaId)),
-        s => setContratados(s.docs.filter(d => (d.data() as any).estado === 'contratado').map(d => d.data())),
+        s => setContratados(s.docs.filter(d => (d.data() as any).estado === 'contratado').map(d => ({ id: d.id, ...(d.data() as any) }))),
         error => console.warn('Error en listener (aplicaciones empresa):', error)),
+      onSnapshot(query(collection(db, 'asignaciones_cupo'), where('empresaId', '==', empresaId)),
+        s => setCupos(s.docs.map(d => ({ id: d.id, ...(d.data() as any) }))),
+        error => console.warn('Error en listener (asignaciones_cupo empresa):', error)),
     ];
     return () => unsubs.forEach(u => u());
   }, [empresaId]);
 
-  // Resolver nombres de universidades aliadas (postulaciones aprobadas/en proceso)
+  // Nombres de las universidades aliadas: unión de la marca durable
+  // (`aliados_universidades_ids`) + las postulaciones de grupo aprobadas/en
+  // revisión (por si la marca aún no se escribió en algún flujo).
   useEffect(() => {
-    const ids = [...new Set(
-      grupoApps.filter(a => a.estado === 'aprobada' || a.estado === 'revisando').map(a => a.universidadId),
-    )].filter(Boolean) as string[];
+    const ids = [...new Set([
+      ...aliadosIds,
+      ...grupoApps.filter(a => a.estado === 'aprobada' || a.estado === 'revisando').map(a => a.universidadId),
+    ])].filter(Boolean) as string[];
     if (ids.length === 0) { setUnisAliadas([]); return; }
     let cancel = false;
     Promise.all(ids.map(id => getDoc(doc(db, 'perfiles_universidades', id))))
       .then(snaps => {
         if (cancel) return;
-        setUnisAliadas(snaps.filter(s => s.exists()).map(s => (s.data() as any).nombre_universidad ?? 'Universidad'));
+        setUnisAliadas(
+          snaps
+            .filter(s => s.exists())
+            .map(s => ({ id: s.id, nombre: (s.data() as any).nombre_universidad ?? 'Universidad' })),
+        );
       })
       .catch(() => {});
     return () => { cancel = true; };
-  }, [grupoApps]);
+  }, [aliadosIds, grupoApps]);
 
-  // Agregación mensual de pagos completados (últimos 6 meses)
-  const chart = useMemo(() => {
-    const now = new Date();
-    const labels: string[] = [];
-    const buckets: number[] = [];
-    const keyIdx = new Map<string, number>();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      keyIdx.set(key, labels.length);
-      labels.push(MESES[d.getMonth()]);
-      buckets.push(0);
-    }
-    trans.forEach(t => {
-      if (t.estado !== 'completado') return;
-      if (t.tipo === 'suscripcion') return; // pago del plan de Gradly, no pago a un grupo
-      const f = t.fecha?.toDate?.();
-      if (!f) return;
-      const key = `${f.getFullYear()}-${f.getMonth()}`;
-      const idx = keyIdx.get(key);
-      if (idx !== undefined) buckets[idx] += Number(t.monto) || 0;
+  // Estudiantes trabajando ahora: contratados (flujo individual legado) +
+  // inscripciones de cupo activas (no finalizadas). Se deduplica por id.
+  const trabajando = useMemo(() => {
+    const map = new Map<string, string>();
+    contratados.forEach(a => {
+      if (a.estudiante_id) map.set(a.estudiante_id, a.estudiante_nombre ?? 'Estudiante');
     });
-    return { labels, data: buckets, total: buckets.reduce((a, b) => a + b, 0) };
-  }, [trans]);
-
-  const chartConfig = makeChartConfig(colors, isDark);
-  const chartWidth = SCREEN_W - 96;
+    cupos.forEach(c => {
+      if (c.estado === 'tomado' && c.finalizada !== true && c.estudianteId) {
+        map.set(c.estudianteId, c.estudianteNombre ?? 'Estudiante');
+      }
+    });
+    // `inscripcionesCupo` ya trae la meta/progreso, pero para esta lista basta
+    // el id+nombre; se usa `cupos` directo para no depender del orden de carga.
+    void inscripcionesCupo;
+    return [...map.entries()].map(([id, nombre]) => ({ id, nombre }));
+  }, [contratados, cupos, inscripcionesCupo]);
 
   return (
     <View style={{ gap: 16 }}>
-      {/* Pagos */}
-      <View>
-        <Text style={styles.panelTitle}>Pagos a grupos (últimos 6 meses)</Text>
-        {chart.total > 0 ? (
-          <BarChart
-            data={{ labels: chart.labels, datasets: [{ data: chart.data }] }}
-            width={chartWidth}
-            height={200}
-            yAxisLabel="$"
-            yAxisSuffix=""
-            chartConfig={chartConfig}
-            fromZero
-            showValuesOnTopOfBars
-            style={styles.chart}
-          />
-        ) : (
-          <Text style={styles.empty}>Aún no hay pagos registrados.</Text>
-        )}
-      </View>
-
       {/* Universidades aliadas */}
       <View>
         <Text style={styles.panelTitle}>Universidades aliadas ({unisAliadas.length})</Text>
         {unisAliadas.length === 0 ? (
           <Text style={styles.empty}>Aún sin universidades aliadas.</Text>
         ) : (
-          unisAliadas.map((n, i) => (
-            <View key={`${n}-${i}`} style={styles.listRow}>
+          unisAliadas.map(u => (
+            <View key={u.id} style={styles.listRow}>
               <Ionicons name="school-outline" size={18} color={colors.primaryLight} />
-              <Text style={styles.listText} numberOfLines={1}>{n}</Text>
+              <Text style={styles.listText} numberOfLines={1} noTranslate>{u.nombre}</Text>
             </View>
           ))
         )}
@@ -304,20 +290,19 @@ export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
 
       {/* Estudiantes trabajando */}
       <View>
-        <Text style={styles.panelTitle}>Estudiantes trabajando ({contratados.length})</Text>
-        {contratados.length === 0 ? (
-          <Text style={styles.empty}>Aún sin estudiantes contratados.</Text>
+        <Text style={styles.panelTitle}>Estudiantes trabajando ({trabajando.length})</Text>
+        {trabajando.length === 0 ? (
+          <Text style={styles.empty}>Aún sin estudiantes trabajando.</Text>
         ) : (
-          contratados.map((a, i) => (
+          trabajando.map(e => (
             <TouchableOpacity
-              key={a.estudiante_id ?? i}
+              key={e.id}
               style={styles.listRow}
               activeOpacity={0.7}
-              disabled={!a.estudiante_id}
-              onPress={() => a.estudiante_id && setVerPerfilId(a.estudiante_id)}
+              onPress={() => setVerPerfilId(e.id)}
             >
               <Ionicons name="person-outline" size={18} color={colors.success} />
-              <Text style={styles.listText} numberOfLines={1}>{a.estudiante_nombre ?? 'Estudiante'}</Text>
+              <Text style={styles.listText} numberOfLines={1} noTranslate>{e.nombre}</Text>
             </TouchableOpacity>
           ))
         )}

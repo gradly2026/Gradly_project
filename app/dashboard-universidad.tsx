@@ -121,7 +121,7 @@ import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 // Ya explicado a fondo en app/(tabs)/perfil.tsx: recibe una lista
 // `sections` (título/ícono/campos o render personalizado) y dibuja toda
 // la pantalla de perfil de forma consistente.
-import { PromedioSimple } from '../src/components/ResenasFeedback';
+import ResenasFeedback from '../src/components/ResenasFeedback';
 import { VacantesDisponibles } from '../src/components/Matchmaking';
 import { PerfilStatsUniversidad, RedGradlyBanner } from '../src/components/NetworkStats';
 import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTour';
@@ -966,13 +966,14 @@ export default function DashboardUniversidad() {
             },
             {
               id: 'resenas',
-              title: 'Calificación',
-              subtitle: 'Promedio de tus estudiantes en sus pasantías',
+              title: 'Reseñas',
+              subtitle: 'Lo que estudiantes y empresas opinan de tu universidad',
               icon: 'star-outline',
               tone: 'orange',
               render: () => (
-                <PromedioSimple
-                  promedio={(perfil as any)?.calificacion_estudiantes_promedio ?? null}
+                <ResenasFeedback
+                  entidadId={user!.uid}
+                  entidadRol="universidad"
                   theme={isDark ? 'dark' : 'light'}
                 />
               ),
