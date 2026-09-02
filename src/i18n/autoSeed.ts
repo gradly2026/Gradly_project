@@ -886,6 +886,14 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Comentario breve sobre el desempeño": "Brief comment on performance",
   "No se pudieron calcular las horas de la práctica. Revisa el grupo del estudiante antes de enviar.":
     "The placement hours couldn't be calculated. Check the student's group before sending.",
+  "Toca un estudiante para calificarlo. Al terminar con uno, elige el siguiente.":
+    "Tap a student to rate them. When you finish with one, pick the next.",
+  "No se pudo guardar la evaluación (permisos). Inténtalo de nuevo en un momento.":
+    "The review couldn't be saved (permissions). Try again in a moment.",
+  "No se pudo enviar la evaluación. Inténtalo de nuevo.": "The review couldn't be sent. Try again.",
+  "Permite las ventanas emergentes para ver el documento.":
+    "Allow pop-ups to view the document.",
+  "No se pudo abrir el documento.": "Couldn't open the document.",
   "Ver / descargar PDF": "View / download PDF",
   "Adjuntar mi PDF": "Attach my PDF",
   "PDF adjunto — reemplaza la constancia automática al enviar.":

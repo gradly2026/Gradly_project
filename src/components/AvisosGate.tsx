@@ -107,50 +107,72 @@ function CulminacionFlow({
   onFin: () => void;
 }) {
   const [fase, setFase] = useState<'aviso' | 'evaluar' | 'final'>('aviso');
-  const [cola, setCola] = useState<FeedbackPendiente[] | null>(null);
-  const [idx, setIdx] = useState(0);
+  // Estudiantes (asignacionId) ya calificados en esta sesión del modal.
+  const [hechas, setHechas] = useState<string[]>([]);
+  // Estudiante que se está calificando ahora (asignacionId), o null.
+  const [activo, setActivo] = useState<string | null>(null);
+  const [subCola, setSubCola] = useState<FeedbackPendiente[] | null>(null);
+  const [subIdx, setSubIdx] = useState(0);
   const [finIdx, setFinIdx] = useState(0);
 
-  const empezarEvaluacion = async () => {
+  const multi = asignaciones.length > 1;
+  const restantes = asignaciones.filter(a => !hechas.includes(a.id));
+  const itemsRestantes = items.filter(it => restantes.some(a => a.id === it.id));
+
+  // Carga las evaluaciones pendientes SOLO de un estudiante y arranca su cola.
+  const empezarEvaluacion = async (asignacionId: string) => {
+    setActivo(asignacionId);
+    setSubCola(null);
+    setSubIdx(0);
     setFase('evaluar');
     try {
-      const set = new Set(asignaciones.map(a => a.id));
       const todos = await getFeedbackPendiente(uid, rol);
-      setCola(todos.filter(p => set.has(p.solicitudId)));
+      setSubCola(todos.filter(p => p.solicitudId === asignacionId));
     } catch {
-      setCola([]);
+      setSubCola([]);
     }
-    setIdx(0);
   };
 
   if (fase === 'aviso') {
+    if (restantes.length === 0) {
+      setTimeout(() => setFase('final'), 0);
+      return null;
+    }
     return (
       <AvisoListaModal
         icon="checkmark-done-circle-outline"
         titulo={titulo}
-        subtitulo={subtitulo}
-        items={items}
-        accionLabel="Calificar ahora"
-        onAccion={empezarEvaluacion}
+        subtitulo={
+          multi
+            ? 'Toca un estudiante para calificarlo. Al terminar con uno, elige el siguiente.'
+            : subtitulo
+        }
+        items={itemsRestantes}
+        {...(multi
+          ? { onItemPress: (id: string) => void empezarEvaluacion(id) }
+          : { accionLabel: 'Calificar ahora', onAccion: () => void empezarEvaluacion(asignaciones[0].id) })}
         onCerrar={onFin}
       />
     );
   }
 
   if (fase === 'evaluar') {
-    if (cola === null) return null; // cargando la cola
-    const actual = cola[idx];
+    if (subCola === null) return null; // cargando
+    const actual = subCola[subIdx];
     if (!actual) {
-      // cola agotada (o vacía) → pasar al cierre en el próximo tick (evita el
-      // warning de "removeChild" del portal de react-native-web).
-      setTimeout(() => setFase('final'), 0);
+      // Este estudiante terminó → volver a la lista (o al cierre si no quedan).
+      setTimeout(() => {
+        setHechas(h => (activo && !h.includes(activo) ? [...h, activo] : h));
+        setActivo(null);
+        setFase('aviso');
+      }, 0);
       return null;
     }
     return (
       <FeedbackExperienciaModal
         key={actual.feedbackId}
         pendiente={actual}
-        onSubmitted={() => setTimeout(() => setIdx(i => i + 1), 0)}
+        onSubmitted={() => setTimeout(() => setSubIdx(i => i + 1), 0)}
       />
     );
   }

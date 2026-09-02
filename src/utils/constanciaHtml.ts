@@ -7,6 +7,8 @@
 // (comprobanteService.ts) y ya están en la BD cuando se envía.
 // ════════════════════════════════════════════════════════════════════════
 
+import * as Print from 'expo-print';
+import { Platform } from 'react-native';
 import { textoHorario } from '../data/disponibilidad';
 import type { DatosConstancia } from '../services/comprobanteService';
 
@@ -104,4 +106,29 @@ export function constanciaHtml(d: DatosConstancia, extra?: ConstanciaExtra): str
 
     <div class="pagenum">1</div>
   </body></html>`;
+}
+
+/**
+ * Abre la constancia como documento para ver / imprimir / guardar como PDF.
+ *
+ * OJO web: `expo-print` en web es literalmente `window.print()` de la PÁGINA
+ * actual — ignora `{ html }` (imprimiría el dashboard, no la constancia). Por
+ * eso en web se abre el HTML en una pestaña nueva (Blob URL), donde el usuario
+ * imprime/guarda desde el navegador. En nativo sí funciona `Print.printAsync`.
+ */
+export async function abrirConstancia(html: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    const w = typeof window !== 'undefined' ? window : undefined;
+    if (!w) throw new Error('No se pudo abrir el documento.');
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    const tab = w.open(url, '_blank');
+    if (!tab) {
+      URL.revokeObjectURL(url);
+      throw new Error('Permite las ventanas emergentes para ver el documento.');
+    }
+    // Se revoca tras dar tiempo a que la pestaña cargue.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return;
+  }
+  await Print.printAsync({ html });
 }

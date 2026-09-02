@@ -88,15 +88,16 @@ service cloud.firestore {
                      || esRol('empresa')
                      || esAdmin();
       allow create: if esRol('universidad') || esAdmin();
-      // 🆕 CAMBIO: además del dueño / universidad dueña / admin, una EMPRESA puede
-      //    actualizar el perfil SOLO en los campos de gamificación/calificación
+      // 🆕 CAMBIO: además del dueño / universidad dueña / admin, una EMPRESA o
+      //    (evaluación a 3 bandas) una UNIVERSIDAD puede actualizar el perfil
+      //    SOLO en los campos de gamificación/calificación
       //    (feedbackService.enviarFeedback y ProfileViewerModal escriben el rango,
-      //    XP y promedio del estudiante evaluado). El `hasOnly` impide que la
-      //    empresa toque cualquier otro campo.
+      //    XP y promedio del estudiante evaluado). El `hasOnly` impide tocar
+      //    cualquier otro campo.
       allow update: if request.auth.uid == studentId
                      || resource.data.universidad_id == request.auth.uid
                      || esAdmin()
-                     || (esRol('empresa')
+                     || ((esRol('empresa') || esRol('universidad'))
                          && request.resource.data.diff(resource.data).affectedKeys()
                               .hasOnly([
                                 'puntos_experiencia', 'pasantias_completadas',
@@ -142,7 +143,7 @@ service cloud.firestore {
       //    la puede leer cada dueño — ver el bloque de abajo).
       allow update: if request.auth.uid == empresaId
                      || esAdmin()
-                     || (esRol('estudiante')
+                     || ((esRol('estudiante') || esRol('universidad'))
                          && request.resource.data.diff(resource.data).affectedKeys()
                               .hasOnly([
                                 'puntos_experiencia', 'pasantias_completadas',

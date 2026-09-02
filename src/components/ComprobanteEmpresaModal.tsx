@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { doc, getDoc } from 'firebase/firestore';
 import * as DocumentPicker from 'expo-document-picker';
-import * as Print from 'expo-print';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { db } from '../config/firebaseConfig';
@@ -13,7 +12,7 @@ import {
 } from '../services/comprobanteService';
 import type { AsignacionCupo } from '../services/reclamoCuposService';
 import { progresoPorMeta } from '../utils/horasPasantia';
-import { constanciaHtml, fmtFechaLarga } from '../utils/constanciaHtml';
+import { abrirConstancia, constanciaHtml, fmtFechaLarga } from '../utils/constanciaHtml';
 import { showAlert } from './AppAlert';
 import { AutoText as Text, AutoTextInput as TextInput } from './AutoText';
 
@@ -127,9 +126,7 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
 
   const verPdf = async () => {
     try {
-      await Print.printAsync({
-        html: constanciaHtml(datos, { area, supervisor, nota, fechaEmisionISO }),
-      });
+      await abrirConstancia(constanciaHtml(datos, { area, supervisor, nota, fechaEmisionISO }));
     } catch (e: any) {
       showAlert('No se pudo generar el PDF', e?.message ?? 'Inténtalo de nuevo.');
     }

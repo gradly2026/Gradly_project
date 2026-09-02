@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import * as Print from 'expo-print';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
@@ -12,7 +11,7 @@ import {
   type Comprobante,
 } from '../services/comprobanteService';
 import { COLECCION_ASIGNACIONES, type AsignacionCupo } from '../services/reclamoCuposService';
-import { constanciaHtml } from '../utils/constanciaHtml';
+import { abrirConstancia, constanciaHtml } from '../utils/constanciaHtml';
 import { showAlert, showConfirm } from './AppAlert';
 import { AutoText as Text } from './AutoText';
 import ComprobanteEmpresaModal from './ComprobanteEmpresaModal';
@@ -94,14 +93,14 @@ export default function ComprobantePasantiaCard({ rol, uid }: { rol: Rol; uid: s
       if (comp.origen === 'pdf' && comp.archivoUrl) {
         await Linking.openURL(comp.archivoUrl);
       } else {
-        await Print.printAsync({
-          html: constanciaHtml(comp, {
+        await abrirConstancia(
+          constanciaHtml(comp, {
             area: comp.area,
             supervisor: comp.supervisor,
             nota: comp.notaEmpresa,
             fechaEmisionISO: comp.fechaEmision,
           }),
-        });
+        );
       }
     } catch (e: any) {
       showAlert('No se pudo abrir el documento', e?.message ?? 'Inténtalo de nuevo.');

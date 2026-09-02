@@ -99,6 +99,7 @@ export default function FeedbackExperienciaModal({
   const [comentario, setComentario] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState<EnviarFeedbackResult | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Contexto: incidencias de la práctica de este estudiante, visibles solo a
   // quien lo evalúa (empresa o universidad). No expone nada nuevo — son las
@@ -139,6 +140,7 @@ export default function FeedbackExperienciaModal({
   const handleEnviar = async () => {
     if (!completo || enviando) return;
     setEnviando(true);
+    setErrorMsg(null);
     try {
       const res = await enviarFeedback({
         feedbackId: pendiente.feedbackId,
@@ -159,6 +161,11 @@ export default function FeedbackExperienciaModal({
         return;
       }
       console.warn("Error enviando feedback:", error);
+      setErrorMsg(
+        String(error?.message ?? "").includes("insufficient permissions")
+          ? "No se pudo guardar la evaluación (permisos). Inténtalo de nuevo en un momento."
+          : error?.message || "No se pudo enviar la evaluación. Inténtalo de nuevo.",
+      );
       setEnviando(false);
     }
   };
@@ -281,7 +288,9 @@ export default function FeedbackExperienciaModal({
                   </>
                 )}
               </TouchableOpacity>
-              {!completo ? (
+              {errorMsg ? (
+                <Text style={styles.errorMsg}>{errorMsg}</Text>
+              ) : !completo ? (
                 <Text style={styles.hint}>
                   Califica todos los criterios para continuar.
                 </Text>
@@ -439,6 +448,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: "center",
     marginTop: 10,
+  },
+  errorMsg: {
+    color: "#f87171",
+    fontSize: 12.5,
+    fontWeight: "600",
+    textAlign: "center",
+    marginTop: 12,
+    lineHeight: 17,
   },
   // ── Resultado ──
   resultWrap: {

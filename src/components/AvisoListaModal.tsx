@@ -26,6 +26,9 @@ interface Props {
    *  dibuja como botón principal y "Entendido" pasa a enlace secundario. */
   accionLabel?: string;
   onAccion?: () => void;
+  /** Si se pasa, cada fila es tocable y llama a esto con el id del item
+   *  (selector). En ese modo el pie muestra solo "Entendido". */
+  onItemPress?: (id: string) => void;
 }
 
 /**
@@ -35,9 +38,20 @@ interface Props {
  * estudiante, inscripciones nuevas para universidad/empresa) para no repetir la
  * misma maqueta tres veces.
  */
-export default function AvisoListaModal({ icon, titulo, subtitulo, items, onCerrar, accionLabel, onAccion }: Props) {
+export default function AvisoListaModal({ icon, titulo, subtitulo, items, onCerrar, accionLabel, onAccion, onItemPress }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
+
+  const contenido = (it: AvisoItem) => (
+    <>
+      {/* primary/secondary son nombres propios (empresa, estudiante) o
+          títulos escritos por la empresa: no se traducen. */}
+      <Text style={s.itemPrimary} numberOfLines={1} noTranslate>{it.primary}</Text>
+      {!!it.secondary && <Text style={s.itemSecondary} numberOfLines={1} noTranslate>{it.secondary}</Text>}
+      {!!it.meta && <Text style={s.itemMeta} numberOfLines={1}>{it.meta}</Text>}
+      {!!it.highlight && <Text style={s.itemHighlight}>{it.highlight}</Text>}
+    </>
+  );
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onCerrar}>
@@ -51,19 +65,23 @@ export default function AvisoListaModal({ icon, titulo, subtitulo, items, onCerr
           <Text style={s.subtitulo}>{subtitulo}</Text>
 
           <ScrollView style={s.lista} contentContainerStyle={{ gap: 10 }} showsVerticalScrollIndicator={false}>
-            {items.map(it => (
-              <View key={it.id} style={s.item}>
-                {/* primary/secondary son nombres propios (empresa, estudiante) o
-                    títulos escritos por la empresa: no se traducen. */}
-                <Text style={s.itemPrimary} numberOfLines={1} noTranslate>{it.primary}</Text>
-                {!!it.secondary && <Text style={s.itemSecondary} numberOfLines={1} noTranslate>{it.secondary}</Text>}
-                {!!it.meta && <Text style={s.itemMeta} numberOfLines={1}>{it.meta}</Text>}
-                {!!it.highlight && <Text style={s.itemHighlight}>{it.highlight}</Text>}
-              </View>
-            ))}
+            {items.map(it =>
+              onItemPress ? (
+                <TouchableOpacity key={it.id} style={[s.item, s.itemTappable]} onPress={() => onItemPress(it.id)} activeOpacity={0.7}>
+                  <View style={{ flex: 1 }}>{contenido(it)}</View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              ) : (
+                <View key={it.id} style={s.item}>{contenido(it)}</View>
+              ),
+            )}
           </ScrollView>
 
-          {accionLabel && onAccion ? (
+          {onItemPress ? (
+            <TouchableOpacity style={s.btnLink} onPress={onCerrar} activeOpacity={0.7}>
+              <Text style={s.btnLinkText}>Entendido</Text>
+            </TouchableOpacity>
+          ) : accionLabel && onAccion ? (
             <>
               <TouchableOpacity style={s.btn} onPress={onAccion} activeOpacity={0.85}>
                 <Text style={s.btnText}>{accionLabel}</Text>
@@ -111,6 +129,7 @@ const makeStyles = (COLORS: GradlyColors) =>
       borderRadius: 14, borderWidth: 1, borderColor: COLORS.border,
       padding: 13,
     },
+    itemTappable: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     itemPrimary: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
     itemSecondary: { fontSize: 12.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 2 },
     itemMeta: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 4 },
