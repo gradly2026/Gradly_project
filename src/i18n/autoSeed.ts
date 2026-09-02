@@ -1469,3 +1469,34 @@ export const INCIDENCIAS_SEED_EN: Record<string, string> = {
   "Problema con la plataforma": "Problem with the platform",
   "Otro": "Other",
 };
+
+// ── Rediseño de la sección "Reclutamiento" del dashboard empresa
+// (SeccionReclutamiento.tsx y, en fases siguientes, sus modales de contratar/
+// rechazar/despedir/tareas). Se van acumulando aquí las frases nuevas de cada
+// fase para que el inglés sea instantáneo (sin esperar la traducción por red),
+// según la regla del proyecto: toda UI nueva siembra sus textos. Las claves
+// que ya viven en AUTO_SEED_EN ("Contratado", "Vacante", "Vacantes", "Volver",
+// "Descripción", "Ubicación") NO se repiten aquí. ──
+export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
+  // Fase 1 — cascarón: pestañas, filtros, tarjetas y microsección.
+  "En reclutamiento": "Recruiting",
+  "Puestos": "Positions",
+  "Todos los contratados": "All hires",
+  "Puesto": "Position",
+  "postulantes": "applicants",
+  "contratados": "hired",
+  "Skills requeridas": "Required skills",
+  "Fecha límite:": "Deadline:",
+  "Cupos disponibles:": "Open spots:",
+  "Cupos: sin límite declarado": "Spots: no declared limit",
+  "Ver perfil": "View profile",
+  "No hay vacantes de empleo abiertas. Publica una desde \"Mis Vacantes\".":
+    "No open job vacancies. Post one from \"My Vacancies\".",
+  "Aún no has contratado a nadie. Cuando lo hagas, el puesto cubierto aparecerá aquí.":
+    "You haven't hired anyone yet. Once you do, the filled position will appear here.",
+  "Todavía no hay contratados.": "No hires yet.",
+  "Este puesto no tiene contratados.": "This position has no hires.",
+  "Todavía nadie se ha postulado a esta vacante.": "No one has applied to this vacancy yet.",
+  "Revisa tus vacantes de empleo y sus postulantes. Cada vacante muestra cuántos graduados se postularon; ábrela para ver el detalle, contratar o descartar. La pestaña \"Contratado\" reúne los puestos ya cubiertos.":
+    "Review your job vacancies and their applicants. Each vacancy shows how many graduates applied; open it to see the details, hire, or reject. The \"Hired\" tab gathers the positions already filled.",
+};

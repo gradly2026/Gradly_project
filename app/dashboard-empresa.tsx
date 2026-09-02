@@ -110,6 +110,7 @@ import { AREAS as AREAS_CATALOGO, tagsDeArea } from '../src/data/areas';
 import { normalizarHorario, textoHorario, valHorario, type HorarioPasantia } from '../src/data/disponibilidad';
 import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import CandidatosVacante from '../src/components/CandidatosVacante';
+import SeccionReclutamiento from '../src/components/SeccionReclutamiento';
 import PerfilPublicoModal from '../components/PerfilPublicoModal';
 import MapViewer from '../src/components/MapViewer';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
@@ -305,7 +306,7 @@ const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
   kanban: {
     titulo: 'Reclutamiento',
     texto:
-      'Mueve a los candidatos entre etapas: pendiente, en revisión, entrevista y contratado. Todo desde un tablero visual.',
+      'Revisa tus vacantes de empleo y sus postulantes. Cada vacante muestra cuántos graduados se postularon; ábrela para ver el detalle, contratar o descartar. La pestaña "Contratado" reúne los puestos ya cubiertos.',
   },
   activas: {
     titulo: 'Pasantías Activas',
@@ -485,19 +486,6 @@ const formatFecha = (raw: string): string => {
   if (digits.length >= 4) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
   return digits;
 };
-// Columnas del tablero Kanban de reclutamiento (SeccionKanban): key = valor
-// real guardado en `aplicaciones.estado`, label = texto de la pestaña, color
-// = acento visual. El ORDEN dentro de SeccionKanban (variable local `ORDEN`)
-// se define aparte porque debe coincidir exactamente con la secuencia en la
-// que se puede avanzar/retroceder a un candidato.
-const KANBAN_COLS: { key: string; label: string; color: string }[] = [
-  { key: 'pendiente',   label: 'Pendientes',   color: COLORS.textMuted },
-  { key: 'en_revision', label: 'En Revisión',  color: COLORS.warning },
-  { key: 'entrevista',  label: 'Entrevista',   color: COLORS.primaryLight },
-  { key: 'contratado',  label: 'Contratado',   color: COLORS.success },
-];
-
-
 // ─────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────
@@ -1867,7 +1855,15 @@ export default function DashboardEmpresa() {
     switch (seccion) {
       case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} onVerPerfil={setPerfilCandidatoId} />;
       case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => { setVacanteEditando(null); setShowNuevaVacante(true); }} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} onEditar={abrirEditarVacante} onEliminar={handleEliminarVacante} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
-      case 'kanban':   return <SeccionKanban apps={apps} onMover={moverEstado} onSeleccionar={(a) => { setRatingEstudiante(0); setCandidatoSeleccionado(a); }} />;
+      case 'kanban':   return (
+        <SeccionReclutamiento
+          empresaId={user!.uid}
+          empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'}
+          vacantes={vacantes}
+          apps={apps}
+          onVerPerfilCandidato={setPerfilCandidatoId}
+        />
+      );
       case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? 'Empresa'} />;
       case 'historial': return <HistorialPasantes empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
       case 'perfil':   return renderPerfilSeccion();
@@ -3473,102 +3469,6 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
         }}
         ListEmptyComponent={<Text style={s.emptyText}>Sin vacantes publicadas.</Text>}
       />
-    </View>
-  );
-}
-
-// ─────────────────────────────────────────────
-// SECCIÓN: KANBAN — tablero de reclutamiento con pestañas en vez de columnas
-// lado a lado (más usable en pantallas angostas que un kanban horizontal
-// clásico): una pestaña por estado, con botones "←"/"Avanzar →" en cada
-// tarjeta para mover al candidato de una etapa a la siguiente/anterior.
-// ─────────────────────────────────────────────
-function SeccionKanban({ apps, onMover, onSeleccionar }: { apps: Aplicacion[]; onMover: (a: Aplicacion, s: string) => void; onSeleccionar: (a: Aplicacion) => void }) {
-  const { s, colors } = useThemedStyles();
-  // ORDEN: secuencia real de estados en Firestore (se conserva para mover ←/→)
-  const ORDEN = ['pendiente', 'en_revision', 'entrevista', 'contratado'];
-
-  // Pestaña activa. OJO: los ids coinciden con los valores guardados en la BD
-  // ('en_revision' lleva guion bajo) para no romper los filtros.
-  const [estadoTab, setEstadoTab] = useState<'pendiente' | 'en_revision' | 'entrevista' | 'contratado'>('pendiente');
-
-  // Pestañas reutilizando las etiquetas/orden de KANBAN_COLS.
-  const TABS = KANBAN_COLS.map(col => ({ id: col.key, label: col.label, color: col.color }));
-
-  // Lista filtrada al estado activo y posición en la secuencia.
-  const filtered = apps.filter(a => a.estado === estadoTab);
-  const idx = ORDEN.indexOf(estadoTab);
-
-  // Mensaje amable de lista vacía por pestaña.
-  const VACIO: Record<string, string> = {
-    pendiente:   'No hay postulantes pendientes por revisar.',
-    en_revision: 'No hay postulantes en revisión.',
-    entrevista:  'No hay postulantes en entrevista.',
-    contratado:  'Aún no has contratado a ningún postulante.',
-  };
-
-  return (
-    <View style={{ flex: 1, padding: 16, paddingBottom: 110 }}>
-      {/* ── Barra de pestañas horizontales ── */}
-      <View style={{ flexDirection: 'row', backgroundColor: colors.white4, borderRadius: 14, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: colors.border, gap: 4 }}>
-        {TABS.map(tab => {
-          const count = apps.filter(a => a.estado === tab.id).length;
-          const isActive = estadoTab === tab.id;
-          return (
-            <TouchableOpacity
-              key={tab.id}
-              style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: isActive ? colors.primary : 'transparent' }}
-              onPress={() => setEstadoTab(tab.id as any)}
-            >
-              <Text style={{ color: isActive ? '#fff' : colors.textMuted, fontFamily: FONTS.interSemiBold, fontSize: 12, textAlign: 'center' }}>
-                {tab.label}{count > 0 ? ` (${count})` : ''}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* ── Contenedor unificado con la lista del estado activo ── */}
-      <GlassCard style={{ flex: 1 }} contentStyle={{ flex: 1, padding: 12 }}>
-        {filtered.length === 0 ? (
-          <Text style={s.kanbanEmpty}>{VACIO[estadoTab]}</Text>
-        ) : (
-          <FlatList
-            data={filtered}
-            keyExtractor={item => item.id}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 8 }}
-            renderItem={({ item: app }) => (
-              <TouchableOpacity style={s.kanbanCard} activeOpacity={0.85} onPress={() => onSeleccionar(app)}>
-                <Text style={s.kanbanNombre} numberOfLines={1}>{app.estudiante_nombre}</Text>
-                <Text style={s.kanbanMeta}>{app.titulo_vacante ?? 'Vacante'}</Text>
-                <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
-                  {idx > 0 && (
-                    <JellyButton
-                      style={s.kanbanMoveBtn}
-                      contentStyle={{ paddingHorizontal: 10, paddingVertical: 5 }}
-                      onPress={() => onMover(app, ORDEN[idx - 1])}
-                    >
-                      <Ionicons name="chevron-back" size={14} color={colors.textMuted} />
-                    </JellyButton>
-                  )}
-                  {idx < ORDEN.length - 1 && (
-                    <JellyButton
-                      style={[s.kanbanMoveBtn, { backgroundColor: colors.primary12 }]}
-                      contentStyle={{ paddingHorizontal: 10, paddingVertical: 5 }}
-                      onPress={() => onMover(app, ORDEN[idx + 1])}
-                    >
-                      <Text style={{ fontSize: 11, fontFamily: FONTS.interSemiBold, color: colors.primaryLight }}>
-                        Avanzar →
-                      </Text>
-                    </JellyButton>
-                  )}
-                </View>
-              </TouchableOpacity>
-            )}
-          />
-        )}
-      </GlassCard>
     </View>
   );
 }

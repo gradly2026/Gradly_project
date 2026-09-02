@@ -54,7 +54,7 @@ import { app } from "../config/firebaseConfig";
 // src/config/firebaseConfig.ts. Se necesita aquí porque getFunctions()
 // requiere saber A QUÉ proyecto de Firebase pertenece.
 
-import { ADMIN_SEED_EN, AUTO_SEED_EN, CUPOS_SEED_EN, GESTION_SEED_EN, INCIDENCIAS_SEED_EN, NOTIF_MODALES_SEED_EN, PROGRESO_SEED_EN, RESUMEN_HOME_SEED_EN, UBICACION_SEED_EN } from "../i18n/autoSeed";
+import { ADMIN_SEED_EN, AUTO_SEED_EN, CUPOS_SEED_EN, GESTION_SEED_EN, INCIDENCIAS_SEED_EN, NOTIF_MODALES_SEED_EN, PROGRESO_SEED_EN, RECLUTAMIENTO_SEED_EN, RESUMEN_HOME_SEED_EN, UBICACION_SEED_EN } from "../i18n/autoSeed";
 // Estos son varios diccionarios "es → en" PRE-ESCRITOS a mano, definidos
 // en src/i18n/autoSeed.ts (ver la explicación completa en ese archivo y
 // en GUIA_02_TRADUCTOR_I18N.md). La idea es: para frases que YA sabemos
@@ -419,6 +419,10 @@ function seedStaticCache(): void {
   }
   for (const es in INCIDENCIAS_SEED_EN) {
     const en = INCIDENCIAS_SEED_EN[es];
+    if (en) mem[key("en", es)] = en;
+  }
+  for (const es in RECLUTAMIENTO_SEED_EN) {
+    const en = RECLUTAMIENTO_SEED_EN[es];
     if (en) mem[key("en", es)] = en;
   }
   // (Los 9 bloques hacen exactamente lo mismo, cada uno con un diccionario
