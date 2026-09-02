@@ -22,6 +22,10 @@ interface Props {
   subtitulo: string;
   items: AvisoItem[];
   onCerrar: () => void;
+  /** Acción primaria opcional (p. ej. "Calificar ahora"). Si se pasa, se
+   *  dibuja como botón principal y "Entendido" pasa a enlace secundario. */
+  accionLabel?: string;
+  onAccion?: () => void;
 }
 
 /**
@@ -31,7 +35,7 @@ interface Props {
  * estudiante, inscripciones nuevas para universidad/empresa) para no repetir la
  * misma maqueta tres veces.
  */
-export default function AvisoListaModal({ icon, titulo, subtitulo, items, onCerrar }: Props) {
+export default function AvisoListaModal({ icon, titulo, subtitulo, items, onCerrar, accionLabel, onAccion }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
@@ -59,9 +63,20 @@ export default function AvisoListaModal({ icon, titulo, subtitulo, items, onCerr
             ))}
           </ScrollView>
 
-          <TouchableOpacity style={s.btn} onPress={onCerrar} activeOpacity={0.85}>
-            <Text style={s.btnText}>Entendido</Text>
-          </TouchableOpacity>
+          {accionLabel && onAccion ? (
+            <>
+              <TouchableOpacity style={s.btn} onPress={onAccion} activeOpacity={0.85}>
+                <Text style={s.btnText}>{accionLabel}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.btnLink} onPress={onCerrar} activeOpacity={0.7}>
+                <Text style={s.btnLinkText}>Entendido</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity style={s.btn} onPress={onCerrar} activeOpacity={0.85}>
+              <Text style={s.btnText}>Entendido</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </Modal>
@@ -105,4 +120,6 @@ const makeStyles = (COLORS: GradlyColors) =>
       borderRadius: 14, paddingVertical: 14, alignItems: 'center',
     },
     btnText: { color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 14.5 },
+    btnLink: { marginTop: 10, paddingVertical: 6, alignItems: 'center' },
+    btnLinkText: { color: COLORS.textMuted, fontFamily: FONTS.interSemiBold, fontSize: 13 },
   });

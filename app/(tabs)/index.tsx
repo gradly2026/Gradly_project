@@ -89,6 +89,7 @@ import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import MiInstitucionCard from '../../src/components/MiInstitucionCard';
+import ComprobantePasantiaCard from '../../src/components/ComprobantePasantiaCard';
 // Línea de identidad "UES · Grupo 2026-A" bajo el saludo: le recuerda al
 // estudiante a qué universidad y grupo pertenece, dato que ya estaba en su
 // perfil pero no se mostraba en ninguna pantalla.
@@ -457,6 +458,10 @@ export default function FeedVacantes() {
   const [tieneAcuerdoAprobado, setTieneAcuerdoAprobado] = useState(false);
   const [acuerdoCargado, setAcuerdoCargado] = useState(false);
   const [tieneCupoTomado, setTieneCupoTomado] = useState(false);
+  // Cupo YA culminado por horas (Fase E): sigue en `estado:'tomado'` pero con
+  // `finalizada:true`. NO cuenta como pasantía activa — el alumno queda libre
+  // para ver el feed de vacantes de trabajo mientras se tramita su comprobante.
+  const [tieneCupoFinalizado, setTieneCupoFinalizado] = useState(false);
   const [cupoCargado, setCupoCargado] = useState(false);
   // GUÍA: notarás el patrón "X" + "XCargado" repetido varias veces en
   // este archivo (perfilCargado, acuerdoCargado, cupoCargado). Cada
@@ -560,8 +565,14 @@ export default function FeedVacantes() {
     );
     const unsub = onSnapshot(
       q,
-      snap => { setTieneCupoTomado(!snap.empty); setCupoCargado(true); },
-      () => { setTieneCupoTomado(false); setCupoCargado(true); },
+      snap => {
+        const cupos = snap.docs.map(d => d.data() as any);
+        // Un cupo culminado (`finalizada:true`) ya no es "activo".
+        setTieneCupoTomado(cupos.some(c => c.finalizada !== true));
+        setTieneCupoFinalizado(cupos.some(c => c.finalizada === true));
+        setCupoCargado(true);
+      },
+      () => { setTieneCupoTomado(false); setTieneCupoFinalizado(false); setCupoCargado(true); },
     );
     return unsub;
   }, [user]);
@@ -804,7 +815,7 @@ export default function FeedVacantes() {
   // completo si es Zona Roja, o si ya está graduado/en pasantía (ese caso lo
   // cubren las otras 2 ramas del render).
   const pasantiasDisponibles = useMemo(() => {
-    if (habilitadoParaVacantes || tienePasantiaActiva || zonaRoja) return [];
+    if (habilitadoParaVacantes || tienePasantiaActiva || tieneCupoFinalizado || zonaRoja) return [];
     // Corta temprano: si el estudiante está en cualquiera de las otras 2
     // situaciones (o es Zona Roja), esta lista ni siquiera se calcula —
     // simplemente queda vacía.
@@ -839,7 +850,7 @@ export default function FeedVacantes() {
       res = res.filter(v => v.modalidad === filtroActivo || v.area === filtroActivo);
     }
     return res;
-  }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, miCarrera, habilitadoParaVacantes, tienePasantiaActiva, zonaRoja, vacantesConCupoReservado]);
+  }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, miCarrera, habilitadoParaVacantes, tienePasantiaActiva, tieneCupoFinalizado, zonaRoja, vacantesConCupoReservado]);
 
   // ── Aplicar a vacante ────────────────────────────────────────────
   const handleAplicar = useCallback(async (vacante: Vacante) => {
@@ -1032,6 +1043,10 @@ export default function FeedVacantes() {
           variant="compacta"
         />
 
+        {/* Estado del comprobante de finalización tras culminar una pasantía por
+            cupo — se auto-oculta si no hay ninguno pendiente. */}
+        {user?.uid && <ComprobantePasantiaCard rol="estudiante" uid={user.uid} />}
+
         {/* Búsqueda y filtros: hay algo que buscar en los 3 estados del feed
             (vacantes, vacantes en modo lectura, o pasantías de autoservicio) —
             antes solo se mostraba si `habilitadoParaVacantes`. Se oculta solo
@@ -1133,8 +1148,9 @@ export default function FeedVacantes() {
         <View style={styles.loader}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
-      ) : habilitadoParaVacantes ? (
-        // ── Graduado: feed completo, aplicar habilitado (sin cambios) ──
+      ) : (habilitadoParaVacantes || (tieneCupoFinalizado && !tienePasantiaActiva)) ? (
+        // ── Graduado, o culminó su pasantía por cupo: feed completo de vacantes
+        //    de trabajo (aplicar habilitado si además está graduado) ──
         <FlatList
           data={filteredVacantes}
           renderItem={({ item }) => (
@@ -1147,7 +1163,11 @@ export default function FeedVacantes() {
               // "item.id in aplicaciones" comprueba si esa clave existe
               // en el diccionario (sin importar su valor).
               estadoAplicacion={aplicaciones[item.id] ?? ''}
-              onAplicar={handleAplicar}
+              // Culminó su pasantía por cupo pero aún no está graduado (su
+              // universidad no ha validado el comprobante): ve el feed en modo
+              // lectura hasta que se le acrediten las horas.
+              onAplicar={habilitadoParaVacantes ? handleAplicar : undefined}
+              readOnly={!habilitadoParaVacantes}
               onVerDetalle={setVacanteDetalle}
               applying={applying === item.id}
               empresaTier={empresaTiers[item.empresa_id]}
@@ -1162,7 +1182,13 @@ export default function FeedVacantes() {
             // Un componente que se dibuja UNA vez, arriba de toda la
             // lista (no se repite por cada elemento) — aquí, el banner
             // explicativo.
-            <EstadoBanner texto={t('feed_banner_graduado')} />
+            <EstadoBanner
+              texto={
+                habilitadoParaVacantes
+                  ? t('feed_banner_graduado')
+                  : 'Culminaste tu pasantía. Ya puedes explorar las vacantes de trabajo; podrás postularte cuando tu universidad valide tu comprobante.'
+              }
+            />
           }
           ListEmptyComponent={<EmptyState />}
           // Se dibuja SOLO si `data` está vacío, en vez de ListHeaderComponent.

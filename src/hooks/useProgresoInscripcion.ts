@@ -52,7 +52,11 @@ export function useProgresoInscripcion(estudianteId?: string | null): ProgresoIn
         where('estado', '==', 'tomado'),
       ),
       snap => {
-        const a = snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as AsignacionCupo);
+        // Prefiere la inscripción que AÚN no culminó; si todas culminaron (o
+        // solo hay una), toma la primera. Así, tras cerrar un cupo por horas,
+        // una nueva inscripción activa no queda tapada por la ya finalizada.
+        const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as AsignacionCupo));
+        const a = docs.find(x => x.finalizada !== true) ?? docs[0] ?? null;
         setAsignacion(a);
         setCargado(true);
       },
@@ -106,6 +110,7 @@ export function useProgresoInscripcion(estudianteId?: string | null): ProgresoIn
         empresaId: asignacion.empresaId,
         empresaNombre: asignacion.empresaNombre,
         vacanteTitulo: asignacion.vacanteTitulo,
+        horasCumplidas: metaHoras ?? undefined,
       }).catch(() => { finalizando.current = false; });
     }
   }, [asignacion, progreso?.completado]);

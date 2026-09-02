@@ -23,13 +23,16 @@
 // ════════════════════════════════════════════════════════════════════════
 
 /** Tipos de entidad reconocidos en una referencia estructurada "kind:id". */
-export type NotifRefKind = 'vacante' | 'grupo' | 'aplicacionGrupo' | 'reclamo';
-// Tipo de TypeScript que limita `kind` a exactamente estos 4 valores de
+export type NotifRefKind = 'vacante' | 'grupo' | 'aplicacionGrupo' | 'reclamo' | 'comprobante';
+// Tipo de TypeScript que limita `kind` a exactamente estos valores de
 // texto posibles. Cada uno corresponde a un modal de detalle distinto:
 //   'vacante'         → VacanteDetailByIdModal.tsx
 //   'grupo'           → GrupoDetailViewerModal.tsx
 //   'aplicacionGrupo' → AplicacionGrupoDetailModal.tsx
 //   'reclamo'         → ReclamoDetailModal.tsx
+//   'comprobante'     → ComprobanteInfoModal.tsx (ciclo del comprobante de
+//                       finalización de una pasantía por cupo; el id es el de
+//                       la `asignaciones_cupo`)
 
 export interface NotifRef {
   // Forma del resultado "ya interpretado": qué tipo de entidad es, y cuál
@@ -38,7 +41,7 @@ export interface NotifRef {
   id: string;
 }
 
-const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo'];
+const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante'];
 // La MISMA lista de valores que el tipo NotifRefKind de arriba, pero como
 // un ARRAY real (no solo un tipo). Se necesita en tiempo de ejecución
 // (los tipos de TypeScript desaparecen al compilar, no existen dentro del

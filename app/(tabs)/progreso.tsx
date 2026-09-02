@@ -564,7 +564,7 @@ export default function ProgresoTab() {
   // termómetro muestra sus horas REALES avanzando; si no, cae al expediente
   // del perfil (`horas_aprobadas`/`horas_objetivo`, que solo se acreditan al
   // certificar).
-  const { asignacion: inscripcion, progreso: ledger } = useProgresoInscripcion(user?.uid);
+  const { asignacion: inscripcion, metaHoras: metaInscripcion, progreso: ledger } = useProgresoInscripcion(user?.uid);
   const horasObjetivo = ledger ? ledger.meta : horasObjetivoPerfil;
   const horasCumplidas = ledger ? ledger.cumplidas : horasAprobadas;
   const horasRestantes = ledger ? ledger.restantes : Math.max(0, horasObjetivoPerfil - horasAprobadas);
@@ -578,6 +578,22 @@ export default function ProgresoTab() {
   // devolvería TODOS los que coincidan. Se asume que un estudiante solo
   // puede tener una aplicación "contratado" a la vez.
   const historial = apps.filter(a => a.estado === 'finalizado' || a.estado === 'aprobado');
+
+  // ── Pasantías de cupo del estudiante (Fase E: las culminadas van a Historial) ──
+  const [asignacionesCupo, setAsignacionesCupo] = useState<AsignacionCupo[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'asignaciones_cupo'), where('estudianteId', '==', user.uid)),
+      snap => setAsignacionesCupo(snap.docs.map(d => ({ id: d.id, ...d.data() } as AsignacionCupo))),
+      e => console.warn('Error en listener (asignaciones_cupo progreso):', e),
+    );
+    return unsub;
+  }, [user]);
+  const historialCupos = asignacionesCupo.filter(a => a.finalizada === true);
+  // La inscripción "activa" para la sección "Pasantía activa" es la que aún NO
+  // culminó; la culminada vive en Historial.
+  const inscripcionActiva = inscripcion && !inscripcion.finalizada ? inscripcion : null;
 
   // ── Firestore: perfil ────────────────────────────────────────────
   useEffect(() => {
@@ -812,8 +828,8 @@ export default function ProgresoTab() {
         <Text style={styles.sectionTitle}>Pasantía activa</Text>
         {activa ? (
           <PasantiaActivaCard app={activa} onFinalizar={() => handleFinalizar(activa.id)} />
-        ) : inscripcion ? (
-          <MiInscripcionCard asignacion={inscripcion} ledger={ledger} />
+        ) : inscripcionActiva ? (
+          <MiInscripcionCard asignacion={inscripcionActiva} ledger={ledger} />
         ) : (
           <View style={styles.emptySection}>
             <Ionicons name="briefcase-outline" size={40} color={COLORS.border} />
@@ -823,35 +839,61 @@ export default function ProgresoTab() {
 
         {/* ── Historial ── */}
         <Text style={styles.sectionTitle}>Historial</Text>
-        {historial.length === 0 ? (
+        {historial.length === 0 && historialCupos.length === 0 ? (
           <View style={styles.emptySection}>
             <Text style={styles.emptyText}>Aquí aparecerán tus pasantías completadas.</Text>
           </View>
         ) : (
-          historial.map(app => (
-            <GlassCard key={app.id} style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
-              <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.historialEmpresa}>{app.nombre_empresa ?? 'Empresa'}</Text>
-                <Text style={styles.historialHoras}>{app.horas_completadas ?? 0} horas completadas</Text>
-              </View>
-              {app.calificacion_empresa > 0 && (
-                <View style={styles.starsRow}>
-                  {[1, 2, 3, 4, 5].map(s => (
-                    // Dibuja 5 estrellas, cada una rellena o vacía según
-                    // si su número (1 a 5) es menor o igual a la
-                    // calificación real.
-                    <Ionicons
-                      key={s}
-                      name={s <= app.calificacion_empresa ? 'star' : 'star-outline'}
-                      size={14}
-                      color={COLORS.gold}
-                    />
-                  ))}
+          <>
+            {historial.map(app => (
+              <GlassCard key={app.id} style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
+                <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.historialEmpresa}>{app.nombre_empresa ?? 'Empresa'}</Text>
+                  <Text style={styles.historialHoras}>{app.horas_completadas ?? 0} horas completadas</Text>
                 </View>
-              )}
-            </GlassCard>
-          ))
+                {app.calificacion_empresa > 0 && (
+                  <View style={styles.starsRow}>
+                    {[1, 2, 3, 4, 5].map(s => (
+                      // Dibuja 5 estrellas, cada una rellena o vacía según
+                      // si su número (1 a 5) es menor o igual a la
+                      // calificación real.
+                      <Ionicons
+                        key={s}
+                        name={s <= app.calificacion_empresa ? 'star' : 'star-outline'}
+                        size={14}
+                        color={COLORS.gold}
+                      />
+                    ))}
+                  </View>
+                )}
+              </GlassCard>
+            ))}
+
+            {/* Pasantías de cupo culminadas (Fase E). El nº de horas se guardó
+                en `horasCumplidas` al cerrarse; para las culminadas antes de
+                que existiera ese campo, se cae a la meta si es la misma que
+                sigue en el libro mayor. */}
+            {historialCupos.map(a => {
+              const horas =
+                a.horasCumplidas ??
+                (metaInscripcion && inscripcion?.id === a.id ? metaInscripcion : null);
+              return (
+                <GlassCard key={a.id} style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
+                  <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historialEmpresa}>{a.empresaNombre ?? 'Empresa'}</Text>
+                    <Text style={styles.historialHoras}>
+                      {horas != null ? `${Math.round(horas)} horas completadas` : 'Pasantía completada'}
+                    </Text>
+                    {!!a.vacanteTitulo && (
+                      <Text style={styles.historialHoras}>{a.vacanteTitulo}</Text>
+                    )}
+                  </View>
+                </GlassCard>
+              );
+            })}
+          </>
         )}
 
       </ScrollView>

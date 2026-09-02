@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -12,12 +12,15 @@ import {
 } from "react-native";
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import {
-  CRITERIOS_EMPRESA_A_ESTUDIANTE,
-  CRITERIOS_ESTUDIANTE_A_EMPRESA,
+  criteriosPara,
   enviarFeedback,
   type EnviarFeedbackResult,
   type FeedbackPendiente,
 } from "../services/feedbackService";
+import {
+  getIncidenciasDeEstudiante,
+  type Incidencia,
+} from "../services/incidenciaService";
 
 const C = {
   overlay: "rgba(7,5,15,0.92)",
@@ -37,6 +40,14 @@ interface Props {
   pendiente: FeedbackPendiente;
   onSubmitted: () => void;
 }
+
+/** Etiqueta legible del estado de una incidencia. */
+const ESTADO_INC: Record<string, string> = {
+  abierta: "Abierta",
+  en_seguimiento: "En seguimiento",
+  escalada: "Escalada",
+  resuelta: "Resuelta",
+};
 
 /** Escala de calificación (1..ESCALA_MAX). */
 const ESCALA_MAX = 10;
@@ -80,17 +91,45 @@ export default function FeedbackExperienciaModal({
   onSubmitted,
 }: Props) {
   const criterios = useMemo(
-    () =>
-      pendiente.evaluadorRol === "estudiante"
-        ? CRITERIOS_ESTUDIANTE_A_EMPRESA
-        : CRITERIOS_EMPRESA_A_ESTUDIANTE,
-    [pendiente.evaluadorRol],
+    () => criteriosPara(pendiente.evaluadorRol, pendiente.evaluadoRol),
+    [pendiente.evaluadorRol, pendiente.evaluadoRol],
   );
 
   const [valores, setValores] = useState<Record<string, number>>({});
   const [comentario, setComentario] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState<EnviarFeedbackResult | null>(null);
+
+  // Contexto: incidencias de la práctica de este estudiante, visibles solo a
+  // quien lo evalúa (empresa o universidad). No expone nada nuevo — son las
+  // mismas que ese rol ya ve en su bandeja de incidencias.
+  const [incidencias, setIncidencias] = useState<Incidencia[]>([]);
+  useEffect(() => {
+    if (
+      pendiente.evaluadoRol !== "estudiante" ||
+      (pendiente.evaluadorRol !== "empresa" &&
+        pendiente.evaluadorRol !== "universidad")
+    ) {
+      setIncidencias([]);
+      return;
+    }
+    let vivo = true;
+    getIncidenciasDeEstudiante(
+      pendiente.evaluadorRol,
+      pendiente.evaluadorId,
+      pendiente.evaluadoId,
+    )
+      .then((l) => vivo && setIncidencias(l))
+      .catch(() => vivo && setIncidencias([]));
+    return () => {
+      vivo = false;
+    };
+  }, [
+    pendiente.evaluadoRol,
+    pendiente.evaluadorRol,
+    pendiente.evaluadorId,
+    pendiente.evaluadoId,
+  ]);
 
   const completo = criterios.every((c) => (valores[c.key] ?? 0) > 0);
 
@@ -125,8 +164,10 @@ export default function FeedbackExperienciaModal({
   };
 
   const titulo =
-    pendiente.evaluadorRol === "estudiante"
+    pendiente.evaluadoRol === "empresa"
       ? `¿Cómo fue tu experiencia con ${pendiente.evaluadoNombre}?`
+      : pendiente.evaluadoRol === "universidad"
+      ? `¿Cómo fue el acompañamiento de ${pendiente.evaluadoNombre}?`
       : `Evalúa el desempeño de ${pendiente.evaluadoNombre}`;
 
   return (
@@ -140,8 +181,15 @@ export default function FeedbackExperienciaModal({
           </View>
 
           {resultado ? (
-            // ── Pantalla de resultado (subida de XP / rango) ──
+            // ── Pantalla de resultado ──
+            // El XP/rango SÍ se calcula y guarda en la BD (feedbackService), pero
+            // por ahora NO se muestra al usuario: el reveal queda comentado a
+            // pedido del equipo. Se conserva para reactivarlo sin reescribirlo.
             <View style={styles.resultWrap}>
+              <View style={[styles.rangoCircle, { borderColor: C.green }]}>
+                <Ionicons name="checkmark-circle" size={40} color={C.green} />
+              </View>
+              {/*
               <View
                 style={[styles.rangoCircle, { borderColor: resultado.rango.color }]}
               >
@@ -154,8 +202,9 @@ export default function FeedbackExperienciaModal({
               <Text style={styles.resultRango}>
                 Rango: <Text style={{ color: resultado.rango.color }}>{resultado.rango.nivel}</Text>
               </Text>
+              */}
               <Text style={styles.resultThanks}>
-                Gracias por compartir tu experiencia.
+                ¡Gracias por compartir tu evaluación!
               </Text>
               <TouchableOpacity
                 style={styles.submitBtn}
@@ -175,6 +224,27 @@ export default function FeedbackExperienciaModal({
                 Tu evaluación es obligatoria y ayuda a mantener la confianza de la
                 comunidad Gradly.
               </Text>
+
+              {incidencias.length > 0 ? (
+                <View style={styles.incWrap}>
+                  <View style={styles.incHeader}>
+                    <Ionicons name="alert-circle" size={15} color={C.star} />
+                    <Text style={styles.incTitle}>Incidencias de esta práctica</Text>
+                    <Text style={styles.incTitle} noTranslate>({incidencias.length})</Text>
+                  </View>
+                  {incidencias.map((i) => (
+                    <View key={i.id} style={styles.incRow}>
+                      <Text style={styles.incMotivo}>{i.motivo}</Text>
+                      <Text style={styles.incMeta}>{ESTADO_INC[i.estado] ?? i.estado}</Text>
+                      {i.descripcion ? (
+                        <Text style={styles.incDesc} numberOfLines={3}>
+                          {i.descripcion}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              ) : null}
 
               {criterios.map((c) => (
                 <View key={c.key} style={styles.criterio}>
@@ -273,6 +343,48 @@ const styles = StyleSheet.create({
   },
   criterio: {
     marginBottom: 16,
+  },
+  // ── Panel de incidencias (contexto al evaluar a un estudiante) ──
+  incWrap: {
+    backgroundColor: "rgba(245,181,10,0.07)",
+    borderWidth: 1,
+    borderColor: "rgba(245,181,10,0.30)",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 18,
+    gap: 10,
+  },
+  incHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  incTitle: {
+    color: C.star,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  incRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(245,181,10,0.25)",
+    paddingTop: 8,
+    gap: 2,
+  },
+  incMotivo: {
+    color: C.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  incMeta: {
+    color: C.textSub,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  incDesc: {
+    color: C.textSub,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
   },
   criterioLabel: {
     color: C.text,

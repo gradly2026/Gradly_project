@@ -32,6 +32,7 @@ import {
   arrayUnion,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -194,6 +195,38 @@ export function suscribirIncidencias(
     // Manejador de error explícito: sin él, un fallo de permisos o un índice
     // compuesto que falte se convierte en una excepción no capturada.
   );
+}
+
+/**
+ * Incidencias que involucran a la vez a un estudiante concreto y a quien
+ * consulta (empresa o universidad). Lectura de una sola vez, pensada como
+ * CONTEXTO al evaluar al estudiante tras una pasantía culminada (feedback a 3
+ * bandas).
+ *
+ * Consulta por el campo del PROPIO consultante (`empresa_id` / `universidad_id`)
+ * y filtra en cliente por `estudiante_id`: así las reglas la permiten (el
+ * consultante es siempre parte de cada doc devuelto) y se apoya en un índice ya
+ * existente. No expone nada nuevo: son las mismas incidencias que ese rol ya ve
+ * en su bandeja.
+ */
+export async function getIncidenciasDeEstudiante(
+  rolConsultante: 'universidad' | 'empresa',
+  uid: string,
+  estudianteId: string,
+): Promise<Incidencia[]> {
+  if (!uid || !estudianteId) return [];
+  const campo = rolConsultante === 'universidad' ? 'universidad_id' : 'empresa_id';
+  const snap = await getDocs(
+    query(collection(db, COLECCION_INCIDENCIAS), where(campo, '==', uid)),
+  );
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as Incidencia))
+    .filter(i => i.estudiante_id === estudianteId)
+    .sort(
+      (a, b) =>
+        (b.fecha_actualizacion?.toMillis?.() ?? 0) -
+        (a.fecha_actualizacion?.toMillis?.() ?? 0),
+    );
 }
 
 /** Agrega un mensaje al hilo. Lo puede hacer cualquiera de las partes. */

@@ -81,6 +81,7 @@ import AvisosGate from '../src/components/AvisosGate';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import EmpresaHomeCards from '../src/components/EmpresaHomeCards';
+import ComprobantePasantiaCard from '../src/components/ComprobantePasantiaCard';
 import HistorialPasantes from '../src/components/HistorialPasantes';
 // PerfilMasterDetail: mismo componente config-driven (array de `sections`)
 // que arma "Mi Perfil" en app/(tabs)/perfil.tsx y en dashboard-universidad.tsx.
@@ -3304,6 +3305,9 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
 
       {/* ── Calendario de hitos de la cuenta (registro, vacantes, pasantías) ── */}
       <CalendarioEventos uid={empresaId} rol="empresa" />
+
+      {/* ── Comprobantes de finalización por generar/enviar (pasantías por cupo) ── */}
+      <ComprobantePasantiaCard rol="empresa" uid={empresaId} />
 
       {/* ── Tarjetas resumen agrupadas (Resumen / Análisis) ── */}
       <EmpresaHomeCards

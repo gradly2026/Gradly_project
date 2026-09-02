@@ -115,6 +115,7 @@ import BandejaIncidencias from '../src/components/BandejaIncidencias';
 // aquí es el único de los tres que puede escalar un caso al equipo de Gradly.
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import UniversidadHomeCards from '../src/components/UniversidadHomeCards';
+import ComprobantePasantiaCard from '../src/components/ComprobantePasantiaCard';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 // Ya explicado a fondo en app/(tabs)/perfil.tsx: recibe una lista
@@ -1145,6 +1146,9 @@ function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, so
 
       {/* ── Calendario de hitos de la cuenta (registro, grupos, pasantías, egresos) ── */}
       <CalendarioEventos uid={uid} />
+
+      {/* ── Comprobantes de finalización pendientes de validar (pasantías por cupo) ── */}
+      <ComprobantePasantiaCard rol="universidad" uid={uid} />
 
       {/* ── Tarjetas resumen agrupadas (Resumen / Análisis) — sustituyen a la
              grilla de métricas y a la vieja sección "Estadísticas" ── */}

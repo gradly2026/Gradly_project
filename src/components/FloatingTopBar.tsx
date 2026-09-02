@@ -146,6 +146,7 @@ import VacanteDetailByIdModal from './VacanteDetailByIdModal';
 import GrupoDetailViewerModal from './GrupoDetailViewerModal';
 import AplicacionGrupoDetailModal from './AplicacionGrupoDetailModal';
 import ReclamoDetailModal from './ReclamoDetailModal';
+import ComprobanteInfoModal from './ComprobanteInfoModal';
 // Los 4 modales de detalle que se pueden abrir al tocar una notificación
 // con referencia estructurada "kind:id" (ver notifRoute.ts). Cada uno es
 // un componente separado, definido en su propio archivo.
@@ -228,6 +229,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const [grupoModalId, setGrupoModalId] = useState<string | null>(null);
   const [aplicacionModalId, setAplicacionModalId] = useState<string | null>(null);
   const [reclamoModalId, setReclamoModalId] = useState<string | null>(null);
+  const [comprobanteModalId, setComprobanteModalId] = useState<string | null>(null);
   // 4 estados, uno por cada tipo de modal de detalle posible. Cada uno
   // guarda `null` (modal cerrado) o el ID del documento a mostrar (modal
   // abierto, mostrando ese documento específico). Ver más abajo cómo
@@ -385,6 +387,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         // un mismo valor contra varios casos posibles: según qué tipo de
         // entidad sea la referencia, se abre el estado (y por lo tanto el
         // modal) correspondiente.
+        case 'comprobante': setComprobanteModalId(ref.id); break;
         case 'vacante': setVacanteModalId(ref.id); break;
         case 'grupo': setGrupoModalId(ref.id); break;
         case 'aplicacionGrupo': setAplicacionModalId(ref.id); break;
@@ -687,6 +690,11 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         visible={!!reclamoModalId}
         reclamoId={reclamoModalId}
         onClose={() => setReclamoModalId(null)}
+      />
+      <ComprobanteInfoModal
+        visible={!!comprobanteModalId}
+        asignacionId={comprobanteModalId}
+        onClose={() => setComprobanteModalId(null)}
       />
     </>
   );

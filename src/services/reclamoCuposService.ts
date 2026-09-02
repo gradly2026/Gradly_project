@@ -161,6 +161,9 @@ export interface AsignacionCupo {
   finalizada?: boolean;
   /** Cuándo se cerró al cumplir la meta de horas. */
   finalizadaAt?: any;
+  /** Horas cumplidas al cerrarse (= meta del grupo). Se guarda para que el
+   *  Historial del estudiante sea autocontenido, sin releer el grupo. */
+  horasCumplidas?: number;
   /**
    * Día en que el estudiante se presenta por primera vez a la empresa — su
    * "Día 1". Lo fija (y puede editar) la empresa. ISO `yyyy-mm-dd`. Mientras
@@ -820,16 +823,21 @@ export async function marcarInscripcionesAvisadas(
  */
 export async function finalizarInscripcionPorHoras(
   asignacionId: string,
-  datos: { estudianteNombre?: string; universidadId?: string; empresaId?: string; vacanteTitulo?: string; empresaNombre?: string; estudianteId?: string },
+  datos: { estudianteNombre?: string; universidadId?: string; empresaId?: string; vacanteTitulo?: string; empresaNombre?: string; estudianteId?: string; horasCumplidas?: number },
 ): Promise<boolean> {
   if (!asignacionId) return false;
   const ref = doc(db, COLECCION_ASIGNACIONES, asignacionId);
+  const meta = Number(datos.horasCumplidas);
   const hecho = await runTransaction(db, async tx => {
     const snap = await tx.get(ref);
     if (!snap.exists()) return false;
     const a = snap.data() as AsignacionCupo;
     if (a.estado !== 'tomado' || a.finalizada === true) return false;
-    tx.update(ref, { finalizada: true, finalizadaAt: serverTimestamp() });
+    tx.update(ref, {
+      finalizada: true,
+      finalizadaAt: serverTimestamp(),
+      ...(Number.isFinite(meta) && meta > 0 ? { horasCumplidas: Math.round(meta) } : {}),
+    });
     return true;
   });
   if (!hecho) return false;

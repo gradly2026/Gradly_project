@@ -15,7 +15,7 @@ import { db } from "../config/firebaseConfig";
 // ═══════════════════════════════════════════════════════════════════
 
 export type RangoTier = "bronce" | "plata" | "oro";
-export type EntidadRol = "estudiante" | "empresa";
+export type EntidadRol = "estudiante" | "empresa" | "universidad";
 
 export interface RangoInfo {
   /** String persistido en `rango_nivel`. */
@@ -38,19 +38,27 @@ export const TIER_COLORS: Record<RangoTier, string> = {
   oro: "#E6B422",
 };
 
+/** Nombres de rango por rol y tier: [bronce, plata, oro]. */
+const NOMBRES_RANGO: Record<EntidadRol, readonly [string, string, string]> = {
+  estudiante: ["Novato", "Profesional", "Máster"],
+  empresa: ["Empresa Nueva", "Empresa Confiable", "Empresa Destacada Top"],
+  universidad: ["Universidad Nueva", "Universidad Confiable", "Universidad Destacada Top"],
+};
+
 /**
- * Rango según la XP acumulada:
- *  - 0–300     → Novato / Empresa Nueva        (bronce)
- *  - 301–1000  → Profesional / Empresa Confiable (plata)
- *  - >1000     → Máster / Empresa Destacada Top  (oro)
+ * Rango según la XP acumulada (mismos cortes para los 3 roles, solo cambia el
+ * nombre):
+ *  - 0–300     → Novato / Empresa Nueva / Universidad Nueva            (bronce)
+ *  - 301–1000  → Profesional / Empresa Confiable / Universidad Confiable (plata)
+ *  - >1000     → Máster / Empresa Destacada Top / Universidad Destacada Top (oro)
  */
 export function calcularRango(xp: number, rol: EntidadRol): RangoInfo {
-  const esEmpresa = rol === "empresa";
+  const nombres = NOMBRES_RANGO[rol] ?? NOMBRES_RANGO.estudiante;
   const seguro = Math.max(0, Number.isFinite(xp) ? xp : 0);
 
   if (seguro > 1000) {
     return {
-      nivel: esEmpresa ? "Empresa Destacada Top" : "Máster",
+      nivel: nombres[2],
       tier: "oro",
       color: TIER_COLORS.oro,
       min: 1001,
@@ -60,7 +68,7 @@ export function calcularRango(xp: number, rol: EntidadRol): RangoInfo {
   }
   if (seguro > 300) {
     return {
-      nivel: esEmpresa ? "Empresa Confiable" : "Profesional",
+      nivel: nombres[1],
       tier: "plata",
       color: TIER_COLORS.plata,
       min: 301,
@@ -69,7 +77,7 @@ export function calcularRango(xp: number, rol: EntidadRol): RangoInfo {
     };
   }
   return {
-    nivel: esEmpresa ? "Empresa Nueva" : "Novato",
+    nivel: nombres[0],
     tier: "bronce",
     color: TIER_COLORS.bronce,
     min: 0,
@@ -117,6 +125,55 @@ export const CRITERIOS_EMPRESA_A_ESTUDIANTE = [
   { key: "trabajo_equipo", label: "Trabajo en equipo" },
 ] as const;
 
+/** El estudiante evalúa a su universidad. */
+export const CRITERIOS_ESTUDIANTE_A_UNIVERSIDAD = [
+  { key: "acompanamiento", label: "Acompañamiento y seguimiento" },
+  { key: "gestion_practica", label: "Gestión de la práctica" },
+  { key: "comunicacion_universidad", label: "Comunicación y respuesta" },
+] as const;
+
+/** La empresa evalúa a la universidad. */
+export const CRITERIOS_EMPRESA_A_UNIVERSIDAD = [
+  { key: "calidad_candidatos", label: "Calidad de los candidatos" },
+  { key: "coordinacion", label: "Coordinación y logística" },
+  { key: "respuesta_universidad", label: "Capacidad de respuesta" },
+] as const;
+
+/** La universidad evalúa al estudiante. */
+export const CRITERIOS_UNIVERSIDAD_A_ESTUDIANTE = [
+  { key: "desempeno_practica", label: "Desempeño en la práctica" },
+  { key: "profesionalismo", label: "Profesionalismo" },
+  { key: "cumplimiento_horas", label: "Cumplimiento de horas y tareas" },
+] as const;
+
+/** La universidad evalúa a la empresa. */
+export const CRITERIOS_UNIVERSIDAD_A_EMPRESA = [
+  { key: "ambiente_formativo", label: "Ambiente formativo" },
+  { key: "acompanamiento_empresa", label: "Acompañamiento al estudiante" },
+  { key: "cumplimiento_acuerdo", label: "Cumplimiento del acuerdo" },
+] as const;
+
+/**
+ * Juego de criterios para un par evaluador→evaluado. Cubre las 6 direcciones
+ * posibles entre los 3 roles; cae a estudiante→empresa como red defensiva.
+ */
+export function criteriosPara(
+  evaluadorRol: EntidadRol,
+  evaluadoRol: EntidadRol,
+): ReadonlyArray<{ readonly key: string; readonly label: string }> {
+  if (evaluadorRol === "estudiante" && evaluadoRol === "universidad")
+    return CRITERIOS_ESTUDIANTE_A_UNIVERSIDAD;
+  if (evaluadorRol === "empresa" && evaluadoRol === "universidad")
+    return CRITERIOS_EMPRESA_A_UNIVERSIDAD;
+  if (evaluadorRol === "universidad" && evaluadoRol === "estudiante")
+    return CRITERIOS_UNIVERSIDAD_A_ESTUDIANTE;
+  if (evaluadorRol === "universidad" && evaluadoRol === "empresa")
+    return CRITERIOS_UNIVERSIDAD_A_EMPRESA;
+  if (evaluadorRol === "empresa" && evaluadoRol === "estudiante")
+    return CRITERIOS_EMPRESA_A_ESTUDIANTE;
+  return CRITERIOS_ESTUDIANTE_A_EMPRESA;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // DETECCIÓN DE EVALUACIONES PENDIENTES
 // ═══════════════════════════════════════════════════════════════════
@@ -162,12 +219,124 @@ function pasantiaFinalizada(s: any): boolean {
   return false;
 }
 
+/** Timestamp de Firestore (o Date/número) → 'yyyy-mm-dd', o "" si no se puede. */
+function tsToIso(v: any): string {
+  try {
+    const d: Date | null =
+      typeof v?.toDate === "function" ? v.toDate()
+      : v instanceof Date ? v
+      : typeof v === "number" ? new Date(v)
+      : null;
+    if (!d || Number.isNaN(d.getTime())) return "";
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Igual que `getFeedbackPendiente` pero para pasantías de CUPO culminadas
+ * (`asignaciones_cupo` con `finalizada === true`, Fase E). El ID de la
+ * asignación hace de `solicitudId`, así el dedupe (`${solId}_${evaluadoId}`) y
+ * `enviarFeedback` funcionan sin cambio alguno.
+ *
+ * Evaluación a 3 bandas, en el orden que ve cada rol:
+ * - Estudiante  → 1º la empresa, 2º su universidad.
+ * - Empresa     → 1º el estudiante, 2º la universidad.
+ * - Universidad → 1º el estudiante, 2º la empresa.
+ *
+ * A diferencia del flujo de grupo, aquí `estudianteId` es un uid real, así que
+ * no hace falta emparejar por nombre.
+ */
+async function feedbackPendienteCupos(
+  uid: string,
+  rol: EntidadRol,
+  yaEnviado: Set<string>,
+): Promise<FeedbackPendiente[]> {
+  const campo =
+    rol === "empresa" ? "empresaId"
+    : rol === "universidad" ? "universidadId"
+    : "estudianteId";
+  const snap = await getDocs(
+    query(collection(db, "asignaciones_cupo"), where(campo, "==", uid)),
+  );
+  const culminadas = snap.docs.filter((d) => {
+    const a = d.data() as any;
+    return a.finalizada === true && a.estado !== "cancelado";
+  });
+  if (culminadas.length === 0) return [];
+
+  const out: FeedbackPendiente[] = [];
+  const nombreEmpresaCache: Record<string, string> = {};
+  const nombreUniCache: Record<string, string> = {};
+
+  const nombreEmpresa = async (id: string, fallback?: string): Promise<string> => {
+    if (!(id in nombreEmpresaCache)) {
+      const s = await getDoc(doc(db, "perfiles_empresas", id));
+      nombreEmpresaCache[id] =
+        fallback || (s.data() as any)?.nombre_empresa || "la empresa";
+    }
+    return nombreEmpresaCache[id];
+  };
+  const nombreUni = async (id: string): Promise<string> => {
+    if (!(id in nombreUniCache)) {
+      const s = await getDoc(doc(db, "perfiles_universidades", id));
+      nombreUniCache[id] = (s.data() as any)?.nombre_universidad || "tu universidad";
+    }
+    return nombreUniCache[id];
+  };
+
+  for (const d of culminadas) {
+    const a = d.data() as any;
+    const base = {
+      solicitudId: d.id,
+      evaluadorId: uid,
+      carrera: a.carrera ?? "",
+      fechaInicio: a.fechaPresentacion ?? "",
+      fechaFin: tsToIso(a.finalizadaAt),
+    };
+    const add = (
+      evaluadorRol: EntidadRol,
+      evaluadoId: string | undefined,
+      evaluadoRol: EntidadRol,
+      evaluadoNombre: string,
+    ) => {
+      if (!evaluadoId || yaEnviado.has(`${d.id}_${evaluadoId}`)) return;
+      out.push({
+        ...base,
+        feedbackId: buildFeedbackId(d.id, uid, evaluadoId),
+        evaluadorRol,
+        evaluadoId,
+        evaluadoNombre,
+        evaluadoRol,
+      });
+    };
+
+    if (rol === "estudiante") {
+      add("estudiante", a.empresaId, "empresa", await nombreEmpresa(a.empresaId, a.empresaNombre));
+      add("estudiante", a.universidadId, "universidad", await nombreUni(a.universidadId));
+    } else if (rol === "empresa") {
+      add("empresa", a.estudianteId, "estudiante", a.estudianteNombre ?? "Estudiante");
+      add("empresa", a.universidadId, "universidad", await nombreUni(a.universidadId));
+    } else {
+      add("universidad", a.estudianteId, "estudiante", a.estudianteNombre ?? "Estudiante");
+      add("universidad", a.empresaId, "empresa", await nombreEmpresa(a.empresaId, a.empresaNombre));
+    }
+  }
+  return out;
+}
+
 /**
  * Evaluaciones que el usuario actual aún debe completar de sus pasantías
- * finalizadas (`solicitudes_practicas` con `estado: 'finalizado'`).
+ * finalizadas: las de grupo (`solicitudes_practicas` con `estado: 'finalizado'`)
+ * y las de cupo (`asignaciones_cupo` con `finalizada === true`, Fase E).
  *
- * - Estudiante → evalúa a la empresa de cada pasantía finalizada de su grupo.
- * - Empresa → evalúa a cada estudiante de sus pasantías finalizadas.
+ * - Estudiante → evalúa a la empresa (grupo y cupo) y a su universidad (cupo).
+ * - Empresa → evalúa a cada estudiante (grupo y cupo) y a la universidad (cupo).
+ * - Universidad → evalúa al estudiante y a la empresa de cada cupo culminado.
+ *
+ * El flujo de grupo aún no genera evaluación hacia/desde la universidad; eso
+ * vive solo en el flujo de cupo por ahora.
  */
 export async function getFeedbackPendiente(
   uid: string,
@@ -186,12 +355,18 @@ export async function getFeedbackPendiente(
     }),
   );
 
-  const pendientes: FeedbackPendiente[] = [];
+  // Pasantías de cupo culminadas (Fase E). Vale para ambos roles y no depende
+  // del grupo, así que se resuelve antes de la lógica del flujo de grupo.
+  const pendientes: FeedbackPendiente[] = await feedbackPendienteCupos(
+    uid,
+    rol,
+    yaEnviado,
+  );
 
   if (rol === "estudiante") {
     const perfilSnap = await getDoc(doc(db, "perfiles_estudiantes", uid));
     const grupoId = (perfilSnap.data() as any)?.grupo_id;
-    if (!grupoId) return [];
+    if (!grupoId) return pendientes;
 
     const sols = await getDocs(
       query(collection(db, "solicitudes_practicas"), where("grupoId", "==", grupoId)),
@@ -227,6 +402,10 @@ export async function getFeedbackPendiente(
     }
     return pendientes;
   }
+
+  // rol === 'universidad': el flujo de grupo no genera feedback hacia la
+  // universidad; solo cuentan los cupos culminados ya resueltos arriba.
+  if (rol === "universidad") return pendientes;
 
   // rol === 'empresa'
   const sols = await getDocs(
@@ -331,7 +510,9 @@ export async function enviarFeedback(
   const promedioFeedback = promedioBruto * factor;
   const xp = calcularXP(promedioFeedback);
   const evaluadoCol =
-    evaluadoRol === "empresa" ? "perfiles_empresas" : "perfiles_estudiantes";
+    evaluadoRol === "empresa" ? "perfiles_empresas"
+    : evaluadoRol === "universidad" ? "perfiles_universidades"
+    : "perfiles_estudiantes";
 
   return runTransaction(db, async (tx) => {
     const perfilRef = doc(db, evaluadoCol, evaluadoId);

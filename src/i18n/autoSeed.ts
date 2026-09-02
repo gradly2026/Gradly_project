@@ -848,6 +848,113 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Estudiantes que culminaron su pasantía": "Students who finished their internship",
   "Estos estudiantes cumplieron todas sus horas de práctica.": "These students completed all their practice hours.",
   "Estudiante culminó su pasantía": "Student finished their internship",
+  "Pasantía completada": "Internship completed",
+
+  // ── Evaluación a 3 bandas al culminar (estudiante ↔ empresa ↔ universidad) ──
+  "Calificar ahora": "Rate now",
+  "¡Gracias por compartir tu evaluación!": "Thanks for sharing your review!",
+  "Incidencias de esta práctica": "Incidents from this placement",
+  "Cumpliste todas tus horas de práctica. Califica a la empresa donde trabajaste y a tu universidad.":
+    "You completed all your practice hours. Rate the company you worked at and your university.",
+  "Estos estudiantes cumplieron todas sus horas de práctica. Califícalos, evalúa a su universidad y envía el comprobante de finalización.":
+    "These students completed all their practice hours. Rate them, review their university, and send the completion certificate.",
+  "Estos estudiantes cumplieron todas sus horas de práctica. Califícalos y evalúa también a la empresa.":
+    "These students completed all their practice hours. Rate them and the company too.",
+
+  // ── Cierre del comprobante de finalización (constancia por cupo) ──
+  "Tu comprobante está en camino": "Your certificate is on its way",
+  "Comprobante de finalización en camino": "Completion certificate on its way",
+  "Tu universidad y la empresa recibirán el comprobante que certifica que culminaste tu pasantía y cumpliste tus horas de práctica laboral. Mientras tanto, ya puedes explorar las vacantes de trabajo.":
+    "Your university and the company will receive the certificate confirming you finished your internship and completed your work-practice hours. In the meantime, you can now browse job openings.",
+  "Ponte en contacto con la empresa sobre la pronta recepción del comprobante de finalización. Cuando lo envíe, podrás revisarlo y validarlo desde tu inicio.":
+    "Get in touch with the company about the upcoming completion certificate. Once they send it, you can review and validate it from your home screen.",
+  "No se pudo abrir el chat": "Couldn't open the chat",
+  "Escríbele a la empresa desde la sección Mensajes.": "Message the company from the Messages section.",
+  "Comprobante de finalización": "Completion certificate",
+  "Revisa la constancia. Puedes enviarla tal cual o adjuntar tu propio PDF en papel membretado.":
+    "Review the certificate. You can send it as is or attach your own PDF on letterhead.",
+  "Constancia de finalización de pasantía": "Internship completion certificate",
+  "Rol": "Role",
+  "Horas cumplidas": "Hours completed",
+  "Área / departamento (opcional)": "Area / department (optional)",
+  "Ej. Desarrollo de software": "e.g. Software development",
+  "Supervisor (opcional)": "Supervisor (optional)",
+  "Nombre de quien acompañó al estudiante": "Name of the person who guided the student",
+  "Nota para la universidad (opcional)": "Note for the university (optional)",
+  "Comentario breve sobre el desempeño": "Brief comment on performance",
+  "Ver / descargar PDF": "View / download PDF",
+  "Adjuntar mi PDF": "Attach my PDF",
+  "PDF adjunto — reemplaza la constancia automática al enviar.":
+    "PDF attached — it replaces the auto certificate when sent.",
+  "Enviar a la universidad": "Send to the university",
+  "Enviar más tarde": "Send later",
+  "Comprobante enviado": "Certificate sent",
+  "Tu universidad ya puede revisarlo y validarlo. Al validarlo, el proceso queda 100% culminado.":
+    "Your university can now review and validate it. Once validated, the process is 100% complete.",
+  "No se pudo generar el PDF": "Couldn't generate the PDF",
+  "No se pudo adjuntar el archivo": "Couldn't attach the file",
+  "No se pudo enviar": "Couldn't send it",
+  "Inténtalo de nuevo.": "Try again.",
+  // Notificaciones del ciclo del comprobante
+  "Comprobante de pasantía recibido": "Internship certificate received",
+  "Comprobante validado": "Certificate validated",
+  "¡Pasantía validada!": "Internship validated!",
+  "Pasantía culminada al 100%": "Internship 100% complete",
+
+  // ── Tarjeta de estado del comprobante en el Inicio (3 roles) ──
+  "Esperando que la empresa envíe tu comprobante de finalización.":
+    "Waiting for the company to send your completion certificate.",
+  "Tu comprobante fue enviado a tu universidad. Falta que lo valide.":
+    "Your certificate was sent to your university. It still needs to be validated.",
+  "Genera y envía el comprobante de finalización.": "Generate and send the completion certificate.",
+  "Comprobante enviado. Esperando validación de la universidad.":
+    "Certificate sent. Waiting for the university to validate it.",
+  "Esperando el comprobante de la empresa.": "Waiting for the company's certificate.",
+  "Comprobante recibido. Revísalo y valídalo.": "Certificate received. Review and validate it.",
+  "Enviar comprobante": "Send certificate",
+  "Corregir y reenviar": "Fix and resend",
+  "Ver documento": "View document",
+  "Validar": "Validate",
+  "Validar comprobante": "Validate certificate",
+  "Pasantía validada": "Internship validated",
+  "Se acreditaron las horas y el proceso quedó culminado.":
+    "The hours were credited and the process is complete.",
+  "No se pudo validar": "Couldn't validate it",
+  "No se pudo abrir el documento": "Couldn't open the document",
+
+  // ── Modal al tocar la notificación del comprobante + feed post-culminación ──
+  "Comprobante en revisión": "Certificate under review",
+  "El comprobante de tu pasantía está en trámite. Sigue su avance desde la tarjeta de tu inicio.":
+    "Your internship certificate is being processed. Track it from the card on your home screen.",
+  "Tienes un comprobante de finalización por revisar y validar. Ábrelo desde la tarjeta de tu inicio.":
+    "You have a completion certificate to review and validate. Open it from the card on your home screen.",
+  "El comprobante fue enviado a la universidad. Falta que lo valide para cerrar el proceso.":
+    "The certificate was sent to the university. It still needs to be validated to close the process.",
+  "La universidad validó el comprobante de finalización. El proceso quedó 100% culminado.":
+    "The university validated the completion certificate. The process is 100% complete.",
+  "Culminaste tu pasantía. Ya puedes explorar las vacantes de trabajo; podrás postularte cuando tu universidad valide tu comprobante.":
+    "You finished your internship. You can now browse job openings; you'll be able to apply once your university validates your certificate.",
+  // Criterios nuevos (estudiante → universidad)
+  "Acompañamiento y seguimiento": "Guidance and follow-up",
+  "Gestión de la práctica": "Placement management",
+  "Comunicación y respuesta": "Communication and responsiveness",
+  // Criterios nuevos (empresa → universidad)
+  "Calidad de los candidatos": "Quality of candidates",
+  "Coordinación y logística": "Coordination and logistics",
+  "Capacidad de respuesta": "Responsiveness",
+  // Criterios nuevos (universidad → estudiante)
+  "Desempeño en la práctica": "Performance during the placement",
+  "Profesionalismo": "Professionalism",
+  "Cumplimiento de horas y tareas": "Meeting hours and tasks",
+  // Criterios nuevos (universidad → empresa)
+  "Ambiente formativo": "Learning environment",
+  "Acompañamiento al estudiante": "Support for the student",
+  "Cumplimiento del acuerdo": "Adherence to the agreement",
+  // Estados de incidencia mostrados en el panel de contexto
+  "Abierta": "Open",
+  "En seguimiento": "In progress",
+  "Escalada": "Escalated",
+  "Resuelta": "Resolved",
 
   // ── Inscripción por autoservicio a una pasantía (estudiante) ──
   "Estudiante inscrito": "Student enrolled",

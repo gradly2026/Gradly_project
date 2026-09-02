@@ -161,11 +161,23 @@ service cloud.firestore {
       allow create: if request.auth.uid == uniId || esAdmin();
       // 🆕 CAMBIO: espejo del bloque de arriba — una EMPRESA puede sumar su
       //    propio id a `aliados_empresas_ids` al aprobar una pasantía de grupo.
+      // 🆕 CAMBIO (evaluación a 3 bandas): un ESTUDIANTE o una EMPRESA puede
+      //    actualizar el perfil de la universidad SOLO en los campos de
+      //    gamificación/calificación (feedbackService.enviarFeedback escribe
+      //    XP/rango/promedio de la universidad evaluada tras un cupo culminado).
+      //    El `hasOnly` impide tocar cualquier otro campo.
       allow update: if request.auth.uid == uniId
                      || esAdmin()
                      || (esRol('empresa')
                          && request.resource.data.diff(resource.data).affectedKeys()
-                              .hasOnly(['aliados_empresas_ids']));
+                              .hasOnly(['aliados_empresas_ids']))
+                     || ((esRol('estudiante') || esRol('empresa'))
+                         && request.resource.data.diff(resource.data).affectedKeys()
+                              .hasOnly([
+                                'puntos_experiencia', 'pasantias_completadas',
+                                'calificaciones_recibidas', 'calificacion_promedio',
+                                'rango_nivel', 'rango_tier',
+                              ]));
       allow delete: if esAdmin();
     }
 
@@ -282,6 +294,53 @@ service cloud.firestore {
                  .hasOnly(['fechaPresentacion', 'fechaPresentacionAt'])
           )
         );
+      allow delete: if esAdmin();
+    }
+
+    // 📜 COMPROBANTES_PASANTIA (constancia de finalización de una pasantía por
+    //    CUPO). Un doc por `asignaciones_cupo` culminada, id = id de la
+    //    asignación. Ciclo: (sin doc) → 'enviado' (la empresa lo manda) →
+    //    'validado' (la universidad lo acredita). El modelo de grupo tiene su
+    //    equivalente en `solicitudes_practicas.constancia` + `certificarPasantia`.
+    match /comprobantes_pasantia/{asignacionId} {
+      allow read: if request.auth != null
+        && (request.auth.uid == resource.data.estudianteId
+            || request.auth.uid == resource.data.empresaId
+            || request.auth.uid == resource.data.universidadId
+            || esAdmin());
+
+      // Lo crea la EMPRESA dueña de la asignación, ya culminada, en 'enviado'.
+      // Las partes del comprobante deben calzar con las de la asignación real.
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.empresaId
+        && request.resource.data.estado == 'enviado'
+        && request.resource.data.asignacionId == asignacionId
+        && get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.empresaId == request.auth.uid
+        && get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.finalizada == true
+        && request.resource.data.estudianteId == get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.estudianteId
+        && request.resource.data.universidadId == get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.universidadId;
+
+      allow update: if request.auth != null && (
+        // La UNIVERSIDAD valida: solo 'enviado' → 'validado', campos acotados.
+        (
+          request.auth.uid == resource.data.universidadId
+          && resource.data.estado == 'enviado'
+          && request.resource.data.estado == 'validado'
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['estado', 'validadoAt', 'notaUniversidad'])
+        )
+        // La EMPRESA corrige y reenvía su propio comprobante mientras siga
+        // 'enviado' (re-subir PDF, editar nota/área/supervisor); nunca toca
+        // las partes ni saca el estado de 'enviado'.
+        || (
+          request.auth.uid == resource.data.empresaId
+          && resource.data.estado == 'enviado'
+          && request.resource.data.estado == 'enviado'
+          && request.resource.data.estudianteId == resource.data.estudianteId
+          && request.resource.data.empresaId == resource.data.empresaId
+          && request.resource.data.universidadId == resource.data.universidadId
+        )
+      );
       allow delete: if esAdmin();
     }
 

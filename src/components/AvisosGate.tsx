@@ -3,6 +3,11 @@ import { useAuth } from '../context/AuthContext';
 import { textoHorario } from '../data/disponibilidad';
 import { cuposLibresEnReclamo } from '../utils/cupos';
 import {
+  getFeedbackPendiente,
+  type EntidadRol,
+  type FeedbackPendiente,
+} from '../services/feedbackService';
+import {
   getAvisoFinalizacionEstudiante,
   getAvisosCuposEstudiante,
   getAvisosFinalizacionEmpresa,
@@ -21,6 +26,9 @@ import {
 } from '../services/reclamoCuposService';
 import { showAlert } from './AppAlert';
 import AvisoListaModal, { type AvisoItem } from './AvisoListaModal';
+import ComprobanteEmpresaModal from './ComprobanteEmpresaModal';
+import ComprobanteFinalInfoModal from './ComprobanteFinalInfoModal';
+import FeedbackExperienciaModal from './FeedbackExperienciaModal';
 import ReclamoDetailModal from './ReclamoDetailModal';
 
 /**
@@ -61,6 +69,120 @@ function inscripcionAItem(a: AsignacionCupo, audiencia: 'universidad' | 'empresa
     secondary: vacante,
     meta: textoHorario(a.horario) || undefined,
   };
+}
+
+/**
+ * Modal "culminó su pasantía" + cola de evaluación a 3 bandas + cierre del
+ * comprobante.
+ *
+ * - `aviso`   → `AvisoListaModal` con la lista de pasantías culminadas y el
+ *               botón "Calificar ahora" ("Entendido" = salir sin calificar).
+ * - `evaluar` → una a una, las `FeedbackExperienciaModal` pendientes de ESTE
+ *               lote (`getFeedbackPendiente` filtrado a `solicitudId` ∈ ids del
+ *               lote; el orden ya viene bien del servicio).
+ * - `final`   → cierre según rol: estudiante/universidad ven un informativo;
+ *               la empresa recorre `ComprobanteEmpresaModal` por cada estudiante
+ *               para generar y enviar la constancia.
+ *
+ * `onFin` (marca el flag "visto" del rol y cierra) corre al terminar el cierre
+ * o si el usuario sale con "Entendido". La red de seguridad global
+ * (`FeedbackGate`) recoge lo pendiente en el próximo arranque; el comprobante
+ * sin enviar queda visible en la tarjeta del inicio.
+ */
+function CulminacionFlow({
+  uid,
+  rol,
+  asignaciones,
+  titulo,
+  subtitulo,
+  items,
+  onFin,
+}: {
+  uid: string;
+  rol: EntidadRol;
+  asignaciones: AsignacionCupo[];
+  titulo: string;
+  subtitulo: string;
+  items: AvisoItem[];
+  onFin: () => void;
+}) {
+  const [fase, setFase] = useState<'aviso' | 'evaluar' | 'final'>('aviso');
+  const [cola, setCola] = useState<FeedbackPendiente[] | null>(null);
+  const [idx, setIdx] = useState(0);
+  const [finIdx, setFinIdx] = useState(0);
+
+  const empezarEvaluacion = async () => {
+    setFase('evaluar');
+    try {
+      const set = new Set(asignaciones.map(a => a.id));
+      const todos = await getFeedbackPendiente(uid, rol);
+      setCola(todos.filter(p => set.has(p.solicitudId)));
+    } catch {
+      setCola([]);
+    }
+    setIdx(0);
+  };
+
+  if (fase === 'aviso') {
+    return (
+      <AvisoListaModal
+        icon="checkmark-done-circle-outline"
+        titulo={titulo}
+        subtitulo={subtitulo}
+        items={items}
+        accionLabel="Calificar ahora"
+        onAccion={empezarEvaluacion}
+        onCerrar={onFin}
+      />
+    );
+  }
+
+  if (fase === 'evaluar') {
+    if (cola === null) return null; // cargando la cola
+    const actual = cola[idx];
+    if (!actual) {
+      // cola agotada (o vacía) → pasar al cierre en el próximo tick (evita el
+      // warning de "removeChild" del portal de react-native-web).
+      setTimeout(() => setFase('final'), 0);
+      return null;
+    }
+    return (
+      <FeedbackExperienciaModal
+        key={actual.feedbackId}
+        pendiente={actual}
+        onSubmitted={() => setTimeout(() => setIdx(i => i + 1), 0)}
+      />
+    );
+  }
+
+  // fase === 'final'
+  if (rol === 'empresa') {
+    const a = asignaciones[finIdx];
+    if (!a) {
+      setTimeout(onFin, 0);
+      return null;
+    }
+    return (
+      <ComprobanteEmpresaModal
+        key={a.id}
+        asignacion={a}
+        onListo={() => setTimeout(() => setFinIdx(i => i + 1), 0)}
+      />
+    );
+  }
+
+  const unaSolaEmpresa = new Set(asignaciones.map(a => a.empresaId)).size === 1;
+  return (
+    <ComprobanteFinalInfoModal
+      variante={rol === 'universidad' ? 'universidad' : 'estudiante'}
+      empresa={
+        rol === 'universidad' && unaSolaEmpresa && asignaciones[0]
+          ? { uid: asignaciones[0].empresaId, nombre: asignaciones[0].empresaNombre }
+          : null
+      }
+      onCerrar={onFin}
+    />
+  );
 }
 
 // ─────────────────────────────────────────────
@@ -158,17 +280,17 @@ function AvisosEmpresa() {
     );
   }
 
-  if (!finCerrado && finalizadas.length > 0) {
+  if (!finCerrado && finalizadas.length > 0 && user?.uid) {
     return (
-      <AvisoListaModal
-        icon="checkmark-done-circle-outline"
+      <CulminacionFlow
+        uid={user.uid}
+        rol="empresa"
+        asignaciones={finalizadas}
         titulo="Estudiantes que culminaron su pasantía"
-        subtitulo="Estos estudiantes cumplieron todas sus horas de práctica."
+        subtitulo="Estos estudiantes cumplieron todas sus horas de práctica. Califícalos, evalúa a su universidad y envía el comprobante de finalización."
         items={finalizadas.map(a => inscripcionAItem(a, 'empresa'))}
-        onCerrar={() => {
-          if (user?.uid) {
-            void marcarInscripcionesAvisadas(user.uid, 'perfiles_empresas', finalizadas.map(a => a.id), 'finalizado').catch(() => {});
-          }
+        onFin={() => {
+          void marcarInscripcionesAvisadas(user.uid, 'perfiles_empresas', finalizadas.map(a => a.id), 'finalizado').catch(() => {});
           setFinCerrado(true);
         }}
       />
@@ -226,17 +348,17 @@ function AvisosUniversidad() {
     );
   }
 
-  if (!finCerrado && finalizadas.length > 0) {
+  if (!finCerrado && finalizadas.length > 0 && user?.uid) {
     return (
-      <AvisoListaModal
-        icon="checkmark-done-circle-outline"
+      <CulminacionFlow
+        uid={user.uid}
+        rol="universidad"
+        asignaciones={finalizadas}
         titulo="Estudiantes que culminaron su pasantía"
-        subtitulo="Estos estudiantes cumplieron todas sus horas de práctica."
+        subtitulo="Estos estudiantes cumplieron todas sus horas de práctica. Califícalos y evalúa también a la empresa."
         items={finalizadas.map(a => inscripcionAItem(a, 'universidad'))}
-        onCerrar={() => {
-          if (user?.uid) {
-            void marcarInscripcionesAvisadas(user.uid, 'perfiles_universidades', finalizadas.map(a => a.id), 'finalizado').catch(() => {});
-          }
+        onFin={() => {
+          void marcarInscripcionesAvisadas(user.uid, 'perfiles_universidades', finalizadas.map(a => a.id), 'finalizado').catch(() => {});
           setFinCerrado(true);
         }}
       />
@@ -277,22 +399,22 @@ function AvisosEstudiante() {
     return () => { cancelado = true; };
   }, [user?.uid]);
 
-  if (!finCerrado && finalizada) {
+  if (!finCerrado && finalizada && user?.uid) {
     return (
-      <AvisoListaModal
-        icon="checkmark-done-circle-outline"
+      <CulminacionFlow
+        uid={user.uid}
+        rol="estudiante"
+        asignaciones={[finalizada]}
         titulo="¡Culminaste tu pasantía!"
-        subtitulo="Cumpliste todas tus horas de práctica. Tu universidad y la empresa ya fueron notificadas."
+        subtitulo="Cumpliste todas tus horas de práctica. Califica a la empresa donde trabajaste y a tu universidad."
         items={[{
           id: finalizada.id,
           primary: finalizada.empresaNombre || 'Empresa',
           secondary: finalizada.vacanteTitulo || 'Pasantía',
           meta: textoHorario(finalizada.horario) || undefined,
         }]}
-        onCerrar={() => {
-          if (user?.uid) {
-            void marcarFinalizacionAvisadaEstudiante(user.uid, [finalizada.id]).catch(() => {});
-          }
+        onFin={() => {
+          void marcarFinalizacionAvisadaEstudiante(user.uid, [finalizada.id]).catch(() => {});
           setFinCerrado(true);
         }}
       />
