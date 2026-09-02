@@ -303,11 +303,15 @@ service cloud.firestore {
     //    'validado' (la universidad lo acredita). El modelo de grupo tiene su
     //    equivalente en `solicitudes_practicas.constancia` + `certificarPasantia`.
     match /comprobantes_pasantia/{asignacionId} {
-      allow read: if request.auth != null
-        && (request.auth.uid == resource.data.estudianteId
-            || request.auth.uid == resource.data.empresaId
-            || request.auth.uid == resource.data.universidadId
-            || esAdmin());
+      // `resource == null` (doc inexistente) se permite: devuelve "no existe"
+      // en vez de un permission-denied. Sin esto, un `getDoc` previo a crear el
+      // comprobante rompía el envío (la condición referencia `resource.data`).
+      allow read: if resource == null
+        || (request.auth != null
+            && (request.auth.uid == resource.data.estudianteId
+                || request.auth.uid == resource.data.empresaId
+                || request.auth.uid == resource.data.universidadId
+                || esAdmin()));
 
       // Lo crea la EMPRESA dueña de la asignación referenciada, en 'enviado'.
       // Basta con que sea la empresa de esa asignación (el id del doc = id de

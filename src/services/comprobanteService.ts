@@ -106,8 +106,12 @@ export function construirDatosConstancia(
 /** Lectura de una sola vez del comprobante de una asignación (o null). */
 export async function getComprobante(asignacionId: string): Promise<Comprobante | null> {
   if (!asignacionId) return null;
-  const snap = await getDoc(doc(db, COLECCION_COMPROBANTES, asignacionId));
-  return snap.exists() ? ({ id: snap.id, ...(snap.data() as any) } as Comprobante) : null;
+  try {
+    const snap = await getDoc(doc(db, COLECCION_COMPROBANTES, asignacionId));
+    return snap.exists() ? ({ id: snap.id, ...(snap.data() as any) } as Comprobante) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Suscripción en vivo al comprobante de una asignación (para modal/tarjeta). */
@@ -206,9 +210,12 @@ export async function enviarComprobante(
     }
   }
 
+  // OJO: no se relee el doc antes de escribir. Un `getDoc` sobre un
+  // `comprobantes_pasantia` inexistente lo DENIEGA la regla de lectura (que
+  // referencia `resource.data`, nulo si el doc no existe) → lanzaría
+  // "Missing or insufficient permissions". El `setDoc` con `merge` sirve igual
+  // para crear y para corregir; `enviadoAt` marca el último envío.
   const ref = doc(db, COLECCION_COMPROBANTES, datos.asignacionId);
-  const yaExiste = (await getDoc(ref)).exists();
-
   await setDoc(
     ref,
     {
@@ -221,7 +228,6 @@ export async function enviarComprobante(
       supervisor: opts.supervisor ?? '',
       notaEmpresa: opts.notaEmpresa ?? '',
       enviadoAt: serverTimestamp(),
-      ...(yaExiste ? {} : { creadoAt: serverTimestamp() }),
     },
     { merge: true },
   );
