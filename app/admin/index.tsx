@@ -3867,41 +3867,113 @@ export default function AdminPreview() {
 
     const labelSolicitud = (s: any) => {
       if (s?.estado === "finalizado" && s?.certificacion === "pendiente") {
-        return { label: "Pend. certificación", type: "pending" as const };
+        return { label: "Pendiente de certificación", type: "pending" as const };
       }
       const estado = s?.certificacion === "certificada" ? "certificada" : String(s?.estado ?? "");
-      if (estado === "pendiente") return { label: "Pendiente", type: "pending" as const };
+      if (estado === "pendiente") return { label: "Pendiente de revisión", type: "pending" as const };
       if (estado === "finalizado" || estado === "certificada") return { label: estado === "certificada" ? "Certificada" : "Finalizada", type: "inactive" as const };
       if (estado === "rechazada") return { label: "Rechazada", type: "inactive" as const };
-      // aprobado / revisando / etc.
-      return { label: estado ? estado[0].toUpperCase() + estado.slice(1) : "Activa", type: "active" as const };
+      return { label: "En curso", type: "active" as const };
     };
 
     const labelAplicacion = (a: any) => {
       const estado = String(a?.estado ?? "");
-      if (estado === "finalizado_pendiente_firma") return { label: "Pend. firma", type: "pending" as const };
+      if (estado === "finalizado_pendiente_firma") return { label: "Pendiente de firma", type: "pending" as const };
       if (estado === "finalizado") return { label: "Finalizada", type: "inactive" as const };
-      if (estado === "contratado") return { label: "Activa", type: "active" as const };
-      return { label: estado || "—", type: "pending" as const };
+      if (estado === "contratado") return { label: "En curso", type: "active" as const };
+      return { label: "Pendiente de revisión", type: "pending" as const };
     };
 
     const labelCupo = (a: any) => {
-      if (a?.estado === "cancelado") return { label: "Cancelado", type: "inactive" as const };
+      if (a?.estado === "cancelado") return { label: "Cancelada", type: "inactive" as const };
       const comp = comprobanteById[String(a?.id ?? "")];
       if (a?.finalizada === true) {
         const estComp = getComprobanteEstado(comp);
         return estComp.label === "Sin comprobante"
-          ? { label: "Finalizada", type: "inactive" as const }
+          ? { label: "Pendiente de comprobante", type: "pending" as const }
           : estComp;
       }
       if (a?.fechaPresentacion) return { label: "En curso", type: "active" as const };
-      return { label: "Tomado", type: "active" as const };
+      return { label: "En curso", type: "active" as const };
     };
 
-    const totalPasantias =
-      filteredSolicitudesPractica.length + filteredAplicacionesPasantia.length + filteredAsignacionesCupo.length;
-    const hasPasantiaFilters =
-      !!pasantiasSearch.trim() || pasantiasOrigenFilter !== "todas" || pasantiasEstadoFilter !== "activas";
+    const prioridadPasantia = (label: string, type: Status) => {
+      if (label === "Pendiente de firma") return 0;
+      if (label === "Comprobante enviado") return 1;
+      if (label === "Pendiente de certificación") return 2;
+      if (label === "Pendiente de comprobante") return 3;
+      if (label === "Pendiente de revisión") return 4;
+      if (type === "active") return 5;
+      if (type === "inactive") return 6;
+      return 7;
+    };
+
+    const pasantiasReales = [
+      ...filteredSolicitudesPractica.slice(0, 80).map((sol) => {
+        const st = labelSolicitud(sol);
+        const fechas = [sol.fechaInicio, sol.fechaFin].filter(Boolean).join(" → ");
+        const resumen = resumenAlumnosPasantia(getGrupoStudentIds(sol));
+        return {
+          id: `grupo-${sol.id}`,
+          kind: "grupo" as const,
+          raw: sol,
+          title: sol.grupoNombre ?? "Pasantía registrada",
+          line1: (sol.carrera ?? "Sin carrera") + (fechas ? ` · ${fechas}` : ""),
+          line2: `Empresa: ${labelEmpresa(sol.empresaId)} · Universidad: ${labelUni(sol.universidadId)}`,
+          line3: `Alumnos: ${resumen.total}${resumen.enProceso > 0 ? ` · En proceso: ${resumen.enProceso}` : ""}${resumen.finalizadas > 0 ? ` · Finalizadas: ${resumen.finalizadas}` : ""}`,
+          icon: "people-outline" as const,
+          badge: st,
+          priority: prioridadPasantia(st.label, st.type),
+        };
+      }),
+      ...filteredAplicacionesPasantia.slice(0, 80).map((app) => {
+        const st = labelAplicacion(app);
+        const horas = typeof app.horas_completadas === "number" ? app.horas_completadas : Number(app.horas_completadas ?? 0);
+        const vacante = vacantesById[String(app.vacante_id ?? "")];
+        const perfil = estudianteSnapshots[String(app.estudiante_id ?? "")];
+        return {
+          id: `individual-${app.id}`,
+          kind: "individual" as const,
+          raw: app,
+          title: app.estudiante_nombre ?? "Estudiante",
+          line1: `Empresa: ${labelEmpresa(app.empresa_id)} · Vacante: ${vacante?.titulo ?? app.vacante_id ?? "—"}`,
+          line2: `Horas completadas: ${horas}`,
+          line3: perfil?.estado_pasantia ? `Estado del alumno: ${estadoAlumnoPasantia(perfil.estado_pasantia).label}` : "",
+          icon: "briefcase-outline" as const,
+          badge: st,
+          priority: prioridadPasantia(st.label, st.type),
+        };
+      }),
+      ...filteredAsignacionesCupo.slice(0, 80).map((asig) => {
+        const st = labelCupo(asig);
+        const comp = comprobanteById[String(asig.id)];
+        const perfil = estudianteSnapshots[String(asig.estudianteId ?? "")];
+        return {
+          id: `cupo-${asig.id}`,
+          kind: "cupo" as const,
+          raw: asig,
+          title: asig.estudianteNombre ?? perfil?.nombre ?? "Estudiante",
+          line1: `Empresa: ${labelEmpresa(asig.empresaId)} · Vacante: ${asig.vacanteTitulo ?? asig.vacanteId ?? "—"}`,
+          line2: `Universidad: ${labelUni(asig.universidadId)}`,
+          line3:
+            (asig.finalizada === true
+              ? `Horas cumplidas: ${Math.round(Number(asig.horasCumplidas ?? 0))}`
+              : `Presentación: ${asig.fechaPresentacion ?? "Pendiente"}`) +
+            (comp ? ` · ${getComprobanteEstado(comp).label}` : asig.finalizada === true ? " · Pendiente de comprobante" : ""),
+          icon: "school-outline" as const,
+          badge: st,
+          priority: prioridadPasantia(st.label, st.type),
+        };
+      }),
+    ].sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return String(a.title).localeCompare(String(b.title), "es", { sensitivity: "base" });
+    });
+
+    const totalPasantias = pasantiasReales.length;
+    const pendientesCount = pasantiasReales.filter((item) => item.badge.type === "pending").length;
+    const cerradasCount = pasantiasReales.filter((item) => item.badge.type === "inactive").length;
+    const hasPasantiaFilters = !!pasantiasSearch.trim() || pasantiasEstadoFilter !== "activas";
 
     return (
       <ScrollView
@@ -3935,18 +4007,6 @@ export default function AdminPreview() {
             />
           </View>
 
-          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8, marginTop: 14 }]}>ORIGEN</Text>
-          <View style={s.chipRow}>
-            {(["todas", "grupo", "individual", "cupo"] as const).map((tp) => (
-              <Chip
-                key={tp}
-                label={tp === "todas" ? "Todas" : tp === "grupo" ? "Grupo" : tp === "individual" ? "Individual" : "Cupo"}
-                active={pasantiasOrigenFilter === tp}
-                onPress={() => setPasantiasOrigenFilter(tp)}
-              />
-            ))}
-          </View>
-
           <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8, marginTop: 14 }]}>ESTADO</Text>
           <View style={s.chipRow}>
             {(["activas", "finalizadas", "todas"] as const).map((st) => (
@@ -3964,17 +4024,9 @@ export default function AdminPreview() {
           message={
             hasPasantiaFilters
               ? `Ahora mismo estás viendo ${totalPasantias} pasantía(s) con los filtros activos.`
-              : "El panel abre priorizando las pasantías activas para que sea más fácil revisar cierres y pendientes."
+              : "Aquí se muestran los registros reales de pasantías disponibles en el panel."
           }
-          meta={`Origen: ${
-            pasantiasOrigenFilter === "todas"
-              ? "Todas"
-              : pasantiasOrigenFilter === "grupo"
-                ? "Grupo"
-                : pasantiasOrigenFilter === "individual"
-                  ? "Individual"
-                  : "Cupo"
-          } · Estado: ${pasantiasEstadoFilter === "activas" ? "Activas" : pasantiasEstadoFilter === "finalizadas" ? "Finalizadas" : "Todas"}${
+          meta={`Estado: ${pasantiasEstadoFilter === "activas" ? "Activas" : pasantiasEstadoFilter === "finalizadas" ? "Finalizadas" : "Todas"}${
             pasantiasSearch.trim() ? ` · Búsqueda: “${pasantiasSearch.trim()}”` : ""
           }`}
           actionLabel="Volver al filtro base"
@@ -3982,216 +4034,79 @@ export default function AdminPreview() {
         />
 
         <View style={[s.grid2, { marginBottom: 14 }]}>
-          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
-            <Text style={s.itemTitle}>Grupos</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Procesos grupales según los filtros elegidos.</Text>
-            <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{filteredSolicitudesPractica.length}</Text>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Registros visibles</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Total de pasantías que coinciden con el filtro actual.</Text>
+            <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{totalPasantias}</Text>
           </View>
-          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
-            <Text style={s.itemTitle}>Individuales</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Procesos individuales que siguen activos o ya cerraron.</Text>
-            <Text style={[s.heroMetricValue, { color: C.green, marginTop: 12 }]}>{filteredAplicacionesPasantia.length}</Text>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Pendientes</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Registros que todavía requieren seguimiento o cierre.</Text>
+            <Text style={[s.heroMetricValue, { color: C.yellow, marginTop: 12 }]}>{pendientesCount}</Text>
           </View>
-          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
-            <Text style={s.itemTitle}>Por cupo</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Pasantías tomadas por cupo y su cierre con comprobante.</Text>
-            <Text style={[s.heroMetricValue, { color: C.yellow, marginTop: 12 }]}>{filteredAsignacionesCupo.length}</Text>
-          </View>
-          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
-            <Text style={s.itemTitle}>Total</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Suma de los tres flujos.</Text>
-            <Text style={[s.heroMetricValue, { color: C.text, marginTop: 12 }]}>{totalPasantias}</Text>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Cerradas</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Registros que ya terminaron o quedaron cerrados.</Text>
+            <Text style={[s.heroMetricValue, { color: C.green, marginTop: 12 }]}>{cerradasCount}</Text>
           </View>
         </View>
 
-        <Card style={{ marginBottom: 14 }}>
-          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
-            <Text style={s.cardTitle}>Pasantías de grupo</Text>
-            <Text style={s.textMuted}>{filteredSolicitudesPractica.length}</Text>
-          </View>
-
-          {pasantiasLoading && filteredSolicitudesPractica.length === 0 ? (
-            <View style={{ paddingVertical: 26, alignItems: "center" }}>
-              <ActivityIndicator color={C.accent70} />
-            </View>
-          ) : filteredSolicitudesPractica.length === 0 ? (
-            <EmptyResultsState
-              icon="people-outline"
-              title="No hay pasantías grupales para mostrar"
-              message="Con estos filtros no apareció ningún grupo. Puedes volver al filtro base para revisar el flujo completo."
-              actionLabel="Ver activas"
-              onAction={hasPasantiaFilters ? resetPasantiaFilters : undefined}
-            />
-          ) : (
-            <View style={{ gap: 10 }}>
-              {filteredSolicitudesPractica.slice(0, 80).map((sol) => {
-                const st = labelSolicitud(sol);
-                const fechas = [sol.fechaInicio, sol.fechaFin].filter(Boolean).join(" → ");
-                const resumen = resumenAlumnosPasantia(getGrupoStudentIds(sol));
-                return (
-                  <TouchableOpacity
-                    key={sol.id}
-                    style={[s.listItem, isPhone && s.listItemStack]}
-                    activeOpacity={0.85}
-                    onPress={() => {
-                      setPasantiaDetail({ kind: "grupo", item: sol });
-                      setPasantiaDetailOpen(true);
-                    }}
-                  >
-                    <View style={s.avatar}>
-                      <Ionicons name="people-outline" size={18} color={C.accent70} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={s.itemTitle} numberOfLines={1}>
-                            {sol.grupoNombre ?? `Grupo ${String(sol.grupoId ?? "").slice(0, 8)}`}
-                          </Text>
-                          <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={2}>
-                            {(sol.carrera ?? "Sin carrera") + (fechas ? ` · ${fechas}` : "")}
-                          </Text>
-                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
-                            Empresa: {labelEmpresa(sol.empresaId)} · Universidad: {labelUni(sol.universidadId)}
-                          </Text>
-                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
-                            Alumnos: {resumen.total}
-                            {resumen.enProceso > 0 ? ` · En proceso: ${resumen.enProceso}` : ""}
-                            {resumen.finalizadas > 0 ? ` · Finalizadas: ${resumen.finalizadas}` : ""}
-                          </Text>
-                        </View>
-                        <Badge label={st.label} type={st.type} />
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-        </Card>
-
         <Card style={{ marginBottom: 24 }}>
           <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
-            <Text style={s.cardTitle}>Pasantías individuales</Text>
-            <Text style={s.textMuted}>{filteredAplicacionesPasantia.length}</Text>
+            <Text style={s.cardTitle}>Pasantías registradas</Text>
+            <Text style={s.textMuted}>{pasantiasReales.length}</Text>
           </View>
+          <Text style={[s.textMuted, { marginBottom: 12 }]}>
+            Ordenadas por prioridad de seguimiento para que lo urgente aparezca primero.
+          </Text>
 
-          {pasantiasLoading && filteredAplicacionesPasantia.length === 0 ? (
+          {pasantiasLoading && pasantiasReales.length === 0 ? (
             <View style={{ paddingVertical: 26, alignItems: "center" }}>
               <ActivityIndicator color={C.accent70} />
             </View>
-          ) : filteredAplicacionesPasantia.length === 0 ? (
+          ) : pasantiasReales.length === 0 ? (
             <EmptyResultsState
-              icon="person-outline"
-              title="No hay pasantías individuales con este filtro"
-              message="Cambia el origen, el estado o la búsqueda para recuperar procesos individuales."
+              icon="briefcase-outline"
+              title="No hay pasantías para mostrar"
+              message="No encontramos registros con este filtro. Puedes limpiar la búsqueda o volver al filtro base."
               actionLabel="Ver activas"
               onAction={hasPasantiaFilters ? resetPasantiaFilters : undefined}
             />
           ) : (
             <View style={{ gap: 10 }}>
-              {filteredAplicacionesPasantia.slice(0, 80).map((app) => {
-                const st = labelAplicacion(app);
-                const horas = typeof app.horas_completadas === "number" ? app.horas_completadas : Number(app.horas_completadas ?? 0);
-                const vacante = vacantesById[String(app.vacante_id ?? "")];
-                const perfil = estudianteSnapshots[String(app.estudiante_id ?? "")];
+              {pasantiasReales.map((item) => {
                 return (
                   <TouchableOpacity
-                    key={app.id}
+                    key={item.id}
                     style={[s.listItem, isPhone && s.listItemStack]}
                     activeOpacity={0.85}
                     onPress={() => {
-                      setPasantiaDetail({ kind: "individual", item: app });
+                      setPasantiaDetail({ kind: item.kind, item: item.raw });
                       setPasantiaDetailOpen(true);
                     }}
                   >
                     <View style={s.avatar}>
-                      <Ionicons name="briefcase-outline" size={18} color={C.accent70} />
+                      <Ionicons name={item.icon} size={18} color={C.accent70} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
                         <View style={{ flex: 1 }}>
                           <Text style={s.itemTitle} numberOfLines={1}>
-                            {app.estudiante_nombre ?? "Estudiante"}
+                            {item.title}
                           </Text>
                           <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={2}>
-                            Empresa: {labelEmpresa(app.empresa_id)} · Vacante: {vacante?.titulo ?? app.vacante_id ?? "—"}
+                            {item.line1}
                           </Text>
-                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={1}>
-                            Horas completadas: {horas}
+                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
+                            {item.line2}
                           </Text>
-                          {perfil?.estado_pasantia ? (
-                            <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={1}>
-                              Estado del alumno: {estadoAlumnoPasantia(perfil.estado_pasantia).label}
+                          {item.line3 ? (
+                            <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
+                              {item.line3}
                             </Text>
                           ) : null}
                         </View>
-                        <Badge label={st.label} type={st.type} />
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-        </Card>
-
-        <Card style={{ marginBottom: 24 }}>
-          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
-            <Text style={s.cardTitle}>Pasantías por cupo</Text>
-            <Text style={s.textMuted}>{filteredAsignacionesCupo.length}</Text>
-          </View>
-
-          {pasantiasLoading && filteredAsignacionesCupo.length === 0 ? (
-            <View style={{ paddingVertical: 26, alignItems: "center" }}>
-              <ActivityIndicator color={C.accent70} />
-            </View>
-          ) : filteredAsignacionesCupo.length === 0 ? (
-            <EmptyResultsState
-              icon="school-outline"
-              title="No hay pasantías por cupo con este filtro"
-              message="Si quieres revisar cierres o comprobantes, vuelve al filtro base o prueba con otro estado."
-              actionLabel="Ver activas"
-              onAction={hasPasantiaFilters ? resetPasantiaFilters : undefined}
-            />
-          ) : (
-            <View style={{ gap: 10 }}>
-              {filteredAsignacionesCupo.slice(0, 80).map((asig) => {
-                const st = labelCupo(asig);
-                const comp = comprobanteById[String(asig.id)];
-                const perfil = estudianteSnapshots[String(asig.estudianteId ?? "")];
-                return (
-                  <TouchableOpacity
-                    key={asig.id}
-                    style={[s.listItem, isPhone && s.listItemStack]}
-                    activeOpacity={0.85}
-                    onPress={() => {
-                      setPasantiaDetail({ kind: "cupo", item: asig });
-                      setPasantiaDetailOpen(true);
-                    }}
-                  >
-                    <View style={s.avatar}>
-                      <Ionicons name="school-outline" size={18} color={C.accent70} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={s.itemTitle} numberOfLines={1}>
-                            {asig.estudianteNombre ?? perfil?.nombre ?? "Estudiante"}
-                          </Text>
-                          <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={2}>
-                            Empresa: {labelEmpresa(asig.empresaId)} · Vacante: {asig.vacanteTitulo ?? asig.vacanteId ?? "—"}
-                          </Text>
-                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
-                            Universidad: {labelUni(asig.universidadId)} · Origen: {asig.origen === "autoservicio" ? "Autoservicio" : "Reserva"}
-                          </Text>
-                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
-                            {asig.finalizada === true
-                              ? `Horas cumplidas: ${Math.round(Number(asig.horasCumplidas ?? 0))}`
-                              : `Presentación: ${asig.fechaPresentacion ?? "Pendiente"}`}
-                            {comp ? ` · ${getComprobanteEstado(comp).label}` : asig.finalizada === true ? " · Esperando comprobante" : ""}
-                          </Text>
-                        </View>
-                        <Badge label={st.label} type={st.type} />
+                        <Badge label={item.badge.label} type={item.badge.type} />
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -4958,8 +4873,7 @@ export default function AdminPreview() {
       return "—";
     };
 
-    const headerTitle =
-      detail.kind === "grupo" ? "Pasantía (grupo)" : detail.kind === "individual" ? "Pasantía (individual)" : "Pasantía (cupo)";
+    const headerTitle = "Detalle de pasantía";
     const primaryTitle =
       detail.kind === "grupo"
         ? (detail.item.grupoNombre ?? `Grupo ${String(detail.item.grupoId ?? "").slice(0, 8)}`)
@@ -4967,27 +4881,62 @@ export default function AdminPreview() {
           ? (detail.item.estudiante_nombre ?? "Estudiante")
           : (detail.item.estudianteNombre ?? resumenParticipantes.alumnos[0]?.nombre ?? "Estudiante");
 
-    const estadoLabel =
+    const estadoDetalle =
       detail.kind === "grupo"
-        ? (detail.item.certificacion === "certificada" ? "Certificada" : detail.item.estado === "finalizado" && detail.item.certificacion === "pendiente" ? "Pend. certificación" : String(detail.item.estado ?? "—"))
+        ? (detail.item.certificacion === "certificada"
+            ? { label: "Certificada", type: "inactive" as const }
+            : detail.item.estado === "finalizado" && detail.item.certificacion === "pendiente"
+              ? { label: "Pendiente de certificación", type: "pending" as const }
+              : detail.item.estado === "pendiente"
+                ? { label: "Pendiente de revisión", type: "pending" as const }
+                : detail.item.estado === "rechazada"
+                  ? { label: "Rechazada", type: "inactive" as const }
+                  : { label: "En curso", type: "active" as const })
         : detail.kind === "individual"
-          ? String(detail.item.estado ?? "—")
+          ? (detail.item.estado === "finalizado_pendiente_firma"
+              ? { label: "Pendiente de firma", type: "pending" as const }
+              : detail.item.estado === "finalizado"
+                ? { label: "Finalizada", type: "inactive" as const }
+                : detail.item.estado === "contratado"
+                  ? { label: "En curso", type: "active" as const }
+                  : { label: "Pendiente de revisión", type: "pending" as const })
           : (detail.item.finalizada === true
               ? getComprobanteEstado(comprobante).label === "Sin comprobante"
-                ? "Finalizada"
-                : getComprobanteEstado(comprobante).label
-              : detail.item.fechaPresentacion
-                ? "En curso"
-                : "Tomado");
+                ? { label: "Pendiente de comprobante", type: "pending" as const }
+                : getComprobanteEstado(comprobante)
+              : { label: "En curso", type: "active" as const });
 
-    const estadoType: Status =
+    const resumenChips =
       detail.kind === "grupo"
-        ? (estadoLabel === "pendiente" || estadoLabel === "Pend. certificación" ? "pending" : estadoLabel === "finalizado" || estadoLabel === "Certificada" ? "inactive" : "active")
+        ? [
+            `Empresa: ${empresaLabel}`,
+            `Universidad: ${uniLabel}`,
+            `Participantes: ${resumenParticipantes.total}`,
+          ]
         : detail.kind === "individual"
-          ? (estadoLabel === "contratado" ? "active" : estadoLabel === "finalizado_pendiente_firma" ? "pending" : estadoLabel === "finalizado" ? "inactive" : "pending")
-          : detail.item.finalizada === true
-            ? (comprobante ? getComprobanteEstado(comprobante).type : "inactive")
-            : "active";
+          ? [
+              `Empresa: ${empresaLabel}`,
+              `Vacante: ${vacanteRelacionada?.titulo ?? "Sin publicación"}`,
+              `Horas: ${typeof detail.item.horas_completadas === "number" ? detail.item.horas_completadas : Number(detail.item.horas_completadas ?? 0)}`,
+            ]
+          : [
+              `Empresa: ${empresaLabel}`,
+              `Universidad: ${uniLabel}`,
+              `Vacante: ${vacanteRelacionada?.titulo ?? detail.item.vacanteTitulo ?? "Sin publicación"}`,
+            ];
+
+    const accionPrincipal =
+      detail.kind === "grupo" && detail.item.estado === "finalizado" && detail.item.certificacion !== "certificada"
+        ? {
+            label: pasantiaActionSaving ? "Procesando..." : "Certificar pasantía",
+            onPress: () => void handleCertificarGrupo(detail.item),
+          }
+        : detail.kind === "cupo" && comprobante?.estado === "enviado"
+          ? {
+              label: pasantiaActionSaving ? "Procesando..." : "Validar comprobante",
+              onPress: () => void handleValidarComprobanteAdmin(comprobante),
+            }
+          : null;
 
     return (
       <Modal
@@ -5018,8 +4967,42 @@ export default function AdminPreview() {
             <ScrollView showsVerticalScrollIndicator>
               <Card>
                 <View style={[s.row, { justifyContent: "space-between", marginBottom: 10, gap: 10, flexWrap: "wrap" }]}>
-                  <Text style={s.cardTitle}>{primaryTitle}</Text>
-                  <Badge label={estadoLabel} type={estadoType} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.kicker}>Estado actual</Text>
+                    <Text style={s.cardTitleLg}>{primaryTitle}</Text>
+                  </View>
+                  <Badge label={estadoDetalle.label} type={estadoDetalle.type} />
+                </View>
+                <Text style={[s.textMuted, { marginBottom: 10 }]}>
+                  {detail.kind === "grupo"
+                    ? "Seguimiento grupal"
+                    : detail.kind === "individual"
+                      ? "Seguimiento individual"
+                      : "Seguimiento por cupo"}
+                </Text>
+                <View style={s.heroBadgeRow}>
+                  {resumenChips.map((chip) => (
+                    <View key={chip} style={s.heroBadge}>
+                      <Text style={s.heroBadgeText}>{chip}</Text>
+                    </View>
+                  ))}
+                </View>
+                {accionPrincipal ? (
+                  <View style={[s.row, { gap: 10, marginTop: 16, flexWrap: "wrap" }]}>
+                    <TouchableOpacity
+                      style={[s.btnPrimary, s.btnSm, pasantiaActionSaving && { opacity: 0.7 }]}
+                      onPress={accionPrincipal.onPress}
+                      activeOpacity={0.8}
+                      disabled={pasantiaActionSaving}
+                    >
+                      <Text style={[s.btnPrimaryText, s.btnSmText]}>{accionPrincipal.label}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                <View style={s.panelSection}>
+                  <View style={s.sectionPill}>
+                    <Text style={s.sectionPillText}>RESUMEN</Text>
+                  </View>
                 </View>
 
                 {detail.kind === "grupo" ? (
@@ -5114,7 +5097,7 @@ export default function AdminPreview() {
                       Constancia: {detail.item.constancia.tipo === "pdf" ? "PDF adjunto" : "Automática"}
                     </Text>
                   ) : null}
-                  {detail.item.estado === "finalizado" && detail.item.certificacion !== "certificada" ? (
+                  {detail.item.estado === "finalizado" && detail.item.certificacion !== "certificada" && !accionPrincipal ? (
                     <View style={[s.row, { gap: 10, marginTop: 14, flexWrap: "wrap" }]}>
                       <TouchableOpacity
                         style={[s.btnPrimary, s.btnSm, pasantiaActionSaving && { opacity: 0.7 }]}
@@ -5149,7 +5132,7 @@ export default function AdminPreview() {
                       {comprobante.notaUniversidad ? (
                         <Text style={[s.textMuted, { marginTop: 6 }]}>Nota universidad: {comprobante.notaUniversidad}</Text>
                       ) : null}
-                      {comprobante.estado === "enviado" ? (
+                      {comprobante.estado === "enviado" && !accionPrincipal ? (
                         <View style={[s.row, { gap: 10, marginTop: 14, flexWrap: "wrap" }]}>
                           <TouchableOpacity
                             style={[s.btnPrimary, s.btnSm, pasantiaActionSaving && { opacity: 0.7 }]}
