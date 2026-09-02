@@ -306,6 +306,117 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // 💼 CONTRATOS_LABORALES — empleo real: un graduado contratado a una
+    //    vacante `categoria:'vacante'`. Es la fuente de verdad del "Puesto de
+    //    trabajo": lo ven SOLO la empresa empleadora y el estudiante
+    //    contratado. Un doc por contratación; `estado` va 'activo' →
+    //    'renuncia'/'despido' y NO se reabre (la vacante queda cerrada).
+    //    Contadores por contrato (se reinician con cada contrato nuevo):
+    //    `reportesCount` (3 → la app sugiere despido) y `advertenciasEmpresa`
+    //    (3 → solo queda "Despedir definitivamente").
+    //    Ver src/services/contratoService.ts para el ciclo completo.
+    // ═══════════════════════════════════════════════════════════════════
+    match /contratos_laborales/{contratoId} {
+      allow read: if request.auth != null && (
+        resource.data.empresaId == request.auth.uid
+        || resource.data.estudianteId == request.auth.uid
+        || esAdmin()
+      );
+
+      // Lo crea SOLO la empresa dueña, y siempre nace 'activo'.
+      allow create: if request.auth != null
+        && request.resource.data.empresaId == request.auth.uid
+        && request.resource.data.estado == 'activo';
+
+      // Las 3 claves que identifican el contrato son INMUTABLES: sin esto la
+      // empresa señalada podría reasignarse el contrato a otra cuenta/vacante
+      // (mismo candado que `incidencias`).
+      allow update: if request.auth != null
+        && request.resource.data.empresaId == resource.data.empresaId
+        && request.resource.data.estudianteId == resource.data.estudianteId
+        && request.resource.data.vacanteId == resource.data.vacanteId
+        && (
+          // La empresa empleadora: despedir, advertir, subir `reportesCount`,
+          // fijar el aviso al empleado, editar el horario del puesto.
+          resource.data.empresaId == request.auth.uid
+          || esAdmin()
+          // El estudiante contratado: SOLO sobre un contrato aún activo, y
+          // SOLO para renunciar o mandar una advertencia a la empresa.
+          || (
+            resource.data.estudianteId == request.auth.uid
+            && resource.data.estado == 'activo'
+            && request.resource.data.estado in ['activo', 'renuncia']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                 'estado', 'fechaFin', 'motivoFin', 'finPor',
+                 'advertenciasEstudiante', 'ultimoAvisoEmpresa', 'updatedAt',
+               ])
+          )
+        );
+
+      allow delete: if esAdmin();
+    }
+
+    // 📋 TAREAS_LABORALES — tareas que la empresa asigna a un empleado
+    //    contratado. "Asignar a ambos" = un doc por empleado del puesto,
+    //    agrupados por `loteId` (estado simple por doc, sin arrays de avance).
+    match /tareas_laborales/{tareaId} {
+      allow read: if request.auth != null && (
+        resource.data.empresaId == request.auth.uid
+        || resource.data.estudianteId == request.auth.uid
+        || esAdmin()
+      );
+      allow create: if request.auth != null
+        && request.resource.data.empresaId == request.auth.uid
+        && request.resource.data.estado == 'pendiente';
+      allow update: if request.auth != null
+        && request.resource.data.empresaId == resource.data.empresaId
+        && request.resource.data.estudianteId == resource.data.estudianteId
+        && (
+          resource.data.empresaId == request.auth.uid
+          || esAdmin()
+          // El empleado SOLO marca/desmarca "completada".
+          || (
+            resource.data.estudianteId == request.auth.uid
+            && request.resource.data.estado in ['pendiente', 'completada']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'completadaAt'])
+          )
+        );
+      allow delete: if request.auth != null
+        && (resource.data.empresaId == request.auth.uid || esAdmin());
+    }
+
+    // 📨 OFERTAS_EMPLEO — la empresa oferta una vacante a un ex-pasante desde
+    //    "Historial de Pasantes". El estudiante acepta/rechaza; aceptar NO
+    //    crea el contrato (la empresa lo confirma luego en "Recontratar
+    //    Pasantes"). Ver src/services/contratoService.ts.
+    match /ofertas_empleo/{ofertaId} {
+      allow read: if request.auth != null && (
+        resource.data.empresaId == request.auth.uid
+        || resource.data.estudianteId == request.auth.uid
+        || esAdmin()
+      );
+      allow create: if request.auth != null
+        && request.resource.data.empresaId == request.auth.uid
+        && request.resource.data.estado == 'pendiente';
+      allow update: if request.auth != null
+        && request.resource.data.empresaId == resource.data.empresaId
+        && request.resource.data.estudianteId == resource.data.estudianteId
+        && request.resource.data.vacanteId == resource.data.vacanteId
+        && (
+          resource.data.empresaId == request.auth.uid
+          || esAdmin()
+          // El estudiante responde UNA vez: 'pendiente' → 'aceptada'/'rechazada'.
+          || (
+            resource.data.estudianteId == request.auth.uid
+            && resource.data.estado == 'pendiente'
+            && request.resource.data.estado in ['aceptada', 'rechazada']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'motivoRechazo', 'respondidaAt'])
+          )
+        );
+      allow delete: if esAdmin();
+    }
+
     // 📜 COMPROBANTES_PASANTIA (constancia de finalización de una pasantía por
     //    CUPO). Un doc por `asignaciones_cupo` culminada, id = id de la
     //    asignación. Ciclo: (sin doc) → 'enviado' (la empresa lo manda) →
@@ -444,6 +555,13 @@ service cloud.firestore {
     }
 
     // 🚩 REPORTES
+    // Denuncia de CONDUCTA de una persona; solo la ve quien reporta y el admin.
+    // Cubre tanto los reportes de chat/perfil (reporteService) como los
+    // laborales (empresa reporta a un empleado contratado: el doc lleva
+    // `contexto:'laboral'` + `contratoId`, y el contador de 3 vive en
+    // `contratos_laborales.reportesCount`). El `create` abierto a autenticados
+    // ya lo permite; el empleado reportado NO puede leer el reporte (se entera
+    // por una notificación, no por esta colección).
     match /reportes/{reporteId} {
       allow read: if resource.data.reportador_id == request.auth.uid || esAdmin();
       allow create: if request.auth != null;
