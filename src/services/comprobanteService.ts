@@ -65,6 +65,10 @@ export interface Comprobante extends DatosConstancia {
   estado: EstadoComprobante;
   creadoAt?: any;
   enviadoAt?: any;
+  /** Fecha de emisión (ISO `yyyy-mm-dd`) — la fija la empresa al enviar y queda
+   *  congelada: es la fecha que muestra la constancia, no la del día en que se
+   *  abre/imprime. */
+  fechaEmision?: string;
   /** 'auto' = constancia del sistema; 'pdf' = archivo subido por la empresa. */
   origen?: 'auto' | 'pdf';
   archivoUrl?: string | null;
@@ -192,6 +196,8 @@ export async function enviarComprobante(
     notaEmpresa?: string;
     area?: string;
     supervisor?: string;
+    /** ISO `yyyy-mm-dd` — fecha de emisión a congelar. Por defecto, hoy. */
+    fechaEmisionISO?: string;
   } = {},
 ): Promise<void> {
   if (!datos.asignacionId) throw new Error('Asignación inválida.');
@@ -227,6 +233,7 @@ export async function enviarComprobante(
       area: opts.area ?? '',
       supervisor: opts.supervisor ?? '',
       notaEmpresa: opts.notaEmpresa ?? '',
+      fechaEmision: opts.fechaEmisionISO || new Date().toISOString().slice(0, 10),
       enviadoAt: serverTimestamp(),
     },
     { merge: true },

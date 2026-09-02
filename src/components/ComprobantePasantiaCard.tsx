@@ -99,6 +99,7 @@ export default function ComprobantePasantiaCard({ rol, uid }: { rol: Rol; uid: s
             area: comp.area,
             supervisor: comp.supervisor,
             nota: comp.notaEmpresa,
+            fechaEmisionISO: comp.fechaEmision,
           }),
         });
       }

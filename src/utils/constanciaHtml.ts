@@ -33,11 +33,14 @@ export interface ConstanciaExtra {
   area?: string;
   supervisor?: string;
   nota?: string;
+  /** Fecha de emisión (ISO `yyyy-mm-dd`) — la que fijó la empresa al enviar.
+   *  Si falta, se usa la de hoy (solo para la previsualización previa al envío). */
+  fechaEmisionISO?: string;
 }
 
 /** HTML A4 de la constancia de finalización de pasantía (documento formal). */
 export function constanciaHtml(d: DatosConstancia, extra?: ConstanciaExtra): string {
-  const hoy = fmtFechaLarga(new Date().toISOString().slice(0, 10));
+  const hoy = fmtFechaLarga(extra?.fechaEmisionISO || new Date().toISOString().slice(0, 10));
   const horario = textoHorario(d.horario as any) || '';
   const area = extra?.area?.trim();
   const supervisor = extra?.supervisor?.trim();

@@ -56,6 +56,9 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
   const [archivoUrl, setArchivoUrl] = useState<string | null>(null);
   const [subiendo, setSubiendo] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  // Fecha de emisión congelada al abrir el modal (≈ fecha de envío). Es la que
+  // muestra la constancia, no la del día en que luego se abra/imprima.
+  const [fechaEmisionISO] = useState(() => new Date().toISOString().slice(0, 10));
 
   // ── Meta de horas del grupo + nombre de la universidad ──
   // El total lo define el GRUPO (`horasRequeridas`/`total_horas`), no la
@@ -124,7 +127,9 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
 
   const verPdf = async () => {
     try {
-      await Print.printAsync({ html: constanciaHtml(datos, { area, supervisor, nota }) });
+      await Print.printAsync({
+        html: constanciaHtml(datos, { area, supervisor, nota, fechaEmisionISO }),
+      });
     } catch (e: any) {
       showAlert('No se pudo generar el PDF', e?.message ?? 'Inténtalo de nuevo.');
     }
@@ -151,7 +156,13 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
     if (!listoParaEnviar) return;
     setEnviando(true);
     try {
-      await enviarComprobante(datos, { archivoUrl, notaEmpresa: nota, area, supervisor });
+      await enviarComprobante(datos, {
+        archivoUrl,
+        notaEmpresa: nota,
+        area,
+        supervisor,
+        fechaEmisionISO,
+      });
       showAlert(
         'Comprobante enviado',
         'Tu universidad ya puede revisarlo y validarlo. Al validarlo, el proceso queda 100% culminado.',
@@ -164,7 +175,7 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
   };
 
   const horario = textoHorario(asignacion.horario) || '';
-  const hoy = fmtFechaLarga(new Date().toISOString().slice(0, 10));
+  const hoy = fmtFechaLarga(fechaEmisionISO);
   const empresa = datos.empresaNombre || 'La empresa';
 
   return (
