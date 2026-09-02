@@ -121,10 +121,10 @@ export async function crearIncidencia(p: CrearIncidenciaParams): Promise<string>
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Sesión no válida.');
   if (!p.motivo.trim()) throw new Error('Selecciona un motivo.');
-  if (p.descripcion.trim().length < 15) {
-    // Un mínimo real: "no me gusta" no le da a nadie con qué actuar, y una
-    // incidencia sin contexto solo genera un ida y vuelta extra.
-    throw new Error('Cuenta un poco más: al menos 15 caracteres.');
+  if (p.descripcion.trim().length < 10) {
+    // Un mínimo real: "no" no le da a nadie con qué actuar. El modal ya valida
+    // esto antes con un mensaje; esto es la última red.
+    throw new Error('Cuéntanos un poco más: al menos 10 caracteres.');
   }
 
   // OJO: NO se aborta si el estudiante no tiene universidad vinculada — antes

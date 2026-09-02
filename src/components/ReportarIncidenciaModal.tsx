@@ -51,21 +51,35 @@ export default function ReportarIncidenciaModal({
 
   const [categoria, setCategoria] = useState<CategoriaIncidencia | null>(null);
   const [motivo, setMotivo] = useState('');
+  const [motivoOtro, setMotivoOtro] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState('');
 
+  const MIN_DESC = 10;
+
   // Cada apertura empieza en blanco: sin esto, reabrir el formulario tras
   // enviar mostraría el reporte anterior a medio llenar.
   useEffect(() => {
-    if (visible) { setCategoria(null); setMotivo(''); setDescripcion(''); setError(''); }
+    if (visible) { setCategoria(null); setMotivo(''); setMotivoOtro(''); setDescripcion(''); setError(''); }
   }, [visible]);
 
   const categorias = CATEGORIAS.filter(c => c.key !== 'empresa' || !!empresaId);
-  const listo = !!categoria && !!motivo && descripcion.trim().length >= 15;
+  // Motivo real que se envía: si eligió "Otro", el texto libre que escribió.
+  const motivoFinal = motivo === 'Otro' ? motivoOtro.trim() : motivo;
 
   const enviar = async () => {
     if (enviando) return;
+    // Validación con MENSAJE (antes el botón estaba deshabilitado en silencio,
+    // y al tocarlo no pasaba nada — parecía "colgado").
+    if (!categoria) { setError('Elige sobre qué es el problema.'); return; }
+    if (!motivo) { setError('Elige un motivo.'); return; }
+    if (motivo === 'Otro' && motivoFinal.length < 3) { setError('Describe brevemente el motivo.'); return; }
+    if (descripcion.trim().length < MIN_DESC) {
+      setError(`Cuéntanos un poco más: al menos ${MIN_DESC} caracteres.`);
+      return;
+    }
+
     setEnviando(true); setError('');
     try {
       // `Promise.race` con un tope: si por lo que sea la escritura se cuelga
@@ -77,7 +91,7 @@ export default function ReportarIncidenciaModal({
           empresaId,
           empresaNombre,
           categoria: categoria!,
-          motivo,
+          motivo: motivoFinal,
           descripcion,
         }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('La solicitud tardó demasiado. Revisa tu conexión e inténtalo de nuevo.')), 15000)),
@@ -152,6 +166,17 @@ export default function ReportarIncidenciaModal({
                   );
                 })}
               </View>
+              {/* "Otro" → campo libre para escribir el motivo real. */}
+              {motivo === 'Otro' && (
+                <TextInput
+                  style={[s.input, { minHeight: 44 }]}
+                  value={motivoOtro}
+                  onChangeText={setMotivoOtro}
+                  placeholder={t('inc_motivo_otro_placeholder')}
+                  placeholderTextColor={colors.textMuted}
+                  selectionColor={colors.primary}
+                />
+              )}
             </View>
 
             {/* 3) Descripción */}
@@ -168,8 +193,8 @@ export default function ReportarIncidenciaModal({
               />
               {/* El contador solo aparece mientras falta: cumplido el mínimo,
                   dejar de contar es una señal de "ya está bien". */}
-              {descripcion.trim().length < 15 && (
-                <Text style={s.contador} noTranslate>{`${descripcion.trim().length}/15`}</Text>
+              {descripcion.trim().length < MIN_DESC && (
+                <Text style={s.contador} noTranslate>{`${descripcion.trim().length}/${MIN_DESC}`}</Text>
               )}
             </View>
 
@@ -179,9 +204,11 @@ export default function ReportarIncidenciaModal({
               {categoria === 'empresa' ? t('inc_aviso_empresa') : t('inc_aviso_universidad')}
             </Text>
 
+            {/* Botón SIEMPRE pulsable (salvo mientras envía): si falta algo,
+                `enviar()` lo dice con un mensaje en vez de no hacer nada. */}
             <TouchableOpacity
-              style={[s.btn, (!listo || enviando) && s.btnOff]}
-              disabled={!listo || enviando}
+              style={[s.btn, enviando && s.btnOff]}
+              disabled={enviando}
               onPress={enviar}
             >
               {enviando

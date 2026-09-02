@@ -851,11 +851,15 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Ver CV": "View CV",
   "Descargar": "Download",
   "Sin currículum adjunto.": "No résumé attached.",
-  // ── Errores del modal de incidencia ──
+  // ── Modal de incidencia: validación + errores ──
   "No se pudo registrar la incidencia (permisos). Inténtalo de nuevo en un momento.":
     "The incident couldn't be recorded (permissions). Try again in a moment.",
   "La solicitud tardó demasiado. Revisa tu conexión e inténtalo de nuevo.":
     "The request took too long. Check your connection and try again.",
+  "Elige sobre qué es el problema.": "Choose what the problem is about.",
+  "Elige un motivo.": "Choose a reason.",
+  "Describe brevemente el motivo.": "Briefly describe the reason.",
+  "Cuéntanos un poco más: al menos 10 caracteres.": "Tell us a bit more: at least 10 characters.",
 
   // ── Cierre automático por horas (Fase E) ──
   "Día de práctica": "Practice day",

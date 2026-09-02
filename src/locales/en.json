@@ -498,6 +498,7 @@
   "inc_campo_motivo": "Reason",
   "inc_campo_descripcion": "What happened?",
   "inc_descripcion_placeholder": "Tell us what happened, when, and with whom. The more specific, the faster they can help you.",
+  "inc_motivo_otro_placeholder": "Type the reason",
   "inc_cat_empresa": "The company",
   "inc_cat_universidad": "My university",
   "inc_cat_plataforma": "The app",

@@ -498,6 +498,7 @@
   "inc_campo_motivo": "Motivo",
   "inc_campo_descripcion": "¿Qué pasó?",
   "inc_descripcion_placeholder": "Cuenta qué pasó, cuándo y con quién. Mientras más concreto, más rápido pueden ayudarte.",
+  "inc_motivo_otro_placeholder": "Escribe el motivo",
   "inc_cat_empresa": "La empresa",
   "inc_cat_universidad": "Mi universidad",
   "inc_cat_plataforma": "La app",
