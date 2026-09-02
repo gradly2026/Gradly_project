@@ -150,7 +150,12 @@ service cloud.firestore {
                                 'calificaciones_recibidas', 'calificacion_promedio',
                                 'rango_nivel', 'rango_tier',
                               ]))
-                     || (esRol('universidad')
+                     // 🆕 Además de la universidad, el ESTUDIANTE puede sumar su
+                     //    propia universidad al array `aliados_universidades_ids`
+                     //    (arrayUnion, dedupe) al inscribirse por autoservicio —
+                     //    la marca durable de la alianza que alimenta "Top
+                     //    Empresas" y "Universidades aliadas".
+                     || ((esRol('universidad') || esRol('estudiante'))
                          && request.resource.data.diff(resource.data).affectedKeys()
                               .hasOnly(['aliados_universidades_ids']));
       allow delete: if esAdmin();
@@ -169,7 +174,10 @@ service cloud.firestore {
       //    El `hasOnly` impide tocar cualquier otro campo.
       allow update: if request.auth.uid == uniId
                      || esAdmin()
-                     || (esRol('empresa')
+                     // La EMPRESA (al aprobar una pasantía de grupo) o el
+                     // ESTUDIANTE (al inscribirse por autoservicio) suman su
+                     // contraparte a `aliados_empresas_ids` (arrayUnion, dedupe).
+                     || ((esRol('empresa') || esRol('estudiante'))
                          && request.resource.data.diff(resource.data).affectedKeys()
                               .hasOnly(['aliados_empresas_ids']))
                      || ((esRol('estudiante') || esRol('empresa'))

@@ -230,13 +230,19 @@ export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
     return () => unsubs.forEach(u => u());
   }, [empresaId]);
 
-  // Nombres de las universidades aliadas: unión de la marca durable
-  // (`aliados_universidades_ids`) + las postulaciones de grupo aprobadas/en
-  // revisión (por si la marca aún no se escribió en algún flujo).
+  // Universidades con las que la empresa ha trabajado — unión de TODAS las
+  // vías, porque la marca durable `aliados_universidades_ids` solo se escribe
+  // en algunos flujos (p. ej. NO en el autoservicio de cupo):
+  //   · marca durable `aliados_universidades_ids`
+  //   · toda `asignaciones_cupo` de la empresa (cada cupo pertenece a una uni)
+  //   · postulaciones de grupo aprobadas / en revisión
+  //   · `aplicaciones` en 'contratado' con universidad vinculada (flujo legado)
   useEffect(() => {
     const ids = [...new Set([
       ...aliadosIds,
+      ...cupos.map(c => c.universidadId),
       ...grupoApps.filter(a => a.estado === 'aprobada' || a.estado === 'revisando').map(a => a.universidadId),
+      ...contratados.map(a => a.universidad_id),
     ])].filter(Boolean) as string[];
     if (ids.length === 0) { setUnisAliadas([]); return; }
     let cancel = false;
@@ -251,7 +257,7 @@ export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
       })
       .catch(() => {});
     return () => { cancel = true; };
-  }, [aliadosIds, grupoApps]);
+  }, [aliadosIds, cupos, grupoApps, contratados]);
 
   // Estudiantes trabajando ahora: contratados (flujo individual legado) +
   // inscripciones de cupo activas (no finalizadas). Se deduplica por id.

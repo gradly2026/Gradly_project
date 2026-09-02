@@ -568,6 +568,24 @@ export async function tomarCupo(params: {
     /* no crítico: no debe bloquear la toma del cupo, que ya se guardó arriba */
   }
 
+  // Marca durable de la alianza empresa ↔ universidad (arrayUnion, dedupe).
+  // `reclamarCupos` ya la escribe cuando la universidad reserva, pero se repite
+  // aquí como refuerzo (idempotente). Best-effort.
+  if (datos.universidadId && datos.empresaId) {
+    try {
+      await Promise.all([
+        updateDoc(doc(db, 'perfiles_empresas', datos.empresaId), {
+          aliados_universidades_ids: arrayUnion(datos.universidadId),
+        }),
+        updateDoc(doc(db, 'perfiles_universidades', datos.universidadId), {
+          aliados_empresas_ids: arrayUnion(datos.empresaId),
+        }),
+      ]);
+    } catch (e) {
+      console.warn('No se pudo registrar la alianza al tomar el cupo:', e);
+    }
+  }
+
   // Avisos: a la universidad (para su seguimiento) y a la empresa (sabe quién llega).
   const quien = estudianteNombre || 'Un estudiante';
   await enviarNotificacion(

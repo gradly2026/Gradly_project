@@ -445,6 +445,26 @@ export async function inscribirseAPasantiaIndependiente(
     /* no crítico */
   }
 
+  // Marca durable de la alianza empresa ↔ universidad (arrayUnion, dedupe, solo
+  // agrega). El autoservicio no pasa por `reclamarCupos`, así que esta marca —
+  // que alimenta "Universidades aliadas" y "Top Empresas" — hay que ponerla
+  // aquí. Best-effort: un fallo no debe deshacer la inscripción ya creada.
+  const uniAliada = estudiantePerfil.universidad_id;
+  if (uniAliada && empresaId) {
+    try {
+      await Promise.all([
+        updateDoc(doc(db, 'perfiles_empresas', empresaId), {
+          aliados_universidades_ids: arrayUnion(uniAliada),
+        }),
+        updateDoc(doc(db, 'perfiles_universidades', uniAliada), {
+          aliados_empresas_ids: arrayUnion(empresaId),
+        }),
+      ]);
+    } catch (e) {
+      console.warn('No se pudo registrar la alianza de la inscripción:', e);
+    }
+  }
+
   // Avisos a universidad y empresa — alimentan la campana y los modales de
   // "se inscribió el estudiante X" al iniciar sesión (AvisosGate).
   const quien = estudiantePerfil.nombre_completo || 'Un estudiante';
