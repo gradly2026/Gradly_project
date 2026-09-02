@@ -79,6 +79,8 @@ import { translateSync } from "../../src/services/translationService";
 import { useAdminTheme } from "../../src/styles/adminStyles";
 import { textoHorario } from "../../src/data/disponibilidad";
 import { textoCupos, textoSalario } from "../../src/utils/cupos";
+import { certificarPasantia } from "../../src/services/solicitudPracticaService";
+import { validarComprobante } from "../../src/services/comprobanteService";
 
 // Convierte un Timestamp de Firestore (o string) a ISO para los tipos del panel.
 // `v?.toDate === "function"` detecta un Timestamp real de Firestore (tiene
@@ -296,6 +298,12 @@ const MESES_ADMIN = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Se
 
 const ROLE_ORDER: Role[] = ["admin", "universidad", "empresa", "estudiante"];
 const PERMISSION_ROLES: PermissionRole[] = ["admin", "universidad", "empresa"];
+const emptyRolePermissionMap = (): Record<Role, Set<string>> => ({
+  admin: new Set(),
+  universidad: new Set(),
+  empresa: new Set(),
+  estudiante: new Set(),
+});
 
 // ── Normalizadores ──────────────────────────────────────────────
 // Los documentos de `usuarios` se han escrito con nombres de campo distintos
@@ -561,6 +569,10 @@ export default function AdminPreview() {
   const [rolePermissions, setRolePermissions] = useState<Set<string>>(new Set());
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [permissionsLoadedRole, setPermissionsLoadedRole] = useState<PermissionRole | null>(null);
+  const [rolePermissionMatrix, setRolePermissionMatrix] = useState<Record<Role, Set<string>>>(emptyRolePermissionMap);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+  const [permissionsRoleFilter, setPermissionsRoleFilter] = useState<Role | "todos">("todos");
+  const [permissionsSearch, setPermissionsSearch] = useState("");
 
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -626,14 +638,28 @@ export default function AdminPreview() {
   // INDIVIDUALES (ciclo de vida en `aplicaciones`).
   type AdminSolicitudPractica = { id: string } & Record<string, any>;
   type AdminAplicacionPasantia = { id: string } & Record<string, any>;
+  type AdminAsignacionCupo = { id: string } & Record<string, any>;
+  type AdminComprobantePasantia = { id: string } & Record<string, any>;
+  type AdminStudentSnapshot = {
+    id: string;
+    nombre: string;
+    estado_pasantia: string;
+    horas_aprobadas: number | null;
+    horas_objetivo: number | null;
+    grupo_id: string | null;
+  };
 
   const [pasantiasLoading, setPasantiasLoading] = useState(false);
   const [pasantiasAttempted, setPasantiasAttempted] = useState(false);
   const [solicitudesPractica, setSolicitudesPractica] = useState<AdminSolicitudPractica[]>([]);
   const [aplicacionesPasantia, setAplicacionesPasantia] = useState<AdminAplicacionPasantia[]>([]);
-  const [pasantiasOrigenFilter, setPasantiasOrigenFilter] = useState<"todas" | "grupo" | "individual">("todas");
+  const [asignacionesCupo, setAsignacionesCupo] = useState<AdminAsignacionCupo[]>([]);
+  const [comprobantesPasantia, setComprobantesPasantia] = useState<AdminComprobantePasantia[]>([]);
+  const [pasantiasOrigenFilter, setPasantiasOrigenFilter] = useState<"todas" | "grupo" | "individual" | "cupo">("todas");
   const [pasantiasEstadoFilter, setPasantiasEstadoFilter] = useState<"todas" | "activas" | "finalizadas">("activas");
   const [pasantiasSearch, setPasantiasSearch] = useState("");
+  const [estudianteSnapshots, setEstudianteSnapshots] = useState<Record<string, AdminStudentSnapshot>>({});
+  const [pasantiaActionSaving, setPasantiaActionSaving] = useState(false);
 
   // Mapas de nombres para que el admin vea etiquetas humanas (no solo IDs).
   const [empresaNames, setEmpresaNames] = useState<Record<string, string>>({});
@@ -642,6 +668,7 @@ export default function AdminPreview() {
   type PasantiaDetailState =
     | { kind: "grupo"; item: AdminSolicitudPractica }
     | { kind: "individual"; item: AdminAplicacionPasantia }
+    | { kind: "cupo"; item: AdminAsignacionCupo }
     | null;
   const [pasantiaDetail, setPasantiaDetail] = useState<PasantiaDetailState>(null);
   const [pasantiaDetailOpen, setPasantiaDetailOpen] = useState(false);
@@ -1192,9 +1219,11 @@ export default function AdminPreview() {
       // del listado como haría un orderBy de Firestore. El tope de 200 es una
       // cota simple para el MVP; si alguna colección lo supera hará falta
       // paginación de verdad.
-      const [solSnap, appSnap] = await Promise.all([
+      const [solSnap, appSnap, cupoSnap, compSnap] = await Promise.all([
         getDocs(query(collection(db, "solicitudes_practicas"), limit(200))),
         getDocs(query(collection(db, "aplicaciones"), limit(200))),
+        getDocs(query(collection(db, "asignaciones_cupo"), limit(200))),
+        getDocs(query(collection(db, "comprobantes_pasantia"), limit(200))),
       ]);
 
       const sols = solSnap.docs
@@ -1203,15 +1232,37 @@ export default function AdminPreview() {
       const apps = appSnap.docs
         .map((d) => ({ id: d.id, ...(d.data() as any) }))
         .sort((a: any, b: any) => tsToMillis(b.fecha_aplicacion) - tsToMillis(a.fecha_aplicacion));
+      const cupos = cupoSnap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .sort((a: any, b: any) => {
+          const right = tsToMillis(b.finalizadaAt) || tsToMillis(b.fechaTomado);
+          const left = tsToMillis(a.finalizadaAt) || tsToMillis(a.fechaTomado);
+          return right - left;
+        });
+      const comps = compSnap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .sort((a: any, b: any) => {
+          const right = tsToMillis(b.validadoAt) || tsToMillis(b.enviadoAt) || tsToMillis(b.creadoAt);
+          const left = tsToMillis(a.validadoAt) || tsToMillis(a.enviadoAt) || tsToMillis(a.creadoAt);
+          return right - left;
+        });
       setSolicitudesPractica(sols);
       setAplicacionesPasantia(apps);
+      setAsignacionesCupo(cupos);
+      setComprobantesPasantia(comps);
 
       // Resolver nombres (empresa/universidad) en segundo plano, sin romper si falta permiso.
       const empresaIds = Array.from(new Set([
         ...sols.map((s: any) => String(s.empresaId ?? "")).filter(Boolean),
         ...apps.map((a: any) => String(a.empresa_id ?? "")).filter(Boolean),
+        ...cupos.map((a: any) => String(a.empresaId ?? "")).filter(Boolean),
+        ...comps.map((c: any) => String(c.empresaId ?? "")).filter(Boolean),
       ])).slice(0, 80);
-      const uniIds = Array.from(new Set(sols.map((s: any) => String(s.universidadId ?? "")).filter(Boolean))).slice(0, 80);
+      const uniIds = Array.from(new Set([
+        ...sols.map((s: any) => String(s.universidadId ?? "")).filter(Boolean),
+        ...cupos.map((a: any) => String(a.universidadId ?? "")).filter(Boolean),
+        ...comps.map((c: any) => String(c.universidadId ?? "")).filter(Boolean),
+      ])).slice(0, 80);
 
       const [empresaRes, uniRes] = await Promise.allSettled([
         Promise.allSettled(
@@ -1246,13 +1297,115 @@ export default function AdminPreview() {
         });
         if (Object.keys(map).length) setUniversidadNames((prev) => ({ ...prev, ...map }));
       }
+
+      const estudianteIds = Array.from(
+        new Set(
+          [
+            ...sols.flatMap((s: any) => [
+              ...(Array.isArray(s.estudianteIds) ? s.estudianteIds : []),
+              ...(Array.isArray(s.alumnos) ? s.alumnos.map((a: any) => a?.id) : []),
+            ]),
+            ...apps.map((a: any) => a.estudiante_id),
+            ...cupos.map((a: any) => a.estudianteId),
+            ...comps.map((c: any) => c.estudianteId),
+          ]
+            .filter(Boolean)
+            .map((id) => String(id)),
+        ),
+      ).slice(0, 160);
+
+      if (estudianteIds.length) {
+        const estRes = await Promise.allSettled(
+          estudianteIds.map(async (id) => {
+            const snap = await getDoc(doc(db, "perfiles_estudiantes", id));
+            const data: any = snap.exists() ? snap.data() : null;
+            return {
+              id,
+              nombre: String(data?.nombre_completo ?? data?.nombre ?? "").trim() || "Estudiante",
+              estado_pasantia: String(data?.estado_pasantia ?? "").trim(),
+              horas_aprobadas: typeof data?.horas_aprobadas === "number" ? data.horas_aprobadas : Number.isFinite(Number(data?.horas_aprobadas)) ? Number(data?.horas_aprobadas) : null,
+              horas_objetivo: typeof data?.horas_objetivo === "number" ? data.horas_objetivo : Number.isFinite(Number(data?.horas_objetivo)) ? Number(data?.horas_objetivo) : null,
+              grupo_id: data?.grupo_id ? String(data.grupo_id) : null,
+            } satisfies AdminStudentSnapshot;
+          }),
+        );
+        const map: Record<string, AdminStudentSnapshot> = {};
+        estRes.forEach((r) => {
+          if (r.status !== "fulfilled") return;
+          map[r.value.id] = r.value;
+        });
+        setEstudianteSnapshots(map);
+      } else {
+        setEstudianteSnapshots({});
+      }
       setDataIssue("pasantias", null);
     } catch (error) {
       setSolicitudesPractica([]);
       setAplicacionesPasantia([]);
+      setAsignacionesCupo([]);
+      setComprobantesPasantia([]);
+      setEstudianteSnapshots({});
       setDataIssue("pasantias", adminDataErrorMessage(error, "las pasantías de la plataforma"));
     } finally {
       setPasantiasLoading(false);
+    }
+  }, [setDataIssue]);
+
+  const fetchPermissionsOverview = useCallback(async () => {
+    setPermissionsLoading(true);
+    try {
+      const [permRes, rpRes] = await Promise.allSettled([
+        getDocs(collection(db, "permissions")),
+        getDocs(collection(db, "role_permissions")),
+      ]);
+
+      const issues: string[] = [];
+      const permSnap = permRes.status === "fulfilled" ? permRes.value : null;
+      const rpSnap = rpRes.status === "fulfilled" ? rpRes.value : null;
+
+      if (!permSnap) issues.push("permissions");
+      if (!rpSnap) issues.push("role_permissions");
+
+      const perms: Permission[] = (permSnap?.docs ?? []).map((d) => {
+        const r: any = d.data();
+        return {
+          key: r.key ?? d.id,
+          label: r.label ?? "",
+          group_name: r.group_name ?? null,
+          description: r.description ?? null,
+        };
+      });
+      perms.sort(
+        (a, b) =>
+          (a.group_name ?? "").localeCompare(b.group_name ?? "") ||
+          a.key.localeCompare(b.key),
+      );
+
+      const matrix = emptyRolePermissionMap();
+      (rpSnap?.docs ?? []).forEach((d) => {
+        const data: any = d.data();
+        const role = normalizeRole(data.role);
+        const key = String(data.permission_key ?? "").trim();
+        if (!key) return;
+        matrix[role].add(key);
+      });
+
+      setPermissions(perms);
+      setRolePermissionMatrix(matrix);
+      setPermissionsLoaded(true);
+      setDataIssue(
+        "permisos",
+        issues.length
+          ? `Colecciones sin acceso en permisos: ${issues.join(", ")}.`
+          : null,
+      );
+    } catch (error) {
+      setPermissions([]);
+      setRolePermissionMatrix(emptyRolePermissionMap());
+      setPermissionsLoaded(true);
+      setDataIssue("permisos", adminDataErrorMessage(error, "los permisos del panel"));
+    } finally {
+      setPermissionsLoading(false);
     }
   }, [setDataIssue]);
 
@@ -1799,8 +1952,8 @@ export default function AdminPreview() {
           "advertencia",
           accion === "deshabilitar" ? "Publicación deshabilitada" : "Publicación eliminada",
           accion === "deshabilitar"
-            ? "Ya no aparece para los estudiantes y la empresa puede ver el motivo. Puedes volver a habilitarla si se corrige."
-            : "La publicación se borró de la plataforma. Esta acción no se puede deshacer.",
+            ? "Ya no aparece para los estudiantes y queda bloqueada por moderación administrativa."
+            : "La publicación quedó eliminada lógicamente y dejó de mostrarse en la plataforma.",
         );
       } catch (error) {
         console.error("Admin:vacanteModeracion error", error);
@@ -1927,6 +2080,59 @@ export default function AdminPreview() {
     [refreshOverview, reportResolution, t],
   );
 
+  const handleCertificarGrupo = useCallback(
+    async (solicitud: AdminSolicitudPractica) => {
+      setPasantiaActionSaving(true);
+      try {
+        const res = await certificarPasantia(solicitud.id);
+        await fetchPasantias();
+        mostrarAviso(
+          "exito",
+          "Pasantía certificada",
+          `Se certificó la pasantía y se acreditaron ${res.horas} horas a ${res.totalEstudiantes} estudiante(s).`,
+        );
+      } catch (error) {
+        mostrarAviso(
+          "error",
+          "No pudimos certificar la pasantía",
+          "La solicitud sigue igual. Puedes volver a intentarlo cuando quieras.",
+          translateSync(adminDataErrorMessage(error, "certificar la pasantía")),
+        );
+      } finally {
+        setPasantiaActionSaving(false);
+      }
+    },
+    [fetchPasantias, mostrarAviso],
+  );
+
+  const handleValidarComprobanteAdmin = useCallback(
+    async (comp: AdminComprobantePasantia) => {
+      setPasantiaActionSaving(true);
+      try {
+        const ok = await validarComprobante(comp.id);
+        if (!ok) {
+          throw new Error("El comprobante ya no estaba en estado enviado.");
+        }
+        await fetchPasantias();
+        mostrarAviso(
+          "exito",
+          "Comprobante validado",
+          "Se acreditaron las horas del estudiante y la pasantía por cupo quedó cerrada al 100%.",
+        );
+      } catch (error) {
+        mostrarAviso(
+          "error",
+          "No pudimos validar el comprobante",
+          "El comprobante sigue en el estado anterior. Puedes intentarlo de nuevo.",
+          translateSync(adminDataErrorMessage(error, "validar el comprobante")),
+        );
+      } finally {
+        setPasantiaActionSaving(false);
+      }
+    },
+    [fetchPasantias, mostrarAviso],
+  );
+
   // ── Carga inicial y carga perezosa por página ──────────────────────
   // Primer efecto: usuarios + métricas se cargan SIEMPRE al montar (son la
   // base de Resumen/Aprobaciones/Usuarios). El resto (logs/notificaciones/
@@ -1966,20 +2172,14 @@ export default function AdminPreview() {
     if (page === "notificaciones" && !notificationsAttempted && !notificationsLoading) fetchNotifications();
     if (page === "pasantias" && !pasantiasAttempted && !pasantiasLoading) fetchPasantias();
     if (page === "suscripciones" && !suscripcionesAttempted && !suscripcionesLoading) fetchSuscripciones();
-    if (page === "roles" && !permissionsLoading) {
-      if (roleTab === "estudiante") {
-        setPermissions([]);
-        setRolePermissions(new Set());
-        setPermissionsLoadedRole(null);
-      } else if (permissionsLoadedRole !== roleTab) {
-        fetchPermissions(roleTab);
-      }
+    if (page === "roles" && !permissionsLoaded && !permissionsLoading) {
+      fetchPermissionsOverview();
     }
   }, [
     fetchLogs,
     fetchNotifications,
     fetchPasantias,
-    fetchPermissions,
+    fetchPermissionsOverview,
     fetchSuscripciones,
     logsAttempted,
     logsLoading,
@@ -1988,9 +2188,8 @@ export default function AdminPreview() {
     pasantiasAttempted,
     pasantiasLoading,
     page,
-    permissionsLoadedRole,
+    permissionsLoaded,
     permissionsLoading,
-    roleTab,
     suscripcionesAttempted,
     suscripcionesLoading,
   ]);
@@ -2010,6 +2209,86 @@ export default function AdminPreview() {
       return haystack.includes(q);
     });
   }, [roleTab, search, statusFilter, users]);
+
+  const vacantesById = useMemo(() => {
+    const map: Record<string, AdminVacante> = {};
+    vacantesList.forEach((v) => {
+      map[v.id] = v;
+    });
+    return map;
+  }, [vacantesList]);
+
+  const getGrupoStudentIds = useCallback((sol: any): string[] => {
+    return Array.from(
+      new Set(
+        [
+          ...(Array.isArray(sol?.estudianteIds) ? sol.estudianteIds : []),
+          ...(Array.isArray(sol?.alumnos) ? sol.alumnos.map((a: any) => a?.id) : []),
+        ]
+          .filter(Boolean)
+          .map((id) => String(id)),
+      ),
+    );
+  }, []);
+
+  const getPasantiaStudentIds = useCallback((detail: PasantiaDetailState): string[] => {
+    if (!detail) return [];
+    if (detail.kind === "grupo") return getGrupoStudentIds(detail.item);
+    if (detail.kind === "individual") return detail.item.estudiante_id ? [String(detail.item.estudiante_id)] : [];
+    return detail.item.estudianteId ? [String(detail.item.estudianteId)] : [];
+  }, [getGrupoStudentIds]);
+
+  const estadoAlumnoPasantia = useCallback((estado?: string | null) => {
+    const raw = String(estado ?? "").trim().toLowerCase();
+    if (raw === "finalizada") return { label: "Finalizada", type: "inactive" as const };
+    if (raw === "en_proceso") return { label: "En proceso", type: "active" as const };
+    if (raw === "pendiente" || raw === "por_iniciar") return { label: "Pendiente", type: "pending" as const };
+    return { label: raw ? raw[0].toUpperCase() + raw.slice(1).replaceAll("_", " ") : "Sin estado", type: "pending" as const };
+  }, []);
+
+  const resumenAlumnosPasantia = useCallback((ids: string[]) => {
+    const alumnos = ids
+      .map((id) => estudianteSnapshots[id])
+      .filter(Boolean) as AdminStudentSnapshot[];
+    const total = ids.length;
+    const finalizadas = alumnos.filter((al) => String(al.estado_pasantia ?? "").toLowerCase() === "finalizada").length;
+    const enProceso = alumnos.filter((al) => String(al.estado_pasantia ?? "").toLowerCase() === "en_proceso").length;
+    return { total, finalizadas, enProceso, alumnos };
+  }, [estudianteSnapshots]);
+
+  const comprobanteById = useMemo(() => {
+    const map: Record<string, AdminComprobantePasantia> = {};
+    comprobantesPasantia.forEach((item) => {
+      map[item.id] = item;
+    });
+    return map;
+  }, [comprobantesPasantia]);
+
+  const getComprobanteEstado = useCallback((comp?: AdminComprobantePasantia | null) => {
+    const estado = String(comp?.estado ?? "").trim().toLowerCase();
+    if (!estado) return { label: "Sin comprobante", type: "pending" as const };
+    if (estado === "enviado") return { label: "Comprobante enviado", type: "pending" as const };
+    if (estado === "validado") return { label: "Comprobante validado", type: "inactive" as const };
+    return { label: estado[0].toUpperCase() + estado.slice(1), type: "pending" as const };
+  }, []);
+
+  const filteredPermissionUsers = useMemo(() => {
+    const q = permissionsSearch.trim().toLowerCase();
+    return users.filter((u) => {
+      if (permissionsRoleFilter !== "todos" && u.role !== permissionsRoleFilter) return false;
+      if (!q) return true;
+      const haystack = `${u.nombre} ${u.email} ${u.username} ${labelRole(u.role)} ${u.departamento ?? ""} ${u.distrito ?? ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [permissionsRoleFilter, permissionsSearch, users]);
+
+  const permissionCatalog = useMemo(() => {
+    const map: Record<string, Permission> = {};
+    permissions.forEach((p) => {
+      map[p.key] = p;
+    });
+    return map;
+  }, [permissions]);
 
   const filteredReports = useMemo(() => {
     if (reportStatusFilter === "todos") return reportCases;
@@ -2034,7 +2313,7 @@ export default function AdminPreview() {
   }, [vacanteEstadoFilter, vacanteSearch, vacanteTipoFilter, vacantesList]);
 
   const filteredSolicitudesPractica = useMemo(() => {
-    if (pasantiasOrigenFilter === "individual") return [];
+    if (pasantiasOrigenFilter === "individual" || pasantiasOrigenFilter === "cupo") return [];
     const q = pasantiasSearch.trim().toLowerCase();
     return solicitudesPractica.filter((s) => {
       const estado = s.certificacion === "certificada" ? "certificada" : String(s.estado ?? "");
@@ -2042,16 +2321,23 @@ export default function AdminPreview() {
       if (pasantiasEstadoFilter === "activas" && esFinal) return false;
       if (pasantiasEstadoFilter === "finalizadas" && !esFinal) return false;
       if (!q) return true;
+      const ids = getGrupoStudentIds(s);
+      const alumnosTxt = ids
+        .map((id) => estudianteSnapshots[id]?.nombre)
+        .filter(Boolean)
+        .join(" ");
       const haystack =
-        `${s.grupoNombre ?? ""} ${s.grupoId ?? ""} ${s.empresaId ?? ""} ${s.universidadId ?? ""} ${s.carrera ?? ""} ${s.estado ?? ""}`.toLowerCase();
+        `${s.grupoNombre ?? ""} ${s.grupoId ?? ""} ${s.empresaId ?? ""} ${s.universidadId ?? ""} ${s.carrera ?? ""} ${s.estado ?? ""} ${empresaNames[String(s.empresaId ?? "")] ?? ""} ${universidadNames[String(s.universidadId ?? "")] ?? ""} ${alumnosTxt}`.toLowerCase();
       return haystack.includes(q);
     });
-  }, [pasantiasEstadoFilter, pasantiasOrigenFilter, pasantiasSearch, solicitudesPractica]);
+  }, [empresaNames, estudianteSnapshots, getGrupoStudentIds, pasantiasEstadoFilter, pasantiasOrigenFilter, pasantiasSearch, solicitudesPractica, universidadNames]);
 
   const filteredAplicacionesPasantia = useMemo(() => {
-    if (pasantiasOrigenFilter === "grupo") return [];
+    if (pasantiasOrigenFilter === "grupo" || pasantiasOrigenFilter === "cupo") return [];
     const q = pasantiasSearch.trim().toLowerCase();
     return aplicacionesPasantia.filter((a) => {
+      const vacante = vacantesById[String(a.vacante_id ?? "")];
+      if (vacante && !(vacante.categoria === "pasantia" || vacante.tipo === "Pasantía")) return false;
       const estado = String(a.estado ?? "");
       const esFinal = estado === "finalizado" || estado === "finalizado_pendiente_firma";
       const esActiva = estado === "contratado";
@@ -2063,10 +2349,27 @@ export default function AdminPreview() {
       }
       if (!q) return true;
       const haystack =
-        `${a.estudiante_nombre ?? ""} ${a.estudiante_id ?? ""} ${a.empresa_id ?? ""} ${a.vacante_id ?? ""} ${a.estado ?? ""}`.toLowerCase();
+        `${a.estudiante_nombre ?? ""} ${a.estudiante_id ?? ""} ${a.empresa_id ?? ""} ${a.vacante_id ?? ""} ${a.estado ?? ""} ${empresaNames[String(a.empresa_id ?? "")] ?? ""} ${vacante?.titulo ?? ""} ${estudianteSnapshots[String(a.estudiante_id ?? "")]?.estado_pasantia ?? ""}`.toLowerCase();
       return haystack.includes(q);
     });
-  }, [aplicacionesPasantia, pasantiasEstadoFilter, pasantiasOrigenFilter, pasantiasSearch]);
+  }, [aplicacionesPasantia, empresaNames, estudianteSnapshots, pasantiasEstadoFilter, pasantiasOrigenFilter, pasantiasSearch, vacantesById]);
+
+  const filteredAsignacionesCupo = useMemo(() => {
+    if (pasantiasOrigenFilter === "grupo" || pasantiasOrigenFilter === "individual") return [];
+    const q = pasantiasSearch.trim().toLowerCase();
+    return asignacionesCupo.filter((a) => {
+      const esFinal = a.finalizada === true && a.estado !== "cancelado";
+      const esActiva = a.estado === "tomado" && !esFinal;
+      if (pasantiasEstadoFilter === "activas" && !esActiva) return false;
+      if (pasantiasEstadoFilter === "finalizadas" && !esFinal) return false;
+      if (pasantiasEstadoFilter === "todas" && a.estado === "cancelado") return false;
+      if (!q) return true;
+      const comp = comprobanteById[a.id];
+      const haystack =
+        `${a.estudianteNombre ?? ""} ${a.estudianteId ?? ""} ${a.empresaId ?? ""} ${a.universidadId ?? ""} ${a.vacanteId ?? ""} ${a.vacanteTitulo ?? ""} ${a.carrera ?? ""} ${a.estado ?? ""} ${a.origen ?? ""} ${empresaNames[String(a.empresaId ?? "")] ?? ""} ${universidadNames[String(a.universidadId ?? "")] ?? ""} ${estudianteSnapshots[String(a.estudianteId ?? "")]?.estado_pasantia ?? ""} ${comp?.estado ?? ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [asignacionesCupo, comprobanteById, empresaNames, estudianteSnapshots, pasantiasEstadoFilter, pasantiasOrigenFilter, pasantiasSearch, universidadNames]);
 
   const approvalQueue = useMemo(() => {
     return users
@@ -2099,26 +2402,22 @@ export default function AdminPreview() {
 
   const navItems: Array<{ key: AdminPage; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
     { key: "resumen", label: "Resumen", icon: "home-outline" },
-    { key: "aprobaciones", label: "Aprobaciones", icon: "checkmark-done-outline" },
     { key: "usuarios", label: "Usuarios", icon: "people-outline" },
     { key: "reportes", label: "Reportes", icon: "bar-chart-outline" },
-    { key: "incidencias", label: "Incidencias", icon: "flag-outline" },
     { key: "pasantias", label: "Pasantías", icon: "school-outline" },
     { key: "notificaciones", label: "Inbox", icon: "notifications-outline" },
     { key: "roles", label: "Permisos", icon: "key-outline" },
-    { key: "logs", label: "Logs", icon: "receipt-outline" },
     { key: "config", label: "Config", icon: "settings-outline" },
   ];
 
   const navigateAdminPage = useCallback(
     (nextPage: AdminPage) => {
       setPage(nextPage);
-      if (nextPage === "roles" && roleTab === "estudiante") {
-        setRoleTab("admin");
-        void fetchPermissions("admin");
+      if (nextPage === "roles" && !permissionsLoaded) {
+        void fetchPermissionsOverview();
       }
     },
-    [fetchPermissions, roleTab],
+    [fetchPermissionsOverview, permissionsLoaded],
   );
 
   // ── Navegación (sidebar de escritorio / drawer de móvil) ──────────
@@ -2425,12 +2724,10 @@ export default function AdminPreview() {
                 onPress={() => {
                   if (item.key === "vacantes") navigateToVacanteList();
                   if (item.key === "transacciones") navigateToSuscripciones();
-                  if (item.key === "incidencias") navigateAdminPage("incidencias");
                 }}
                 disabled={
                   item.key !== "vacantes" &&
-                  item.key !== "transacciones" &&
-                  item.key !== "incidencias"
+                  item.key !== "transacciones"
                 }
                 activeOpacity={0.85}
               >
@@ -2560,9 +2857,7 @@ export default function AdminPreview() {
             <TouchableOpacity
               style={s.actionTile}
               onPress={() => {
-                setApprovalRoleFilter("todos");
-                setApprovalStatusFilter("pending");
-                setPage("aprobaciones");
+                navigateToUserList({ status: "pending", search: "" });
               }}
               activeOpacity={0.85}
             >
@@ -2581,16 +2876,15 @@ export default function AdminPreview() {
                 <Ionicons name="flag-outline" size={20} color={C.red} />
               </View>
               <Text style={s.actionTileTitle}>Gestionar reportes</Text>
-              <Text style={s.actionTileText}>Ve a incidencias y entra directo a los casos recientes.</Text>
+              <Text style={s.actionTileText}>Abre la bandeja de reportes recientes y entra directo al detalle.</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={s.actionTile}
               onPress={() => {
                 setPage("roles");
-                if (roleTab === "estudiante") {
-                  setRoleTab("admin");
-                  void fetchPermissions("admin");
-                }
+                setPermissionsRoleFilter("todos");
+                setPermissionsSearch("");
+                if (!permissionsLoaded) void fetchPermissionsOverview();
               }}
               activeOpacity={0.85}
             >
@@ -2598,18 +2892,7 @@ export default function AdminPreview() {
                 <Ionicons name="key-outline" size={20} color={C.accent70} />
               </View>
               <Text style={s.actionTileTitle}>Ajustar permisos</Text>
-              <Text style={s.actionTileText}>Edita el mapa de accesos administrativos por rol.</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={s.actionTile}
-              onPress={() => setPage("logs")}
-              activeOpacity={0.85}
-            >
-              <View style={s.statIconWrap}>
-                <Ionicons name="receipt-outline" size={20} color={C.green} />
-              </View>
-              <Text style={s.actionTileTitle}>Abrir auditoría</Text>
-              <Text style={s.actionTileText}>Consulta la bitácora reciente del panel y sus acciones.</Text>
+              <Text style={s.actionTileText}>Consulta cada usuario con su rol y los permisos efectivos de ese rol.</Text>
             </TouchableOpacity>
           </View>
         </Card>
@@ -2823,7 +3106,6 @@ export default function AdminPreview() {
               onPress={() => {
                 setRoleTab(r);
                 setSearch("");
-                if (page === "roles" && r !== "estudiante") fetchPermissions(r);
               }}
             />
           ))}
@@ -3456,6 +3738,9 @@ export default function AdminPreview() {
     };
 
     const labelSolicitud = (s: any) => {
+      if (s?.estado === "finalizado" && s?.certificacion === "pendiente") {
+        return { label: "Pend. certificación", type: "pending" as const };
+      }
       const estado = s?.certificacion === "certificada" ? "certificada" : String(s?.estado ?? "");
       if (estado === "pendiente") return { label: "Pendiente", type: "pending" as const };
       if (estado === "finalizado" || estado === "certificada") return { label: estado === "certificada" ? "Certificada" : "Finalizada", type: "inactive" as const };
@@ -3472,6 +3757,19 @@ export default function AdminPreview() {
       return { label: estado || "—", type: "pending" as const };
     };
 
+    const labelCupo = (a: any) => {
+      if (a?.estado === "cancelado") return { label: "Cancelado", type: "inactive" as const };
+      const comp = comprobanteById[String(a?.id ?? "")];
+      if (a?.finalizada === true) {
+        const estComp = getComprobanteEstado(comp);
+        return estComp.label === "Sin comprobante"
+          ? { label: "Finalizada", type: "inactive" as const }
+          : estComp;
+      }
+      if (a?.fechaPresentacion) return { label: "En curso", type: "active" as const };
+      return { label: "Tomado", type: "active" as const };
+    };
+
     return (
       <ScrollView
         showsVerticalScrollIndicator
@@ -3482,7 +3780,7 @@ export default function AdminPreview() {
             <Text style={s.kicker}>Operación</Text>
             <Text style={s.pageTitle}>Pasantías</Text>
             <Text style={[s.textMuted, { marginTop: 6 }]}>
-              Visión unificada del flujo de pasantías: grupos (`solicitudes_practicas`) e individuales (`aplicaciones`).
+              Visión unificada del flujo de pasantías: grupos, individuales y cupos con su cierre por comprobante.
             </Text>
           </View>
           <TouchableOpacity style={s.btnOutline} onPress={fetchPasantias} activeOpacity={0.8}>
@@ -3505,10 +3803,10 @@ export default function AdminPreview() {
 
           <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8, marginTop: 14 }]}>ORIGEN</Text>
           <View style={s.chipRow}>
-            {(["todas", "grupo", "individual"] as const).map((tp) => (
+            {(["todas", "grupo", "individual", "cupo"] as const).map((tp) => (
               <Chip
                 key={tp}
-                label={tp === "todas" ? "Todas" : tp === "grupo" ? "Grupo" : "Individual"}
+                label={tp === "todas" ? "Todas" : tp === "grupo" ? "Grupo" : tp === "individual" ? "Individual" : "Cupo"}
                 active={pasantiasOrigenFilter === tp}
                 onPress={() => setPasantiasOrigenFilter(tp)}
               />
@@ -3529,21 +3827,26 @@ export default function AdminPreview() {
         </Card>
 
         <View style={[s.grid2, { marginBottom: 14 }]}>
-          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
             <Text style={s.itemTitle}>Grupos</Text>
             <Text style={[s.textMuted, { marginTop: 6 }]}>Pasantías en `solicitudes_practicas` (según filtros).</Text>
             <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{filteredSolicitudesPractica.length}</Text>
           </View>
-          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
             <Text style={s.itemTitle}>Individuales</Text>
             <Text style={[s.textMuted, { marginTop: 6 }]}>Pasantías individuales (estado en `aplicaciones`).</Text>
             <Text style={[s.heroMetricValue, { color: C.green, marginTop: 12 }]}>{filteredAplicacionesPasantia.length}</Text>
           </View>
-          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Por cupo</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Asignaciones en `asignaciones_cupo` y su comprobante.</Text>
+            <Text style={[s.heroMetricValue, { color: C.yellow, marginTop: 12 }]}>{filteredAsignacionesCupo.length}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "24%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
             <Text style={s.itemTitle}>Total</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Suma de ambas vistas.</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Suma de los tres flujos.</Text>
             <Text style={[s.heroMetricValue, { color: C.text, marginTop: 12 }]}>
-              {filteredSolicitudesPractica.length + filteredAplicacionesPasantia.length}
+              {filteredSolicitudesPractica.length + filteredAplicacionesPasantia.length + filteredAsignacionesCupo.length}
             </Text>
           </View>
         </View>
@@ -3565,6 +3868,7 @@ export default function AdminPreview() {
               {filteredSolicitudesPractica.slice(0, 80).map((sol) => {
                 const st = labelSolicitud(sol);
                 const fechas = [sol.fechaInicio, sol.fechaFin].filter(Boolean).join(" → ");
+                const resumen = resumenAlumnosPasantia(getGrupoStudentIds(sol));
                 return (
                   <TouchableOpacity
                     key={sol.id}
@@ -3589,6 +3893,11 @@ export default function AdminPreview() {
                           </Text>
                           <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
                             Empresa: {labelEmpresa(sol.empresaId)} · Universidad: {labelUni(sol.universidadId)}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
+                            Alumnos: {resumen.total}
+                            {resumen.enProceso > 0 ? ` · En proceso: ${resumen.enProceso}` : ""}
+                            {resumen.finalizadas > 0 ? ` · Finalizadas: ${resumen.finalizadas}` : ""}
                           </Text>
                         </View>
                         <Badge label={st.label} type={st.type} />
@@ -3618,6 +3927,8 @@ export default function AdminPreview() {
               {filteredAplicacionesPasantia.slice(0, 80).map((app) => {
                 const st = labelAplicacion(app);
                 const horas = typeof app.horas_completadas === "number" ? app.horas_completadas : Number(app.horas_completadas ?? 0);
+                const vacante = vacantesById[String(app.vacante_id ?? "")];
+                const perfil = estudianteSnapshots[String(app.estudiante_id ?? "")];
                 return (
                   <TouchableOpacity
                     key={app.id}
@@ -3638,10 +3949,75 @@ export default function AdminPreview() {
                             {app.estudiante_nombre ?? "Estudiante"}
                           </Text>
                           <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={2}>
-                            Empresa: {labelEmpresa(app.empresa_id)} · Vacante: {app.vacante_id ?? "—"}
+                            Empresa: {labelEmpresa(app.empresa_id)} · Vacante: {vacante?.titulo ?? app.vacante_id ?? "—"}
                           </Text>
                           <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={1}>
                             Horas completadas: {horas}
+                          </Text>
+                          {perfil?.estado_pasantia ? (
+                            <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={1}>
+                              Estado del alumno: {estadoAlumnoPasantia(perfil.estado_pasantia).label}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <Badge label={st.label} type={st.type} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </Card>
+
+        <Card style={{ marginBottom: 24 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>Pasantías por cupo</Text>
+            <Text style={s.textMuted}>{filteredAsignacionesCupo.length}</Text>
+          </View>
+
+          {pasantiasLoading && filteredAsignacionesCupo.length === 0 ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : filteredAsignacionesCupo.length === 0 ? (
+            <Text style={[s.textMuted, { textAlign: "center", paddingVertical: 20 }]}>Sin resultados</Text>
+          ) : (
+            <View style={{ gap: 10 }}>
+              {filteredAsignacionesCupo.slice(0, 80).map((asig) => {
+                const st = labelCupo(asig);
+                const comp = comprobanteById[String(asig.id)];
+                const perfil = estudianteSnapshots[String(asig.estudianteId ?? "")];
+                return (
+                  <TouchableOpacity
+                    key={asig.id}
+                    style={[s.listItem, isPhone && s.listItemStack]}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setPasantiaDetail({ kind: "cupo", item: asig });
+                      setPasantiaDetailOpen(true);
+                    }}
+                  >
+                    <View style={s.avatar}>
+                      <Ionicons name="school-outline" size={18} color={C.accent70} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.itemTitle} numberOfLines={1}>
+                            {asig.estudianteNombre ?? perfil?.nombre ?? "Estudiante"}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={2}>
+                            Empresa: {labelEmpresa(asig.empresaId)} · Vacante: {asig.vacanteTitulo ?? asig.vacanteId ?? "—"}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
+                            Universidad: {labelUni(asig.universidadId)} · Origen: {asig.origen === "autoservicio" ? "Autoservicio" : "Reserva"}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
+                            {asig.finalizada === true
+                              ? `Horas cumplidas: ${Math.round(Number(asig.horasCumplidas ?? 0))}`
+                              : `Presentación: ${asig.fechaPresentacion ?? "Pendiente"}`}
+                            {comp ? ` · ${getComprobanteEstado(comp).label}` : asig.finalizada === true ? " · Esperando comprobante" : ""}
                           </Text>
                         </View>
                         <Badge label={st.label} type={st.type} />
@@ -3701,13 +4077,11 @@ export default function AdminPreview() {
                 onPress={
                   abreIncidencia
                     ? () => {
-                        const caso = incidencias.find((x) => x.id === n.incidencia_id);
-                        // Si el caso ya no está en memoria (aún no se refrescó,
-                        // o lo borraron), se abre igual la sección con el filtro
-                        // en escaladas: mejor eso que un toque que no hace nada.
-                        navigateAdminPage("incidencias");
-                        setIncidenciaFiltro("escalada");
-                        if (caso) openIncidenciaDetail(caso);
+                        mostrarAviso(
+                          "advertencia",
+                          "Sección no disponible",
+                          "El apartado de incidencias fue retirado del panel principal.",
+                        );
                       }
                     : undefined
                 }
@@ -3729,17 +4103,19 @@ export default function AdminPreview() {
     </ScrollView>
   );
 
-  // renderRoles: matriz de permisos por rol — agrupa el catálogo `permissions`
-  // por `group_name` (reduce de abajo) y pinta un interruptor por permiso;
-  // tocar uno llama togglePermission. El rol "estudiante" no tiene permisos
-  // administrables (mensaje fijo en vez de la lista).
+  // renderRoles: vista operativa por usuario. Toma el catálogo `permissions`
+  // y la matriz `role_permissions`, calcula los permisos efectivos según el
+  // rol de cada usuario y los muestra en una lista única.
   const renderRoles = () => {
-    const grouped = permissions.reduce<Record<string, Permission[]>>((acc, p) => {
-      const g = p.group_name || "General";
-      acc[g] = acc[g] || [];
-      acc[g].push(p);
+    const countByRole = ROLE_ORDER.reduce<Record<Role, number>>((acc, role) => {
+      acc[role] = users.filter((u) => u.role === role).length;
       return acc;
-    }, {});
+    }, { admin: 0, universidad: 0, empresa: 0, estudiante: 0 });
+
+    const rolePermissionLabels = (role: Role) => {
+      const keys = Array.from(rolePermissionMatrix[role] ?? new Set()).sort();
+      return keys.map((key) => permissionCatalog[key]?.label || key);
+    };
 
     return (
       <ScrollView
@@ -3748,7 +4124,7 @@ export default function AdminPreview() {
           <RefreshControl
             refreshing={permissionsLoading}
             onRefresh={() => {
-              if (roleTab !== "estudiante") fetchPermissions(roleTab);
+              void Promise.all([refreshUsers(), fetchPermissionsOverview()]);
             }}
           />
         }
@@ -3756,67 +4132,119 @@ export default function AdminPreview() {
         <View style={s.sectionHeader}>
           <View style={{ flex: 1 }}>
             <Text style={s.kicker}>Control</Text>
-            <Text style={s.pageTitle}>Roles & permisos</Text>
-            <Text style={[s.textMuted, { marginTop: 6 }]}>Permisos por rol (role_permissions).</Text>
+            <Text style={s.pageTitle}>Permisos</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Usuarios del panel con su rol y los permisos efectivos de ese rol.</Text>
           </View>
+          <TouchableOpacity style={s.btnOutline} onPress={() => void Promise.all([refreshUsers(), fetchPermissionsOverview()])} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Actualizar</Text>
+          </TouchableOpacity>
         </View>
 
         <Card style={{ marginBottom: 14 }}>
-          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 10 }]}>ROL</Text>
+          <View style={s.searchWrap}>
+            <Ionicons name="search-outline" size={18} color={C.textMuted} />
+            <TextInput
+              style={s.searchInput}
+              placeholder="Buscar por nombre, email o username…"
+              placeholderTextColor={C.textMuted}
+              value={permissionsSearch}
+              onChangeText={setPermissionsSearch}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 10, marginTop: 14 }]}>ROL</Text>
           <View style={s.chipRow}>
-            {PERMISSION_ROLES.map((r) => (
+            {(["todos", ...ROLE_ORDER] as Array<Role | "todos">).map((r) => (
               <Chip
                 key={r}
-                label={labelRole(r)}
-                active={roleTab === r}
-                onPress={() => {
-                  setRoleTab(r);
-                  fetchPermissions(r);
-                }}
+                label={r === "todos" ? "Todos" : labelRole(r)}
+                active={permissionsRoleFilter === r}
+                onPress={() => setPermissionsRoleFilter(r)}
               />
             ))}
           </View>
         </Card>
+
+        <View style={[s.grid2, { marginBottom: 14 }]}>
+          {ROLE_ORDER.map((role) => (
+            <View key={role} style={[s.card, { flex: 1, minWidth: isDesktop ? "23%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+              <Text style={s.itemTitle}>{labelRole(role)}</Text>
+              <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 10 }]}>{countByRole[role]}</Text>
+              <Text style={[s.textMuted, { marginTop: 6 }]}>
+                {role === "estudiante"
+                  ? "Sin permisos administrables."
+                  : `${rolePermissionLabels(role).length} permiso(s) configurado(s).`}
+              </Text>
+            </View>
+          ))}
+        </View>
 
         {permissionsLoading ? (
           <View style={{ paddingVertical: 28, alignItems: "center" }}>
             <ActivityIndicator color={C.accent70} />
             <Text style={[s.textMuted, { marginTop: 10 }]}>Cargando permisos…</Text>
           </View>
-        ) : roleTab === "estudiante" ? (
+        ) : filteredPermissionUsers.length === 0 ? (
           <Card style={{ marginBottom: 24 }}>
-            <Text style={s.cardTitle}>Permisos no configurados</Text>
+            <Text style={s.cardTitle}>Sin resultados</Text>
             <Text style={[s.textMuted, { marginTop: 10, lineHeight: 20 }]}>
-              El rol Estudiante no tiene permisos administrables en esta sección. Selecciona Admin, Universidad o Empresa.
+              No encontramos usuarios con ese filtro.
             </Text>
           </Card>
         ) : (
-          Object.keys(grouped).map((g) => (
-            <Card key={g} style={{ marginBottom: 14 }}>
-              <Text style={s.cardTitle}>{g}</Text>
-              <View style={{ height: 10 }} />
-              {grouped[g].map((p) => {
-                const active = rolePermissions.has(p.key);
+          <Card style={{ marginBottom: 24 }}>
+            <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+              <Text style={s.cardTitle}>Usuarios</Text>
+              <Text style={s.textMuted}>{filteredPermissionUsers.length}</Text>
+            </View>
+            <View style={{ gap: 10 }}>
+              {filteredPermissionUsers.map((u) => {
+                const effectivePermissions = rolePermissionLabels(u.role);
                 return (
                   <TouchableOpacity
-                    key={p.key}
-                    style={[s.permItem, active && s.permItemActive]}
-                    onPress={() => togglePermission(roleTab, p.key)}
+                    key={u.id}
+                    style={s.listItem}
+                    onPress={() => openDetail(u)}
                     activeOpacity={0.8}
                   >
                     <View style={{ flex: 1 }}>
-                      <Text style={s.itemTitle}>{p.label}</Text>
-                      <Text style={[s.itemSub, { marginTop: 3 }]}>{p.key}</Text>
-                      {p.description ? <Text style={[s.itemSub, { marginTop: 6 }]}>{p.description}</Text> : null}
-                    </View>
-                    <View style={[s.togglePill, active && s.togglePillOn]}>
-                      <View style={[s.toggleDot, active && s.toggleDotOn]} />
+                      <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.itemTitle}>{u.nombre || "Usuario sin nombre"}</Text>
+                          <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={2}>
+                            {u.email || "Sin correo"}{u.username ? ` · @${u.username}` : ""}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 6 }]}>
+                            Rol: {labelRole(u.role)}
+                            {roleRequiresApproval(u.role) ? ` · Aprobación: ${labelStatus(u.approval_status)}` : ""}
+                            {u.banned ? " · Baneado" : ""}
+                          </Text>
+                        </View>
+                        <Badge label={statusBadgeLabel(u.status)} type={u.status} />
+                      </View>
+                      <View style={{ marginTop: 10 }}>
+                        <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8 }]}>PERMISOS EFECTIVOS</Text>
+                        {u.role === "estudiante" ? (
+                          <Text style={[s.itemSub, { marginTop: 6 }]}>Este rol no tiene permisos administrables en esta sección.</Text>
+                        ) : effectivePermissions.length === 0 ? (
+                          <Text style={[s.itemSub, { marginTop: 6 }]}>No hay permisos configurados para el rol {labelRole(u.role)}.</Text>
+                        ) : (
+                          <View style={[s.chipRow, { marginTop: 8 }]}>
+                            {effectivePermissions.map((label) => (
+                              <View key={`${u.id}-${label}`} style={s.chip}>
+                                <Text style={s.chipText}>{label}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </TouchableOpacity>
                 );
               })}
-            </Card>
-          ))
+            </View>
+          </Card>
         )}
 
         <View style={{ height: 10 }} />
@@ -4058,16 +4486,13 @@ export default function AdminPreview() {
         <Text style={s.cardTitle}>Accesos</Text>
         <View style={[s.row, { gap: 10, marginTop: 14, flexWrap: "wrap" }]}>
           <TouchableOpacity style={s.btnOutline} onPress={() => setPage("roles")} activeOpacity={0.8}>
-            <Text style={s.btnOutlineText}>Roles y permisos</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.btnOutline} onPress={() => setPage("logs")} activeOpacity={0.8}>
-            <Text style={s.btnOutlineText}>Auditoría</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.btnOutline} onPress={() => setPage("notificaciones")} activeOpacity={0.8}>
-            <Text style={s.btnOutlineText}>Notificaciones</Text>
-          </TouchableOpacity>
-        </View>
-      </Card>
+              <Text style={s.btnOutlineText}>Permisos</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.btnOutline} onPress={() => setPage("notificaciones")} activeOpacity={0.8}>
+              <Text style={s.btnOutlineText}>Notificaciones</Text>
+            </TouchableOpacity>
+          </View>
+        </Card>
 
       <Card style={{ marginBottom: 14 }}>
         <Text style={s.cardTitle}>Mantenimiento</Text>
@@ -4321,26 +4746,67 @@ export default function AdminPreview() {
   const PasantiaDetailModal = () => {
     const detail = pasantiaDetail;
     if (!detail) return null;
-    const empresaId = detail.kind === "grupo" ? String(detail.item.empresaId ?? "") : String(detail.item.empresa_id ?? "");
-    const uniId = detail.kind === "grupo" ? String(detail.item.universidadId ?? "") : "";
+    const empresaId =
+      detail.kind === "grupo"
+        ? String(detail.item.empresaId ?? "")
+        : detail.kind === "individual"
+          ? String(detail.item.empresa_id ?? "")
+          : String(detail.item.empresaId ?? "");
+    const uniId =
+      detail.kind === "grupo"
+        ? String(detail.item.universidadId ?? "")
+        : detail.kind === "cupo"
+          ? String(detail.item.universidadId ?? "")
+          : "";
+    const vacanteId =
+      detail.kind === "grupo"
+        ? String((detail.item as any).vacanteId ?? "")
+        : detail.kind === "individual"
+          ? String(detail.item.vacante_id ?? "")
+          : String(detail.item.vacanteId ?? "");
+    const vacanteRelacionada = vacanteId ? vacantesById[vacanteId] ?? null : null;
+    const comprobante = detail.kind === "cupo" ? comprobanteById[String(detail.item.id)] ?? null : null;
     const empresaLabel = empresaId ? (empresaNames[empresaId] ?? `${empresaId.slice(0, 10)}…`) : "—";
     const uniLabel = uniId ? (universidadNames[uniId] ?? `${uniId.slice(0, 10)}…`) : "—";
+    const estudianteIds = getPasantiaStudentIds(detail);
+    const resumenParticipantes = resumenAlumnosPasantia(estudianteIds);
+    const formatDetalleFecha = (rawDate: any) => {
+      const iso = tsToIso(rawDate);
+      if (iso) return iso.slice(0, 10);
+      if (typeof rawDate === "string" && rawDate.length >= 10) return rawDate.slice(0, 10);
+      return "—";
+    };
 
-    const headerTitle = detail.kind === "grupo" ? "Pasantía (grupo)" : "Pasantía (individual)";
+    const headerTitle =
+      detail.kind === "grupo" ? "Pasantía (grupo)" : detail.kind === "individual" ? "Pasantía (individual)" : "Pasantía (cupo)";
     const primaryTitle =
       detail.kind === "grupo"
         ? (detail.item.grupoNombre ?? `Grupo ${String(detail.item.grupoId ?? "").slice(0, 8)}`)
-        : (detail.item.estudiante_nombre ?? "Estudiante");
+        : detail.kind === "individual"
+          ? (detail.item.estudiante_nombre ?? "Estudiante")
+          : (detail.item.estudianteNombre ?? resumenParticipantes.alumnos[0]?.nombre ?? "Estudiante");
 
     const estadoLabel =
       detail.kind === "grupo"
-        ? (detail.item.certificacion === "certificada" ? "Certificada" : String(detail.item.estado ?? "—"))
-        : String(detail.item.estado ?? "—");
+        ? (detail.item.certificacion === "certificada" ? "Certificada" : detail.item.estado === "finalizado" && detail.item.certificacion === "pendiente" ? "Pend. certificación" : String(detail.item.estado ?? "—"))
+        : detail.kind === "individual"
+          ? String(detail.item.estado ?? "—")
+          : (detail.item.finalizada === true
+              ? getComprobanteEstado(comprobante).label === "Sin comprobante"
+                ? "Finalizada"
+                : getComprobanteEstado(comprobante).label
+              : detail.item.fechaPresentacion
+                ? "En curso"
+                : "Tomado");
 
     const estadoType: Status =
       detail.kind === "grupo"
-        ? (estadoLabel === "pendiente" ? "pending" : estadoLabel === "finalizado" || estadoLabel === "Certificada" ? "inactive" : "active")
-        : (estadoLabel === "contratado" ? "active" : estadoLabel === "finalizado_pendiente_firma" ? "pending" : estadoLabel === "finalizado" ? "inactive" : "pending");
+        ? (estadoLabel === "pendiente" || estadoLabel === "Pend. certificación" ? "pending" : estadoLabel === "finalizado" || estadoLabel === "Certificada" ? "inactive" : "active")
+        : detail.kind === "individual"
+          ? (estadoLabel === "contratado" ? "active" : estadoLabel === "finalizado_pendiente_firma" ? "pending" : estadoLabel === "finalizado" ? "inactive" : "pending")
+          : detail.item.finalizada === true
+            ? (comprobante ? getComprobanteEstado(comprobante).type : "inactive")
+            : "active";
 
     const raw = detail.item as any;
     const rawKeys = Object.keys(raw || {}).filter((k) => k !== "raw").sort().slice(0, 36);
@@ -4393,17 +4859,205 @@ export default function AdminPreview() {
                         Estudiantes: {detail.item.estudianteIds.length}
                       </Text>
                     ) : null}
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      En proceso: {resumenParticipantes.enProceso} · Finalizadas: {resumenParticipantes.finalizadas}
+                    </Text>
                   </>
-                ) : (
+                ) : detail.kind === "individual" ? (
                   <>
                     <Text style={s.textMuted}>Empresa: {empresaLabel}</Text>
                     <Text style={[s.textMuted, { marginTop: 6 }]}>ID empresa: {empresaId || "—"}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Vacante: {vacanteRelacionada?.titulo ?? detail.item.vacante_id ?? "—"}
+                    </Text>
                     <Text style={[s.textMuted, { marginTop: 6 }]}>ID vacante: {detail.item.vacante_id ?? "—"}</Text>
                     <Text style={[s.textMuted, { marginTop: 6 }]}>ID estudiante: {detail.item.estudiante_id ?? "—"}</Text>
                     <Text style={[s.textMuted, { marginTop: 6 }]}>
                       Horas completadas: {typeof detail.item.horas_completadas === "number" ? detail.item.horas_completadas : Number(detail.item.horas_completadas ?? 0)}
                     </Text>
+                    {resumenParticipantes.alumnos[0]?.estado_pasantia ? (
+                      <Text style={[s.textMuted, { marginTop: 6 }]}>
+                        Estado del alumno: {estadoAlumnoPasantia(resumenParticipantes.alumnos[0].estado_pasantia).label}
+                      </Text>
+                    ) : null}
                   </>
+                ) : (
+                  <>
+                    <Text style={s.textMuted}>Empresa: {empresaLabel}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>Universidad: {uniLabel}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Vacante: {vacanteRelacionada?.titulo ?? detail.item.vacanteTitulo ?? detail.item.vacanteId ?? "—"}
+                    </Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID asignación: {detail.item.id}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>ID estudiante: {detail.item.estudianteId ?? "—"}</Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Origen: {detail.item.origen === "autoservicio" ? "Autoservicio" : "Reserva universitaria"}
+                    </Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Presentación: {detail.item.fechaPresentacion ?? "Pendiente"}
+                    </Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Horas cumplidas: {Math.round(Number(detail.item.horasCumplidas ?? 0))}
+                    </Text>
+                    {resumenParticipantes.alumnos[0]?.estado_pasantia ? (
+                      <Text style={[s.textMuted, { marginTop: 6 }]}>
+                        Estado del alumno: {estadoAlumnoPasantia(resumenParticipantes.alumnos[0].estado_pasantia).label}
+                      </Text>
+                    ) : null}
+                  </>
+                )}
+              </Card>
+
+              {resumenParticipantes.alumnos.length ? (
+                <Card style={{ marginTop: 12 }}>
+                  <Text style={s.cardTitle}>{detail.kind === "grupo" ? "Alumnos" : "Alumno"}</Text>
+                  <View style={{ marginTop: 12, gap: 10 }}>
+                    {resumenParticipantes.alumnos.map((al) => {
+                      const st = estadoAlumnoPasantia(al.estado_pasantia);
+                      return (
+                        <View key={al.id} style={s.listItem}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.itemTitle}>{al.nombre}</Text>
+                            <Text style={[s.itemSub, { marginTop: 4 }]}>
+                              ID: {al.id}
+                              {al.horas_aprobadas !== null ? ` · Horas aprobadas: ${al.horas_aprobadas}` : ""}
+                              {al.horas_objetivo !== null ? `/${al.horas_objetivo}` : ""}
+                            </Text>
+                          </View>
+                          <Badge label={st.label} type={st.type} />
+                        </View>
+                      );
+                    })}
+                  </View>
+                </Card>
+              ) : null}
+
+              {detail.kind === "grupo" ? (
+                <Card style={{ marginTop: 12 }}>
+                  <Text style={s.cardTitle}>Cierre y certificación</Text>
+                  <Text style={[s.textMuted, { marginTop: 10 }]}>
+                    Certificación: {detail.item.certificacion ?? "Sin dato"}
+                    {detail.item.horasCertificadas ? ` · Horas certificadas: ${detail.item.horasCertificadas}` : ""}
+                  </Text>
+                  {detail.item.constancia?.tipo ? (
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Constancia: {detail.item.constancia.tipo === "pdf" ? "PDF adjunto" : "Automática"}
+                    </Text>
+                  ) : null}
+                  {detail.item.estado === "finalizado" && detail.item.certificacion !== "certificada" ? (
+                    <View style={[s.row, { gap: 10, marginTop: 14, flexWrap: "wrap" }]}>
+                      <TouchableOpacity
+                        style={[s.btnPrimary, s.btnSm, pasantiaActionSaving && { opacity: 0.7 }]}
+                        onPress={() => void handleCertificarGrupo(detail.item)}
+                        activeOpacity={0.8}
+                        disabled={pasantiaActionSaving}
+                      >
+                        <Text style={[s.btnPrimaryText, s.btnSmText]}>
+                          {pasantiaActionSaving ? "Procesando..." : "Certificar pasantía"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </Card>
+              ) : null}
+
+              {detail.kind === "cupo" ? (
+                <Card style={{ marginTop: 12 }}>
+                  <Text style={s.cardTitle}>Comprobante y cierre</Text>
+                  {comprobante ? (
+                    <>
+                      <Text style={[s.textMuted, { marginTop: 10 }]}>
+                        Estado: {getComprobanteEstado(comprobante).label}
+                      </Text>
+                      <Text style={[s.textMuted, { marginTop: 6 }]}>
+                        Emisión: {formatDetalleFecha(comprobante.fechaEmision)}
+                        {comprobante.horasCumplidas ? ` · Horas: ${comprobante.horasCumplidas}` : ""}
+                      </Text>
+                      {comprobante.notaEmpresa ? (
+                        <Text style={[s.textMuted, { marginTop: 6 }]}>Nota empresa: {comprobante.notaEmpresa}</Text>
+                      ) : null}
+                      {comprobante.notaUniversidad ? (
+                        <Text style={[s.textMuted, { marginTop: 6 }]}>Nota universidad: {comprobante.notaUniversidad}</Text>
+                      ) : null}
+                      {comprobante.estado === "enviado" ? (
+                        <View style={[s.row, { gap: 10, marginTop: 14, flexWrap: "wrap" }]}>
+                          <TouchableOpacity
+                            style={[s.btnPrimary, s.btnSm, pasantiaActionSaving && { opacity: 0.7 }]}
+                            onPress={() => void handleValidarComprobanteAdmin(comprobante)}
+                            activeOpacity={0.8}
+                            disabled={pasantiaActionSaving}
+                          >
+                            <Text style={[s.btnPrimaryText, s.btnSmText]}>
+                              {pasantiaActionSaving ? "Procesando..." : "Validar comprobante"}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+                    </>
+                  ) : detail.item.finalizada === true ? (
+                    <Text style={[s.textMuted, { marginTop: 10 }]}>
+                      Esta pasantía ya terminó, pero la empresa todavía no ha enviado el comprobante de finalización.
+                    </Text>
+                  ) : (
+                    <Text style={[s.textMuted, { marginTop: 10 }]}>
+                      La pasantía sigue activa; el comprobante aparecerá cuando se cierre y la empresa lo envíe.
+                    </Text>
+                  )}
+                </Card>
+              ) : null}
+
+              <Card style={{ marginTop: 12 }}>
+                <Text style={s.cardTitle}>Publicación relacionada</Text>
+                {vacanteRelacionada ? (
+                  <>
+                    <Text style={[s.textMuted, { marginTop: 10 }]}>
+                      {vacanteRelacionada.titulo} · {vacanteRelacionada.nombre_empresa}
+                    </Text>
+                    <Text style={[s.textMuted, { marginTop: 6 }]}>
+                      Estado: {vacanteRelacionada.estado_moderacion ? vacanteRelacionada.estado_moderacion : vacanteRelacionada.activa ? "activa" : "inactiva"}
+                    </Text>
+                    <View style={[s.row, { gap: 10, marginTop: 14, flexWrap: "wrap" }]}>
+                      <TouchableOpacity
+                        style={[s.btnOutline, s.btnSm]}
+                        onPress={() => {
+                          setPasantiaDetailOpen(false);
+                          setPasantiaDetail(null);
+                          openVacanteDetail(vacanteRelacionada);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[s.btnOutlineText, s.btnSmText]}>Abrir publicación</Text>
+                      </TouchableOpacity>
+                      {!vacanteRelacionada.estado_moderacion ? (
+                        <>
+                          <TouchableOpacity
+                            style={[s.btnOutline, s.btnSm]}
+                            onPress={() => confirmDisableVacante(vacanteRelacionada)}
+                            activeOpacity={0.8}
+                            disabled={vacanteActionSaving}
+                          >
+                            <Text style={[s.btnOutlineText, s.btnSmText]}>Deshabilitar</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[s.btnOutline, s.btnSm, { borderColor: C.red }]}
+                            onPress={() => confirmDeleteVacante(vacanteRelacionada)}
+                            activeOpacity={0.8}
+                            disabled={vacanteActionSaving}
+                          >
+                            <Text style={[s.btnOutlineText, s.btnSmText, { color: C.red }]}>Eliminar</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <Text style={[s.itemSub, { color: C.red }]}>
+                          {vacanteRelacionada.estado_moderacion === "eliminada" ? "Esta publicación ya fue eliminada por admin." : "Esta publicación ya fue deshabilitada por admin."}
+                        </Text>
+                      )}
+                    </View>
+                  </>
+                ) : (
+                  <Text style={[s.textMuted, { marginTop: 10 }]}>
+                    No encontramos una publicación vinculada para moderar desde esta ficha.
+                  </Text>
                 )}
               </Card>
 
@@ -4422,6 +5076,7 @@ export default function AdminPreview() {
                 </View>
               </Card>
             </ScrollView>
+            {AvisoOverlay()}
           </View>
         </View>
       </Modal>
@@ -5118,6 +5773,44 @@ export default function AdminPreview() {
                   ) : null}
                 </Card>
 
+                <Card style={{ marginTop: 12 }}>
+                  <Text style={s.cardTitle}>Moderación</Text>
+                  {v.estado_moderacion ? (
+                    <>
+                      <Text style={[s.textMuted, { marginTop: 10 }]}>
+                        Estado actual: {v.estado_moderacion === "eliminada" ? "Eliminada por admin" : "Deshabilitada por admin"}
+                      </Text>
+                      {v.motivo_moderacion ? (
+                        <Text style={[s.textMuted, { marginTop: 6 }]}>Motivo: {v.motivo_moderacion}</Text>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <Text style={[s.textMuted, { marginTop: 10 }]}>
+                        Puedes deshabilitar o eliminar esta publicación directamente desde aquí.
+                      </Text>
+                      <View style={[s.row, { gap: 10, marginTop: 14, flexWrap: "wrap" }]}>
+                        <TouchableOpacity
+                          style={[s.btnOutline, s.btnSm]}
+                          onPress={() => confirmDisableVacante(v)}
+                          activeOpacity={0.8}
+                          disabled={vacanteActionSaving}
+                        >
+                          <Text style={[s.btnOutlineText, s.btnSmText]}>Deshabilitar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[s.btnOutline, s.btnSm, { borderColor: C.red }]}
+                          onPress={() => confirmDeleteVacante(v)}
+                          activeOpacity={0.8}
+                          disabled={vacanteActionSaving}
+                        >
+                          <Text style={[s.btnOutlineText, s.btnSmText, { color: C.red }]}>Eliminar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </Card>
+
                 <Card style={{ marginTop: 12, marginBottom: 20 }}>
                   <Text style={s.cardTitle}>Ficha técnica completa</Text>
                   <Text style={[s.textMuted, { marginTop: 10 }]}>ID del documento: {v.id}</Text>
@@ -5270,13 +5963,13 @@ export default function AdminPreview() {
       case "resumen":
         return renderResumen();
       case "aprobaciones":
-        return renderAprobaciones();
+        return renderResumen();
       case "usuarios":
         return renderUsuarios();
       case "reportes":
         return renderReportes();
       case "incidencias":
-        return renderIncidencias();
+        return renderResumen();
       case "pasantias":
         return renderPasantias();
       case "vacantes":
@@ -5288,9 +5981,11 @@ export default function AdminPreview() {
       case "roles":
         return renderRoles();
       case "logs":
-        return renderLogs();
+        return renderResumen();
       case "config":
         return renderConfig();
+      default:
+        return renderResumen();
     }
   };
 
