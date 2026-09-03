@@ -784,10 +784,12 @@ export default function ProgresoTab() {
       >
 
       {vista === 'puesto' ? (
-        <PuestoTrabajoEstudiante
-          uid={user!.uid}
-          estudianteNombre={(userProfile as any)?.nombre_completo ?? ''}
-        />
+        user?.uid ? (
+          <PuestoTrabajoEstudiante
+            uid={user.uid}
+            estudianteNombre={(userProfile as any)?.nombre_completo ?? ''}
+          />
+        ) : null
       ) : (
        <>
         {/* ── Mi institución: universidad y grupo al que pertenece ──
