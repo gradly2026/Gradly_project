@@ -1310,6 +1310,17 @@ export const GESTION_SEED_EN: Record<string, string> = {
   "Eliminar": "Delete",
   "Listo": "Done",
   "Grupo ya cubierto": "Group already covered",
+  // ── Confirmaciones destructivas migradas de Alert.alert a showConfirm
+  // (AppAlert) + sección "En pasantía" de la vista Prácticas ──
+  "Egresar grupo": "Graduate group",
+  "Egresar": "Graduate",
+  "Certificar pasantía": "Certify internship",
+  "Certificar": "Certify",
+  "Por certificar": "Pending certification",
+  "Certificadas": "Certified",
+  "Estudiantes tuyos trabajando por cupo o vacante individual (la empresa gestiona esta pasantía).":
+    "Your students working via a slot or an individual vacancy (the company manages this internship).",
+  "h acumuladas": "h accrued",
   // ── Aviso a la empresa cuando un admin modera una de sus publicaciones
   // (ModeracionVacanteModal/Gate) ──
   "Tu publicación fue eliminada": "Your posting was deleted",
@@ -1668,4 +1679,22 @@ export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
   "Añadir tarea": "Add task",
   "Tarea asignada. El empleado la verá en \"Mi Progreso\" y podrá marcarla completada.":
     "Task assigned. The employee will see it in \"My Progress\" and can mark it complete.",
+
+  // Fase 7 — unificación de las dos vistas de perfil ajeno (PerfilPublicoModal,
+  // hoja inferior, y ProfileViewerModal, pantalla completa): ambas muestran el
+  // mismo conjunto de datos del estudiante. Frases que faltaban por sembrar.
+  "Acerca de": "About",
+  "Habilidades": "Skills",
+  "Reportar perfil": "Report profile",
+  "Información de contacto": "Contact information",
+  "Universidad vinculada": "Linked university",
+  "Horas de avance": "Progress hours",
+  "Redes": "Links",
+  "Grupos en común": "Groups in common",
+  "Chatear": "Chat",
+  "Correo": "Email",
+  "Web": "Website",
+  "Sin grupo": "No group",
+  "Estudiante de Alto Nivel": "High-Achieving Student",
+  "Graduado": "Graduate",
 };

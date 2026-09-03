@@ -49,6 +49,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import FloatingTopBar from '../src/components/FloatingTopBar';
 import SalirSesionModal from '../src/components/SalirSesionModal';
+import { showConfirm, showAlert } from '../src/components/AppAlert';
 // Truco de renombrado ya visto en otros dashboards: se usa <Text>/<TextInput>
 // normales en todo el JSX, pero en realidad son AutoText/AutoTextInput (se
 // traducen solos). `useAutoText` traduce un string suelto fuera del JSX.
@@ -1287,32 +1288,24 @@ export default function DashboardEmpresa() {
   ]);
 
   // ── Eliminar una vacante ──────────────────────────────────────────
-  // NOTA (gotcha ya visto en otros archivos): Alert.alert con botones NO
-  // dispara ninguna acción en react-native-web (es un no-op silencioso ahí)
-  // — solo funciona en móvil nativo. Este botón concreto, al vivir dentro de
-  // SeccionVacantes (ícono de basura en cada fila), heredó ese patrón del
-  // código original; a diferencia de otros flujos ya migrados a un <Modal>
-  // propio en la app, este todavía usa Alert.alert de dos botones. La lógica
-  // real de borrado vive en eliminarVacante() (pasantiaService.ts).
-  const handleEliminarVacante = (v: Vacante) => {
-    Alert.alert(
-      'Eliminar vacante',
-      `¿Eliminar "${v.titulo}"? Esta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await eliminarVacante(v.id, user!.uid);
-            } catch (e: any) {
-              Alert.alert('No se pudo eliminar', e?.message ?? 'Intenta de nuevo.');
-            }
-          },
-        },
-      ],
-    );
+  // Confirmación con `showConfirm` (AppAlert): el viejo `Alert.alert` de dos
+  // botones era un no-op silencioso en react-native-web (gotcha
+  // `gotcha_alert_alert_web_noop`), así que en la web el botón de basura
+  // "no hacía nada". La lógica real de borrado vive en eliminarVacante()
+  // (pasantiaService.ts).
+  const handleEliminarVacante = async (v: Vacante) => {
+    const ok = await showConfirm({
+      title: 'Eliminar publicación',
+      message: `¿Eliminar "${v.titulo}"? Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await eliminarVacante(v.id, user!.uid);
+    } catch (e: any) {
+      void showAlert('No se pudo eliminar', e?.message ?? 'Intenta de nuevo.');
+    }
   };
 
   // ── Abrir el formulario en modo EDICIÓN (precarga desde la vacante) ──

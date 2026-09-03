@@ -140,6 +140,7 @@ export default function PerfilPublicoModal({
   const [loading, setLoading] = useState(false);
   const [showReportar, setShowReportar] = useState(false);
   const [universidadNombre, setUniversidadNombre] = useState<string | null>(null);
+  const [grupoNombre, setGrupoNombre] = useState<string | null>(null);
   const [aliados, setAliados] = useState<string[]>([]);
 
   useEffect(() => {
@@ -150,6 +151,7 @@ export default function PerfilPublicoModal({
     setLoading(true);
     setPerfil(null);
     setUniversidadNombre(null);
+    setGrupoNombre(null);
     setAliados([]);
     try {
       const snap = await getDoc(doc(db, COLLECTION_MAP[rol], userId));
@@ -163,6 +165,15 @@ export default function PerfilPublicoModal({
           setUniversidadNombre(uniSnap.exists() ? ((uniSnap.data() as any)?.nombre_universidad ?? null) : null);
         } catch {
           setUniversidadNombre(null);
+        }
+      }
+      // Grupo vinculado — mismo dato que muestra ProfileViewerModal.
+      if ((rol === "alumno" || rol === "talento") && data?.grupo_id) {
+        try {
+          const gSnap = await getDoc(doc(db, "grupos", data.grupo_id));
+          setGrupoNombre(gSnap.exists() ? ((gSnap.data() as any)?.nombre ?? null) : null);
+        } catch {
+          setGrupoNombre(null);
         }
       }
       // Aliados (convenio con pasantías reales) — `aliados_*_ids` ya vive en
@@ -208,6 +219,16 @@ export default function PerfilPublicoModal({
   };
 
   const foto = getFoto();
+
+  const esEstudiante = rol === "talento" || rol === "alumno";
+  const horasAprob = Number(perfil?.horas_aprobadas ?? 0);
+  const horasObj = Number(perfil?.horas_objetivo ?? 500) || 500;
+  const horasPct = Math.min(100, Math.round((horasAprob / Math.max(horasObj, 1)) * 100));
+  const esGraduado = esEstudiante && horasPct >= 100;
+  const esAltoNivel =
+    esEstudiante &&
+    Number(perfil?.calificaciones_recibidas ?? 0) > 0 &&
+    Number(perfil?.calificacion_promedio ?? 0) >= 4.5;
 
   return (
     <>
@@ -287,6 +308,24 @@ export default function PerfilPublicoModal({
                   </View>
                 </View>
 
+                {/* Insignias gamificadas del estudiante — mismas que ProfileViewerModal. */}
+                {esEstudiante && (esGraduado || esAltoNivel) && (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                    {esAltoNivel && (
+                      <View style={[styles.gBadge, { borderColor: "#F59E0B88", backgroundColor: "#F59E0B1A" }]}>
+                        <Ionicons name="star" size={13} color="#F59E0B" />
+                        <Text style={{ color: "#F59E0B", fontSize: 11, fontWeight: "700" }}>Estudiante de Alto Nivel</Text>
+                      </View>
+                    )}
+                    {esGraduado && (
+                      <View style={[styles.gBadge, { borderColor: C.green + "88", backgroundColor: C.green + "1A" }]}>
+                        <Ionicons name="trophy" size={13} color={C.green} />
+                        <Text style={{ color: C.green, fontSize: 11, fontWeight: "700" }}>Graduado</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
                 {/* Estudiante: certificación digital · Empresa: rango + sello */}
                 {rol === "empresa" ? (
                   <View style={{ marginBottom: 12, gap: 10 }}>
@@ -352,12 +391,30 @@ export default function PerfilPublicoModal({
                   </View>
                 ) : null}
 
+                {/* Horas de avance — mismo bloque que ProfileViewerModal. */}
+                {esEstudiante && (
+                  <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
+                    <Text style={[styles.sectionLabel, { color: C.muted }]}>Horas de avance</Text>
+                    <View style={{ height: 8, borderRadius: 4, backgroundColor: C.purpleDim, overflow: "hidden" }}>
+                      <View style={{ height: "100%", width: `${horasPct}%`, backgroundColor: C.purple, borderRadius: 4 }} />
+                    </View>
+                    <Text style={{ color: C.textSub, fontSize: 12, marginTop: 6 }}>
+                      {horasAprob} / {horasObj} horas · {horasPct}%
+                    </Text>
+                  </View>
+                )}
+
                 {/* Info de contacto pública */}
                 {[
-                  { icon: "mail-outline", label: "Email", val: perfil.email ?? perfil.email_corporativo ?? perfil.email_institucional },
+                  { icon: "mail-outline", label: "Email", val: perfil.email ?? perfil.email_corporativo ?? perfil.email_institucional ?? perfil.correo },
                   { icon: "call-outline", label: "Teléfono", val: perfil.telefono },
                   { icon: "globe-outline", label: "Web", val: perfil.web },
-                  ...((rol === "alumno" || rol === "talento") ? [{ icon: "school-outline", label: "Universidad", val: universidadNombre }] : []),
+                  ...((rol === "alumno" || rol === "talento")
+                    ? [
+                        { icon: "school-outline", label: "Universidad", val: universidadNombre },
+                        { icon: "people-outline", label: "Grupo", val: grupoNombre },
+                      ]
+                    : []),
                   { icon: "location-outline", label: "Ubicación", val: [perfil.distrito ?? perfil.ciudad, perfil.departamento].filter(Boolean).join(", ") || null },
                   { icon: "home-outline", label: "Dirección", val: perfil.direccion },
                   { icon: "logo-instagram", label: "Instagram", val: perfil.instagram },
@@ -366,10 +423,48 @@ export default function PerfilPublicoModal({
                     <Ionicons name={f.icon as any} size={16} color={C.purple} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: C.muted, fontSize: 11 }}>{f.label}</Text>
-                      <Text style={{ color: C.text, fontSize: 13 }} noTranslate={f.label === "Universidad"}>{f.val}</Text>
+                      <Text
+                        style={{ color: C.text, fontSize: 13 }}
+                        noTranslate={["Universidad", "Grupo", "Web", "Instagram", "Email"].includes(f.label)}
+                      >
+                        {f.val}
+                      </Text>
                     </View>
                   </View>
                 ))}
+
+                {/* Redes — mismas que ProfileViewerModal. */}
+                {esEstudiante && (perfil.linkedin || perfil.portfolio) && (
+                  <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
+                    <Text style={[styles.sectionLabel, { color: C.muted }]}>Redes</Text>
+                    <View style={styles.tagsRow}>
+                      {!!perfil.linkedin && (
+                        <TouchableOpacity
+                          style={[styles.tag, { backgroundColor: C.purpleDim, borderColor: C.border, flexDirection: "row", alignItems: "center", gap: 5 }]}
+                          onPress={() => {
+                            const u = String(perfil.linkedin);
+                            Linking.openURL(u.startsWith("http") ? u : `https://${u}`).catch(() => {});
+                          }}
+                        >
+                          <Ionicons name="logo-linkedin" size={13} color={C.purple} />
+                          <Text style={{ color: C.purple, fontSize: 11 }}>LinkedIn</Text>
+                        </TouchableOpacity>
+                      )}
+                      {!!perfil.portfolio && (
+                        <TouchableOpacity
+                          style={[styles.tag, { backgroundColor: C.purpleDim, borderColor: C.border, flexDirection: "row", alignItems: "center", gap: 5 }]}
+                          onPress={() => {
+                            const u = String(perfil.portfolio);
+                            Linking.openURL(u.startsWith("http") ? u : `https://${u}`).catch(() => {});
+                          }}
+                        >
+                          <Ionicons name="globe-outline" size={13} color={C.purple} />
+                          <Text style={{ color: C.purple, fontSize: 11 }}>Portfolio</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
 
                 {/* Campos específicos por rol */}
                 {/* Nota: el campo real en perfiles_estudiantes es `skills`, no
@@ -565,6 +660,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     marginBottom: 0,
+  },
+  gBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
   },
   tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   topEstudianteRow: {

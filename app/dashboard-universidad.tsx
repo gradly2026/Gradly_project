@@ -147,6 +147,7 @@ import { calcularHorasAcuerdo, progresoDeGrupo } from '../src/utils/horasPasanti
 // el grupo (ver el comentario del propio código más abajo).
 import { esCarreraSoportada, cargarOverridesCarreras, CARRERAS_EL_SALVADOR } from '../src/data/carreras';
 import CarrerasEditorModal from '../src/components/CarrerasEditorModal';
+import { showConfirm, showAlert } from '../src/components/AppAlert';
 import ProfileViewerModal from '../src/components/ProfileViewerModal';
 import { certificarPasantia } from '../src/services/solicitudPracticaService';
 import { eliminarEstudiante as eliminarEstudianteCF, eliminarGrupo as eliminarGrupoCF } from '../src/services/universidadService';
@@ -713,6 +714,27 @@ export default function DashboardUniversidad() {
     return unsub;
   }, [user]);
 
+  // Pasantías por CUPO en curso de esta universidad (flujo `asignaciones_cupo`,
+  // el que NO pasa por `solicitudes_practicas`). Sin esto, la sección "Prácticas"
+  // mostraba 0 aunque la empresa sí veía a esos estudiantes trabajando. Misma
+  // query que ya usa SeccionEstudiantes para el libro de horas → las reglas
+  // (`asignaciones_cupo` con universidadId propio) ya lo permiten.
+  const [asignacionesCupo, setAsignacionesCupo] = useState<any[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'asignaciones_cupo'),
+      where('universidadId', '==', user.uid),
+      where('estado', '==', 'tomado'),
+    );
+    const unsub = onSnapshot(
+      q,
+      snap => setAsignacionesCupo(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))),
+      error => console.warn('Error en listener (asignaciones_cupo universidad):', error),
+    );
+    return unsub;
+  }, [user]);
+
   // ── Métricas ──────────────────────────────────────────────────────
   const metricas = useMemo(() => ({
     totalEstudiantes: estudiantes.length,
@@ -820,7 +842,7 @@ export default function DashboardUniversidad() {
     switch (seccion) {
       case 'inicio':       return <SeccionInicio metricas={metricas} perfil={perfil} nombreUni={nombreUni} uid={user!.uid} estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
       case 'estudiantes':  return <SeccionEstudiantes estudiantes={estudiantes} uid={user!.uid} solicitudesGrupo={solicitudesGrupo} onAbrirChatEnMensajes={(id, peerName) => { setChatAAbrir({ id, peerName }); setSeccion('mensajes'); }} />;
-      case 'aprobar':      return <SeccionPracticas solicitudes={solicitudesGrupo} uid={user!.uid} nombreUni={nombreUni} />;
+      case 'aprobar':      return <SeccionPracticas solicitudes={solicitudesGrupo} asignacionesCupo={asignacionesCupo} apps={apps} estudiantes={estudiantes} uid={user!.uid} nombreUni={nombreUni} />;
       case 'estadisticas': return <SeccionEstadisticas estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
       case 'mensajes':     return (
         <SeccionMensajes
@@ -1432,76 +1454,64 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
       return false;
     });
 
+  // Confirmaciones destructivas: `showConfirm` (AppAlert) en vez de Alert.alert
+  // de dos botones, que en react-native-web es un no-op silencioso (gotcha
+  // `gotcha_alert_alert_web_noop`) — por eso "el botón no hacía nada".
+
   // ── Egresar (graduar) un grupo ──────────────────────────────────
   // Marca a TODOS los estudiantes del grupo como `graduado` y sella el grupo
   // con `egresado`/`fecha_egreso`. Esto alimenta la métrica "Egresados" del
   // Inicio y crea el evento de egreso en el calendario. Es irreversible.
   const [egresando, setEgresando] = useState<string | null>(null);
-  const egresarGrupo = (grupo: Grupo) => {
+  const egresarGrupo = async (grupo: Grupo) => {
     if (grupo.egresado || egresando) return;
     // Guardia: solo grupos con una pasantía ya finalizada (cumplida).
     if (!grupoPuedeEgresar(grupo.id)) {
-      Alert.alert(
+      void showAlert(
         'Aún no puede egresar',
         `El grupo "${grupo.nombre}" solo puede egresar cuando haya completado una pasantía (su período debe haber finalizado).`,
       );
       return;
     }
-    Alert.alert(
-      'Egresar grupo',
-      `¿Marcar como egresados a los estudiantes del grupo "${grupo.nombre}"? Esta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Egresar',
-          style: 'destructive',
-          onPress: async () => {
-            setEgresando(grupo.id);
-            try {
-              const estSnap = await getDocs(
-                query(collection(db, 'perfiles_estudiantes'), where('grupo_id', '==', grupo.id)),
-              );
-              const batch = writeBatch(db);
-              // CREATE/UPDATE en lote: en vez de un updateDoc() separado
-              // por cada estudiante (lo que serían N viajes al servidor),
-              // se acumulan TODAS las actualizaciones en un solo `batch`
-              // y se envían juntas con .commit() — más rápido y, si algo
-              // fallara a mitad de camino, NINGUNA se aplicaría
-              // (atomicidad, igual que una transacción, pero sin poder
-              // leer datos primero dentro del mismo batch).
-              estSnap.docs.forEach(d => {
-                batch.update(d.ref, { graduado: true, fecha_graduacion: serverTimestamp() });
-              });
-              batch.update(doc(db, 'grupos', grupo.id), { egresado: true, fecha_egreso: serverTimestamp() });
-              await batch.commit();
+    const ok = await showConfirm({
+      title: 'Egresar grupo',
+      message: `¿Marcar como egresados a los estudiantes del grupo "${grupo.nombre}"? Esta acción no se puede deshacer.`,
+      confirmText: 'Egresar',
+      destructive: true,
+    });
+    if (!ok) return;
+    setEgresando(grupo.id);
+    try {
+      const estSnap = await getDocs(
+        query(collection(db, 'perfiles_estudiantes'), where('grupo_id', '==', grupo.id)),
+      );
+      const batch = writeBatch(db);
+      // CREATE/UPDATE en lote: en vez de un updateDoc() separado por cada
+      // estudiante (N viajes al servidor), se acumulan TODAS y se envían
+      // juntas con .commit() — atómico: si algo falla, ninguna se aplica.
+      estSnap.docs.forEach(d => {
+        batch.update(d.ref, { graduado: true, fecha_graduacion: serverTimestamp() });
+      });
+      batch.update(doc(db, 'grupos', grupo.id), { egresado: true, fecha_egreso: serverTimestamp() });
+      await batch.commit();
 
-              try {
-                await enviarNotificacion(
-                  uid,
-                  'Grupo egresado 🎓',
-                  `El grupo "${grupo.nombre}" fue marcado como egresado (${estSnap.size} estudiante(s)).`,
-                  'success',
-                  grupo.id,
-                );
-              } catch { /* la notificación no debe afectar el flujo principal */ }
+      try {
+        await enviarNotificacion(
+          uid,
+          'Grupo egresado 🎓',
+          `El grupo "${grupo.nombre}" fue marcado como egresado (${estSnap.size} estudiante(s)).`,
+          'success',
+          grupo.id,
+        );
+      } catch { /* la notificación no debe afectar el flujo principal */ }
 
-              Alert.alert('Listo', `El grupo "${grupo.nombre}" egresó correctamente.`);
-            } catch (e) {
-              console.warn('Error al egresar grupo:', e);
-              Alert.alert('Error', 'No se pudo egresar el grupo. Intenta de nuevo.');
-            } finally {
-              setEgresando(null);
-            }
-          },
-        },
-      ],
-    );
-    // NOTA: este Alert.alert TIENE botones ("Cancelar"/"Egresar") — como
-    // ya se explicó en app/(tabs)/progreso.tsx, este patrón NO FUNCIONA en
-    // la versión web del proyecto (react-native-web no dibuja nada para
-    // Alert.alert con botones) — es el mismo "gotcha" documentado en la
-    // memoria del proyecto, presente varias veces en este archivo
-    // (egresarGrupo, handleEliminarGrupo, handleEliminarEstudiante).
+      void showAlert('Listo', `El grupo "${grupo.nombre}" egresó correctamente.`);
+    } catch (e) {
+      console.warn('Error al egresar grupo:', e);
+      void showAlert('Error', 'No se pudo egresar el grupo. Intenta de nuevo.');
+    } finally {
+      setEgresando(null);
+    }
   };
 
   // ── Eliminar grupo (deshacer una carga por Excel equivocada) ──
@@ -1510,65 +1520,51 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
   // de los estudiantes del grupo: es una unidad, no tiene sentido dejarlos
   // huérfanos sin grupo.
   const [eliminandoGrupo, setEliminandoGrupo] = useState<string | null>(null);
-  const handleEliminarGrupo = (grupo: Grupo) => {
+  const handleEliminarGrupo = async (grupo: Grupo) => {
     if (eliminandoGrupo) return;
-    Alert.alert(
-      'Eliminar grupo',
-      `¿Eliminar el grupo "${grupo.nombre}" y las ${grupo.estudiantes_registrados} cuenta(s) de estudiante que contiene? Esta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            setEliminandoGrupo(grupo.id);
-            try {
-              const res = await eliminarGrupoCF({ grupoId: grupo.id });
-              // Llama a la Cloud Function (no borra directo desde el
-              // celular): esa función, corriendo en el servidor, valida
-              // de nuevo que el grupo no tenga compromisos, y borra tanto
-              // los documentos de Firestore como las cuentas de Auth de
-              // cada estudiante del grupo.
-              Alert.alert('Listo', `Se eliminó el grupo "${grupo.nombre}" y ${res.estudiantesEliminados} estudiante(s).`);
-            } catch (e: any) {
-              Alert.alert('No se pudo eliminar', e?.message ?? 'Intenta de nuevo.');
-            } finally {
-              setEliminandoGrupo(null);
-            }
-          },
-        },
-      ],
-    );
+    const ok = await showConfirm({
+      title: 'Eliminar grupo',
+      message: `¿Eliminar el grupo "${grupo.nombre}" y las ${grupo.estudiantes_registrados} cuenta(s) de estudiante que contiene? Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      destructive: true,
+    });
+    if (!ok) return;
+    setEliminandoGrupo(grupo.id);
+    try {
+      // Llama a la Cloud Function (no borra directo desde el celular): valida
+      // de nuevo que el grupo no tenga compromisos y borra los documentos de
+      // Firestore + las cuentas de Auth de cada estudiante del grupo.
+      const res = await eliminarGrupoCF({ grupoId: grupo.id });
+      void showAlert('Listo', `Se eliminó el grupo "${grupo.nombre}" y ${res.estudiantesEliminados} estudiante(s).`);
+    } catch (e: any) {
+      void showAlert('No se pudo eliminar', e?.message ?? 'Intenta de nuevo.');
+    } finally {
+      setEliminandoGrupo(null);
+    }
   };
 
   // ── Eliminar un estudiante específico (deshacer un dato mal cargado) ──
   // Solo antes de que tenga una pasantía o solicitud en curso — la Cloud
   // Function repite el chequeo del lado servidor.
   const [eliminandoEstudiante, setEliminandoEstudiante] = useState<string | null>(null);
-  const handleEliminarEstudiante = (est: EstudianteRow) => {
+  const handleEliminarEstudiante = async (est: EstudianteRow) => {
     if (eliminandoEstudiante) return;
-    Alert.alert(
-      'Eliminar estudiante',
-      `¿Eliminar la cuenta de "${est.nombre_completo}"? Esta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            setEliminandoEstudiante(est.id);
-            try {
-              await eliminarEstudianteCF({ estudianteId: est.id });
-              Alert.alert('Listo', `Se eliminó la cuenta de "${est.nombre_completo}".`);
-            } catch (e: any) {
-              Alert.alert('No se pudo eliminar', e?.message ?? 'Intenta de nuevo.');
-            } finally {
-              setEliminandoEstudiante(null);
-            }
-          },
-        },
-      ],
-    );
+    const ok = await showConfirm({
+      title: 'Eliminar estudiante',
+      message: `¿Eliminar la cuenta de "${est.nombre_completo}"? Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      destructive: true,
+    });
+    if (!ok) return;
+    setEliminandoEstudiante(est.id);
+    try {
+      await eliminarEstudianteCF({ estudianteId: est.id });
+      void showAlert('Listo', `Se eliminó la cuenta de "${est.nombre_completo}".`);
+    } catch (e: any) {
+      void showAlert('No se pudo eliminar', e?.message ?? 'Intenta de nuevo.');
+    } finally {
+      setEliminandoEstudiante(null);
+    }
   };
 
   // ── Paso 0 → 1: abrir el formulario de grupo ──
@@ -2295,7 +2291,14 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
 // Gestiona las pasantías de grupo (solicitudes_practicas): en curso, por
 // certificar (la empresa ya finalizó y emitió constancia) y certificadas.
 // La universidad revisa la constancia y pulsa "Certificar" → acredita horas.
-function SeccionPracticas({ solicitudes, uid, nombreUni }: { solicitudes: SolicitudGrupo[]; uid: string; nombreUni: string }) {
+function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, uid, nombreUni }: {
+  solicitudes: SolicitudGrupo[];
+  asignacionesCupo: any[];
+  apps: Aplicacion[];
+  estudiantes: EstudianteRow[];
+  uid: string;
+  nombreUni: string;
+}) {
   const { s, colors } = useThemedStyles();
   const { t } = useTranslation();
   const [certificando, setCertificando] = useState<string | null>(null);
@@ -2306,35 +2309,57 @@ function SeccionPracticas({ solicitudes, uid, nombreUni }: { solicitudes: Solici
   // 3 listas derivadas por filtro simple del mismo array — se dibujan
   // como 3 secciones separadas más abajo.
 
-  const handleCertificar = (sol: SolicitudGrupo) => {
+  // Pasantías INDIVIDUALES en curso — flujos que no pasan por
+  // `solicitudes_practicas` (grupo): por cupo (`asignaciones_cupo` tomado) y el
+  // legado por `aplicaciones` contratado. Se listan solo lectura, para que la
+  // universidad vea a los mismos estudiantes que la empresa ve trabajando.
+  const horasDe = (estudianteId: string) =>
+    estudiantes.find(e => e.id === estudianteId)?.horas_aprobadas ?? 0;
+  const enPasantiaIndividual = useMemo(() => {
+    const filas: { key: string; nombre: string; detalle: string; horas: number; carrera: string }[] = [];
+    (asignacionesCupo ?? []).forEach(a => {
+      filas.push({
+        key: `cupo-${a.id}`,
+        nombre: a.estudianteNombre || estudiantes.find(e => e.id === a.estudianteId)?.nombre_completo || 'Estudiante',
+        detalle: [a.vacanteTitulo, a.empresaNombre].filter(Boolean).join(' · ') || 'Pasantía por cupo',
+        horas: horasDe(a.estudianteId),
+        carrera: a.carrera || '',
+      });
+    });
+    (apps ?? [])
+      .filter(ap => ap.estado === 'contratado')
+      .forEach(ap => {
+        filas.push({
+          key: `app-${ap.id}`,
+          nombre: ap.estudiante_nombre || estudiantes.find(e => e.id === ap.estudiante_id)?.nombre_completo || 'Estudiante',
+          detalle: [ap.titulo_vacante, ap.nombre_empresa].filter(Boolean).join(' · ') || 'Pasantía individual',
+          horas: ap.horas_completadas ?? horasDe(ap.estudiante_id),
+          carrera: estudiantes.find(e => e.id === ap.estudiante_id)?.carrera || '',
+        });
+      });
+    return filas.sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [asignacionesCupo, apps, estudiantes]);
+
+  const handleCertificar = async (sol: SolicitudGrupo) => {
     const h = calcularHorasAcuerdo(sol.acuerdo);
-    Alert.alert(
-      'Certificar pasantía',
-      `Grupo "${sol.grupoNombre ?? '—'}"\nSe acreditarán ${h.total} horas a ${sol.alumnos?.length ?? 0} estudiante(s). Esta acción es definitiva.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Certificar',
-          onPress: async () => {
-            setCertificando(sol.id);
-            try {
-              const r = await certificarPasantia(sol.id);
-              // Llama al servicio (src/services/solicitudPracticaService.ts,
-              // no comentado en esta sesión) que marca la solicitud como
-              // 'certificada' y ACREDITA las horas correspondientes a
-              // TODOS los estudiantes del grupo de una sola vez —
-              // seguramente usando runTransaction/writeBatch por dentro,
-              // mismo patrón visto en pasantiaService.ts.
-              Alert.alert('✅ Certificada', `Se acreditaron ${r.horas} horas a ${r.totalEstudiantes} estudiante(s).`);
-            } catch {
-              Alert.alert('Error', 'No se pudo certificar la pasantía.');
-            } finally {
-              setCertificando(null);
-            }
-          },
-        },
-      ],
-    );
+    const ok = await showConfirm({
+      title: 'Certificar pasantía',
+      message: `Grupo "${sol.grupoNombre ?? '—'}". Se acreditarán ${h.total} horas a ${sol.alumnos?.length ?? 0} estudiante(s). Esta acción es definitiva.`,
+      confirmText: 'Certificar',
+    });
+    if (!ok) return;
+    setCertificando(sol.id);
+    try {
+      // Servicio (solicitudPracticaService.ts): marca la solicitud como
+      // 'certificada' y ACREDITA las horas a TODOS los estudiantes del
+      // grupo de una vez (runTransaction/writeBatch por dentro).
+      const r = await certificarPasantia(sol.id);
+      void showAlert('✅ Certificada', `Se acreditaron ${r.horas} horas a ${r.totalEstudiantes} estudiante(s).`);
+    } catch {
+      void showAlert('Error', 'No se pudo certificar la pasantía.');
+    } finally {
+      setCertificando(null);
+    }
   };
 
   const Card = ({ sol, accion }: { sol: SolicitudGrupo; accion?: 'certificar' }) => {
@@ -2427,7 +2452,34 @@ function SeccionPracticas({ solicitudes, uid, nombreUni }: { solicitudes: Solici
         <BandejaIncidencias rol="universidad" uid={uid} nombreUsuario={nombreUni} />
       </View>
 
-      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginBottom: 8 }}>
+      {enPasantiaIndividual.length > 0 && (
+        <>
+          <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginBottom: 8 }}>
+            En pasantía ({enPasantiaIndividual.length})
+          </Text>
+          <Text style={[s.emptyText, { marginTop: -4, marginBottom: 8 }]}>
+            Estudiantes tuyos trabajando por cupo o vacante individual (la empresa gestiona esta pasantía).
+          </Text>
+          {enPasantiaIndividual.map(fila => (
+            <GlassCard key={fila.key} style={{ marginBottom: 10 }} contentStyle={{ padding: 14, gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 15, flex: 1 }} numberOfLines={1}>
+                  {fila.nombre}
+                </Text>
+                <View style={{ borderWidth: 1, borderColor: colors.success + '55', backgroundColor: colors.success + '22', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 }}>
+                  <Text style={{ color: colors.success, fontSize: 11, fontWeight: '700' }}>En curso</Text>
+                </View>
+              </View>
+              <Text style={{ color: colors.textMuted, fontSize: 12 }} numberOfLines={1}>{fila.detalle}</Text>
+              <Text style={{ color: colors.textMuted, fontSize: 12 }}>
+                {fila.carrera ? `${fila.carrera} · ` : ''}{fila.horas} h acumuladas
+              </Text>
+            </GlassCard>
+          ))}
+        </>
+      )}
+
+      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: enPasantiaIndividual.length > 0 ? 18 : 0, marginBottom: 8 }}>
         Por certificar ({porCertificar.length})
       </Text>
       {porCertificar.length === 0

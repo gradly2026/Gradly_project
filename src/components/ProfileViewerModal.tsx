@@ -1,39 +1,33 @@
 /**
- * ProfileViewerModal — visualizador avanzado de perfiles.
+ * ProfileViewerModal — visualizador avanzado de perfiles (pantalla completa,
+ * abierto desde chat / búsqueda / paneles). Para el estudiante muestra el mismo
+ * conjunto de datos que `components/PerfilPublicoModal.tsx` (la hoja inferior):
+ * reseñas, "Trabaja para tu empresa", acerca de, horas de avance, contacto,
+ * habilidades, currículum y "Reportar perfil". La UBICACIÓN exacta (dirección)
+ * solo se muestra si el usuario activo es 'empresa' o 'universidad'.
  *
- * - Estudiante: foto, correo, teléfono, redes, universidad aliada, carrera y
- *   horas de avance. La UBICACIÓN solo se muestra si el usuario activo es
- *   'empresa' o 'universidad'.
- * - Sistema de calificación de 5 estrellas (puntualidad, responsabilidad,
- *   rendimiento) + reseña → solo visible para usuarios 'empresa'. Se guarda en
- *   la subcolección perfiles_estudiantes/{id}/calificaciones.
- * - Insignias gamificadas: "Estudiante de Alto Nivel" (promedio ≥ 4.5) y
+ * - Reseñas: se lee SOLO el sistema oficial `feedback_pasantias` vía
+ *   `ResenasResumen` (promedio + "Ver más"). La subcolección paralela
+ *   `perfiles_estudiantes/{id}/calificaciones` y su formulario "Calificar al
+ *   estudiante" se RETIRARON: recalculaban `calificacion_promedio` por su cuenta,
+ *   pisando lo que `feedbackService.ts` ya había calculado (ver
+ *   [[project_resenas_perfil_y_reportar_chat]]).
+ * - Insignias gamificadas: "Estudiante de Alto Nivel" (promedio oficial ≥ 4.5) y
  *   "Graduado" (100% de horas completadas).
  */
 import { Ionicons } from '@expo/vector-icons';
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  serverTimestamp,
-  updateDoc,
-} from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Modal,
   ScrollView,
   StyleSheet,
-
-
   TouchableOpacity,
   View,
 } from 'react-native';
-import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
+import { AutoText as Text } from "./AutoText";
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { shadow } from '../utils/shadow';
@@ -44,6 +38,8 @@ import { useIniciarChat } from '../hooks/useIniciarChat';
 import { subscribeUserChats, type ChatListItem } from '../services/chatService';
 import StorageAvatar from './StorageAvatar';
 import { ResenasResumen } from './ResenasFeedback';
+import TrabajaParaCard from './TrabajaParaCard';
+import ReportarUsuarioModal from './ReportarUsuarioModal';
 
 export type ProfileTipo = 'estudiante' | 'empresa' | 'universidad';
 
@@ -52,18 +48,6 @@ interface Props {
   onClose: () => void;
   tipo: ProfileTipo;
   profileId: string;
-}
-
-interface Calificacion {
-  id: string;
-  empresa_id: string;
-  empresa_nombre?: string;
-  puntualidad: number;
-  responsabilidad: number;
-  rendimiento: number;
-  promedio: number;
-  comentario?: string;
-  fecha?: any;
 }
 
 const COLECCION_POR_TIPO: Record<ProfileTipo, string> = {
@@ -90,17 +74,24 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
   const [grupoNombre, setGrupoNombre] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
-  const [califs, setCalifs] = useState<Calificacion[]>([]);
-
-  // Inputs de calificación (solo empresa)
-  const [puntualidad, setPuntualidad] = useState(0);
-  const [responsabilidad, setResponsabilidad] = useState(0);
-  const [rendimiento, setRendimiento] = useState(0);
-  const [comentario, setComentario] = useState('');
-  const [guardando, setGuardando] = useState(false);
+  const [showReportar, setShowReportar] = useState(false);
 
   const puedeVerUbicacion = rol === 'empresa' || rol === 'universidad';
-  const esEmpresaActiva = rol === 'empresa';
+
+  // Paleta suelta para <TrabajaParaCard> (trae su propio StyleSheet y espera
+  // tokens individuales, no el objeto `colors` completo del tema).
+  const trabajaParaPalette = useMemo(() => ({
+    card: colors.backgroundCard,
+    border: colors.border,
+    text: colors.textPrimary,
+    textSub: colors.textMuted,
+    muted: colors.textMuted,
+    purple: colors.primary,
+    purpleDim: colors.primary12,
+    green: colors.success,
+    greenBg: isDark ? 'rgba(16,185,129,0.12)' : 'rgba(5,150,105,0.10)',
+    bg: colors.backgroundDark,
+  }), [colors, isDark]);
 
   // ── Cargar perfil ───────────────────────────────────────────────
   useEffect(() => {
@@ -147,17 +138,6 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     return () => { cancel = true; };
   }, [visible, profileId, tipo]);
 
-  // ── Suscripción a calificaciones (solo estudiantes) ──────────────
-  useEffect(() => {
-    if (!visible || tipo !== 'estudiante' || !profileId) return;
-    const unsub = onSnapshot(
-      collection(db, 'perfiles_estudiantes', profileId, 'calificaciones'),
-      snap => setCalifs(snap.docs.map(d => ({ id: d.id, ...d.data() } as Calificacion))),
-      err => console.error('[ProfileViewer] califs', err),
-    );
-    return unsub;
-  }, [visible, tipo, profileId]);
-
   // ── Grupos en común con este perfil ──────────────────────────────
   useEffect(() => {
     if (!visible || !user?.uid || !profileId || esMiPerfil) {
@@ -175,51 +155,17 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     return unsub;
   }, [visible, user?.uid, profileId, esMiPerfil]);
 
-  const promedioGlobal = useMemo(() => {
-    if (califs.length === 0) return 0;
-    return califs.reduce((acc, c) => acc + (c.promedio ?? 0), 0) / califs.length;
-  }, [califs]);
-
   // Horas de avance
   const horasAprobadas = data?.horas_aprobadas ?? 0;
   const horasObjetivo  = data?.horas_objetivo ?? 500;
   const pct = Math.min(100, Math.round((horasAprobadas / Math.max(horasObjetivo, 1)) * 100));
 
   const esGraduado  = pct >= 100;
-  const esAltoNivel = califs.length > 0 && promedioGlobal >= 4.5;
-
-  // ── Guardar calificación ─────────────────────────────────────────
-  const guardarCalificacion = async () => {
-    if (!user) return;
-    if (!puntualidad || !responsabilidad || !rendimiento) {
-      Alert.alert('Completa las estrellas', 'Califica puntualidad, responsabilidad y rendimiento.');
-      return;
-    }
-    setGuardando(true);
-    const promedio = (puntualidad + responsabilidad + rendimiento) / 3;
-    try {
-      await addDoc(collection(db, 'perfiles_estudiantes', profileId, 'calificaciones'), {
-        empresa_id:      user.uid,
-        puntualidad,
-        responsabilidad,
-        rendimiento,
-        promedio,
-        comentario:      comentario.trim(),
-        fecha:           serverTimestamp(),
-      });
-      // Recalcular y persistir el promedio global en el perfil
-      const nuevoProm = (califs.reduce((a, c) => a + (c.promedio ?? 0), 0) + promedio) / (califs.length + 1);
-      await updateDoc(doc(db, 'perfiles_estudiantes', profileId), {
-        calificacion_promedio: Math.round(nuevoProm * 10) / 10,
-      });
-      setPuntualidad(0); setResponsabilidad(0); setRendimiento(0); setComentario('');
-      Alert.alert('¡Reseña guardada!', 'Tu calificación se registró correctamente.');
-    } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'No se pudo guardar la reseña.');
-    } finally {
-      setGuardando(false);
-    }
-  };
+  // Insignia "Alto Nivel": promedio OFICIAL del perfil (feedback_pasantias, vía
+  // feedbackService) — antes se derivaba de la subcolección paralela.
+  const esAltoNivel =
+    Number(data?.calificaciones_recibidas ?? 0) > 0 &&
+    Number(data?.calificacion_promedio ?? 0) >= 4.5;
 
   const abrirLink = (url?: string) => {
     if (!url) return;
@@ -234,6 +180,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     tipo === 'empresa' ? 'business' : tipo === 'universidad' ? 'school' : 'person';
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={[styles.root, { paddingTop: insets.top }]}>
         {/* Header */}
@@ -266,13 +213,28 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                 )}
               </View>
               {tipo === 'estudiante' && (
-                <Text style={styles.carrera}>{data.carrera ?? 'Sin carrera'}</Text>
+                <Text style={styles.carrera}>
+                  {[data.carrera, data.semestre ? `${data.semestre}° sem.` : '']
+                    .filter(Boolean).join('  ·  ') || 'Sin carrera'}
+                </Text>
               )}
               {tipo === 'empresa' && (
                 <Text style={styles.carrera}>{data.industria ?? 'Empresa'}</Text>
               )}
               {tipo === 'universidad' && (
                 <Text style={styles.carrera}>{data.dominio_correo ?? ''}</Text>
+              )}
+
+              {tipo === 'estudiante' && !!data.estado_pasantia && (
+                <View style={styles.estadoPill}>
+                  <Text style={styles.estadoPillText}>
+                    {data.estado_pasantia === 'en_proceso'
+                      ? 'En proceso'
+                      : data.estado_pasantia === 'finalizada'
+                      ? 'Finalizada'
+                      : 'Sin iniciar'}
+                  </Text>
+                </View>
               )}
 
               {/* Insignias gamificadas */}
@@ -327,12 +289,12 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
               </View>
             )}
 
-            {/* Bandeja de reseñas del sistema OFICIAL (feedback_pasantias) —
-                deliberadamente aparte de la sección "Calificar al estudiante"
-                de más abajo, que sigue viva sin tocar (sistema viejo, ver
-                ResenasFeedback.tsx para el porqué de dejarlos separados). */}
+            {/* Reseñas del sistema OFICIAL (feedback_pasantias): mismo vistazo
+                compacto + "Ver más" que PerfilPublicoModal. `ResenasResumen` ya
+                trae su encabezado "RESEÑAS", así que aquí NO se repite el título
+                (antes convivía con la sección paralela "Calificar al estudiante",
+                retirada por pisar `calificacion_promedio` del sistema real). */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Reseñas</Text>
               <ResenasResumen
                 entidadId={profileId}
                 entidadRol={tipo}
@@ -340,8 +302,31 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
               />
             </View>
 
+            {/* Si quien mira es la empresa que tiene contratado a este estudiante:
+                "Trabaja para tu empresa" + "Añadir tarea". Se autooculta si no hay
+                contrato activo (query interna por empresaId == viewer). */}
+            {tipo === 'estudiante' && rol === 'empresa' && !!user?.uid && !esMiPerfil && (
+              <View style={{ marginHorizontal: 16, marginTop: 18 }}>
+                <TrabajaParaCard
+                  estudianteId={profileId}
+                  viewerUserId={user.uid}
+                  C={trabajaParaPalette}
+                />
+              </View>
+            )}
+
             {tipo === 'estudiante' && (
               <>
+                {/* Acerca de */}
+                {!!data.descripcion && (
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Acerca de</Text>
+                    <View style={styles.aboutCard}>
+                      <Text style={styles.aboutText}>{data.descripcion}</Text>
+                    </View>
+                  </View>
+                )}
+
                 {/* Horas de avance */}
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Horas de avance</Text>
@@ -351,14 +336,6 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                   <Text style={styles.progressLabel}>
                     {horasAprobadas} / {horasObjetivo} horas · {pct}%
                   </Text>
-                  {califs.length > 0 && (
-                    <View style={styles.ratingSummary}>
-                      <Stars value={Math.round(promedioGlobal)} />
-                      <Text style={styles.ratingSummaryText}>
-                        {promedioGlobal.toFixed(1)} · {califs.length} reseña{califs.length !== 1 ? 's' : ''}
-                      </Text>
-                    </View>
-                  )}
                 </View>
 
                 {/* Contacto */}
@@ -366,11 +343,23 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                   <Text style={styles.sectionTitle}>Información de contacto</Text>
                   <InfoRow icon="mail-outline" label="Correo" value={correo || 'No disponible'} colors={colors} styles={styles} />
                   <InfoRow icon="call-outline" label="Teléfono" value={data.telefono || 'No disponible'} colors={colors} styles={styles} />
-                  <InfoRow icon="school-outline" label="Universidad vinculada" value={uniNombre || 'No disponible'} colors={colors} styles={styles} />
-                  <InfoRow icon="people-outline" label="Grupo" value={grupoNombre || 'Sin grupo'} colors={colors} styles={styles} />
-                  {/* Ubicación: solo empresa/universidad */}
-                  {puedeVerUbicacion && (
-                    <InfoRow icon="location-outline" label="Ubicación" value={data.direccion || 'No disponible'} colors={colors} styles={styles} />
+                  {!!data.web && (
+                    <InfoRow icon="globe-outline" label="Web" value={String(data.web)} colors={colors} styles={styles} noTranslate />
+                  )}
+                  <InfoRow icon="school-outline" label="Universidad vinculada" value={uniNombre || 'No disponible'} colors={colors} styles={styles} noTranslate={!!uniNombre} />
+                  <InfoRow icon="people-outline" label="Grupo" value={grupoNombre || 'Sin grupo'} colors={colors} styles={styles} noTranslate={!!grupoNombre} />
+                  {(() => {
+                    const ubic = [data.distrito ?? data.ciudad, data.departamento].filter(Boolean).join(', ');
+                    return ubic
+                      ? <InfoRow icon="location-outline" label="Ubicación" value={ubic} colors={colors} styles={styles} noTranslate />
+                      : null;
+                  })()}
+                  {/* Dirección exacta: solo empresa/universidad */}
+                  {puedeVerUbicacion && !!data.direccion && (
+                    <InfoRow icon="home-outline" label="Dirección" value={String(data.direccion)} colors={colors} styles={styles} noTranslate />
+                  )}
+                  {!!data.instagram && (
+                    <InfoRow icon="logo-instagram" label="Instagram" value={String(data.instagram)} colors={colors} styles={styles} noTranslate />
                   )}
                 </View>
 
@@ -395,6 +384,24 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                   </View>
                 )}
 
+                {/* Habilidades — el campo real en perfiles_estudiantes es `skills`. */}
+                {!!data.skills &&
+                  (Array.isArray(data.skills) ? data.skills.length > 0 : String(data.skills).trim().length > 0) && (
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Habilidades</Text>
+                      <View style={styles.skillsRow}>
+                        {(Array.isArray(data.skills) ? data.skills : String(data.skills).split(','))
+                          .map((h: string) => String(h).trim())
+                          .filter(Boolean)
+                          .map((h: string, i: number) => (
+                            <View key={i} style={styles.skillTag}>
+                              <Text style={styles.skillText} noTranslate>{h}</Text>
+                            </View>
+                          ))}
+                      </View>
+                    </View>
+                  )}
+
                 {/* Currículum */}
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Currículum</Text>
@@ -414,46 +421,19 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                   )}
                 </View>
 
-                {/* Módulo de calificación — solo empresa */}
-                {esEmpresaActiva && (
+                {/* Reportar perfil */}
+                {!esMiPerfil && (
                   <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Calificar al estudiante</Text>
-                    <View style={styles.ratingCard}>
-                      <RatingRow label="Puntualidad" value={puntualidad} onChange={setPuntualidad} styles={styles} />
-                      <RatingRow label="Responsabilidad" value={responsabilidad} onChange={setResponsabilidad} styles={styles} />
-                      <RatingRow label="Rendimiento" value={rendimiento} onChange={setRendimiento} styles={styles} />
-                      <TextInput
-                        style={styles.textArea}
-                        value={comentario}
-                        onChangeText={setComentario}
-                        placeholder="Escribe una reseña (opcional)…"
-                        placeholderTextColor={colors.textMuted}
-                        multiline
-                        selectionColor={colors.primary}
-                      />
-                      <TouchableOpacity
-                        style={[styles.saveBtn, guardando && { opacity: 0.6 }]}
-                        onPress={guardarCalificacion}
-                        disabled={guardando}
-                      >
-                        {guardando
-                          ? <ActivityIndicator color="#fff" />
-                          : <Text style={styles.saveText}>Guardar reseña</Text>}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-
-                {/* Reseñas existentes */}
-                {califs.length > 0 && (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Reseñas ({califs.length})</Text>
-                    {califs.map(c => (
-                      <View key={c.id} style={styles.resenaCard}>
-                        <Stars value={Math.round(c.promedio)} size={14} />
-                        {!!c.comentario && <Text style={styles.resenaText}>{c.comentario}</Text>}
-                      </View>
-                    ))}
+                    <TouchableOpacity
+                      style={[styles.reportBtn, { borderColor: isDark ? '#ef4444' : '#dc2626' }]}
+                      onPress={() => setShowReportar(true)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="flag-outline" size={14} color={isDark ? '#ef4444' : '#dc2626'} />
+                      <Text style={[styles.reportText, { color: isDark ? '#ef4444' : '#dc2626' }]}>
+                        Reportar perfil
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </>
@@ -479,48 +459,32 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
         )}
       </View>
     </Modal>
+
+    {!esMiPerfil && !!data && tipo === 'estudiante' && (
+      <ReportarUsuarioModal
+        visible={showReportar}
+        reportadoId={profileId}
+        reportadoNombre={nombre}
+        onClose={() => setShowReportar(false)}
+      />
+    )}
+    </>
   );
 }
 
 // ─────────────────────────────────────────────
 // SUBCOMPONENTES
 // ─────────────────────────────────────────────
-function Stars({ value, size = 18 }: { value: number; size?: number }) {
-  return (
-    <View style={{ flexDirection: 'row', gap: 2 }}>
-      {[1, 2, 3, 4, 5].map(i => (
-        <Ionicons key={i} name={i <= value ? 'star' : 'star-outline'} size={size} color="#F59E0B" />
-      ))}
-    </View>
-  );
-}
-
-function RatingRow({ label, value, onChange, styles }: {
-  label: string; value: number; onChange: (v: number) => void; styles: any;
-}) {
-  return (
-    <View style={styles.ratingRow}>
-      <Text style={styles.ratingLabel}>{label}</Text>
-      <View style={{ flexDirection: 'row', gap: 4 }}>
-        {[1, 2, 3, 4, 5].map(i => (
-          <TouchableOpacity key={i} onPress={() => onChange(i)} hitSlop={4}>
-            <Ionicons name={i <= value ? 'star' : 'star-outline'} size={22} color="#F59E0B" />
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function InfoRow({ icon, label, value, colors, styles }: {
-  icon: keyof typeof Ionicons.glyphMap; label: string; value: string; colors: GradlyColors; styles: any;
+function InfoRow({ icon, label, value, colors, styles, noTranslate }: {
+  icon: keyof typeof Ionicons.glyphMap; label: string; value: string;
+  colors: GradlyColors; styles: any; noTranslate?: boolean;
 }) {
   return (
     <View style={styles.infoRow}>
       <Ionicons name={icon} size={18} color={colors.primaryLight} style={{ width: 26 }} />
       <View style={{ flex: 1 }}>
         <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue} numberOfLines={1}>{value}</Text>
+        <Text style={styles.infoValue} numberOfLines={1} noTranslate={noTranslate}>{value}</Text>
       </View>
     </View>
   );
@@ -577,11 +541,34 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     letterSpacing: 0.3, textTransform: 'uppercase',
   },
 
+  estadoPill: {
+    marginTop: 6, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
+    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.backgroundCard,
+  },
+  estadoPillText: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: COLORS.textSecondary },
+
+  aboutCard: {
+    backgroundColor: COLORS.backgroundCard, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  aboutText: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textPrimary, lineHeight: 20 },
+
   progressTrack: { height: 10, borderRadius: 5, backgroundColor: COLORS.backgroundSurface, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 5 },
   progressLabel: { fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
-  ratingSummary: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  ratingSummaryText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+
+  skillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  skillTag: {
+    backgroundColor: COLORS.primary12, borderRadius: 8, borderWidth: 1, borderColor: COLORS.primary35,
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  skillText: { fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.primaryLight },
+
+  reportBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 11, borderWidth: 1, borderRadius: 12,
+  },
+  reportText: { fontSize: 12.5, fontFamily: FONTS.interSemiBold },
 
   infoRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -599,24 +586,4 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.primary35,
   },
   redText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
-
-  ratingCard: {
-    backgroundColor: COLORS.backgroundCard, borderRadius: 16, padding: 16, gap: 12,
-    borderWidth: 1, borderColor: COLORS.border,
-  },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  ratingLabel: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
-  textArea: {
-    backgroundColor: COLORS.backgroundSurface, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
-    minHeight: 80, padding: 12, fontSize: 14, fontFamily: FONTS.interRegular, color: COLORS.textPrimary,
-    textAlignVertical: 'top',
-  },
-  saveBtn: { height: 46, borderRadius: 12, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  saveText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: '#fff' },
-
-  resenaCard: {
-    backgroundColor: COLORS.backgroundCard, borderRadius: 12, padding: 12, gap: 6,
-    borderWidth: 1, borderColor: COLORS.border,
-  },
-  resenaText: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textPrimary, lineHeight: 18 },
 });
