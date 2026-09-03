@@ -177,7 +177,9 @@ async function rechazarPendientesRestantes(opts: {
  * Devuelve el id del contrato y si la vacante quedó cerrada.
  */
 export async function contratarCandidato(params: {
-  aplicacionId: string;
+  /** id de la `aplicaciones` que originó la contratación; `null` cuando no
+   *  hubo postulación (recontratación de ex-pasante u oferta de empleo). */
+  aplicacionId: string | null;
   vacante: VacanteParaContrato;
   estudianteId: string;
   estudianteNombre: string;
@@ -252,12 +254,14 @@ export async function contratarCandidato(params: {
     ),
   );
 
-  // 2. La aplicación pasa a 'contratado'.
-  await updateDoc(doc(db, 'aplicaciones', aplicacionId), {
-    estado: 'contratado',
-    fecha_inicio: serverTimestamp(),
-    contrato_id: ref.id,
-  });
+  // 2. La aplicación (si la hubo) pasa a 'contratado'.
+  if (aplicacionId) {
+    await updateDoc(doc(db, 'aplicaciones', aplicacionId), {
+      estado: 'contratado',
+      fecha_inicio: serverTimestamp(),
+      contrato_id: ref.id,
+    });
+  }
 
   // 3. Contador de la vacante.
   await updateDoc(doc(db, 'vacantes', vacante.id), {
@@ -274,7 +278,7 @@ export async function contratarCandidato(params: {
       vacanteId: vacante.id,
       empresaId,
       vacanteTitulo: vacante.titulo,
-      exceptoAplicacionId: aplicacionId,
+      exceptoAplicacionId: aplicacionId ?? undefined,
     });
     await updateDoc(doc(db, 'vacantes', vacante.id), { cerrada: true });
   }
@@ -599,5 +603,132 @@ export async function renunciarPuesto(params: {
     `${estudianteNombre} renunció a "${vacanteTitulo}". Motivo: ${motivo.trim()}`,
     'error',
     `contratoAviso:${contratoId}`,
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// FASE 5 · Recontratar ex-pasantes + ofertas de empleo.
+// ════════════════════════════════════════════════════════════════════════
+
+/** Forma de un documento de `ofertas_empleo`. */
+export interface OfertaEmpleo {
+  id: string;
+  empresaId: string;
+  empresaNombre: string;
+  estudianteId: string;
+  estudianteNombre: string;
+  vacanteId: string;
+  vacanteTitulo: string;
+  area: string;
+  estado: 'pendiente' | 'aceptada' | 'rechazada';
+  motivoRechazo: string | null;
+  createdAt: any;
+  respondidaAt: any | null;
+}
+
+/**
+ * La empresa contrata a un EX-PASANTE directo a una vacante afín — sin que haya
+ * habido postulación. Igual que `contratarCandidato` pero sin `aplicaciones`.
+ * Si con esto se cubren los cupos, descarta a los postulantes que hubiera y
+ * cierra la vacante.
+ */
+export async function contratarExPasante(params: {
+  vacante: VacanteParaContrato;
+  estudianteId: string;
+  estudianteNombre: string;
+  estudianteFoto?: string;
+  empresaId: string;
+  empresaNombre: string;
+  origen?: OrigenContrato;
+}): Promise<{ contratoId: string; vacanteCerrada: boolean }> {
+  return contratarCandidato({
+    aplicacionId: null,
+    vacante: params.vacante,
+    estudianteId: params.estudianteId,
+    estudianteNombre: params.estudianteNombre,
+    estudianteFoto: params.estudianteFoto,
+    empresaId: params.empresaId,
+    empresaNombre: params.empresaNombre,
+    origen: params.origen ?? 'recontratacion',
+  });
+}
+
+/**
+ * La empresa oferta una vacante a un ex-pasante desde "Historial de Pasantes".
+ * Crea el doc en `ofertas_empleo` ('pendiente') y notifica al estudiante con
+ * deep link 'ofertaEmpleo:<id>'. Bloquea duplicar una oferta pendiente para el
+ * mismo estudiante+vacante.
+ */
+export async function crearOfertaEmpleo(params: {
+  empresaId: string;
+  empresaNombre: string;
+  estudianteId: string;
+  estudianteNombre: string;
+  vacanteId: string;
+  vacanteTitulo: string;
+  area?: string;
+}): Promise<string> {
+  const { empresaId, empresaNombre, estudianteId, estudianteNombre, vacanteId, vacanteTitulo, area } = params;
+
+  const previas = await getDocs(
+    query(collection(db, COL_OFERTAS), where('empresaId', '==', empresaId)),
+  );
+  const yaPendiente = previas.docs.some((d) => {
+    const o = d.data() as any;
+    return o.estudianteId === estudianteId && o.vacanteId === vacanteId && o.estado === 'pendiente';
+  });
+  if (yaPendiente) throw new Error('Ya tienes una oferta pendiente para este estudiante en esta vacante.');
+
+  const ref = await addDoc(collection(db, COL_OFERTAS), {
+    empresaId,
+    empresaNombre,
+    estudianteId,
+    estudianteNombre,
+    vacanteId,
+    vacanteTitulo,
+    area: area ?? '',
+    estado: 'pendiente' as const,
+    motivoRechazo: null,
+    createdAt: serverTimestamp(),
+    respondidaAt: null,
+  });
+  await enviarNotificacion(
+    estudianteId,
+    'Oferta de empleo',
+    `${empresaNombre} te ofreció el puesto "${vacanteTitulo}".`,
+    'info',
+    `ofertaEmpleo:${ref.id}`,
+  );
+  return ref.id;
+}
+
+/**
+ * El estudiante responde una oferta: 'aceptada' o 'rechazada' (con motivo).
+ * Aceptar NO crea el contrato — la empresa lo confirma luego en "Recontratar
+ * Pasantes". Notifica a la empresa con deep link 'ofertaRespondida:<id>'.
+ */
+export async function responderOfertaEmpleo(params: {
+  oferta: OfertaEmpleo;
+  estudianteNombre: string;
+  decision: 'aceptada' | 'rechazada';
+  motivo?: string;
+}): Promise<void> {
+  const { oferta, estudianteNombre, decision, motivo } = params;
+  if (decision === 'rechazada' && !(motivo ?? '').trim()) {
+    throw new Error('Escribe el motivo del rechazo.');
+  }
+  await updateDoc(doc(db, COL_OFERTAS, oferta.id), {
+    estado: decision,
+    motivoRechazo: decision === 'rechazada' ? (motivo ?? '').trim() : null,
+    respondidaAt: serverTimestamp(),
+  });
+  await enviarNotificacion(
+    oferta.empresaId,
+    decision === 'aceptada' ? 'Oferta aceptada' : 'Oferta rechazada',
+    decision === 'aceptada'
+      ? `${estudianteNombre} aceptó tu oferta para "${oferta.vacanteTitulo}". Confírmala en "Recontratar Pasantes".`
+      : `${estudianteNombre} rechazó tu oferta para "${oferta.vacanteTitulo}".${motivo ? ` Motivo: ${motivo.trim()}` : ''}`,
+    decision === 'aceptada' ? 'success' : 'info',
+    `ofertaRespondida:${oferta.id}`,
   );
 }

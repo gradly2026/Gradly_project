@@ -1616,4 +1616,48 @@ export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
   "Renunciar definitivamente": "Resign permanently",
   "Aviso de un empleado": "Notice from an employee",
   "Un empleado renunció": "An employee resigned",
+
+  // Fase 5 — Recontratar pasantes + ofertas de empleo.
+  "Por vacantes": "By vacancy",
+  "Recontratar pasantes": "Rehire interns",
+  "Estudiantes que ya culminaron su pasantía contigo, ordenados por calificación. Contrátalos directo a una vacante afín a su carrera.":
+    "Students who already completed an internship with you, sorted by rating. Hire them straight into a vacancy that fits their degree.",
+  "Aún no tienes ex-pasantes disponibles para recontratar.": "You don't have any former interns available to rehire yet.",
+  "Aceptó tu oferta de empleo": "Accepted your job offer",
+  "Contratar a un ex-pasante": "Hire a former intern",
+  "Elige la vacante bajo la cual quedará contratado.": "Choose the vacancy they'll be hired under.",
+  "No tienes vacantes de empleo abiertas.": "You have no open job vacancies.",
+  "No se pudo contratar.": "Couldn't hire.",
+  "Elige una vacante.": "Choose a vacancy.",
+  // OfertaEmpleoModal (estudiante)
+  "Oferta de empleo": "Job offer",
+  "No se encontró esta oferta.": "This offer was not found.",
+  "Horario": "Schedule",
+  "Ya aceptaste esta oferta. La empresa confirmará la contratación.":
+    "You already accepted this offer. The company will confirm the hire.",
+  "Ya rechazaste esta oferta.": "You already declined this offer.",
+  "Motivo del rechazo": "Reason for declining",
+  "Cuéntale a la empresa por qué (mín. 5 caracteres)": "Tell the company why (min. 5 characters)",
+  "Chatear con la empresa": "Chat with the company",
+  "Aceptar oferta": "Accept offer",
+  "No se pudo enviar la respuesta.": "Couldn't send your response.",
+  // OfertaRespondidaModal (empresa)
+  "Respuesta a tu oferta": "Response to your offer",
+  "Oferta aceptada": "Offer accepted",
+  "Oferta rechazada": "Offer declined",
+  "aceptó tu oferta para": "accepted your offer for",
+  "rechazó tu oferta para": "declined your offer for",
+  "Para completar la contratación, ve a Reclutamiento → \"Recontratar Pasantes\" y pulsa Contratar en su tarjeta.":
+    "To complete the hire, go to Recruitment → \"Rehire Interns\" and tap Hire on their card.",
+  "Ir a mi panel": "Go to my dashboard",
+  // OfertarEmpleoModal (empresa, desde Historial de Pasantes)
+  "Ofertar empleo": "Offer a job",
+  "Oferta enviada. El estudiante la verá en sus notificaciones y podrá aceptarla o rechazarla.":
+    "Offer sent. The student will see it in their notifications and can accept or decline it.",
+  "No tienes vacantes de empleo abiertas para ofrecer.": "You have no open job vacancies to offer.",
+  "Elige la vacante a ofrecer": "Choose the vacancy to offer",
+  "No se pudo identificar al estudiante.": "Couldn't identify the student.",
+  "No se pudo enviar la oferta.": "Couldn't send the offer.",
+  "Enviar oferta": "Send offer",
+  "Re-contactar": "Re-contact",
 };

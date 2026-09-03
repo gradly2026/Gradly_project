@@ -149,6 +149,8 @@ import ReclamoDetailModal from './ReclamoDetailModal';
 import ComprobanteInfoModal from './ComprobanteInfoModal';
 import PostulacionRechazadaModal from './PostulacionRechazadaModal';
 import ContratoAvisoModal from './ContratoAvisoModal';
+import OfertaEmpleoModal from './OfertaEmpleoModal';
+import OfertaRespondidaModal from './OfertaRespondidaModal';
 // Los modales de detalle que se pueden abrir al tocar una notificación
 // con referencia estructurada "kind:id" (ver notifRoute.ts). Cada uno es
 // un componente separado, definido en su propio archivo.
@@ -234,6 +236,8 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const [comprobanteModalId, setComprobanteModalId] = useState<string | null>(null);
   const [postulacionRechazadaId, setPostulacionRechazadaId] = useState<string | null>(null);
   const [contratoAvisoId, setContratoAvisoId] = useState<string | null>(null);
+  const [ofertaEmpleoId, setOfertaEmpleoId] = useState<string | null>(null);
+  const [ofertaRespondidaId, setOfertaRespondidaId] = useState<string | null>(null);
   // 4 estados, uno por cada tipo de modal de detalle posible. Cada uno
   // guarda `null` (modal cerrado) o el ID del documento a mostrar (modal
   // abierto, mostrando ese documento específico). Ver más abajo cómo
@@ -398,6 +402,8 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         case 'reclamo': setReclamoModalId(ref.id); break;
         case 'postulacionRechazada': setPostulacionRechazadaId(ref.id); break;
         case 'contratoAviso': setContratoAvisoId(ref.id); break;
+        case 'ofertaEmpleo': setOfertaEmpleoId(ref.id); break;
+        case 'ofertaRespondida': setOfertaRespondidaId(ref.id); break;
       }
       return;
       // Termina aquí: si era una referencia estructurada, ya se decidió
@@ -711,6 +717,16 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         visible={!!contratoAvisoId}
         contratoId={contratoAvisoId}
         onClose={() => setContratoAvisoId(null)}
+      />
+      <OfertaEmpleoModal
+        visible={!!ofertaEmpleoId}
+        ofertaId={ofertaEmpleoId}
+        onClose={() => setOfertaEmpleoId(null)}
+      />
+      <OfertaRespondidaModal
+        visible={!!ofertaRespondidaId}
+        ofertaId={ofertaRespondidaId}
+        onClose={() => setOfertaRespondidaId(null)}
       />
     </>
   );

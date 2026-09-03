@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import { AutoText as Text } from "./AutoText";
 import PerfilPublicoModal from "../../components/PerfilPublicoModal";
+import OfertarEmpleoModal from "./OfertarEmpleoModal";
 import { db } from "../config/firebaseConfig";
 import { abrirChatDirectoRecontratacion } from "../services/chatService";
 import {
@@ -86,6 +87,8 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
   const [loading, setLoading] = useState(true);
   const [resolviendo, setResolviendo] = useState<string | null>(null);
   const [perfilUid, setPerfilUid] = useState<string | null>(null);
+  // Ex-pasante al que se le va a ofertar un empleo (abre OfertarEmpleoModal).
+  const [ofertarA, setOfertarA] = useState<PasanteItem | null>(null);
 
   // ── Consulta en tiempo real a las pasantías finalizadas de esta empresa ──
   // Filtramos `empresaId` en el servidor y `estado === 'finalizado'` en cliente:
@@ -338,24 +341,33 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
           ) : null}
         </View>
 
-        {/* Botón de re-contacto destacado */}
-        <TouchableOpacity
-          style={[styles.recontactarBtn, cargando && { opacity: 0.7 }]}
-          activeOpacity={0.9}
-          onPress={() => reContactar(item)}
-          disabled={cargando}
-        >
-          {cargando ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="briefcase" size={16} color="#fff" />
-              <Text style={styles.recontactarText}>
-                Ofertar Empleo / Re-contactar
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Acciones: Ofertar empleo (crea una oferta formal) + Re-contactar (chat) */}
+        <View style={styles.accionesRow}>
+          <TouchableOpacity
+            style={styles.ofertarBtn}
+            activeOpacity={0.9}
+            onPress={() => setOfertarA(item)}
+            disabled={!item.estudianteUid}
+          >
+            <Ionicons name="mail-open-outline" size={15} color="#fff" />
+            <Text style={styles.ofertarText}>Ofertar empleo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.recontactarBtn, cargando && { opacity: 0.7 }]}
+            activeOpacity={0.9}
+            onPress={() => reContactar(item)}
+            disabled={cargando}
+          >
+            {cargando ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="chatbubble-ellipses-outline" size={15} color="#fff" />
+                <Text style={styles.recontactarText}>Re-contactar</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -390,6 +402,14 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
         rol="talento"
         viewerUserId={perfilViewer}
         theme="dark"
+      />
+
+      <OfertarEmpleoModal
+        visible={!!ofertarA}
+        empresaId={empresaId}
+        empresaNombre={empresaNombre}
+        estudiante={{ id: ofertarA?.estudianteUid ?? null, nombre: ofertarA?.nombre ?? '', carrera: ofertarA?.carrera }}
+        onClose={() => setOfertarA(null)}
       />
     </View>
   );
@@ -479,18 +499,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  recontactarBtn: {
+  accionesRow: { flexDirection: "row", gap: 8 },
+  ofertarBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
+    backgroundColor: C.green,
+    borderRadius: 14,
+    paddingVertical: 13,
+  },
+  ofertarText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  recontactarBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
     backgroundColor: C.accent,
     borderRadius: 14,
     paddingVertical: 13,
   },
   recontactarText: {
     color: "#fff",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "800",
   },
   empty: {

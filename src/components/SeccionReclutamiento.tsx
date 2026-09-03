@@ -33,6 +33,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
@@ -71,9 +72,11 @@ import {
   cerrarVacante,
   completarTarea,
   contratarCandidato,
+  contratarExPasante,
   despedirEmpleado,
   reportarEmpleado,
   type ContratoLaboral,
+  type OfertaEmpleo,
   type TareaLaboral,
   type VacanteParaContrato,
 } from '../services/contratoService';
@@ -198,6 +201,9 @@ export default function SeccionReclutamiento({
 
   const { pasantes } = usePasantesEmpresa(empresaId);
 
+  // Filtro "supremo", por encima de todo: ver las vacantes/puestos, o
+  // recontratar directamente a un ex-pasante.
+  const [filtroSupremo, setFiltroSupremo] = useState<'porVacantes' | 'recontratar'>('porVacantes');
   const [tab, setTab] = useState<'reclutamiento' | 'contratado'>('reclutamiento');
   const [filtroContratado, setFiltroContratado] = useState<'puestos' | 'todos'>('puestos');
   const [vacanteSelId, setVacanteSelId] = useState<string | null>(null);
@@ -340,6 +346,40 @@ export default function SeccionReclutamiento({
 
   return (
     <View style={s.wrap}>
+      {/* ── Filtro supremo ── */}
+      <View style={s.supremo}>
+        {([
+          { id: 'porVacantes', label: 'Por vacantes', icon: 'briefcase' },
+          { id: 'recontratar', label: 'Recontratar pasantes', icon: 'ribbon' },
+        ] as const).map((f) => {
+          const activo = filtroSupremo === f.id;
+          return (
+            <TouchableOpacity
+              key={f.id}
+              style={[s.supremoBtn, activo && s.supremoBtnActivo]}
+              onPress={() => { setFiltroSupremo(f.id); setVacanteSelId(null); setEmpleadoSelId(null); }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name={f.icon} size={13} color={activo ? '#fff' : colors.textMuted} />
+              <Text style={activo ? s.supremoTxtActivo : s.supremoTxt}>{f.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {filtroSupremo === 'recontratar' ? (
+        <RecontratarPasantes
+          empresaId={empresaId}
+          empresaNombre={empresaNombre}
+          contratosActivos={contratosActivos}
+          colors={colors}
+          s={s}
+          onVerPerfil={onVerPerfilCandidato}
+          onChatCandidato={onChatCandidato}
+          onContratado={irAContratado}
+        />
+      ) : (
+      <>
       {/* ── Pestañas ── */}
       <View style={s.tabs}>
         {([
@@ -478,6 +518,8 @@ export default function SeccionReclutamiento({
             </TouchableOpacity>
           )}
         />
+      )}
+      </>
       )}
     </View>
   );
@@ -1877,6 +1919,330 @@ function AsignarTareaModal({
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// FASE 5 · RECONTRATAR PASANTES — lista de ex-pasantes de la empresa por
+// calificación; cada uno se puede contratar directo a una vacante afín, sin
+// que haya postulación. Marca a los que aceptaron una oferta de empleo.
+// ════════════════════════════════════════════════════════════════════════
+interface ExPasanteFila {
+  uid: string;
+  nombre: string;
+  carrera: string;
+  rating: number;
+  cvUrl: string;
+  foto: string;
+}
+
+function RecontratarPasantes({
+  empresaId, empresaNombre, contratosActivos, colors, s, onVerPerfil, onChatCandidato, onContratado,
+}: {
+  empresaId: string;
+  empresaNombre: string;
+  contratosActivos: ContratoLaboral[];
+  colors: GradlyColors;
+  s: ReturnType<typeof makeStyles>;
+  onVerPerfil: (id: string) => void;
+  onChatCandidato: (args: ChatCandidatoArgs) => void;
+  onContratado: () => void;
+}) {
+  const { pasantes, cargando: cargandoPasantes } = usePasantesEmpresa(empresaId);
+  const [perfiles, setPerfiles] = useState<Record<string, ExPasanteFila>>({});
+  const [ofertas, setOfertas] = useState<OfertaEmpleo[]>([]);
+  const [contratarUid, setContratarUid] = useState<string | null>(null);
+  const [cvMenu, setCvMenu] = useState<string | null>(null);
+
+  // Ofertas de la empresa (para marcar "Aceptó tu oferta").
+  useEffect(() => {
+    if (!empresaId) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'ofertas_empleo'), where('empresaId', '==', empresaId)),
+      (snap) => setOfertas(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as OfertaEmpleo))),
+      (e) => console.warn('ofertas recontratar:', e),
+    );
+    return unsub;
+  }, [empresaId]);
+
+  // Perfiles de los ex-pasantes.
+  const idsKey = [...pasantes].sort().join(',');
+  useEffect(() => {
+    let cancel = false;
+    const ids = idsKey ? idsKey.split(',') : [];
+    (async () => {
+      const faltan = ids.filter((id) => id && !perfiles[id]);
+      if (faltan.length === 0) return;
+      const nuevos: Record<string, ExPasanteFila> = {};
+      await Promise.all(faltan.map(async (id) => {
+        try {
+          const snap = await getDoc(doc(db, 'perfiles_estudiantes', id));
+          const d = snap.exists() ? (snap.data() as any) : {};
+          nuevos[id] = {
+            uid: id,
+            nombre: d.nombre_completo || 'Estudiante',
+            carrera: d.carrera || '',
+            rating: Number(d.calificacion_promedio) || 0,
+            cvUrl: d.cv_url || '',
+            foto: d.foto_url || '',
+          };
+        } catch {
+          nuevos[id] = { uid: id, nombre: 'Estudiante', carrera: '', rating: 0, cvUrl: '', foto: '' };
+        }
+      }));
+      if (!cancel) setPerfiles((prev) => ({ ...prev, ...nuevos }));
+    })();
+    return () => { cancel = true; };
+  }, [idsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const yaContratados = useMemo(
+    () => new Set(contratosActivos.map((c) => c.estudianteId)),
+    [contratosActivos],
+  );
+  const ofertaAceptadaDe = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of ofertas) if (o.estado === 'aceptada') set.add(o.estudianteId);
+    return set;
+  }, [ofertas]);
+
+  const filas = useMemo(() => {
+    return [...pasantes]
+      .map((id) => perfiles[id])
+      .filter((p): p is ExPasanteFila => !!p && !yaContratados.has(p.uid))
+      .sort((a, b) => {
+        // Los que aceptaron una oferta primero; luego por rating.
+        const af = (p: ExPasanteFila) => (ofertaAceptadaDe.has(p.uid) ? 0 : 1);
+        return af(a) - af(b) || b.rating - a.rating || a.nombre.localeCompare(b.nombre);
+      });
+  }, [pasantes, perfiles, yaContratados, ofertaAceptadaDe]);
+
+  const abrirCV = (url: string) => { if (url) Linking.openURL(url).catch(() => {}); setCvMenu(null); };
+
+  if (cargandoPasantes && filas.length === 0) {
+    return <View style={{ paddingVertical: 40, alignItems: 'center' }}><ActivityIndicator size="small" color={colors.primary} /></View>;
+  }
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+      <Text style={s.recontratarIntro}>
+        Estudiantes que ya culminaron su pasantía contigo, ordenados por calificación. Contrátalos directo a una vacante afín a su carrera.
+      </Text>
+      {filas.length === 0 ? (
+        <Text style={s.vacio}>Aún no tienes ex-pasantes disponibles para recontratar.</Text>
+      ) : (
+        <View style={{ gap: 10 }}>
+          {filas.map((p) => {
+            const acepto = ofertaAceptadaDe.has(p.uid);
+            return (
+              <View key={p.uid} style={[s.candCard, acepto && { borderColor: colors.success + '77' }]}>
+                <TouchableOpacity style={s.candTop} activeOpacity={0.75} onPress={() => onVerPerfil(p.uid)}>
+                  {p.foto ? (
+                    <Image source={{ uri: p.foto }} style={s.candAvatar} />
+                  ) : (
+                    <View style={s.candAvatar}><Ionicons name="person" size={17} color={colors.primaryLight} /></View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <Text style={s.candNombre} numberOfLines={1} noTranslate>{p.nombre}</Text>
+                      <Ionicons name="chevron-forward-circle-outline" size={15} color={colors.primaryLight} />
+                    </View>
+                    {!!p.carrera && <Text style={s.candCarrera} numberOfLines={1} noTranslate>{p.carrera}</Text>}
+                  </View>
+                  {p.rating > 0 && (
+                    <View style={s.ratingPill}>
+                      <Ionicons name="star" size={12} color={colors.gold} />
+                      <Text style={s.ratingTxt} noTranslate>{p.rating.toFixed(1)}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                {acepto && (
+                  <View style={[s.chip, s.chipPriv, { alignSelf: 'flex-start' }]}>
+                    <Ionicons name="checkmark-circle" size={11} color={colors.success} />
+                    <Text style={s.chipPrivTxt}>Aceptó tu oferta de empleo</Text>
+                  </View>
+                )}
+
+                <View style={s.candAcciones}>
+                  <TouchableOpacity
+                    style={s.accionBtn}
+                    onPress={() => onChatCandidato({ estudianteId: p.uid, estudianteNombre: p.nombre })}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primaryLight} />
+                    <Text style={s.accionTxt}>Chat</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.accionBtn, !p.cvUrl && s.accionDeshabilitada]}
+                    onPress={() => p.cvUrl && setCvMenu(cvMenu === p.uid ? null : p.uid)}
+                    disabled={!p.cvUrl}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="document-text-outline" size={14} color={p.cvUrl ? colors.primaryLight : colors.textMuted} />
+                    <Text style={[s.accionTxt, !p.cvUrl && { color: colors.textMuted }]}>CV</Text>
+                    {!!p.cvUrl && <Ionicons name="chevron-down" size={12} color={colors.primaryLight} />}
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.accionBtn, s.accionContratar]} onPress={() => setContratarUid(p.uid)} activeOpacity={0.85}>
+                    <Ionicons name="checkmark" size={14} color="#fff" />
+                    <Text style={[s.accionTxt, { color: '#fff' }]}>Contratar</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {cvMenu === p.uid && !!p.cvUrl && (
+                  <View style={s.cvMenu}>
+                    <TouchableOpacity style={s.cvMenuItem} onPress={() => abrirCV(p.cvUrl)} activeOpacity={0.8}>
+                      <Ionicons name="eye-outline" size={14} color={colors.textPrimary} />
+                      <Text style={s.cvMenuTxt}>Ver CV</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={s.cvMenuItem} onPress={() => abrirCV(p.cvUrl)} activeOpacity={0.8}>
+                      <Ionicons name="open-outline" size={14} color={colors.textPrimary} />
+                      <Text style={s.cvMenuTxt}>Abrir en navegador</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      <ContratarExPasanteModal
+        pasante={contratarUid ? perfiles[contratarUid] ?? null : null}
+        empresaId={empresaId}
+        empresaNombre={empresaNombre}
+        colors={colors}
+        s={s}
+        onClose={() => setContratarUid(null)}
+        onContratado={() => { setContratarUid(null); onContratado(); }}
+      />
+    </ScrollView>
+  );
+}
+
+// ── Modal: elegir vacante y contratar a un ex-pasante ──
+function ContratarExPasanteModal({
+  pasante, empresaId, empresaNombre, colors, s, onClose, onContratado,
+}: {
+  pasante: ExPasanteFila | null;
+  empresaId: string;
+  empresaNombre: string;
+  colors: GradlyColors;
+  s: ReturnType<typeof makeStyles>;
+  onClose: () => void;
+  onContratado: () => void;
+}) {
+  const [cargando, setCargando] = useState(true);
+  const [vacantes, setVacantes] = useState<VacanteParaContrato[]>([]);
+  const [sel, setSel] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (!pasante) return;
+    let cancel = false;
+    setCargando(true); setSel(null); setErr(''); setEnviando(false);
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'vacantes'), where('empresa_id', '==', empresaId)));
+        if (cancel) return;
+        const carreraN = normalizarSkill(pasante.carrera ?? '');
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) }))
+          .filter((v) => v.categoria === 'vacante' && !v.cerrada && v.activa !== false && v.estado_moderacion !== 'eliminada')
+          .map((v) => ({
+            id: v.id, titulo: v.titulo || 'Vacante', area: v.area, modalidad: v.modalidad,
+            modalidad_contrato: v.modalidad_contrato, ubicacion_texto: v.ubicacion_texto ?? null,
+            horario: v.horario ?? null, salario_min: v.salario_min ?? null, salario_max: v.salario_max ?? null,
+            cupos: v.cupos ?? null, contratados_count: v.contratados_count ?? 0,
+          } as VacanteParaContrato))
+          .sort((a, b) => {
+            const af = (x: VacanteParaContrato) => (carreraN && normalizarSkill(x.area ?? '').includes(carreraN.slice(0, 6)) ? 0 : 1);
+            return af(a) - af(b) || (a.titulo || '').localeCompare(b.titulo || '');
+          });
+        setVacantes(list);
+      } catch (e) {
+        console.warn('[ContratarExPasante] vacantes', e);
+        setVacantes([]);
+      } finally {
+        if (!cancel) setCargando(false);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [pasante, empresaId]);
+
+  const confirmar = async () => {
+    if (!pasante || !sel) { setErr('Elige una vacante.'); return; }
+    const v = vacantes.find((x) => x.id === sel);
+    if (!v) return;
+    setEnviando(true); setErr('');
+    try {
+      await contratarExPasante({
+        vacante: v,
+        estudianteId: pasante.uid,
+        estudianteNombre: pasante.nombre,
+        estudianteFoto: pasante.foto,
+        empresaId,
+        empresaNombre,
+        origen: 'recontratacion',
+      });
+      onContratado();
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo contratar.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <Modal visible={!!pasante} transparent animationType="none" onRequestClose={onClose}>
+      <View style={s.modalOverlay}>
+        <View style={s.modalCard}>
+          <Text style={s.modalTitulo}>Contratar a un ex-pasante</Text>
+          <Text style={[s.modalTexto, { fontFamily: FONTS.interSemiBold, color: colors.textPrimary }]} noTranslate>
+            {pasante?.nombre}
+          </Text>
+          <Text style={s.modalTexto}>Elige la vacante bajo la cual quedará contratado.</Text>
+          {cargando ? (
+            <View style={{ paddingVertical: 20, alignItems: 'center' }}><ActivityIndicator size="small" color={colors.primary} /></View>
+          ) : vacantes.length === 0 ? (
+            <Text style={s.vacio}>No tienes vacantes de empleo abiertas.</Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 8 }}>
+                {vacantes.map((v) => {
+                  const activo = sel === v.id;
+                  return (
+                    <TouchableOpacity
+                      key={v.id}
+                      style={[s.exVacOpcion, activo && s.exVacOpcionActiva]}
+                      onPress={() => { setSel(v.id); setErr(''); }}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name={activo ? 'radio-button-on' : 'radio-button-off'} size={18} color={activo ? colors.primary : colors.textMuted} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.exVacTitulo} numberOfLines={1} noTranslate>{v.titulo}</Text>
+                        {!!(v.area || v.modalidad) && (
+                          <Text style={s.exVacMeta} numberOfLines={1} noTranslate>{[v.area, v.modalidad].filter(Boolean).join(' · ')}</Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          )}
+          {!!err && <Text style={s.modalError}>{err}</Text>}
+          <View style={s.modalBotones}>
+            <TouchableOpacity style={s.modalCancelar} onPress={onClose} disabled={enviando}>
+              <Text style={s.modalCancelarTxt}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.modalConfirmar, { backgroundColor: colors.success }]} onPress={confirmar} disabled={enviando || !sel}>
+              {enviando ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.modalConfirmarTxt}>Contratar</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const makeStyles = (c: GradlyColors) =>
   StyleSheet.create({
     wrap: { flex: 1, padding: 16, paddingBottom: 110 },
@@ -2137,4 +2503,26 @@ const makeStyles = (c: GradlyColors) =>
     },
     tareaTitulo: { flex: 1, fontSize: 13, fontFamily: FONTS.interSemiBold, color: c.textPrimary },
     tareaDetalle: { fontSize: 11.5, color: c.textMuted, lineHeight: 16 },
+
+    // ── Fase 5: filtro supremo + recontratar pasantes ──
+    supremo: {
+      flexDirection: 'row', gap: 6, padding: 4, marginBottom: 12,
+      backgroundColor: c.backgroundSurface, borderRadius: 14,
+      borderWidth: 1, borderColor: c.border,
+    },
+    supremoBtn: {
+      flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+      paddingVertical: 10, borderRadius: 10,
+    },
+    supremoBtnActivo: { backgroundColor: c.primary },
+    supremoTxt: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: c.textMuted },
+    supremoTxtActivo: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: '#fff' },
+    recontratarIntro: { fontSize: 12.5, color: c.textSecondary, lineHeight: 18, marginBottom: 14 },
+    exVacOpcion: {
+      flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 12,
+      borderWidth: 1, borderColor: c.border, backgroundColor: c.backgroundSurface,
+    },
+    exVacOpcionActiva: { borderColor: c.primary, backgroundColor: c.primary + '12' },
+    exVacTitulo: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: c.textPrimary },
+    exVacMeta: { fontSize: 11.5, color: c.textMuted, marginTop: 1 },
   });
