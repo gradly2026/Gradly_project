@@ -290,6 +290,7 @@ export default function SeccionReclutamiento({
 
   // Tras contratar (o cubrir cupos): llevar a la empresa a "Contratado".
   const irAContratado = () => {
+    setFiltroSupremo('porVacantes');
     setTab('contratado');
     setFiltroContratado('puestos');
     setVacanteSelId(null);
