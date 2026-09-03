@@ -18,6 +18,7 @@ import CertificadoGradly from "../src/components/CertificadoGradly";
 import RangoCard from "../src/components/RangoCard";
 import { ResenasResumen } from "../src/components/ResenasFeedback";
 import SelloEmpresa from "../src/components/SelloEmpresa";
+import TrabajaParaCard from "../src/components/TrabajaParaCard";
 import { calcularRango } from "../src/services/feedbackService";
 import ReportarModal from "./ReportarModal";
 
@@ -334,6 +335,12 @@ export default function PerfilPublicoModal({
                     theme={theme}
                   />
                 </View>
+
+                {/* Si quien mira es la empresa que tiene contratado a este
+                    estudiante: "Trabaja para tu empresa" + botón "Añadir tarea". */}
+                {(rol === "talento" || rol === "alumno") && !!viewerUserId && (
+                  <TrabajaParaCard estudianteId={userId} viewerUserId={viewerUserId} C={C} />
+                )}
 
                 {/* Descripción */}
                 {perfil.descripcion ? (

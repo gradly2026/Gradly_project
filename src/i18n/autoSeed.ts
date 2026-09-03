@@ -1660,4 +1660,12 @@ export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
   "No se pudo enviar la oferta.": "Couldn't send the offer.",
   "Enviar oferta": "Send offer",
   "Re-contactar": "Re-contact",
+
+  // Fase 6 — tarjeta "Trabaja para tu empresa" + "Añadir tarea" en la vista
+  // de perfil del contratado.
+  "Trabaja para tu empresa": "Works for your company",
+  "Desde": "Since",
+  "Añadir tarea": "Add task",
+  "Tarea asignada. El empleado la verá en \"Mi Progreso\" y podrá marcarla completada.":
+    "Task assigned. The employee will see it in \"My Progress\" and can mark it complete.",
 };
