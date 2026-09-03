@@ -41,7 +41,6 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 // archivo para el detalle de cada transacción): mover el estado de una
 // aplicación, firmar la constancia de horas, y eliminar una vacante.
 import {
-  cambiarEstadoAplicacion,
   empresaFirmaConstancia,
   eliminarVacante,
 } from '../src/services/pasantiaService';
@@ -60,7 +59,6 @@ import {
   Alert,
   Dimensions,
   FlatList,
-  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -90,7 +88,6 @@ import RangoCard from '../src/components/RangoCard';
 import ResenasFeedback from '../src/components/ResenasFeedback';
 import SeccionMensajes from '../src/components/SeccionMensajes';
 import { SolicitudesEmpresa } from '../src/components/Matchmaking';
-import ProponerHorarioModal from '../src/components/ProponerHorarioModal';
 import type { AcuerdoData } from '../src/types/chat';
 import { PerfilStatsEmpresa, RedGradlyBanner } from '../src/components/NetworkStats';
 import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTour';
@@ -755,8 +752,6 @@ export default function DashboardEmpresa() {
   const [showCardModal,     setShowCardModal]      = useState(false);
   const [showFirmaModal,    setShowFirmaModal]     = useState<Aplicacion | null>(null);
   const [firmaConfirmada,   setFirmaConfirmada]    = useState(false);
-  // Horario de contratación (individual): se pide antes de mover a 'contratado'.
-  const [horarioContratoApp, setHorarioContratoApp] = useState<Aplicacion | null>(null);
 
   // Formulario nueva vacante
   const [nvTitulo,   setNvTitulo]   = useState('');
@@ -866,12 +861,6 @@ export default function DashboardEmpresa() {
   };
 
   const [renovandoPago, setRenovandoPago] = useState(false);
-
-  // ── Vista detallada de un candidato (sección Reclutar / Kanban) ──
-  const [candidatoSeleccionado, setCandidatoSeleccionado] = useState<any | null>(null);
-  const [showRechazoModal, setShowRechazoModal] = useState(false);
-  const [motivoRechazo, setMotivoRechazo] = useState('');
-  const [ratingEstudiante, setRatingEstudiante] = useState(0);
 
   // ── Firestore subscriptions ──────────────────────────────────────
   // Mismo patrón onSnapshot ya explicado en pasantiaService.ts/index.tsx:
@@ -1632,125 +1621,29 @@ export default function DashboardEmpresa() {
     } catch { Alert.alert('Error', 'No se pudo actualizar.'); }
   };
 
-  // ── Mover Kanban (usa cambiarEstadoAplicacion del servicio) ──────
-  // Contratar exige antes definir el horario (ver ProponerHorarioModal, sin
-  // sección de pago): el modal de horario hace de confirmación.
-  const moverEstado = async (app: Aplicacion, nuevoEstado: string) => {
-    if (nuevoEstado === 'contratado') {
-      setHorarioContratoApp(app);
-      return;
-    }
-    try {
-      await cambiarEstadoAplicacion(app.id, nuevoEstado);
-    } catch { Alert.alert('Error', 'No se pudo actualizar.'); }
-  };
-
-  // ── Confirmar contratación con el horario acordado ────────────────
-  const confirmarContratacion = async (acuerdo: AcuerdoData) => {
-    if (!horarioContratoApp) return;
-    try {
-      await cambiarEstadoAplicacion(
-        horarioContratoApp.id,
-        'contratado',
-        horarioContratoApp.vacante_id,
-        undefined,
-        undefined,
-        acuerdo,
-      );
-      setHorarioContratoApp(null);
-    } catch {
-      Alert.alert('Error', 'No se pudo confirmar la contratación.');
-    }
-  };
-
-  // ── Acciones sobre un candidato (vista detallada del Kanban) ──────
-  // Estos 5 handlers (entrevista/rechazar/calificar/CV/chatear) trabajan
-  // sobre `candidatoSeleccionado`, el objeto que abre el modal "VISTA
-  // DETALLADA DEL CANDIDATO" más abajo en el JSX. Cada uno hace un
-  // updateDoc/addDoc directo (no pasan por pasantiaService.ts porque son
-  // acciones simples de un solo documento, sin transacción).
-  const handleMandarEntrevista = async () => {
-    if (!candidatoSeleccionado) return;
-    try {
-      await updateDoc(doc(db, 'aplicaciones', candidatoSeleccionado.id), { estado: 'entrevista' });
-      // Notificar al estudiante
-      await addDoc(collection(db, 'notificaciones_app'), {
-        destinatario_id: candidatoSeleccionado.estudiante_id,
-        titulo: '¡Avanzaste a Entrevista!',
-        mensaje: `La empresa ha movido tu postulación a fase de Entrevista.`,
-        tipo: 'actualizacion_aplicacion',
-        leido: false,
-        fecha: serverTimestamp(),
-        referencia_id: candidatoSeleccionado.id,
-      });
-      Alert.alert('Éxito', 'Candidato movido a Entrevista');
-      setCandidatoSeleccionado(null);
-    } catch (error) { Alert.alert('Error', 'No se pudo actualizar.'); }
-  };
-
-  const handleRechazarCandidato = async () => {
-    if (!candidatoSeleccionado || motivoRechazo.trim() === '') return Alert.alert('Error', 'Escribe un motivo válido.');
-    try {
-      await updateDoc(doc(db, 'aplicaciones', candidatoSeleccionado.id), { estado: 'rechazado', motivo_rechazo: motivoRechazo });
-      await addDoc(collection(db, 'notificaciones_app'), {
-        destinatario_id: candidatoSeleccionado.estudiante_id,
-        titulo: 'Postulación rechazada',
-        mensaje: `Motivo: ${motivoRechazo}`,
-        tipo: 'actualizacion_aplicacion',
-        leido: false,
-        fecha: serverTimestamp(),
-        referencia_id: candidatoSeleccionado.id,
-      });
-      Alert.alert('Postulación rechazada', 'Se ha notificado al estudiante.');
-      setShowRechazoModal(false);
-      setMotivoRechazo('');
-      setCandidatoSeleccionado(null);
-    } catch (error) { Alert.alert('Error', 'No se pudo rechazar.'); }
-  };
-
-  const handleCalificarEstudiante = async (estrellas: number) => {
-    if (!candidatoSeleccionado) return;
-    setRatingEstudiante(estrellas);
-    try {
-      await addDoc(collection(db, 'evaluaciones_estudiantes'), {
-        estudiante_id: candidatoSeleccionado.estudiante_id,
-        empresa_id: user?.uid,
-        calificacion: estrellas,
-        fecha: serverTimestamp(),
-      });
-      Alert.alert('Gracias', 'Calificación guardada exitosamente.');
-    } catch (error) { Alert.alert('Error', 'No se pudo guardar la calificación.'); }
-  };
-
-  const descargarCV = (cvUrl: string) => {
-    if (cvUrl) { Linking.openURL(cvUrl); } else { Alert.alert('Sin CV', 'El estudiante no ha adjuntado un CV.'); }
-  };
-
-  // ── Chatear con el candidato seleccionado (chat directo empresa↔estudiante) ──
-  const handleChatearCandidato = async () => {
-    const estudianteId = candidatoSeleccionado?.estudiante_id;
-    if (!user?.uid || !estudianteId) {
-      Alert.alert('No disponible', 'No se pudo identificar al candidato para iniciar el chat.');
-      return;
-    }
-    const estudianteNombre = candidatoSeleccionado?.estudiante_nombre || 'Estudiante';
-    try {
-      const chatId = await abrirChatDirectoEmpresaEstudiante({
-        empresaId: user.uid,
-        empresaNombre: perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa',
-        estudianteId,
-        estudianteNombre,
-        contexto: 'candidatura',
-      });
-      setCandidatoSeleccionado(null);
-      // Se abre dentro de la sección "Mensajes" del propio dashboard (no una
-      // pantalla aparte) — mismo modelo que usa el estudiante.
-      setChatAAbrir({ id: chatId, peerName: estudianteNombre });
-      setSeccion('mensajes');
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo abrir el chat con el candidato.');
-    }
-  };
+  // ── Chatear con un candidato desde el listado de Reclutamiento ─────
+  // (empresa↔estudiante, chat directo). La lista nueva pasa el estudiante
+  // directo; el chat se abre dentro de la sección "Mensajes" del propio
+  // dashboard, igual que el modelo del estudiante.
+  const handleChatConCandidato = useCallback(
+    async ({ estudianteId, estudianteNombre }: { estudianteId: string; estudianteNombre: string }) => {
+      if (!user?.uid || !estudianteId) return;
+      try {
+        const chatId = await abrirChatDirectoEmpresaEstudiante({
+          empresaId: user.uid,
+          empresaNombre: perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa',
+          estudianteId,
+          estudianteNombre: estudianteNombre || 'Estudiante',
+          contexto: 'candidatura',
+        });
+        setChatAAbrir({ id: chatId, peerName: estudianteNombre || 'Estudiante' });
+        setSeccion('mensajes');
+      } catch {
+        Alert.alert('Error', 'No se pudo abrir el chat con el candidato.');
+      }
+    },
+    [user?.uid, perfil?.nombre_empresa, userProfile],
+  );
 
   // ── Firmar constancia (usa empresaFirmaConstancia del servicio) ───
   // La lógica real (marcar la aplicación como confirmada, generar la
@@ -1862,6 +1755,7 @@ export default function DashboardEmpresa() {
           vacantes={vacantes}
           apps={apps}
           onVerPerfilCandidato={setPerfilCandidatoId}
+          onChatCandidato={handleChatConCandidato}
         />
       );
       case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? 'Empresa'} />;
@@ -3117,135 +3011,10 @@ export default function DashboardEmpresa() {
         </View>
       </Modal>
 
-      {/* ── MODAL: VISTA DETALLADA DEL CANDIDATO (Reclutar) ── se abre desde
-          SeccionKanban al tocar una tarjeta. Mismos colores hardcodeados en
-          línea que el flujo de planes de arriba (p. ej. 'Sora-Bold' en vez
-          de FONTS.soraBold) — funciona, pero es la excepción a como se
-          escriben los estilos en el resto del archivo. */}
-      <Modal visible={!!candidatoSeleccionado && !showRechazoModal} transparent animationType="none">
-        <View style={styles.modalOverlay}>
-          {/* Contenido con texto blanco hardcodeado → tarjeta fija en oscuro
-              para que sea legible también en modo claro (mismo criterio que
-              el flujo de planes). */}
-          <View style={[styles.sheetCard, { padding: 0, overflow: 'hidden', backgroundColor: '#1a162b', borderColor: 'rgba(139,92,246,0.3)' }]}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {/* INFO VACANTE */}
-              <View style={{ padding: 20, backgroundColor: 'rgba(139,92,246,0.1)' }}>
-                <Text style={{ color: '#8b5cf6', fontFamily: 'Sora-Bold', fontSize: 14, marginBottom: 5 }}>POSTULACIÓN A:</Text>
-                <Text style={{ color: '#fff', fontFamily: 'Sora-Bold', fontSize: 18 }}>{candidatoSeleccionado?.vacante_titulo || candidatoSeleccionado?.titulo_vacante || 'Vacante'}</Text>
-              </View>
-
-              {/* INFO ESTUDIANTE */}
-              <View style={{ padding: 20, gap: 12 }}>
-                <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                  activeOpacity={0.7}
-                  disabled={!candidatoSeleccionado?.estudiante_id}
-                  onPress={() => setPerfilCandidatoId(candidatoSeleccionado?.estudiante_id ?? null)}
-                >
-                  <Text style={{ color: '#fff', fontSize: 20, fontFamily: 'Sora-Bold' }}>{candidatoSeleccionado?.estudiante_nombre}</Text>
-                  {!!candidatoSeleccionado?.estudiante_id && (
-                    <Ionicons name="chevron-forward-circle-outline" size={18} color="#a78bfa" />
-                  )}
-                </TouchableOpacity>
-                <Text style={{ color: '#a78bfa', fontSize: 14 }}>{candidatoSeleccionado?.estudiante_carrera}</Text>
-
-                <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 10, gap: 8 }}>
-                  <Text style={{ color: '#fff' }}>📧 {candidatoSeleccionado?.estudiante_email || 'No visible'}</Text>
-                  <Text style={{ color: '#fff' }}>📱 {candidatoSeleccionado?.estudiante_telefono || 'No visible'}</Text>
-                  <Text style={{ color: '#fff' }}>🔗 {candidatoSeleccionado?.estudiante_linkedin || 'Sin redes'}</Text>
-                  <Text style={{ color: '#10b981', marginTop: 5 }}>⏳ Horas de práctica: {candidatoSeleccionado?.estado_horas || 'En proceso'}</Text>
-                </View>
-
-                {/* ESTRELLAS (CALIFICACIÓN) */}
-                <View style={{ alignItems: 'center', marginVertical: 10 }}>
-                  <Text style={{ color: '#fff', marginBottom: 5, fontFamily: 'Inter-SemiBold' }}>Calificar a este candidato:</Text>
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <TouchableOpacity key={star} onPress={() => handleCalificarEstudiante(star)}>
-                        <Ionicons name={star <= ratingEstudiante ? 'star' : 'star-outline'} size={32} color="#eab308" />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                <TouchableOpacity style={{ backgroundColor: '#4f46e5', padding: 12, borderRadius: 10, alignItems: 'center' }} onPress={() => descargarCV(candidatoSeleccionado?.cv_url)}>
-                  <Text style={{ color: '#fff', fontFamily: 'Inter-SemiBold' }}>📄 Descargar CV (PDF)</Text>
-                </TouchableOpacity>
-
-                {/* CHATEAR CON EL CANDIDATO (chat directo empresa↔estudiante) */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    gap: 8,
-                    backgroundColor: candidatoSeleccionado?.estudiante_id ? '#8b5cf6' : 'rgba(139,92,246,0.3)',
-                    padding: 14,
-                    borderRadius: 12,
-                  }}
-                  disabled={!candidatoSeleccionado?.estudiante_id}
-                  onPress={handleChatearCandidato}
-                >
-                  <Ionicons name="chatbubble-outline" size={18} color="#fff" />
-                  <Text style={{ color: '#fff', fontFamily: 'Inter-SemiBold' }}>Chatear con Candidato</Text>
-                </TouchableOpacity>
-
-                {/* BOTONES DE ACCIÓN */}
-                <View style={{ flexDirection: 'row', gap: 10, marginTop: 15 }}>
-                  <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(239,68,68,0.2)', padding: 12, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#ef4444' }} onPress={() => setShowRechazoModal(true)}>
-                    <Text style={{ color: '#ef4444', fontFamily: 'Inter-SemiBold' }}>Rechazar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={{ flex: 1, backgroundColor: '#10b981', padding: 12, borderRadius: 10, alignItems: 'center' }} onPress={handleMandarEntrevista}>
-                    <Text style={{ color: '#fff', fontFamily: 'Inter-SemiBold' }}>Mandar a Entrevista</Text>
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity style={{ marginTop: 10, padding: 10, alignItems: 'center' }} onPress={() => setCandidatoSeleccionado(null)}>
-                  <Text style={{ color: 'rgba(255,255,255,0.6)' }}>Cerrar</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── SUB-MODAL: MOTIVO DE RECHAZO ── */}
-      <Modal visible={showRechazoModal} transparent animationType="none">
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1a162b', padding: 24, borderRadius: 16 }}>
-            <Text style={{ color: '#fff', fontSize: 18, fontFamily: 'Sora-Bold', marginBottom: 10 }}>Motivo del rechazo</Text>
-            <TextInput
-              style={{ backgroundColor: 'rgba(255,255,255,0.05)', color: '#fff', padding: 12, borderRadius: 10, minHeight: 80, textAlignVertical: 'top', marginBottom: 15 }}
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              placeholder="Explica brevemente por qué no fue seleccionado..."
-              multiline
-              value={motivoRechazo}
-              onChangeText={setMotivoRechazo}
-            />
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TouchableOpacity style={{ flex: 1, padding: 12, alignItems: 'center' }} onPress={() => setShowRechazoModal(false)}>
-                <Text style={{ color: 'gray' }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ flex: 1, backgroundColor: '#ef4444', padding: 12, borderRadius: 10, alignItems: 'center' }} onPress={handleRechazarCandidato}>
-                <Text style={{ color: '#fff', fontFamily: 'Inter-SemiBold' }}>Confirmar Rechazo</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── SUB-MODAL: Horario al contratar (vacante individual) ──
-          Solo horario: el pago/salario se acuerda de forma privada entre la
-          empresa y el postulante (graduado), fuera de Gradly. */}
-      <ProponerHorarioModal
-        visible={!!horarioContratoApp}
-        onClose={() => setHorarioContratoApp(null)}
-        onSubmit={confirmarContratacion}
-        title={`Horario · ${horarioContratoApp?.estudiante_nombre ?? ''}`}
-        submitLabel="Confirmar contratación"
-        showPago={false}
-        helperText="El salario o pago se acuerda de forma directa y privada entre tu empresa y el postulante graduado, fuera de Gradly. Aquí solo defines el horario de trabajo."
-      />
+      {/* La vista detallada de candidato del Kanban viejo se retiró en el
+          rediseño de Reclutamiento (Fase 2): las acciones de perfil, chat, CV,
+          rechazar y contratar ahora viven dentro de SeccionReclutamiento, en
+          el listado de candidatos de cada vacante. */}
     </View>
     </LiquidBackground>
   );

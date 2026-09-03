@@ -147,7 +147,8 @@ import GrupoDetailViewerModal from './GrupoDetailViewerModal';
 import AplicacionGrupoDetailModal from './AplicacionGrupoDetailModal';
 import ReclamoDetailModal from './ReclamoDetailModal';
 import ComprobanteInfoModal from './ComprobanteInfoModal';
-// Los 4 modales de detalle que se pueden abrir al tocar una notificación
+import PostulacionRechazadaModal from './PostulacionRechazadaModal';
+// Los modales de detalle que se pueden abrir al tocar una notificación
 // con referencia estructurada "kind:id" (ver notifRoute.ts). Cada uno es
 // un componente separado, definido en su propio archivo.
 
@@ -230,6 +231,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const [aplicacionModalId, setAplicacionModalId] = useState<string | null>(null);
   const [reclamoModalId, setReclamoModalId] = useState<string | null>(null);
   const [comprobanteModalId, setComprobanteModalId] = useState<string | null>(null);
+  const [postulacionRechazadaId, setPostulacionRechazadaId] = useState<string | null>(null);
   // 4 estados, uno por cada tipo de modal de detalle posible. Cada uno
   // guarda `null` (modal cerrado) o el ID del documento a mostrar (modal
   // abierto, mostrando ese documento específico). Ver más abajo cómo
@@ -392,6 +394,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         case 'grupo': setGrupoModalId(ref.id); break;
         case 'aplicacionGrupo': setAplicacionModalId(ref.id); break;
         case 'reclamo': setReclamoModalId(ref.id); break;
+        case 'postulacionRechazada': setPostulacionRechazadaId(ref.id); break;
       }
       return;
       // Termina aquí: si era una referencia estructurada, ya se decidió
@@ -695,6 +698,11 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         visible={!!comprobanteModalId}
         asignacionId={comprobanteModalId}
         onClose={() => setComprobanteModalId(null)}
+      />
+      <PostulacionRechazadaModal
+        visible={!!postulacionRechazadaId}
+        aplicacionId={postulacionRechazadaId}
+        onClose={() => setPostulacionRechazadaId(null)}
       />
     </>
   );

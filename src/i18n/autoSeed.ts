@@ -1499,4 +1499,41 @@ export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
   "Todavía nadie se ha postulado a esta vacante.": "No one has applied to this vacancy yet.",
   "Revisa tus vacantes de empleo y sus postulantes. Cada vacante muestra cuántos graduados se postularon; ábrela para ver el detalle, contratar o descartar. La pestaña \"Contratado\" reúne los puestos ya cubiertos.":
     "Review your job vacancies and their applicants. Each vacancy shows how many graduates applied; open it to see the details, hire, or reject. The \"Hired\" tab gathers the positions already filled.",
+
+  // Fase 2 — listado de candidatos: filtros, privilegios, y acciones
+  // (rechazar / contratar / cerrar vacante) + modal de postulación rechazada.
+  "Todos": "All",
+  "Ex-pasantes": "Former interns",
+  "Mejor calificados": "Top rated",
+  "Cumple con": "Meets",
+  "Hizo su pasantía con nuestra empresa": "Did their internship with our company",
+  "Cerrar vacante": "Close vacancy",
+  "Cerrar la vacante": "Close the vacancy",
+  "Ningún postulante coincide con este filtro.": "No applicant matches this filter.",
+  "Rechazar": "Reject",
+  "Contratar": "Hire",
+  "Ver CV": "View CV",
+  "Abrir en navegador": "Open in browser",
+  "Rechazar postulación": "Reject application",
+  "Explica por qué no fue seleccionado; el estudiante verá este motivo en sus notificaciones.":
+    "Explain why they weren't selected; the student will see this reason in their notifications.",
+  "Motivo del rechazo (mín. 10 caracteres)": "Reason for rejection (min. 10 characters)",
+  "Escribe un motivo de al menos 10 caracteres.": "Write a reason of at least 10 characters.",
+  "No se pudo rechazar. Intenta de nuevo.": "Couldn't reject. Try again.",
+  "Confirmar rechazo": "Confirm rejection",
+  "Confirmar contratación": "Confirm hiring",
+  "Vas a contratar a:": "You're about to hire:",
+  "Con esta contratación se cubren los cupos: el resto de postulantes quedarán descartados (con aviso de agradecimiento) y la vacante se cerrará.":
+    "This hire fills the open spots: the remaining applicants will be dismissed (with a thank-you notice) and the vacancy will close.",
+  "No se pudo completar la contratación.": "Couldn't complete the hiring.",
+  "La vacante quedará cerrada con los contratados que ya tienes. El resto de postulantes serán descartados con un aviso de agradecimiento. No se puede reabrir.":
+    "The vacancy will be closed with the hires you already have. The remaining applicants will be dismissed with a thank-you notice. It cannot be reopened.",
+  "No se pudo cerrar la vacante.": "Couldn't close the vacancy.",
+  // PostulacionRechazadaModal (lo ve el estudiante desde su campana).
+  "Postulación no seleccionada": "Application not selected",
+  "No se encontró esta postulación.": "This application was not found.",
+  "Tu postulación no fue seleccionada esta vez.": "Your application wasn't selected this time.",
+  "Motivo de la empresa": "Company's reason",
+  "No te desanimes: sigue habiendo vacantes abiertas. Revisa las oportunidades y postúlate a las que encajen con tu carrera y tus skills.":
+    "Don't be discouraged: there are still open vacancies. Check the opportunities and apply to the ones that fit your degree and your skills.",
 };

@@ -23,16 +23,25 @@
 // ════════════════════════════════════════════════════════════════════════
 
 /** Tipos de entidad reconocidos en una referencia estructurada "kind:id". */
-export type NotifRefKind = 'vacante' | 'grupo' | 'aplicacionGrupo' | 'reclamo' | 'comprobante';
+export type NotifRefKind =
+  | 'vacante'
+  | 'grupo'
+  | 'aplicacionGrupo'
+  | 'reclamo'
+  | 'comprobante'
+  | 'postulacionRechazada';
 // Tipo de TypeScript que limita `kind` a exactamente estos valores de
 // texto posibles. Cada uno corresponde a un modal de detalle distinto:
-//   'vacante'         → VacanteDetailByIdModal.tsx
-//   'grupo'           → GrupoDetailViewerModal.tsx
-//   'aplicacionGrupo' → AplicacionGrupoDetailModal.tsx
-//   'reclamo'         → ReclamoDetailModal.tsx
-//   'comprobante'     → ComprobanteInfoModal.tsx (ciclo del comprobante de
-//                       finalización de una pasantía por cupo; el id es el de
-//                       la `asignaciones_cupo`)
+//   'vacante'              → VacanteDetailByIdModal.tsx
+//   'grupo'               → GrupoDetailViewerModal.tsx
+//   'aplicacionGrupo'     → AplicacionGrupoDetailModal.tsx
+//   'reclamo'             → ReclamoDetailModal.tsx
+//   'comprobante'         → ComprobanteInfoModal.tsx (ciclo del comprobante de
+//                           finalización de una pasantía por cupo; el id es el
+//                           de la `asignaciones_cupo`)
+//   'postulacionRechazada' → PostulacionRechazadaModal.tsx (el id es el de la
+//                           `aplicaciones`; muestra a qué vacante se postuló y
+//                           el motivo con que la empresa la descartó)
 
 export interface NotifRef {
   // Forma del resultado "ya interpretado": qué tipo de entidad es, y cuál
@@ -41,7 +50,7 @@ export interface NotifRef {
   id: string;
 }
 
-const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante'];
+const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'postulacionRechazada'];
 // La MISMA lista de valores que el tipo NotifRefKind de arriba, pero como
 // un ARRAY real (no solo un tipo). Se necesita en tiempo de ejecución
 // (los tipos de TypeScript desaparecen al compilar, no existen dentro del
