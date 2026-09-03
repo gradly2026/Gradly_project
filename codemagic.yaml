@@ -15,4 +15,4 @@ workflows:
       - name: Compilar APK de debug
         script: cd android && ./gradlew assembleDebug
     artifacts:
-      - android/app/build/outputs/apk/**/*.apk
+      - android/app/build/outputs/apk/release/*.apk
