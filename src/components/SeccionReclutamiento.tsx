@@ -47,7 +47,6 @@ import {
   Image,
   Linking,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -659,7 +658,7 @@ function DetallePuesto({
                 .join(', ') || '—'}
             </Text>
           )}
-          {Platform.OS !== 'web' && !!vacante.ubicacion_coords && (
+          {!!vacante.ubicacion_coords && (
             <View pointerEvents="none" style={s.mapa}>
               <MapViewer
                 mapRegion={{
