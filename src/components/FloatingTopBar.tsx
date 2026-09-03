@@ -148,6 +148,7 @@ import AplicacionGrupoDetailModal from './AplicacionGrupoDetailModal';
 import ReclamoDetailModal from './ReclamoDetailModal';
 import ComprobanteInfoModal from './ComprobanteInfoModal';
 import PostulacionRechazadaModal from './PostulacionRechazadaModal';
+import ContratoAvisoModal from './ContratoAvisoModal';
 // Los modales de detalle que se pueden abrir al tocar una notificación
 // con referencia estructurada "kind:id" (ver notifRoute.ts). Cada uno es
 // un componente separado, definido en su propio archivo.
@@ -232,6 +233,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const [reclamoModalId, setReclamoModalId] = useState<string | null>(null);
   const [comprobanteModalId, setComprobanteModalId] = useState<string | null>(null);
   const [postulacionRechazadaId, setPostulacionRechazadaId] = useState<string | null>(null);
+  const [contratoAvisoId, setContratoAvisoId] = useState<string | null>(null);
   // 4 estados, uno por cada tipo de modal de detalle posible. Cada uno
   // guarda `null` (modal cerrado) o el ID del documento a mostrar (modal
   // abierto, mostrando ese documento específico). Ver más abajo cómo
@@ -395,6 +397,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         case 'aplicacionGrupo': setAplicacionModalId(ref.id); break;
         case 'reclamo': setReclamoModalId(ref.id); break;
         case 'postulacionRechazada': setPostulacionRechazadaId(ref.id); break;
+        case 'contratoAviso': setContratoAvisoId(ref.id); break;
       }
       return;
       // Termina aquí: si era una referencia estructurada, ya se decidió
@@ -703,6 +706,11 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         visible={!!postulacionRechazadaId}
         aplicacionId={postulacionRechazadaId}
         onClose={() => setPostulacionRechazadaId(null)}
+      />
+      <ContratoAvisoModal
+        visible={!!contratoAvisoId}
+        contratoId={contratoAvisoId}
+        onClose={() => setContratoAvisoId(null)}
       />
     </>
   );

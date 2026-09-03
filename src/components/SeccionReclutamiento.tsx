@@ -33,8 +33,11 @@ import {
   collection,
   doc,
   getDoc,
+  onSnapshot,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -61,11 +64,21 @@ import { matchSkills, normalizarSkill } from '../utils/skills';
 import { scoreCandidato } from '../utils/rankingCandidatos';
 import { usePasantesEmpresa } from '../hooks/usePasantesEmpresa';
 import {
+  COL_CONTRATOS,
+  COL_TAREAS,
+  advertirEmpleado,
+  asignarTarea,
   cerrarVacante,
+  completarTarea,
   contratarCandidato,
+  despedirEmpleado,
+  reportarEmpleado,
+  type ContratoLaboral,
+  type TareaLaboral,
   type VacanteParaContrato,
 } from '../services/contratoService';
 import { enviarNotificacion } from '../services/notificationService';
+import { MOTIVOS_REPORTE } from '../services/reporteService';
 
 // ── Formas mínimas que usa esta pantalla. El `Vacante` / `Aplicacion`
 //    completos viven en app/dashboard-empresa.tsx (no exportados); estas
@@ -188,17 +201,36 @@ export default function SeccionReclutamiento({
   const [tab, setTab] = useState<'reclutamiento' | 'contratado'>('reclutamiento');
   const [filtroContratado, setFiltroContratado] = useState<'puestos' | 'todos'>('puestos');
   const [vacanteSelId, setVacanteSelId] = useState<string | null>(null);
+  // Drill-in de "Todos los contratados": el contrato (empleado) enfocado.
+  const [empleadoSelId, setEmpleadoSelId] = useState<string | null>(null);
 
-  // ── Conteo de postulantes por vacante (pendientes / contratados) ──
-  const conteos = useMemo(() => {
-    const m: Record<string, { pendientes: number; contratados: number }> = {};
-    for (const a of apps) {
-      if (!m[a.vacante_id]) m[a.vacante_id] = { pendientes: 0, contratados: 0 };
-      if (EN_RECLUTAMIENTO.has(a.estado)) m[a.vacante_id].pendientes += 1;
-      else if (a.estado === 'contratado') m[a.vacante_id].contratados += 1;
-    }
+  // ── Contratos laborales de la empresa (fuente de verdad del lado
+  //    "Contratado": estado real, reportes, advertencias, horario). ──
+  const [contratos, setContratos] = useState<ContratoLaboral[]>([]);
+  useEffect(() => {
+    if (!empresaId) return;
+    const unsub = onSnapshot(
+      query(collection(db, COL_CONTRATOS), where('empresaId', '==', empresaId)),
+      (snap) => setContratos(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as ContratoLaboral))),
+      (e) => console.warn('contratos empresa:', e),
+    );
+    return unsub;
+  }, [empresaId]);
+  const contratosActivos = useMemo(() => contratos.filter((c) => c.estado === 'activo'), [contratos]);
+
+  // ── Conteo de postulantes PENDIENTES por vacante (para el orden pan caliente). ──
+  const pendientesPorVacante = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const a of apps) if (EN_RECLUTAMIENTO.has(a.estado)) m[a.vacante_id] = (m[a.vacante_id] ?? 0) + 1;
     return m;
   }, [apps]);
+
+  // Contratos ACTIVOS agrupados por vacante (para "Puestos").
+  const contratosPorVacante = useMemo(() => {
+    const m: Record<string, ContratoLaboral[]> = {};
+    for (const c of contratosActivos) (m[c.vacanteId] = m[c.vacanteId] ?? []).push(c);
+    return m;
+  }, [contratosActivos]);
 
   // Solo vacantes de EMPLEO (graduados). Las pasantías siguen por su carril
   // (Matchmaking / reparto de cupos), no aparecen aquí.
@@ -212,51 +244,62 @@ export default function SeccionReclutamiento({
     () =>
       [...vacantesEmpleo]
         .filter((v) => !v.cerrada)
-        .sort((a, b) => (conteos[b.id]?.pendientes ?? 0) - (conteos[a.id]?.pendientes ?? 0)),
-    [vacantesEmpleo, conteos],
+        .sort((a, b) => (pendientesPorVacante[b.id] ?? 0) - (pendientesPorVacante[a.id] ?? 0)),
+    [vacantesEmpleo, pendientesPorVacante],
   );
 
-  // "Contratado" → filtro "Puestos": vacantes con al menos un contratado.
+  /** Vacante mínima reconstruida desde un contrato (por si el doc se borró). */
+  const vacanteDesdeContrato = (c: ContratoLaboral): VacanteReclutamiento => ({
+    id: c.vacanteId,
+    titulo: c.vacanteTitulo,
+    area: c.area,
+    modalidad: c.modalidad,
+    modalidad_contrato: c.modalidad_contrato,
+    ubicacion_texto: c.ubicacion_texto,
+    horario: c.horario,
+    salario_min: c.salario_min,
+    salario_max: c.salario_max,
+    categoria: 'vacante',
+    cerrada: true,
+  });
+
+  // "Contratado" → filtro "Puestos": una tarjeta por vacante con ≥1 contrato activo.
   const puestos = useMemo(
     () =>
-      [...vacantesEmpleo]
-        .filter((v) => (conteos[v.id]?.contratados ?? 0) > 0)
-        .sort((a, b) => (conteos[b.id]?.contratados ?? 0) - (conteos[a.id]?.contratados ?? 0)),
-    [vacantesEmpleo, conteos],
+      Object.keys(contratosPorVacante)
+        .map((vid) => vacantesEmpleo.find((v) => v.id === vid) ?? vacanteDesdeContrato(contratosPorVacante[vid][0]))
+        .sort((a, b) => (contratosPorVacante[b.id]?.length ?? 0) - (contratosPorVacante[a.id]?.length ?? 0)),
+    [contratosPorVacante, vacantesEmpleo],
   );
 
-  // "Contratado" → filtro "Todos los contratados": lista plana de personas.
-  const contratados = useMemo(() => {
-    const idsEmpleo = new Set(vacantesEmpleo.map((v) => v.id));
-    return apps
-      .filter((a) => a.estado === 'contratado' && idsEmpleo.has(a.vacante_id))
-      .map((a) => {
-        const v = vacantesEmpleo.find((x) => x.id === a.vacante_id);
-        return { ...a, puestoTitulo: v?.titulo ?? a.titulo_vacante ?? 'Puesto' };
-      })
-      .sort((x, y) => x.estudiante_nombre.localeCompare(y.estudiante_nombre));
-  }, [apps, vacantesEmpleo]);
+  // "Contratado" → filtro "Todos los contratados": lista plana de empleados.
+  const contratadosPlano = useMemo(
+    () =>
+      [...contratosActivos].sort((a, b) => (a.estudianteNombre || '').localeCompare(b.estudianteNombre || '')),
+    [contratosActivos],
+  );
 
   const vacanteSel = vacanteSelId ? vacantes.find((v) => v.id === vacanteSelId) ?? null : null;
+  const empleadoSel = empleadoSelId ? contratos.find((c) => c.id === empleadoSelId) ?? null : null;
 
   // Tras contratar (o cubrir cupos): llevar a la empresa a "Contratado".
   const irAContratado = () => {
     setTab('contratado');
     setFiltroContratado('puestos');
     setVacanteSelId(null);
+    setEmpleadoSelId(null);
   };
 
-  // ── MICROSECCIÓN interna ──
-  if (vacanteSel) {
+  // ── MICROSECCIÓN: vacante en reclutamiento (candidatos) ──
+  if (tab === 'reclutamiento' && vacanteSel) {
     return (
       <VacanteMicroseccion
         vacante={vacanteSel}
         apps={apps}
-        modo={tab}
         empresaId={empresaId}
         empresaNombre={empresaNombre}
         pasantes={pasantes}
-        contratadosCount={conteos[vacanteSel.id]?.contratados ?? 0}
+        contratadosCount={contratosPorVacante[vacanteSel.id]?.length ?? 0}
         colors={colors}
         s={s}
         onVolver={() => setVacanteSelId(null)}
@@ -264,6 +307,31 @@ export default function SeccionReclutamiento({
         onChatCandidato={onChatCandidato}
         onContratado={irAContratado}
         onVacanteCerrada={irAContratado}
+      />
+    );
+  }
+
+  // ── MICROSECCIÓN: puesto contratado (detalle, tareas, empleados) ──
+  const vacantePuesto = tab === 'contratado'
+    ? (empleadoSel
+        ? (vacantes.find((v) => v.id === empleadoSel.vacanteId) ?? vacanteDesdeContrato(empleadoSel))
+        : vacanteSel)
+    : null;
+  if (tab === 'contratado' && vacantePuesto) {
+    const contratosDelPuesto = contratosPorVacante[vacantePuesto.id] ?? (empleadoSel ? [empleadoSel] : []);
+    return (
+      <PuestoMicroseccion
+        vacante={vacantePuesto}
+        contratos={contratosDelPuesto}
+        empresaId={empresaId}
+        empresaNombre={empresaNombre}
+        focoEmpleadoId={empleadoSel?.estudianteId ?? null}
+        colors={colors}
+        s={s}
+        onVolver={() => { setVacanteSelId(null); setEmpleadoSelId(null); }}
+        onVerPerfil={onVerPerfilCandidato}
+        onChatCandidato={onChatCandidato}
+        onCambiarFoco={(contratoId) => setEmpleadoSelId(contratoId)}
       />
     );
   }
@@ -283,7 +351,7 @@ export default function SeccionReclutamiento({
             <TouchableOpacity
               key={t.id}
               style={[s.tab, activo && s.tabActivo]}
-              onPress={() => { setTab(t.id); setVacanteSelId(null); }}
+              onPress={() => { setTab(t.id); setVacanteSelId(null); setEmpleadoSelId(null); }}
               activeOpacity={0.8}
             >
               <Text style={[s.tabTxt, activo && s.tabTxtActivo]}>{t.label}</Text>
@@ -344,7 +412,7 @@ export default function SeccionReclutamiento({
                 <VacanteCard
                   key={v.id}
                   vacante={v}
-                  conteo={conteos[v.id]?.pendientes ?? 0}
+                  conteo={pendientesPorVacante[v.id] ?? 0}
                   etiquetaConteo="postulantes"
                   width={cardWidth}
                   colors={colors}
@@ -367,7 +435,7 @@ export default function SeccionReclutamiento({
                 <VacanteCard
                   key={v.id}
                   vacante={v}
-                  conteo={conteos[v.id]?.contratados ?? 0}
+                  conteo={contratosPorVacante[v.id]?.length ?? 0}
                   etiquetaConteo="contratados"
                   esPuesto
                   width={cardWidth}
@@ -383,7 +451,7 @@ export default function SeccionReclutamiento({
 
       {tab === 'contratado' && filtroContratado === 'todos' && (
         <FlatList
-          data={contratados}
+          data={contratadosPlano}
           keyExtractor={(item) => item.id}
           style={{ flex: 1 }}
           contentContainerStyle={s.listaPlana}
@@ -393,15 +461,18 @@ export default function SeccionReclutamiento({
             <TouchableOpacity
               style={s.filaPersona}
               activeOpacity={0.75}
-              onPress={() => item.estudiante_id && onVerPerfilCandidato(item.estudiante_id)}
-              disabled={!item.estudiante_id}
+              onPress={() => setEmpleadoSelId(item.id)}
             >
-              <View style={s.avatar}>
-                <Ionicons name="person" size={16} color={colors.primaryLight} />
-              </View>
+              {item.estudianteFoto ? (
+                <Image source={{ uri: item.estudianteFoto }} style={s.avatar} />
+              ) : (
+                <View style={s.avatar}>
+                  <Ionicons name="person" size={16} color={colors.primaryLight} />
+                </View>
+              )}
               <View style={{ flex: 1 }}>
-                <Text style={s.personaNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
-                <Text style={s.personaMeta} numberOfLines={1}>{item.puestoTitulo}</Text>
+                <Text style={s.personaNombre} numberOfLines={1} noTranslate>{item.estudianteNombre}</Text>
+                <Text style={s.personaMeta} numberOfLines={1} noTranslate>{item.vacanteTitulo}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </TouchableOpacity>
@@ -500,35 +571,18 @@ function VacanteCard({
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// MICROSECCIÓN: detalle de una vacante + listado de candidatos.
+// DETALLE DEL PUESTO/VACANTE — los datos comunes (título, chips, ubicación,
+// descripción, skills, datos rápidos). Lo usan la microsección de
+// reclutamiento y la de puesto contratado.
 // ────────────────────────────────────────────────────────────────────────
-function VacanteMicroseccion({
-  vacante, apps, modo, empresaId, empresaNombre, pasantes, contratadosCount,
-  colors, s, onVolver, onVerPerfil, onChatCandidato, onContratado, onVacanteCerrada,
+function DetallePuesto({
+  vacante, esPuesto, colors, s,
 }: {
   vacante: VacanteReclutamiento;
-  apps: AplicacionReclutamiento[];
-  modo: 'reclutamiento' | 'contratado';
-  empresaId: string;
-  empresaNombre: string;
-  pasantes: Set<string>;
-  contratadosCount: number;
+  esPuesto?: boolean;
   colors: GradlyColors;
   s: ReturnType<typeof makeStyles>;
-  onVolver: () => void;
-  onVerPerfil: (estudianteId: string) => void;
-  onChatCandidato: (args: ChatCandidatoArgs) => void;
-  onContratado: () => void;
-  onVacanteCerrada: () => void;
 }) {
-  const esContratado = modo === 'contratado';
-  const candidatosPendientes = apps.filter(
-    (a) => a.vacante_id === vacante.id && EN_RECLUTAMIENTO.has(a.estado),
-  );
-  const contratadosDelPuesto = apps.filter(
-    (a) => a.vacante_id === vacante.id && a.estado === 'contratado',
-  );
-
   const total = cuposTotales(vacante);
   const libres = cuposDisponibles(vacante);
   const salario = textoSalario(vacante.salario_min, vacante.salario_max);
@@ -537,19 +591,11 @@ function VacanteMicroseccion({
   const fechaLim = fechaLimiteLegible(vacante.fecha_limite);
 
   return (
-    <ScrollView contentContainerStyle={s.microWrap} showsVerticalScrollIndicator={false}>
-      {/* Volver */}
-      <TouchableOpacity style={s.volver} onPress={onVolver} activeOpacity={0.7}>
-        <Ionicons name="chevron-back" size={18} color={colors.primaryLight} />
-        <Text style={s.volverTxt}>Volver</Text>
-      </TouchableOpacity>
-
-      {/* 1. Título */}
+    <>
       <Text style={s.microTitulo}>{vacante.titulo}</Text>
 
-      {/* 2·3·5 Área / Modalidad / Modalidad de contrato */}
       <View style={s.chipsRow}>
-        <View style={s.chip}><Text style={s.chipTxt}>{esContratado ? 'Puesto' : 'Vacante'}</Text></View>
+        <View style={s.chip}><Text style={s.chipTxt}>{esPuesto ? 'Puesto' : 'Vacante'}</Text></View>
         {!!vacante.area && <View style={s.chip}><Text style={s.chipTxt}>{vacante.area}</Text></View>}
         {!!vacante.modalidad && <View style={s.chip}><Text style={s.chipTxt}>{vacante.modalidad}</Text></View>}
         {!!vacante.modalidad_contrato && (
@@ -560,7 +606,6 @@ function VacanteMicroseccion({
         ))}
       </View>
 
-      {/* 4. Ubicación (solo Presencial / Híbrido) */}
       {conUbicacion && (vacante.ubicacion_texto || vacante.ubicacion_coords) && (
         <View style={s.microBox}>
           <Text style={s.microLabel}>Ubicación</Text>
@@ -571,9 +616,6 @@ function VacanteMicroseccion({
                 .join(', ') || '—'}
             </Text>
           )}
-          {/* El mapa interactivo solo tiene sentido en la app móvil; en web el
-              componente muestra un texto de respaldo pensado para PUBLICAR una
-              vacante, que no aplica en esta vista de solo lectura. */}
           {Platform.OS !== 'web' && !!vacante.ubicacion_coords && (
             <View pointerEvents="none" style={s.mapa}>
               <MapViewer
@@ -590,7 +632,6 @@ function VacanteMicroseccion({
         </View>
       )}
 
-      {/* 6. Descripción */}
       {!!vacante.descripcion && (
         <View style={s.microBox}>
           <Text style={s.microLabel}>Descripción</Text>
@@ -598,10 +639,9 @@ function VacanteMicroseccion({
         </View>
       )}
 
-      {/* 7. Skills */}
       {(vacante.skills_requeridas ?? []).length > 0 && (
         <View style={s.microBox}>
-          <Text style={s.microLabel}>Skills requeridas</Text>
+          <Text style={s.microLabel}>{esPuesto ? 'Skills del puesto' : 'Skills requeridas'}</Text>
           <View style={s.chipsRow}>
             {(vacante.skills_requeridas ?? []).map((sk, i) => (
               <View key={`${sk}-${i}`} style={[s.chip, s.chipSkill]}>
@@ -612,27 +652,31 @@ function VacanteMicroseccion({
         </View>
       )}
 
-      {/* 8·9·10·11 Datos rápidos */}
       <View style={s.microBox}>
-        <View style={s.datoFila}>
-          <Ionicons name="calendar-outline" size={15} color={colors.textMuted} />
-          <Text style={s.datoTxt}>Fecha límite:</Text>
-          <Text style={s.datoTxt} noTranslate>{fechaLim || '—'}</Text>
-        </View>
-        <View style={s.datoFila}>
-          <Ionicons name="people-outline" size={15} color={colors.textMuted} />
-          {total === null ? (
-            <Text style={s.datoTxt}>Cupos: sin límite declarado</Text>
-          ) : (
-            <>
-              <Text style={s.datoTxt}>Cupos disponibles:</Text>
-              <Text style={s.datoTxt} noTranslate>{`${libres ?? 0} / ${total}`}</Text>
-            </>
-          )}
-        </View>
+        {!esPuesto && (
+          <View style={s.datoFila}>
+            <Ionicons name="calendar-outline" size={15} color={colors.textMuted} />
+            <Text style={s.datoTxt}>Fecha límite:</Text>
+            <Text style={s.datoTxt} noTranslate>{fechaLim || '—'}</Text>
+          </View>
+        )}
+        {!esPuesto && (
+          <View style={s.datoFila}>
+            <Ionicons name="people-outline" size={15} color={colors.textMuted} />
+            {total === null ? (
+              <Text style={s.datoTxt}>Cupos: sin límite declarado</Text>
+            ) : (
+              <>
+                <Text style={s.datoTxt}>Cupos disponibles:</Text>
+                <Text style={s.datoTxt} noTranslate>{`${libres ?? 0} / ${total}`}</Text>
+              </>
+            )}
+          </View>
+        )}
         {!!horario && (
           <View style={s.datoFila}>
             <Ionicons name="time-outline" size={15} color={colors.textMuted} />
+            <Text style={s.datoTxt}>{esPuesto ? 'Horario laboral:' : ''}</Text>
             <Text style={s.datoTxt} noTranslate>{horario}</Text>
           </View>
         )}
@@ -642,75 +686,66 @@ function VacanteMicroseccion({
             <Text style={s.datoTxt} noTranslate>{salario}</Text>
           </View>
         )}
+        {esPuesto && !horario && (
+          <View style={s.datoFila}>
+            <Ionicons name="time-outline" size={15} color={colors.textMuted} />
+            <Text style={s.datoTxt}>Sin horario laboral declarado.</Text>
+          </View>
+        )}
       </View>
-
-      {/* 12. Candidatos */}
-      {esContratado ? (
-        <ContratadosBasico
-          contratados={contratadosDelPuesto}
-          colors={colors}
-          s={s}
-          onVerPerfil={onVerPerfil}
-        />
-      ) : (
-        <ListaCandidatos
-          vacante={vacante}
-          candidatos={candidatosPendientes}
-          empresaId={empresaId}
-          empresaNombre={empresaNombre}
-          pasantes={pasantes}
-          contratadosCount={contratadosCount}
-          colors={colors}
-          s={s}
-          onVerPerfil={onVerPerfil}
-          onChatCandidato={onChatCandidato}
-          onContratado={onContratado}
-          onVacanteCerrada={onVacanteCerrada}
-        />
-      )}
-    </ScrollView>
+    </>
   );
 }
 
-/** Listado de solo lectura de contratados de un puesto (Fase 3 lo enriquece). */
-function ContratadosBasico({
-  contratados, colors, s, onVerPerfil,
+// ────────────────────────────────────────────────────────────────────────
+// MICROSECCIÓN: detalle de una vacante en reclutamiento + listado de candidatos.
+// ────────────────────────────────────────────────────────────────────────
+function VacanteMicroseccion({
+  vacante, apps, empresaId, empresaNombre, pasantes, contratadosCount,
+  colors, s, onVolver, onVerPerfil, onChatCandidato, onContratado, onVacanteCerrada,
 }: {
-  contratados: AplicacionReclutamiento[];
+  vacante: VacanteReclutamiento;
+  apps: AplicacionReclutamiento[];
+  empresaId: string;
+  empresaNombre: string;
+  pasantes: Set<string>;
+  contratadosCount: number;
   colors: GradlyColors;
   s: ReturnType<typeof makeStyles>;
-  onVerPerfil: (id: string) => void;
+  onVolver: () => void;
+  onVerPerfil: (estudianteId: string) => void;
+  onChatCandidato: (args: ChatCandidatoArgs) => void;
+  onContratado: () => void;
+  onVacanteCerrada: () => void;
 }) {
+  const candidatosPendientes = apps.filter(
+    (a) => a.vacante_id === vacante.id && EN_RECLUTAMIENTO.has(a.estado),
+  );
+
   return (
-    <>
-      <View style={s.candHeader}>
-        <Ionicons name="checkmark-circle" size={16} color={colors.primaryLight} />
-        <Text style={s.microLabel} noTranslate>{contratados.length}{' '}</Text>
-        <Text style={s.microLabel}>contratados</Text>
-      </View>
-      {contratados.length === 0 ? (
-        <Text style={s.vacio}>Este puesto no tiene contratados.</Text>
-      ) : (
-        <View style={{ gap: 8 }}>
-          {contratados.map((c) => (
-            <TouchableOpacity
-              key={c.id}
-              style={s.filaPersona}
-              activeOpacity={0.75}
-              onPress={() => c.estudiante_id && onVerPerfil(c.estudiante_id)}
-              disabled={!c.estudiante_id}
-            >
-              <View style={s.avatar}><Ionicons name="person" size={16} color={colors.primaryLight} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.personaNombre} numberOfLines={1}>{c.estudiante_nombre}</Text>
-                <Text style={s.personaMeta} numberOfLines={1}>Ver perfil</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </>
+    <ScrollView contentContainerStyle={s.microWrap} showsVerticalScrollIndicator={false}>
+      <TouchableOpacity style={s.volver} onPress={onVolver} activeOpacity={0.7}>
+        <Ionicons name="chevron-back" size={18} color={colors.primaryLight} />
+        <Text style={s.volverTxt}>Volver</Text>
+      </TouchableOpacity>
+
+      <DetallePuesto vacante={vacante} colors={colors} s={s} />
+
+      <ListaCandidatos
+        vacante={vacante}
+        candidatos={candidatosPendientes}
+        empresaId={empresaId}
+        empresaNombre={empresaNombre}
+        pasantes={pasantes}
+        contratadosCount={contratadosCount}
+        colors={colors}
+        s={s}
+        onVerPerfil={onVerPerfil}
+        onChatCandidato={onChatCandidato}
+        onContratado={onContratado}
+        onVacanteCerrada={onVacanteCerrada}
+      />
+    </ScrollView>
   );
 }
 
@@ -1195,6 +1230,653 @@ function FiltroChip({
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// FASE 3 · MICROSECCIÓN DEL PUESTO CONTRATADO — detalle + horario + tareas +
+// empleados con acciones (chat / reportar / despedir). Se abre desde
+// "Puestos" (todos los empleados) o desde "Todos los contratados" (un
+// empleado enfocado + sus compañeros como enlaces).
+// ════════════════════════════════════════════════════════════════════════
+function PuestoMicroseccion({
+  vacante, contratos, empresaId, empresaNombre, focoEmpleadoId,
+  colors, s, onVolver, onVerPerfil, onChatCandidato, onCambiarFoco,
+}: {
+  vacante: VacanteReclutamiento;
+  contratos: ContratoLaboral[];
+  empresaId: string;
+  empresaNombre: string;
+  focoEmpleadoId: string | null;
+  colors: GradlyColors;
+  s: ReturnType<typeof makeStyles>;
+  onVolver: () => void;
+  onVerPerfil: (estudianteId: string) => void;
+  onChatCandidato: (args: ChatCandidatoArgs) => void;
+  onCambiarFoco: (contratoId: string) => void;
+}) {
+  const foco = focoEmpleadoId ? contratos.find((c) => c.estudianteId === focoEmpleadoId) ?? null : null;
+  const empleados = foco ? [foco] : contratos;
+  const companeros = foco ? contratos.filter((c) => c.id !== foco.id) : [];
+
+  const [reportarC, setReportarC] = useState<ContratoLaboral | null>(null);
+  const [despedirC, setDespedirC] = useState<ContratoLaboral | null>(null);
+  const [asignarOpen, setAsignarOpen] = useState(false);
+  const [sugerirDespido, setSugerirDespido] = useState<ContratoLaboral | null>(null);
+
+  return (
+    <ScrollView contentContainerStyle={s.microWrap} showsVerticalScrollIndicator={false}>
+      <TouchableOpacity style={s.volver} onPress={onVolver} activeOpacity={0.7}>
+        <Ionicons name="chevron-back" size={18} color={colors.primaryLight} />
+        <Text style={s.volverTxt}>Volver</Text>
+      </TouchableOpacity>
+
+      {/* Cabecera de empleado individual (vista desde "Todos los contratados") */}
+      {foco && (
+        <View style={s.empHeader}>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
+            activeOpacity={0.75}
+            onPress={() => onVerPerfil(foco.estudianteId)}
+          >
+            {foco.estudianteFoto ? (
+              <Image source={{ uri: foco.estudianteFoto }} style={s.candAvatar} />
+            ) : (
+              <View style={s.candAvatar}><Ionicons name="person" size={18} color={colors.primaryLight} /></View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={s.microTitulo} numberOfLines={1} noTranslate>{foco.estudianteNombre}</Text>
+              <Text style={s.personaMeta}>Ver perfil</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={s.accionBtn}
+            onPress={() => onChatCandidato({ estudianteId: foco.estudianteId, estudianteNombre: foco.estudianteNombre })}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primaryLight} />
+            <Text style={s.accionTxt}>Chat</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <DetallePuesto vacante={vacante} esPuesto colors={colors} s={s} />
+
+      {/* Compañeros (solo en vista individual y si hay más de uno) */}
+      {foco && companeros.length > 0 && (
+        <View style={s.microBox}>
+          <Text style={s.microLabel}>Compañeros</Text>
+          <View style={{ gap: 6 }}>
+            {companeros.map((c) => (
+              <TouchableOpacity key={c.id} style={s.companeroRow} onPress={() => onCambiarFoco(c.id)} activeOpacity={0.75}>
+                <Ionicons name="person-circle-outline" size={18} color={colors.primaryLight} />
+                <Text style={s.companeroTxt} noTranslate>{c.estudianteNombre}</Text>
+                <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Tareas */}
+      <TareasSection
+        vacanteId={vacante.id}
+        vacanteTitulo={vacante.titulo}
+        empresaId={empresaId}
+        empresaNombre={empresaNombre}
+        empleados={foco ? [foco] : contratos}
+        colors={colors}
+        s={s}
+        onAbrirAsignar={() => setAsignarOpen(true)}
+      />
+
+      {/* Empleados del puesto */}
+      <View style={s.candHeader}>
+        <Ionicons name="briefcase" size={16} color={colors.primaryLight} />
+        <Text style={s.microLabel} noTranslate>{empleados.length}{' '}</Text>
+        <Text style={s.microLabel}>{foco ? 'empleado' : 'empleados'}</Text>
+      </View>
+      <View style={{ gap: 10 }}>
+        {empleados.map((c) => (
+          <EmpleadoRow
+            key={c.id}
+            contrato={c}
+            colors={colors}
+            s={s}
+            onVerPerfil={() => onVerPerfil(c.estudianteId)}
+            onChat={() => onChatCandidato({ estudianteId: c.estudianteId, estudianteNombre: c.estudianteNombre })}
+            onReportar={() => setReportarC(c)}
+            onDespedir={() => setDespedirC(c)}
+          />
+        ))}
+      </View>
+
+      {/* ── Modales ── */}
+      <ReportarEmpleadoModal
+        contrato={reportarC}
+        empresaId={empresaId}
+        empresaNombre={empresaNombre}
+        colors={colors}
+        s={s}
+        onClose={() => setReportarC(null)}
+        onReportado={(total, contrato) => {
+          setReportarC(null);
+          if (total >= 3) setSugerirDespido(contrato);
+        }}
+      />
+      <DespedirEmpleadoModal
+        contrato={despedirC}
+        empresaNombre={empresaNombre}
+        colors={colors}
+        s={s}
+        onClose={() => setDespedirC(null)}
+        onDespedido={() => { setDespedirC(null); onVolver(); }}
+      />
+      <AsignarTareaModal
+        visible={asignarOpen}
+        vacanteId={vacante.id}
+        vacanteTitulo={vacante.titulo}
+        empresaId={empresaId}
+        empresaNombre={empresaNombre}
+        empleados={foco ? [foco] : contratos}
+        colors={colors}
+        s={s}
+        onClose={() => setAsignarOpen(false)}
+      />
+
+      {/* Modal motivacional: 3er reporte → sugerir despido */}
+      <Modal visible={!!sugerirDespido} transparent animationType="none" onRequestClose={() => setSugerirDespido(null)}>
+        <View style={s.modalOverlay}>
+          <View style={s.modalCard}>
+            <View style={s.modalIcono}><Ionicons name="alert-circle" size={26} color={colors.warning} /></View>
+            <Text style={s.modalTitulo}>Este empleado acumula 3 reportes</Text>
+            <Text style={s.modalTexto}>
+              Ya enviaste tres reportes sobre {sugerirDespido?.estudianteNombre}. Si el problema persiste, considera finalizar el contrato.
+            </Text>
+            <View style={s.modalBotones}>
+              <TouchableOpacity style={s.modalCancelar} onPress={() => setSugerirDespido(null)}>
+                <Text style={s.modalCancelarTxt}>Entendido</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.modalConfirmar, { backgroundColor: colors.error }]}
+                onPress={() => { const c = sugerirDespido; setSugerirDespido(null); setDespedirC(c); }}
+              >
+                <Text style={s.modalConfirmarTxt}>Ir a despedir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+}
+
+/** Fila de un empleado del puesto con sus badges y acciones inline. */
+function EmpleadoRow({
+  contrato, colors, s, onVerPerfil, onChat, onReportar, onDespedir,
+}: {
+  contrato: ContratoLaboral;
+  colors: GradlyColors;
+  s: ReturnType<typeof makeStyles>;
+  onVerPerfil: () => void;
+  onChat: () => void;
+  onReportar: () => void;
+  onDespedir: () => void;
+}) {
+  const reportes = Number(contrato.reportesCount) || 0;
+  const advertencias = Array.isArray(contrato.advertenciasEmpresa) ? contrato.advertenciasEmpresa.length : 0;
+  return (
+    <View style={s.candCard}>
+      <TouchableOpacity style={s.candTop} activeOpacity={0.75} onPress={onVerPerfil}>
+        {contrato.estudianteFoto ? (
+          <Image source={{ uri: contrato.estudianteFoto }} style={s.candAvatar} />
+        ) : (
+          <View style={s.candAvatar}><Ionicons name="person" size={17} color={colors.primaryLight} /></View>
+        )}
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Text style={s.candNombre} numberOfLines={1} noTranslate>{contrato.estudianteNombre}</Text>
+            <Ionicons name="chevron-forward-circle-outline" size={15} color={colors.primaryLight} />
+          </View>
+          <Text style={s.candCarrera} numberOfLines={1}>Ver perfil</Text>
+        </View>
+      </TouchableOpacity>
+
+      {(reportes > 0 || advertencias > 0) && (
+        <View style={s.chipsRow}>
+          {reportes > 0 && (
+            <View style={[s.chip, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '55' }]}>
+              <Ionicons name="flag" size={11} color={colors.warning} />
+              <Text style={[s.chipCumpleTxt, { color: colors.warning }]} noTranslate>{reportes}</Text>
+              <Text style={[s.chipCumpleTxt, { color: colors.warning }]}>{reportes === 1 ? 'reporte' : 'reportes'}</Text>
+            </View>
+          )}
+          {advertencias > 0 && (
+            <View style={[s.chip, { backgroundColor: colors.error + '14', borderColor: colors.error + '55' }]}>
+              <Ionicons name="alert-circle" size={11} color={colors.error} />
+              <Text style={[s.chipCumpleTxt, { color: colors.error }]} noTranslate>{advertencias}</Text>
+              <Text style={[s.chipCumpleTxt, { color: colors.error }]}>{advertencias === 1 ? 'advertencia' : 'advertencias'}</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      <View style={s.candAcciones}>
+        <TouchableOpacity style={s.accionBtn} onPress={onChat} activeOpacity={0.85}>
+          <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primaryLight} />
+          <Text style={s.accionTxt}>Chat</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[s.accionBtn, s.accionRechazar]} onPress={onReportar} activeOpacity={0.85}>
+          <Ionicons name="flag-outline" size={14} color={colors.error} />
+          <Text style={[s.accionTxt, { color: colors.error }]}>Reportar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[s.accionBtn, { borderColor: colors.error, backgroundColor: colors.error }]} onPress={onDespedir} activeOpacity={0.85}>
+          <Ionicons name="exit-outline" size={14} color="#fff" />
+          <Text style={[s.accionTxt, { color: '#fff' }]}>Despedir</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ── Sección de Tareas del puesto ──
+function TareasSection({
+  vacanteId, vacanteTitulo, empresaId, empresaNombre, empleados, colors, s, onAbrirAsignar,
+}: {
+  vacanteId: string;
+  vacanteTitulo: string;
+  empresaId: string;
+  empresaNombre: string;
+  empleados: ContratoLaboral[];
+  colors: GradlyColors;
+  s: ReturnType<typeof makeStyles>;
+  onAbrirAsignar: () => void;
+}) {
+  const [tareas, setTareas] = useState<TareaLaboral[]>([]);
+  useEffect(() => {
+    if (!empresaId) return;
+    const unsub = onSnapshot(
+      query(collection(db, COL_TAREAS), where('empresaId', '==', empresaId)),
+      (snap) => setTareas(
+        snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as TareaLaboral)).filter((t) => t.vacanteId === vacanteId),
+      ),
+      (e) => console.warn('tareas puesto:', e),
+    );
+    return unsub;
+  }, [empresaId, vacanteId]);
+
+  const nombrePorId = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const c of empleados) m[c.estudianteId] = c.estudianteNombre;
+    return m;
+  }, [empleados]);
+
+  // Agrupa por loteId (o id suelto) para mostrar "a ambos" como una tarjeta.
+  const grupos = useMemo(() => {
+    const idsVisibles = new Set(empleados.map((e) => e.estudianteId));
+    const visibles = tareas.filter((t) => idsVisibles.has(t.estudianteId));
+    const m: Record<string, TareaLaboral[]> = {};
+    for (const t of visibles) (m[t.loteId || t.id] = m[t.loteId || t.id] ?? []).push(t);
+    return Object.values(m).sort((a, b) => {
+      const ta = a[0]?.createdAt?.seconds ?? 0;
+      const tb = b[0]?.createdAt?.seconds ?? 0;
+      return tb - ta;
+    });
+  }, [tareas, empleados]);
+
+  return (
+    <View style={s.microBox}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={s.microLabel}>Tareas</Text>
+        <TouchableOpacity style={s.asignarBtn} onPress={onAbrirAsignar} activeOpacity={0.85}>
+          <Ionicons name="add" size={14} color="#fff" />
+          <Text style={s.asignarBtnTxt}>Asignar tarea</Text>
+        </TouchableOpacity>
+      </View>
+      {grupos.length === 0 ? (
+        <Text style={s.vacio}>Sin tareas asignadas.</Text>
+      ) : (
+        <View style={{ gap: 8 }}>
+          {grupos.map((g) => {
+            const primera = g[0];
+            const completadas = g.filter((t) => t.estado === 'completada').length;
+            const paraTodos = g.length > 1;
+            const quien = paraTodos
+              ? 'Para todos'
+              : (nombrePorId[primera.estudianteId] || 'Empleado');
+            return (
+              <View key={primera.loteId || primera.id} style={s.tareaCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons
+                    name={completadas === g.length ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={15}
+                    color={completadas === g.length ? colors.success : colors.textMuted}
+                  />
+                  <Text style={s.tareaTitulo} numberOfLines={2} noTranslate>{primera.titulo}</Text>
+                </View>
+                {!!primera.detalle && <Text style={s.tareaDetalle} noTranslate>{primera.detalle}</Text>}
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                  <View style={[s.chip, s.chipSkill]}>
+                    <Text style={s.chipSkillTxt}>{paraTodos ? 'Para todos' : ''}</Text>
+                    {!paraTodos && <Text style={s.chipSkillTxt} noTranslate>{quien}</Text>}
+                  </View>
+                  <View style={[s.chip, s.chipSkill]}>
+                    <Text style={s.chipSkillTxt} noTranslate>{completadas}/{g.length}</Text>
+                    <Text style={s.chipSkillTxt}>completadas</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── Modal: Reportar empleado ──
+function ReportarEmpleadoModal({
+  contrato, empresaId, empresaNombre, colors, s, onClose, onReportado,
+}: {
+  contrato: ContratoLaboral | null;
+  empresaId: string;
+  empresaNombre: string;
+  colors: GradlyColors;
+  s: ReturnType<typeof makeStyles>;
+  onClose: () => void;
+  onReportado: (total: number, contrato: ContratoLaboral) => void;
+}) {
+  const [motivo, setMotivo] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (contrato) { setMotivo(''); setDescripcion(''); setErr(''); }
+  }, [contrato]);
+
+  const enviar = async () => {
+    if (!contrato) return;
+    if (!motivo) { setErr('Selecciona un motivo.'); return; }
+    setEnviando(true);
+    setErr('');
+    try {
+      const { total } = await reportarEmpleado({
+        contratoId: contrato.id,
+        empresaId,
+        empresaNombre,
+        estudianteId: contrato.estudianteId,
+        estudianteNombre: contrato.estudianteNombre,
+        vacanteTitulo: contrato.vacanteTitulo,
+        motivo,
+        descripcion,
+      });
+      onReportado(total, contrato);
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo enviar el reporte.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <Modal visible={!!contrato} transparent animationType="none" onRequestClose={onClose}>
+      <View style={s.modalOverlay}>
+        <View style={s.modalCard}>
+          <Text style={s.modalTitulo}>Reportar empleado</Text>
+          <Text style={[s.modalTexto, { fontFamily: FONTS.interSemiBold, color: colors.textPrimary }]} noTranslate>
+            {contrato?.estudianteNombre}
+          </Text>
+          <Text style={s.modalTexto}>El administrador revisará este reporte. El empleado recibe un aviso.</Text>
+          <View style={s.chipsRow}>
+            {MOTIVOS_REPORTE.map((m) => (
+              <TouchableOpacity
+                key={m}
+                style={[s.candFiltro, motivo === m && s.candFiltroActivo]}
+                onPress={() => { setMotivo(m); setErr(''); }}
+                activeOpacity={0.8}
+              >
+                <Text style={motivo === m ? s.candFiltroTxtActivo : s.candFiltroTxt}>{m}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TextInput
+            style={s.modalInput}
+            value={descripcion}
+            onChangeText={setDescripcion}
+            placeholder="Detalle (opcional)"
+            placeholderTextColor={colors.textMuted}
+            multiline
+            maxLength={600}
+            selectionColor={colors.primary}
+          />
+          {!!err && <Text style={s.modalError}>{err}</Text>}
+          <View style={s.modalBotones}>
+            <TouchableOpacity style={s.modalCancelar} onPress={onClose} disabled={enviando}>
+              <Text style={s.modalCancelarTxt}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.modalConfirmar, { backgroundColor: colors.warning }]} onPress={enviar} disabled={enviando}>
+              {enviando ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.modalConfirmarTxt}>Enviar reporte</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Modal: Despedir / advertir ──
+function DespedirEmpleadoModal({
+  contrato, empresaNombre, colors, s, onClose, onDespedido,
+}: {
+  contrato: ContratoLaboral | null;
+  empresaNombre: string;
+  colors: GradlyColors;
+  s: ReturnType<typeof makeStyles>;
+  onClose: () => void;
+  onDespedido: () => void;
+}) {
+  const [motivo, setMotivo] = useState('');
+  const [accion, setAccion] = useState<null | 'advertir' | 'despedir'>(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (contrato) { setMotivo(''); setAccion(null); setErr(''); }
+  }, [contrato]);
+
+  const advertenciasHechas = Array.isArray(contrato?.advertenciasEmpresa)
+    ? contrato!.advertenciasEmpresa.length
+    : 0;
+  const advertenciaBloqueada = advertenciasHechas >= 3;
+
+  const correr = async (tipo: 'advertir' | 'despedir') => {
+    if (!contrato) return;
+    if (motivo.trim().length < 5) { setErr('Escribe el motivo (mín. 5 caracteres).'); return; }
+    setAccion(tipo);
+    setErr('');
+    try {
+      if (tipo === 'advertir') {
+        await advertirEmpleado({
+          contratoId: contrato.id,
+          empresaNombre,
+          estudianteId: contrato.estudianteId,
+          vacanteTitulo: contrato.vacanteTitulo,
+          texto: motivo,
+        });
+        onClose();
+      } else {
+        await despedirEmpleado({
+          contratoId: contrato.id,
+          empresaNombre,
+          estudianteId: contrato.estudianteId,
+          vacanteTitulo: contrato.vacanteTitulo,
+          motivo,
+        });
+        onDespedido();
+      }
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo completar la acción.');
+      setAccion(null);
+    }
+  };
+
+  return (
+    <Modal visible={!!contrato} transparent animationType="none" onRequestClose={onClose}>
+      <View style={s.modalOverlay}>
+        <View style={s.modalCard}>
+          <Text style={s.modalTitulo}>Finalizar contrato</Text>
+          <Text style={[s.modalTexto, { fontFamily: FONTS.interSemiBold, color: colors.textPrimary }]} noTranslate>
+            {contrato?.estudianteNombre}
+          </Text>
+          <Text style={s.modalTexto}>
+            Escribe el motivo. Puedes enviarlo solo como advertencia, o finalizar el contrato definitivamente (no se reabre).
+          </Text>
+          <TextInput
+            style={s.modalInput}
+            value={motivo}
+            onChangeText={setMotivo}
+            placeholder="Motivo (mín. 5 caracteres)"
+            placeholderTextColor={colors.textMuted}
+            multiline
+            selectionColor={colors.primary}
+          />
+          {advertenciasHechas > 0 && (
+            <Text style={s.modalTexto} noTranslate>
+              {advertenciasHechas}/3 {advertenciasHechas === 1 ? 'advertencia enviada' : 'advertencias enviadas'}
+            </Text>
+          )}
+          {!!err && <Text style={s.modalError}>{err}</Text>}
+          <View style={{ gap: 8 }}>
+            {!advertenciaBloqueada && (
+              <TouchableOpacity
+                style={[s.modalConfirmar, { backgroundColor: colors.warning }]}
+                onPress={() => correr('advertir')}
+                disabled={!!accion}
+              >
+                {accion === 'advertir' ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.modalConfirmarTxt}>Enviar solo como advertencia</Text>}
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[s.modalConfirmar, { backgroundColor: colors.error }]}
+              onPress={() => correr('despedir')}
+              disabled={!!accion}
+            >
+              {accion === 'despedir' ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.modalConfirmarTxt}>Despedir definitivamente</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={s.modalCancelar} onPress={onClose} disabled={!!accion}>
+              <Text style={s.modalCancelarTxt}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Modal: Asignar tarea ──
+function AsignarTareaModal({
+  visible, vacanteId, vacanteTitulo, empresaId, empresaNombre, empleados, colors, s, onClose,
+}: {
+  visible: boolean;
+  vacanteId: string;
+  vacanteTitulo: string;
+  empresaId: string;
+  empresaNombre: string;
+  empleados: ContratoLaboral[];
+  colors: GradlyColors;
+  s: ReturnType<typeof makeStyles>;
+  onClose: () => void;
+}) {
+  const [titulo, setTitulo] = useState('');
+  const [detalle, setDetalle] = useState('');
+  const [destino, setDestino] = useState<'todos' | string>('todos'); // 'todos' o un estudianteId
+  const [enviando, setEnviando] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (visible) {
+      setTitulo(''); setDetalle(''); setErr('');
+      setDestino(empleados.length === 1 ? empleados[0].estudianteId : 'todos');
+    }
+  }, [visible, empleados]);
+
+  const enviar = async () => {
+    if (!titulo.trim()) { setErr('La tarea necesita un título.'); return; }
+    const ids = destino === 'todos' ? empleados.map((e) => e.estudianteId) : [destino];
+    if (ids.length === 0) { setErr('No hay empleados a los que asignar.'); return; }
+    setEnviando(true);
+    setErr('');
+    try {
+      await asignarTarea({ vacanteId, vacanteTitulo, empresaId, empresaNombre, titulo, detalle, estudianteIds: ids });
+      onClose();
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo asignar la tarea.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <View style={s.modalOverlay}>
+        <View style={s.modalCard}>
+          <Text style={s.modalTitulo}>Asignar tarea</Text>
+          <TextInput
+            style={[s.modalInput, { minHeight: 44 }]}
+            value={titulo}
+            onChangeText={setTitulo}
+            placeholder="Título de la tarea"
+            placeholderTextColor={colors.textMuted}
+            selectionColor={colors.primary}
+          />
+          <TextInput
+            style={s.modalInput}
+            value={detalle}
+            onChangeText={setDetalle}
+            placeholder="Detalle (opcional)"
+            placeholderTextColor={colors.textMuted}
+            multiline
+            maxLength={600}
+            selectionColor={colors.primary}
+          />
+          {empleados.length > 1 && (
+            <>
+              <Text style={s.modalTexto}>¿A quién se la asignas?</Text>
+              <View style={s.chipsRow}>
+                <TouchableOpacity
+                  style={[s.candFiltro, destino === 'todos' && s.candFiltroActivo]}
+                  onPress={() => setDestino('todos')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={destino === 'todos' ? s.candFiltroTxtActivo : s.candFiltroTxt}>A todos</Text>
+                </TouchableOpacity>
+                {empleados.map((e) => (
+                  <TouchableOpacity
+                    key={e.id}
+                    style={[s.candFiltro, destino === e.estudianteId && s.candFiltroActivo]}
+                    onPress={() => setDestino(e.estudianteId)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={destino === e.estudianteId ? s.candFiltroTxtActivo : s.candFiltroTxt} noTranslate>
+                      {e.estudianteNombre}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+          {!!err && <Text style={s.modalError}>{err}</Text>}
+          <View style={s.modalBotones}>
+            <TouchableOpacity style={s.modalCancelar} onPress={onClose} disabled={enviando}>
+              <Text style={s.modalCancelarTxt}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.modalConfirmar, { backgroundColor: colors.primary }]} onPress={enviar} disabled={enviando}>
+              {enviando ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.modalConfirmarTxt}>Asignar</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const makeStyles = (c: GradlyColors) =>
   StyleSheet.create({
     wrap: { flex: 1, padding: 16, paddingBottom: 110 },
@@ -1426,4 +2108,33 @@ const makeStyles = (c: GradlyColors) =>
     modalCancelarTxt: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: c.textMuted },
     modalConfirmar: { flex: 1.4, alignItems: 'center', justifyContent: 'center', paddingVertical: 13, borderRadius: 12 },
     modalConfirmarTxt: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: '#fff' },
+    modalIcono: {
+      alignSelf: 'center', width: 48, height: 48, borderRadius: 24,
+      alignItems: 'center', justifyContent: 'center',
+      backgroundColor: c.warning + '1E', borderWidth: 1, borderColor: c.warning + '55',
+    },
+
+    // ── Fase 3: puesto contratado ──
+    empHeader: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      backgroundColor: c.backgroundCard, borderWidth: 1, borderColor: c.border,
+      borderRadius: 14, padding: 12,
+    },
+    companeroRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      paddingVertical: 8, paddingHorizontal: 4,
+    },
+    companeroTxt: { flex: 1, fontSize: 13, fontFamily: FONTS.interSemiBold, color: c.primaryLight },
+    asignarBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
+      backgroundColor: c.primary,
+    },
+    asignarBtnTxt: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: '#fff' },
+    tareaCard: {
+      backgroundColor: c.backgroundSurface, borderWidth: 1, borderColor: c.border,
+      borderRadius: 10, padding: 11, gap: 6,
+    },
+    tareaTitulo: { flex: 1, fontSize: 13, fontFamily: FONTS.interSemiBold, color: c.textPrimary },
+    tareaDetalle: { fontSize: 11.5, color: c.textMuted, lineHeight: 16 },
   });

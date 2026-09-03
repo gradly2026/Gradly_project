@@ -21,14 +21,17 @@
 // ════════════════════════════════════════════════════════════════════════
 import {
   addDoc,
+  arrayUnion,
   collection,
   doc,
+  getDoc,
   getDocs,
   increment,
   query,
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../config/firebaseConfig';
 import { enviarNotificacion } from './notificationService';
@@ -284,4 +287,228 @@ export async function cerrarVacante(params: {
   const descartados = await rechazarPendientesRestantes({ vacanteId, empresaId, vacanteTitulo });
   await updateDoc(doc(db, 'vacantes', vacanteId), { cerrada: true });
   return { descartados };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// FASE 3 · Vida del puesto contratado (lado empresa): tareas, reportes,
+// advertencias y despido.
+// ════════════════════════════════════════════════════════════════════════
+
+/** Forma mínima de una tarea (colección `tareas_laborales`). */
+export interface TareaLaboral {
+  id: string;
+  vacanteId: string;
+  empresaId: string;
+  estudianteId: string;
+  loteId: string | null;
+  titulo: string;
+  detalle: string;
+  estado: 'pendiente' | 'completada';
+  createdAt: any;
+  completadaAt: any | null;
+}
+
+/**
+ * La empresa asigna una tarea a uno o varios empleados de un puesto. "A ambos"
+ * = un doc por empleado, agrupados por `loteId` (estado simple por doc). Se
+ * escriben en un batch atómico. Notifica a cada empleado (deep link a su
+ * progreso → "Puesto de trabajo", pantalla que llega en Fase 4).
+ */
+export async function asignarTarea(params: {
+  vacanteId: string;
+  vacanteTitulo: string;
+  empresaId: string;
+  empresaNombre: string;
+  titulo: string;
+  detalle: string;
+  /** uids de los empleados a los que se asigna (1 = "a uno", varios = "a ambos"). */
+  estudianteIds: string[];
+}): Promise<{ ids: string[] }> {
+  const { vacanteId, vacanteTitulo, empresaId, empresaNombre, titulo, detalle, estudianteIds } = params;
+  const destinatarios = [...new Set(estudianteIds.filter(Boolean))];
+  if (destinatarios.length === 0) throw new Error('Elige al menos un empleado.');
+  if (!titulo.trim()) throw new Error('La tarea necesita un título.');
+
+  const loteId = destinatarios.length > 1 ? doc(collection(db, COL_TAREAS)).id : null;
+  const batch = writeBatch(db);
+  const ids: string[] = [];
+  for (const estudianteId of destinatarios) {
+    const ref = doc(collection(db, COL_TAREAS));
+    ids.push(ref.id);
+    batch.set(ref, {
+      vacanteId,
+      empresaId,
+      estudianteId,
+      loteId,
+      titulo: titulo.trim(),
+      detalle: detalle.trim(),
+      estado: 'pendiente' as const,
+      createdAt: serverTimestamp(),
+      completadaAt: null,
+    });
+  }
+  await batch.commit();
+
+  await Promise.allSettled(
+    destinatarios.map((id) =>
+      enviarNotificacion(
+        id,
+        'Nueva tarea asignada',
+        `${empresaNombre} te asignó una tarea en "${vacanteTitulo}": ${titulo.trim()}`,
+        'info',
+        '/(tabs)/progreso',
+      ),
+    ),
+  );
+  return { ids };
+}
+
+/** El empleado (o la empresa) marca/desmarca una tarea como completada. */
+export async function completarTarea(tareaId: string, completada: boolean): Promise<void> {
+  await updateDoc(doc(db, COL_TAREAS, tareaId), {
+    estado: completada ? 'completada' : 'pendiente',
+    completadaAt: completada ? serverTimestamp() : null,
+  });
+}
+
+/**
+ * La empresa reporta a un empleado contratado. Escribe en `reportes` con el
+ * mismo esquema que lee el panel admin (+ `contexto:'laboral'` y `contratoId`),
+ * notifica al admin, sube el contador `reportesCount` del contrato y avisa al
+ * empleado. Devuelve el nuevo total de reportes de ese contrato.
+ */
+export async function reportarEmpleado(params: {
+  contratoId: string;
+  empresaId: string;
+  empresaNombre: string;
+  estudianteId: string;
+  estudianteNombre: string;
+  vacanteTitulo: string;
+  motivo: string;
+  descripcion: string;
+}): Promise<{ total: number }> {
+  const {
+    contratoId, empresaId, empresaNombre, estudianteId, estudianteNombre,
+    vacanteTitulo, motivo, descripcion,
+  } = params;
+  if (!motivo.trim()) throw new Error('Selecciona un motivo.');
+
+  const detalle = [
+    `Puesto: ${vacanteTitulo}`,
+    `Empresa: ${empresaNombre}`,
+    descripcion.trim() ? `\n${descripcion.trim()}` : '',
+  ].filter(Boolean).join(' · ');
+
+  await addDoc(collection(db, 'reportes'), {
+    reportado_id: estudianteId,
+    reportado_nombre: estudianteNombre,
+    reportante_id: empresaId,
+    reportador_id: empresaId, // compat regla de lectura del propio reporte
+    motivo: motivo.trim(),
+    tipo: 'laboral',
+    contexto: 'laboral',
+    contratoId,
+    descripcion: detalle,
+    estado: 'abierto',
+    fecha: serverTimestamp(),
+  });
+  try {
+    await addDoc(collection(db, 'admin_notifications'), {
+      title: `Reporte laboral: ${motivo.trim()}`,
+      is_read: false,
+      tipo: 'reporte',
+      reportado_id: estudianteId,
+      created_at: serverTimestamp(),
+    });
+  } catch { /* la notificación al admin es secundaria */ }
+
+  // Sube el contador del contrato y deja el aviso legible para el empleado.
+  await updateDoc(doc(db, COL_CONTRATOS, contratoId), {
+    reportesCount: increment(1),
+    ultimoAvisoEmpleado: { tipo: 'reporte', texto: motivo.trim(), fecha: new Date().toISOString() },
+    updatedAt: serverTimestamp(),
+  });
+  await enviarNotificacion(
+    estudianteId,
+    'Reporte de tu empresa',
+    `${empresaNombre} envió un reporte sobre tu desempeño en "${vacanteTitulo}".`,
+    'warning',
+    `contratoAviso:${contratoId}`,
+  );
+
+  // Lee el total ya actualizado (para la regla de 3 en la UI).
+  let total = 0;
+  try {
+    const snap = await getDoc(doc(db, COL_CONTRATOS, contratoId));
+    total = Number((snap.data() as any)?.reportesCount) || 0;
+  } catch { /* no bloquea */ }
+  return { total };
+}
+
+/**
+ * Advertencia empresa → empleado (NO termina el contrato). Suma al array
+ * `advertenciasEmpresa`, deja el aviso legible y notifica. Devuelve el nuevo
+ * número de advertencias (a la 3ª, la UI deshabilita el botón de advertir).
+ */
+export async function advertirEmpleado(params: {
+  contratoId: string;
+  empresaNombre: string;
+  estudianteId: string;
+  vacanteTitulo: string;
+  texto: string;
+}): Promise<{ total: number }> {
+  const { contratoId, empresaNombre, estudianteId, vacanteTitulo, texto } = params;
+  if (!texto.trim()) throw new Error('Escribe el motivo de la advertencia.');
+  const fecha = new Date().toISOString();
+  await updateDoc(doc(db, COL_CONTRATOS, contratoId), {
+    advertenciasEmpresa: arrayUnion({ texto: texto.trim(), fecha }),
+    ultimoAvisoEmpleado: { tipo: 'advertencia', texto: texto.trim(), fecha },
+    updatedAt: serverTimestamp(),
+  });
+  await enviarNotificacion(
+    estudianteId,
+    'Advertencia de tu empresa',
+    `${empresaNombre} te envió una advertencia en "${vacanteTitulo}": ${texto.trim()}`,
+    'warning',
+    `contratoAviso:${contratoId}`,
+  );
+  let total = 0;
+  try {
+    const snap = await getDoc(doc(db, COL_CONTRATOS, contratoId));
+    total = Array.isArray((snap.data() as any)?.advertenciasEmpresa)
+      ? (snap.data() as any).advertenciasEmpresa.length
+      : 0;
+  } catch { /* no bloquea */ }
+  return { total };
+}
+
+/**
+ * Despido definitivo: anula el contrato (estado 'despido'), deja el aviso
+ * legible y notifica al empleado. La vacante NO se reabre.
+ */
+export async function despedirEmpleado(params: {
+  contratoId: string;
+  empresaNombre: string;
+  estudianteId: string;
+  vacanteTitulo: string;
+  motivo: string;
+}): Promise<void> {
+  const { contratoId, empresaNombre, estudianteId, vacanteTitulo, motivo } = params;
+  if (!motivo.trim()) throw new Error('Escribe el motivo del despido.');
+  const fecha = new Date().toISOString();
+  await updateDoc(doc(db, COL_CONTRATOS, contratoId), {
+    estado: 'despido' as EstadoContrato,
+    fechaFin: serverTimestamp(),
+    motivoFin: motivo.trim(),
+    finPor: 'empresa' as const,
+    ultimoAvisoEmpleado: { tipo: 'despido', texto: motivo.trim(), fecha },
+    updatedAt: serverTimestamp(),
+  });
+  await enviarNotificacion(
+    estudianteId,
+    'Se terminó tu contrato',
+    `${empresaNombre} finalizó tu contrato en "${vacanteTitulo}". Motivo: ${motivo.trim()}`,
+    'error',
+    `contratoAviso:${contratoId}`,
+  );
 }
