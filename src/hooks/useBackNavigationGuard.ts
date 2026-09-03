@@ -1,9 +1,11 @@
 import { useIsFocused } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
+import { BackHandler, Platform } from 'react-native';
 
 type GuardMode =
-  /** Pantallas protegidas (dashboards): al presionar "atrás" pregunta si desea cerrar sesión. */
+  /** Pantallas protegidas (dashboards): "atrás" recorre las secciones internas
+   *  y, al agotarlas, deja al usuario quieto en "Inicio" — nunca lo saca al
+   *  login ni ofrece cerrar sesión (eso es solo el botón de "Mi Perfil"). */
   | 'protected'
   /** Pantallas de login/registro: "atrás" no debe sacar al usuario de la pantalla. */
   | 'block';
@@ -19,8 +21,9 @@ interface BackNavigationGuardOptions<S extends string = string> {
    * que se visita, y el "atrás" del navegador primero recorre esas
    * secciones (Inicio → Vacantes → Mensajes → Inicio → Vacantes...) ANTES
    * de considerar que el usuario quiere salir de verdad del área protegida.
-   * Sin esto (u omitiendo esta prop), el guard vuelve al comportamiento
-   * simple: cualquier "atrás" pregunta de inmediato por cerrar sesión.
+   * Sin esto (u omitiendo esta prop), cualquier "atrás" se limita a
+   * re-anclar el historial: el usuario se queda donde está, sin recorrer
+   * secciones ni salir al login.
    */
   section?: S;
   /** Se invoca cuando el "atrás" del navegador debe volver a una sección
@@ -50,15 +53,19 @@ interface BackNavigationGuardResult {
  *     (se invoca `onSectionBack`) y el navegador se deja avanzar con
  *     normalidad — SIN preguntar nada.
  *   - si ya no quedan (estamos en la entrada ancla), se anula ese "atrás"
- *     (se vuelve a apilar la misma entrada) y, en mode 'protected', se pide
- *     confirmación de cierre de sesión — vía el estado `showLogoutConfirm`
- *     devuelto (el llamador lo renderiza con un <SalirSesionModal>, no con
- *     window.confirm: ese diálogo nativo no tiene estilo propio y bloquea
- *     el hilo de JS mientras está abierto).
- * - mode 'block': no permite salir en absoluto (login/registro) — sin diálogo.
+ *     (se vuelve a apilar la misma entrada) y el usuario se queda donde
+ *     está — normalmente ya en "Inicio" tras recorrer las secciones.
+ *     NUNCA se ofrece cerrar sesión desde aquí: el único camino para cerrar
+ *     sesión es el botón "Cerrar sesión" de la sección "Mi Perfil" de cada
+ *     panel. (`showLogoutConfirm` sigue en el retorno por compatibilidad con
+ *     los llamadores, pero ya nunca se pone en true.)
+ * - mode 'block': igual — tampoco deja salir de login/registro.
  *
- * Solo aplica en web (`Platform.OS === 'web'`): en nativo no existe un botón
- * "atrás" de navegador equivalente, así que el hook no hace nada.
+ * En NATIVO (Android) el botón físico "atrás" se maneja aparte con
+ * `BackHandler` (solo `mode: 'protected'` CON `section`): recorre hacia
+ * atrás las secciones internas y, al llegar a la primera, CONSUME el evento
+ * para que el usuario se quede en el panel en vez de volver al login /
+ * cerrar la app. iOS no tiene botón "atrás" físico (BackHandler es inerte).
  */
 export function useBackNavigationGuard<S extends string = string>({
   mode,
@@ -141,18 +148,50 @@ export function useBackNavigationGuard<S extends string = string>({
         return;
       }
 
-      // Ya no hay más secciones internas por deshacer: este "atrás" intenta
-      // sacar al usuario del área protegida — se anula (re-apilando la
-      // misma entrada) y, en mode 'protected', se pide confirmación.
+      // Ya no hay más secciones internas por deshacer: este "atrás" intentaría
+      // sacar al usuario del área protegida (hacia el login). Se anula SIEMPRE
+      // re-apilando la misma entrada, así el usuario se queda donde está
+      // (normalmente ya en "Inicio" tras recorrer las secciones). NO se ofrece
+      // cerrar sesión aquí: el único camino es el botón "Cerrar sesión" de la
+      // sección "Mi Perfil". `mode: 'block'` (login/registro) ya se comportaba
+      // así — ahora `'protected'` también.
       window.history.pushState(null, '', window.location.href);
-
-      if (mode === 'block') return;
-      setShowLogoutConfirm(true);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [mode]);
+
+  // ── NATIVO (Android): botón físico "atrás". En web lo cubre el listener de
+  //    `popstate` de arriba; en nativo no hay historial de navegador, así que
+  //    se usa BackHandler. Solo para pantallas protegidas CON secciones
+  //    internas (paneles de empresa/universidad): recorre hacia atrás las
+  //    secciones visitadas y, al llegar a "Inicio", CONSUME el evento para que
+  //    el usuario NO salga al login ni se cierre la app. Cerrar sesión: solo
+  //    el botón de "Mi Perfil". iOS no tiene "atrás" físico (BackHandler inerte).
+  const hasSection = section !== undefined;
+  useEffect(() => {
+    if (Platform.OS === 'web' || mode !== 'protected' || !hasSection) return;
+
+    const onHardwareBack = (): boolean => {
+      // Hay una pantalla hija encima (chat, modal a pantalla completa…): que
+      // la maneje ella — no interceptamos el "atrás" del dashboard de fondo.
+      if (!isFocusedRef.current) return false;
+
+      const stack = stackRef.current;
+      if (stack.length > 1) {
+        stack.pop();
+        onSectionBackRef.current?.(stack[stack.length - 1]);
+        return true;
+      }
+      // Ya en la sección inicial: consumir el "atrás" — el usuario se queda
+      // en el panel (no vuelve al login ni se cierra la app).
+      return true;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [mode, hasSection]);
 
   const confirmLogout = useCallback(() => {
     setShowLogoutConfirm(false);

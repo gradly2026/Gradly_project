@@ -12,14 +12,19 @@ interface UseAuthBackGuardOptions<S extends string = string> {
 
 /**
  * Guardia de "atrás" para pantallas protegidas (dashboards de estudiante,
- * empresa, universidad y admin). Al presionar "atrás" en el navegador:
+ * empresa, universidad y admin). Al presionar "atrás" (botón del navegador
+ * en web, botón físico en Android):
  *   - si se pasó `section`, primero recorre las secciones internas
  *     visitadas (Inicio → Vacantes → Mensajes → ...) sin preguntar nada.
- *   - al llegar al final de esa pila, pregunta "¿Desea cerrar sesión?" con
- *     un modal propio (el llamador debe renderizar <SalirSesionModal
- *     visible={...} onConfirm={...} onCancel={...} /> con lo que devuelve
- *     este hook): si acepta, cierra sesión (Firebase Auth + estado local) y
- *     redirige a `/auth/iniciosesion`; si cancela, se queda donde estaba.
+ *   - al llegar al final de esa pila, el usuario simplemente se queda en
+ *     "Inicio": NO se sale al login, NO se cierra la app y NO aparece
+ *     ningún "¿Desea cerrar sesión?". Cerrar sesión es exclusivamente el
+ *     botón "Cerrar sesión" de la sección "Mi Perfil" de cada panel.
+ *
+ * `onConfirmLogout` y el `showLogoutConfirm` que devuelve el hook se
+ * conservan por compatibilidad con los llamadores actuales (que aún montan
+ * un <SalirSesionModal visible={showLogoutConfirm} .../>), pero ese modal
+ * ya nunca se muestra.
  *
  * Uso: llamar una vez en el componente raíz de cada dashboard, junto a
  * `useAuthGuard(rol)`.
