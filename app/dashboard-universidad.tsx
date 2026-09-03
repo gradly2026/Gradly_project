@@ -1482,8 +1482,16 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
     if (!ok) return;
     setEgresando(grupo.id);
     try {
+      // El `where('universidad_id','==',uid)` es OBLIGATORIO: la regla de
+      // `perfiles_estudiantes` solo deja a la universidad leer a SUS alumnos, y
+      // Firestore rechaza la query entera con permission-denied si no está
+      // acotada a esa rama (ver gotcha_query_estudiantes_por_grupo).
       const estSnap = await getDocs(
-        query(collection(db, 'perfiles_estudiantes'), where('grupo_id', '==', grupo.id)),
+        query(
+          collection(db, 'perfiles_estudiantes'),
+          where('universidad_id', '==', uid),
+          where('grupo_id', '==', grupo.id),
+        ),
       );
       const batch = writeBatch(db);
       // CREATE/UPDATE en lote: en vez de un updateDoc() separado por cada

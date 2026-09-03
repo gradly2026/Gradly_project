@@ -1314,6 +1314,9 @@ export const GESTION_SEED_EN: Record<string, string> = {
   // (AppAlert) + sección "En pasantía" de la vista Prácticas ──
   "Egresar grupo": "Graduate group",
   "Egresar": "Graduate",
+  "No se puede eliminar: ya hay solicitudes o postulaciones para esta vacante.":
+    "Can't delete: this job posting already has applications or requests.",
+  "Esta vacante no te pertenece.": "This job posting doesn't belong to you.",
   "Certificar pasantía": "Certify internship",
   "Certificar": "Certify",
   "Por certificar": "Pending certification",

@@ -12,13 +12,16 @@
  * IMPORTANTE: Expo Router pre-renderiza las rutas en Node (SSG), donde NO hay
  * `window`/`document`. `leaflet` toca `window` al importarse, así que su JS se
  * carga con `require('leaflet')` DENTRO del efecto (solo corre en el navegador).
- * El CSS sí se importa arriba (no toca `window` y Metro-web lo resuelve).
+ * El CSS sí se importa arriba (no toca `window`); se usa una copia vendida
+ * (`src/vendor/leaflet.css`) SIN las 3 reglas `url(images/*.png)` del original,
+ * que Metro-web no sabe resolver (avisaba "Importing local resources in CSS is
+ * not supported yet") y que además no usamos — el pin es un `L.divIcon` con SVG.
  *
  * El archivo nativo `MapViewer.tsx` (Android/iOS, react-native-maps) NO se toca:
  * Metro elige automáticamente este `.web.tsx` al compilar para web.
  */
 import React, { useEffect, useRef } from 'react';
-import 'leaflet/dist/leaflet.css';
+import '../vendor/leaflet.css';
 
 type Coord = { latitude: number; longitude: number };
 type Props = {

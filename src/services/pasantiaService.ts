@@ -1245,13 +1245,32 @@ export async function respuestaFinalUniversidad(
 // ni reclamó cupos. Borrar después de eso dejaría esos documentos
 // referenciando una vacante inexistente.
 // ─────────────────────────────────────────────
-export async function vacanteTieneSolicitudes(vacanteId: string): Promise<boolean> {
+export async function vacanteTieneSolicitudes(vacanteId: string, empresaId: string): Promise<boolean> {
   // Función de apoyo: revisa en las 3 colecciones que podrían referenciar
   // una vacante, si HAY algo relacionado con ella.
+  //
+  // IMPORTANTE: cada query lleva TAMBIÉN `where('empresa_id/empresaId','==',empresaId)`.
+  // Las reglas de `aplicaciones`/`aplicaciones_grupos`/`reclamos_cupos` solo
+  // dejan leer los documentos propios (empresa dueña), y Firestore rechaza la
+  // query ENTERA con permission-denied si no está acotada a una rama de la
+  // regla — aunque el resultado fuera a ser vacío. Sin este filtro, borrar una
+  // vacante fallaba siempre con "Missing or insufficient permissions".
   const [aplicaciones, aplicacionesGrupos, reclamos] = await Promise.all([
-    getDocs(query(collection(db, 'aplicaciones'), where('vacante_id', '==', vacanteId))),
-    getDocs(query(collection(db, 'aplicaciones_grupos'), where('vacanteId', '==', vacanteId))),
-    getDocs(query(collection(db, 'reclamos_cupos'), where('vacanteId', '==', vacanteId))),
+    getDocs(query(
+      collection(db, 'aplicaciones'),
+      where('vacante_id', '==', vacanteId),
+      where('empresa_id', '==', empresaId),
+    )),
+    getDocs(query(
+      collection(db, 'aplicaciones_grupos'),
+      where('vacanteId', '==', vacanteId),
+      where('empresaId', '==', empresaId),
+    )),
+    getDocs(query(
+      collection(db, 'reclamos_cupos'),
+      where('vacanteId', '==', vacanteId),
+      where('empresaId', '==', empresaId),
+    )),
   ]);
   return !aplicaciones.empty || !aplicacionesGrupos.empty || !reclamos.empty;
   // Devuelve true si CUALQUIERA de las 3 colecciones tiene al menos un
@@ -1270,7 +1289,7 @@ export async function eliminarVacante(vacanteId: string, empresaId: string): Pro
   // Verificación de seguridad: una empresa solo puede borrar SUS PROPIAS
   // vacantes, comparando el `empresa_id` guardado en el documento contra
   // quien está pidiendo borrarla.
-  if (await vacanteTieneSolicitudes(vacanteId)) {
+  if (await vacanteTieneSolicitudes(vacanteId, empresaId)) {
     throw new Error('No se puede eliminar: ya hay solicitudes o postulaciones para esta vacante.');
   }
   await deleteDoc(doc(db, 'vacantes', vacanteId));
