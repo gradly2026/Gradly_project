@@ -131,6 +131,13 @@ export default function PuestoTrabajoEstudiante({
   const companeros = Array.isArray(contrato.companeros) ? contrato.companeros : [];
   const horario = textoHorario(contrato.horario);
   const fechaInicioISO = fechaISOLocal(contrato.fechaInicio);
+  // El empleo no tiene fecha de fin: se pinta una ventana móvil de ~6 meses
+  // para que CalendarioEventos marque los días laborales del mes en curso.
+  const ventanaCalendario = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 6);
+    return d;
+  }, []);
 
   return (
     <>
@@ -177,7 +184,7 @@ export default function PuestoTrabajoEstudiante({
         <CalendarioEventos
           uid={uid}
           rol="estudiante"
-          inscripcion={{ horario: contrato.horario, fechaPresentacion: fechaInicioISO, fechaFin: null }}
+          inscripcion={{ horario: contrato.horario, fechaPresentacion: fechaInicioISO, fechaFin: ventanaCalendario }}
         />
       ) : (
         <GlassCard style={{ marginBottom: 18 }} contentStyle={{ padding: 16 }}>
