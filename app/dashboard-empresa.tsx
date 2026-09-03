@@ -721,10 +721,16 @@ export default function DashboardEmpresa() {
     section: seccion,
     onSectionBack: setSeccion,
   });
-  // Header superior simplificado en "Mensajes": solo desde tablet/web (no
-  // en móvil angosto, donde el header normal sigue igual que siempre).
+  // Header superior simplificado en "Mensajes": una fila fina con solo la
+  // flecha "atrás" — la MISMA que la pestaña "Mensajes" del estudiante
+  // (app/(tabs)/mensajes.tsx). Va en TODOS los anchos: en móvil el menú
+  // flotante se oculta en esta sección, así que sin esta flecha no había
+  // salida visible. En tablet/web la fila va pegada arriba (a la altura de
+  // la píldora flotante); en móvil se separa de la barra de estado igual
+  // que el header normal (`headerChatCompacto` distingue los dos casos).
   const { width: anchoVentana } = useWindowDimensions();
-  const headerChatSimplificado = seccion === 'mensajes' && anchoVentana > 768;
+  const headerChatSimplificado = seccion === 'mensajes';
+  const headerChatCompacto = headerChatSimplificado && anchoVentana > 768;
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
   // Chat a abrir de inmediato dentro de la sección "Mensajes" embebida (p. ej.
   // al pulsar "Chatear con Candidato"), en vez de navegar a otra pantalla.
@@ -2038,12 +2044,17 @@ export default function DashboardEmpresa() {
 
       {/* ── CONTENIDO ── */}
       <View style={styles.main}>
-        {/* Header superior — en "Mensajes" (solo tablet/web) se reemplaza
-            por una fila delgada con una flecha "atrás" a la misma altura
-            que la píldora flotante, para no verse doble/grueso encima de
-            la conversación. En móvil angosto y en el resto de secciones
-            sigue exactamente igual que siempre. */}
-        <View style={headerChatSimplificado ? styles.mainHeaderChat : styles.mainHeader}>
+        {/* Header superior — en "Mensajes" se reemplaza por una fila delgada
+            con una flecha "atrás" (la misma que usa la pestaña "Mensajes"
+            del estudiante). En tablet/web va pegada arriba, a la altura de
+            la píldora flotante; en móvil se separa de la barra de estado
+            como el header normal. En el resto de secciones no cambia nada. */}
+        <View
+          style={[
+            headerChatSimplificado ? styles.mainHeaderChat : styles.mainHeader,
+            headerChatSimplificado && !headerChatCompacto && styles.mainHeaderChatMovil,
+          ]}
+        >
           {headerChatSimplificado ? (
             <TouchableOpacity
               onPress={() => setSeccion('inicio')}
@@ -3523,14 +3534,20 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
     backgroundColor: COLORS.backgroundCard,
   },
-  // Header simplificado de "Mensajes" (tablet/web): una fila delgada en vez
-  // del bloque de avatar/nombre — el paddingTop/paddingBottom más chico deja
-  // la flecha "atrás" a la misma altura que la píldora flotante de arriba.
+  // Header simplificado de "Mensajes": una fila delgada en vez del bloque de
+  // avatar/nombre. En tablet/web el paddingTop chico deja la flecha "atrás"
+  // a la misma altura que la píldora flotante de arriba.
   mainHeaderChat: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: 8, paddingLeft: 12, paddingRight: 150, paddingBottom: 8,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
     backgroundColor: COLORS.backgroundCard,
+  },
+  // En móvil la misma fila fina, pero separada de la barra de estado igual
+  // que `mainHeader` (este archivo no usa safe-area insets; el patrón aquí
+  // es el padding fijo por plataforma).
+  mainHeaderChatMovil: {
+    paddingTop: Platform.OS === 'ios' ? 56 : 40,
   },
   mainHeaderBackBtn: {
     width: 40, height: 40, borderRadius: 12,
