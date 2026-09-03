@@ -382,6 +382,11 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
           paddingHorizontal: 12,
           paddingBottom: 120,
           gap: 12,
+          // En tablet/escritorio la lista se topa a una columna legible y se
+          // centra, en vez de estirar cada tarjeta de borde a borde.
+          width: "100%",
+          maxWidth: 640,
+          alignSelf: "center",
         }}
         ListEmptyComponent={
           <View style={styles.empty}>

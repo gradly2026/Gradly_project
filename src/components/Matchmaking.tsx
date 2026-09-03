@@ -1300,13 +1300,15 @@ const makeStyles = (C: GradlyColors, _isDark: boolean) => {
     },
     cancelText: { fontSize: 14, fontFamily: FONTS.interMedium, color: C.textMuted },
 
-    // Modal
-    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+    // Modal — hoja inferior en móvil; en tablet/escritorio se topa a un ancho
+    // legible y se centra horizontalmente (antes se estiraba de borde a borde).
+    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end', alignItems: 'center' },
     sheet: {
       backgroundColor: C.backgroundCard,
       borderTopLeftRadius: 24, borderTopRightRadius: 24,
       padding: 20, paddingBottom: 32, gap: 8,
       borderTopWidth: 1, borderColor: C.border,
+      width: '100%', maxWidth: 520, alignSelf: 'center',
     },
     sheetTitle: { fontSize: 18, fontFamily: FONTS.soraBold, color: C.textPrimary, flex: 1 },
     sheetHint: { fontSize: 12, fontFamily: FONTS.interMedium, color: C.primaryLight, marginTop: 2 },

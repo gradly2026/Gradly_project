@@ -702,8 +702,18 @@ service cloud.firestore {
       // visite ese perfil, no solo quien calificó o fue calificado.
       allow read: if request.auth != null;
       // El emisor se registra a sí mismo como evaluador. Inmutable tras crearse.
+      // 🔒 UNA sola calificación por (pasantía, evaluador, evaluado): el ID del
+      //    documento DEBE ser exactamente `${solicitudId}_${evaluadorId}_${evaluadoId}`.
+      //    Como `create` solo prospera si el documento aún no existe, un segundo
+      //    envío choca contra el mismo ID y es rechazado — no se puede calificar
+      //    dos veces desde ningún cliente (y `update` está bloqueado). Nadie puede
+      //    auto-evaluarse.
       allow create: if request.auth != null
-        && request.resource.data.evaluadorId == request.auth.uid;
+        && request.resource.data.evaluadorId == request.auth.uid
+        && request.resource.data.evaluadorId != request.resource.data.evaluadoId
+        && feedbackId == request.resource.data.solicitudId + '_'
+                       + request.resource.data.evaluadorId + '_'
+                       + request.resource.data.evaluadoId;
       allow update: if false;
       allow delete: if esAdmin();
     }

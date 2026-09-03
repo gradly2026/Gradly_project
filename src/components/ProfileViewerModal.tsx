@@ -184,7 +184,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={[styles.root, { paddingTop: insets.top }]}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, styles.pageMax]}>
           <TouchableOpacity onPress={onClose} style={styles.backBtn} hitSlop={10}>
             <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
@@ -202,7 +202,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
             <Text style={styles.empty}>No se encontró este perfil.</Text>
           </View>
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          <ScrollView showsVerticalScrollIndicator={false} style={styles.pageMax} contentContainerStyle={{ paddingBottom: 40 }}>
             {/* Hero */}
             <View style={styles.hero}>
               <StorageAvatar url={fotoUrl} size={96} fallbackIcon={fallbackIcon} />
@@ -506,6 +506,9 @@ function GlowBadge({ icon, label, color, styles }: {
 // ─────────────────────────────────────────────
 const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.backgroundDark },
+  // El perfil es una pantalla completa; en tablet/escritorio se topa a una
+  // columna legible y se centra en vez de estirarse de borde a borde.
+  pageMax: { width: '100%', maxWidth: 720, alignSelf: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12,

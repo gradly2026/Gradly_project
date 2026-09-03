@@ -308,8 +308,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: C.overlay,
     justifyContent: "center",
+    alignItems: "center",
     padding: 18,
   },
+  // Centrado y con ancho máximo: en móvil llena el ancho disponible, en
+  // tablet/escritorio se topa a una tarjeta legible en vez de estirarse.
   sheet: {
     backgroundColor: C.surface,
     borderRadius: 24,
@@ -317,6 +320,9 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     padding: 22,
     maxHeight: "88%",
+    width: "100%",
+    maxWidth: 460,
+    alignSelf: "center",
   },
   headerBadge: {
     flexDirection: "row",

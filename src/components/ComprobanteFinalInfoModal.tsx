@@ -103,7 +103,10 @@ export default function ComprobanteFinalInfoModal({ variante, empresa, onCerrar 
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'center', padding: 18 },
+  overlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'center', alignItems: 'center', padding: 18 },
+  // Centrado y con ancho máximo (mismo criterio que FeedbackExperienciaModal):
+  // llena el ancho disponible en móvil, se topa a una tarjeta legible en
+  // tablet/escritorio en vez de estirarse de borde a borde.
   sheet: {
     backgroundColor: C.surface,
     borderRadius: 24,
@@ -111,6 +114,9 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     padding: 24,
     alignItems: 'center',
+    width: '100%',
+    maxWidth: 460,
+    alignSelf: 'center',
   },
   iconWrap: {
     width: 56,

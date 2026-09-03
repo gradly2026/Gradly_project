@@ -196,7 +196,10 @@ const makeStyles = (c: GradlyColors) =>
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.6)",
       justifyContent: "flex-end",
+      alignItems: "center",
     },
+    // Hoja inferior en móvil; en tablet/escritorio se topa a un ancho legible
+    // y se centra (antes ocupaba todo el ancho de la pantalla).
     card: {
       backgroundColor: c.backgroundCard,
       borderTopLeftRadius: 24,
@@ -205,6 +208,9 @@ const makeStyles = (c: GradlyColors) =>
       borderColor: c.border,
       padding: 20,
       maxHeight: "88%",
+      width: "100%",
+      maxWidth: 480,
+      alignSelf: "center",
     },
     header: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
     headerIcon: {

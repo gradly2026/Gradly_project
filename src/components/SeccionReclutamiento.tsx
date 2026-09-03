@@ -2245,9 +2245,21 @@ function ContratarExPasanteModal({
 
 const makeStyles = (c: GradlyColors) =>
   StyleSheet.create({
-    wrap: { flex: 1, padding: 16, paddingBottom: 110 },
+    // La sección ocupa el ancho disponible en móvil; en tablet/escritorio se
+    // topa a una columna amplia (1200) y se centra. El `paddingHorizontal`
+    // asegura un margen lateral en pantallas anchas, así el contenido nunca
+    // toca los bordes de la ventana.
+    wrap: {
+      flex: 1,
+      paddingHorizontal: 24,
+      paddingTop: 16,
+      paddingBottom: 110,
+      width: '100%',
+      maxWidth: 1200,
+      alignSelf: 'center',
+    },
 
-    // Pestañas
+    // Pestañas — segmento acotado (no full-width en pantallas anchas).
     tabs: {
       flexDirection: 'row',
       backgroundColor: c.white4,
@@ -2257,6 +2269,9 @@ const makeStyles = (c: GradlyColors) =>
       borderWidth: 1,
       borderColor: c.border,
       marginBottom: 12,
+      width: '100%',
+      maxWidth: 420,
+      alignSelf: 'flex-start',
     },
     tab: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
     tabActivo: { backgroundColor: c.primary },
@@ -2371,8 +2386,16 @@ const makeStyles = (c: GradlyColors) =>
     personaNombre: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: c.textPrimary },
     personaMeta: { fontSize: 11.5, color: c.textMuted, marginTop: 1 },
 
-    // Microsección
-    microWrap: { padding: 16, paddingBottom: 120, gap: 12 },
+    // Microsección — mismo ancho amplio y margen lateral que `wrap`.
+    microWrap: {
+      paddingHorizontal: 24,
+      paddingTop: 16,
+      paddingBottom: 120,
+      gap: 12,
+      width: '100%',
+      maxWidth: 1200,
+      alignSelf: 'center',
+    },
     volver: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 4 },
     volverTxt: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: c.primaryLight },
     microTitulo: { fontSize: 19, fontFamily: FONTS.soraBold, color: c.textPrimary },
@@ -2509,6 +2532,7 @@ const makeStyles = (c: GradlyColors) =>
       flexDirection: 'row', gap: 6, padding: 4, marginBottom: 12,
       backgroundColor: c.backgroundSurface, borderRadius: 14,
       borderWidth: 1, borderColor: c.border,
+      width: '100%', maxWidth: 420, alignSelf: 'flex-start',
     },
     supremoBtn: {
       flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
