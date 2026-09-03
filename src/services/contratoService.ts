@@ -84,6 +84,10 @@ export interface ContratoLaboral {
   advertenciasEstudiante: { texto: string; fecha: string }[];
   ultimoAvisoEmpleado: AvisoContrato | null;
   ultimoAvisoEmpresa: AvisoContrato | null;
+  /** Otros contratados activos del MISMO puesto (denormalizado: id + nombre +
+   *  foto), para que el estudiante vea a sus compañeros sin leer contratos
+   *  ajenos (las reglas no se lo permiten). Lo mantiene la empresa. */
+  companeros: { id: string; nombre: string; foto: string }[];
   origen: OrigenContrato;
   createdAt: any;
   updatedAt: any;
@@ -193,11 +197,19 @@ export async function contratarCandidato(params: {
   const ya = await getDocs(
     query(collection(db, COL_CONTRATOS), where('empresaId', '==', empresaId)),
   );
-  const duplicado = ya.docs.some((d) => {
-    const c = d.data() as any;
-    return c.estudianteId === estudianteId && c.vacanteId === vacante.id && c.estado === 'activo';
-  });
-  if (duplicado) throw new Error('Este estudiante ya está contratado en esta vacante.');
+  const activosDeVacante = ya.docs
+    .map((d) => ({ id: d.id, ...(d.data() as any) }))
+    .filter((c) => c.vacanteId === vacante.id && c.estado === 'activo');
+  if (activosDeVacante.some((c) => c.estudianteId === estudianteId)) {
+    throw new Error('Este estudiante ya está contratado en esta vacante.');
+  }
+
+  // Compañeros ya activos del mismo puesto (denormalizado para el estudiante).
+  const companeros = activosDeVacante.map((c) => ({
+    id: c.estudianteId,
+    nombre: c.estudianteNombre || '',
+    foto: c.estudianteFoto || '',
+  }));
 
   // 1. Crear el contrato (congela los datos del puesto).
   const ref = await addDoc(collection(db, COL_CONTRATOS), {
@@ -225,10 +237,20 @@ export async function contratarCandidato(params: {
     advertenciasEstudiante: [],
     ultimoAvisoEmpleado: null,
     ultimoAvisoEmpresa: null,
+    companeros,
     origen,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+
+  // 1b. Añadir al nuevo contratado como compañero en los contratos ya activos.
+  await Promise.allSettled(
+    activosDeVacante.map((c) =>
+      updateDoc(doc(db, COL_CONTRATOS, c.id), {
+        companeros: arrayUnion({ id: estudianteId, nombre: estudianteNombre || '', foto: estudianteFoto || '' }),
+      }),
+    ),
+  );
 
   // 2. La aplicación pasa a 'contratado'.
   await updateDoc(doc(db, 'aplicaciones', aplicacionId), {
@@ -508,6 +530,73 @@ export async function despedirEmpleado(params: {
     estudianteId,
     'Se terminó tu contrato',
     `${empresaNombre} finalizó tu contrato en "${vacanteTitulo}". Motivo: ${motivo.trim()}`,
+    'error',
+    `contratoAviso:${contratoId}`,
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// FASE 4 · Lado del estudiante contratado: completar tareas, avisar/renunciar.
+// (Las reglas de `contratos_laborales` permiten al estudiante tocar solo
+//  estado/fechaFin/motivoFin/finPor/advertenciasEstudiante/ultimoAvisoEmpresa,
+//  y solo sobre un contrato aún 'activo'.)
+// ════════════════════════════════════════════════════════════════════════
+
+/**
+ * Aviso / advertencia del estudiante a la empresa (NO termina el contrato).
+ * Suma al array `advertenciasEstudiante`, deja el aviso legible para la
+ * empresa y la notifica.
+ */
+export async function avisarEmpresaContrato(params: {
+  contratoId: string;
+  empresaId: string;
+  estudianteNombre: string;
+  vacanteTitulo: string;
+  texto: string;
+}): Promise<void> {
+  const { contratoId, empresaId, estudianteNombre, vacanteTitulo, texto } = params;
+  if (!texto.trim()) throw new Error('Escribe tu aviso.');
+  const fecha = new Date().toISOString();
+  await updateDoc(doc(db, COL_CONTRATOS, contratoId), {
+    advertenciasEstudiante: arrayUnion({ texto: texto.trim(), fecha }),
+    ultimoAvisoEmpresa: { tipo: 'advertencia', texto: texto.trim(), fecha },
+    updatedAt: serverTimestamp(),
+  });
+  await enviarNotificacion(
+    empresaId,
+    'Aviso de un empleado',
+    `${estudianteNombre} te dejó un aviso en "${vacanteTitulo}": ${texto.trim()}`,
+    'warning',
+    `contratoAviso:${contratoId}`,
+  );
+}
+
+/**
+ * Renuncia definitiva del estudiante: anula el contrato (estado 'renuncia'),
+ * deja el aviso legible y notifica a la empresa. No se reabre.
+ */
+export async function renunciarPuesto(params: {
+  contratoId: string;
+  empresaId: string;
+  estudianteNombre: string;
+  vacanteTitulo: string;
+  motivo: string;
+}): Promise<void> {
+  const { contratoId, empresaId, estudianteNombre, vacanteTitulo, motivo } = params;
+  if (!motivo.trim()) throw new Error('Escribe el motivo de la renuncia.');
+  const fecha = new Date().toISOString();
+  await updateDoc(doc(db, COL_CONTRATOS, contratoId), {
+    estado: 'renuncia' as EstadoContrato,
+    fechaFin: serverTimestamp(),
+    motivoFin: motivo.trim(),
+    finPor: 'estudiante' as const,
+    ultimoAvisoEmpresa: { tipo: 'renuncia', texto: motivo.trim(), fecha },
+    updatedAt: serverTimestamp(),
+  });
+  await enviarNotificacion(
+    empresaId,
+    'Un empleado renunció',
+    `${estudianteNombre} renunció a "${vacanteTitulo}". Motivo: ${motivo.trim()}`,
     'error',
     `contratoAviso:${contratoId}`,
   );

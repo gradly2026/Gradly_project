@@ -1594,4 +1594,26 @@ export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
   "Motivo": "Reason",
   "Tu contrato quedó anulado. En \"Mi Progreso\" no verás un puesto activo hasta que vuelvas a ser contratado.":
     "Your contract has been voided. In \"My Progress\" you won't see an active position until you're hired again.",
+
+  // Fase 4 — "Puesto de trabajo" del estudiante en "Mi Progreso".
+  "Puesto de trabajo": "Job position",
+  "Pasantía culminada": "Completed internship",
+  "Mi institución": "My institution",
+  "Mi calendario": "My calendar",
+  "Empresa que me contrató": "Company that hired me",
+  "Fecha de inicio": "Start date",
+  "Puesto único: no tienes compañeros en esta plaza.": "Single position: you have no coworkers here.",
+  "No tienes un puesto de trabajo activo. Cuando una empresa te contrate, aquí verás los detalles del puesto.":
+    "You don't have an active job position. When a company hires you, you'll see the position details here.",
+  "Este puesto no tiene un horario laboral declarado.": "This position has no declared work schedule.",
+  "La empresa aún no te asignó tareas.": "The company hasn't assigned you any tasks yet.",
+  "Completada": "Completed",
+  "Marcar": "Mark",
+  "Renunciar al puesto": "Resign from the position",
+  "Escribe el motivo. Puedes enviarlo solo como aviso a la empresa, o renunciar definitivamente (el contrato se anula y no se reabre).":
+    "Write the reason. You can send it as a notice to the company only, or resign permanently (the contract is voided and won't reopen).",
+  "Enviar solo como aviso a la empresa": "Send as a notice to the company only",
+  "Renunciar definitivamente": "Resign permanently",
+  "Aviso de un empleado": "Notice from an employee",
+  "Un empleado renunció": "An employee resigned",
 };

@@ -45,6 +45,7 @@ import { progresoPorFechas } from '../../src/utils/progresoPasantia';
 import CalendarioEventos from '../../src/components/CalendarioEventos';
 import TableroCupos from '../../src/components/TableroCupos';
 import MiInstitucionCard from '../../src/components/MiInstitucionCard';
+import PuestoTrabajoEstudiante from '../../src/components/PuestoTrabajoEstudiante';
 import { textoHorario } from '../../src/data/disponibilidad';
 import type { AsignacionCupo } from '../../src/services/reclamoCuposService';
 import type { ProgresoMeta } from '../../src/utils/horasPasantia';
@@ -550,6 +551,22 @@ export default function ProgresoTab() {
   const [acuerdo,       setAcuerdo]       = useState<AcuerdoEstudiante | null>(null);
   const [pasantiaEstado, setPasantiaEstado] = useState<string | null>(null);
   const [cargando,      setCargando]      = useState(true);
+
+  // ── "Puesto de trabajo" (empleo real, contratos_laborales) vs "Pasantía
+  //    culminada" (lo de siempre). La vista arranca en "Puesto de trabajo"
+  //    si hay un contrato activo; el usuario puede cambiarla con el toggle. ──
+  const [tieneContratoActivo, setTieneContratoActivo] = useState(false);
+  const [vistaManual, setVistaManual] = useState<'puesto' | 'pasantia' | null>(null);
+  const vista: 'puesto' | 'pasantia' = vistaManual ?? (tieneContratoActivo ? 'puesto' : 'pasantia');
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'contratos_laborales'), where('estudianteId', '==', user.uid)),
+      snap => setTieneContratoActivo(snap.docs.some(d => (d.data() as any).estado === 'activo')),
+      e => console.warn('Error en listener (contrato progreso):', e),
+    );
+    return unsub;
+  }, [user]);
   // 5 estados distintos, cada uno alimentado por su PROPIO useEffect con
   // onSnapshot (ver los 4 bloques "Firestore:" más abajo) — esta pantalla
   // combina datos de 4 colecciones diferentes de Firestore, todas
@@ -738,6 +755,26 @@ export default function ProgresoTab() {
         <Text style={styles.headerTitle}>Mi progreso</Text>
       </View>
 
+      {/* ── Toggle: Puesto de trabajo / Pasantía culminada ── */}
+      <View style={styles.vistaToggle}>
+        {([
+          { id: 'puesto', label: 'Puesto de trabajo' },
+          { id: 'pasantia', label: 'Pasantía culminada' },
+        ] as const).map((v) => {
+          const activo = vista === v.id;
+          return (
+            <TouchableOpacity
+              key={v.id}
+              style={[styles.vistaBtn, activo && styles.vistaBtnActivo]}
+              onPress={() => setVistaManual(v.id)}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.vistaBtnTxt, activo && styles.vistaBtnTxtActivo]}>{v.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       <ScrollView
         style={webScrollStyle}
         showsVerticalScrollIndicator
@@ -746,6 +783,13 @@ export default function ProgresoTab() {
         contentContainerStyle={[styles.scroll, { flexGrow: 1 }]}
       >
 
+      {vista === 'puesto' ? (
+        <PuestoTrabajoEstudiante
+          uid={user!.uid}
+          estudianteNombre={(userProfile as any)?.nombre_completo ?? ''}
+        />
+      ) : (
+       <>
         {/* ── Mi institución: universidad y grupo al que pertenece ──
             Va ARRIBA del termómetro a propósito: las horas objetivo, el
             calendario y el período que se ven más abajo salen todos del
@@ -895,6 +939,8 @@ export default function ProgresoTab() {
             })}
           </>
         )}
+       </>
+      )}
 
       </ScrollView>
     </View>
@@ -929,6 +975,20 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   headerTitle: { fontSize: 22, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+
+  // Toggle "Puesto de trabajo" / "Pasantía culminada"
+  vistaToggle: {
+    flexDirection: 'row', gap: 6, padding: 4,
+    alignSelf: 'center', width: '92%', maxWidth: 728,
+    marginTop: 12, marginBottom: 2,
+    backgroundColor: COLORS.white4, borderRadius: 14,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  vistaBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  vistaBtnActivo: { backgroundColor: COLORS.primary },
+  vistaBtnTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted },
+  vistaBtnTxtActivo: { color: '#fff' },
+
   scroll: { padding: 16, paddingBottom: 100, width: '100%', maxWidth: 760, alignSelf: 'center' },
 
   // Card termómetro
