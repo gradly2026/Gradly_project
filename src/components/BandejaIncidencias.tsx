@@ -27,6 +27,7 @@ import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import {
   cambiarEstadoIncidencia,
   escalarIncidencia,
+  notificarEstudianteIncidencia,
   responderIncidencia,
   suscribirIncidencias,
   type EstadoIncidencia,
@@ -75,19 +76,30 @@ export default function BandejaIncidencias({
   const s = useMemo(() => makeStyles(colors), [colors]);
   const locale = language === 'en' ? 'en-US' : 'es-SV';
 
-  const [lista, setLista] = useState<Incidencia[]>([]);
+  const [listaCruda, setListaCruda] = useState<Incidencia[]>([]);
   const [cargado, setCargado] = useState(false);
   const [abierta, setAbierta] = useState<Incidencia | null>(null);
 
   useEffect(() => {
-    if (!uid) { setLista([]); setCargado(true); return; }
+    if (!uid) { setListaCruda([]); setCargado(true); return; }
     return suscribirIncidencias(
       rol,
       uid,
-      l => { setLista(l); setCargado(true); },
-      () => { setLista([]); setCargado(true); },
+      l => { setListaCruda(l); setCargado(true); },
+      () => { setListaCruda([]); setCargado(true); },
     );
   }, [rol, uid]);
+
+  // El estudiante NO ve una incidencia que abrió la empresa hasta que su
+  // universidad la notifique o la escale (`visible_estudiante`). La regla de
+  // lectura de Firestore igual le deja verla —es sobre él—, así que el filtro
+  // vive aquí. Empresa y universidad las ven siempre.
+  const lista = useMemo(
+    () => (rol === 'estudiante'
+      ? listaCruda.filter(i => i.origen !== 'empresa' || i.visible_estudiante === true)
+      : listaCruda),
+    [listaCruda, rol],
+  );
 
   // La incidencia abierta en el detalle se re-lee de la lista EN VIVO en vez de
   // guardarse en el estado: si la otra parte responde mientras el modal está
@@ -118,10 +130,16 @@ export default function BandejaIncidencias({
             <TouchableOpacity key={inc.id} activeOpacity={0.85} onPress={() => setAbierta(inc)}>
               <GlassCard contentStyle={{ padding: 14, gap: 8 }}>
                 <View style={s.filaTop}>
-                  <Ionicons name={m.icon} size={16} color={m.color} />
+                  <Ionicons name={inc.origen === 'empresa' ? 'business' : m.icon} size={16} color={m.color} />
                   <Text style={s.motivo} numberOfLines={1}>{inc.motivo}</Text>
                   <Text style={s.fecha} noTranslate>{fechaCorta(inc.fecha, locale)}</Text>
                 </View>
+
+                {inc.origen === 'empresa' && (
+                  <Text style={s.origenHint}>
+                    {rol === 'estudiante' ? t('inc_origen_empresa_est') : t('inc_origen_empresa')}
+                  </Text>
+                )}
 
                 <Text style={s.descripcion} numberOfLines={2}>{inc.descripcion}</Text>
 
@@ -190,8 +208,13 @@ function DetalleIncidencia({
 
   if (!incidencia) return null;
 
+  const deEmpresa = incidencia.origen === 'empresa';
   const puedeGestionar = rol === 'universidad' || rol === 'empresa';
   const puedeEscalar = rol === 'universidad' && incidencia.estado !== 'escalada';
+  // "Notificar al estudiante": solo la universidad, solo en incidencias que
+  // abrió la empresa y que el estudiante aún no ha visto.
+  const puedeNotificarEstudiante =
+    rol === 'universidad' && deEmpresa && incidencia.visible_estudiante !== true;
   const cerrada = incidencia.estado === 'resuelta';
   const m = metaEstado(incidencia.estado, colors);
 
@@ -221,16 +244,32 @@ function DetalleIncidencia({
               <Text style={[s.pillTxt, { color: m.color }]}>{t(m.clave)}</Text>
             </View>
 
-            <View style={{ gap: 4 }}>
-              <Text style={s.bloqueLabel}>{t('inc_reportada_por')}</Text>
-              <Text style={s.bloqueValor} noTranslate>{incidencia.estudiante_nombre}</Text>
-            </View>
-
-            {!!incidencia.empresa_nombre && (
-              <View style={{ gap: 4 }}>
-                <Text style={s.bloqueLabel}>{t('inc_empresa')}</Text>
-                <Text style={s.bloqueValor} noTranslate>{incidencia.empresa_nombre}</Text>
-              </View>
+            {deEmpresa ? (
+              <>
+                <View style={{ gap: 4 }}>
+                  <Text style={s.bloqueLabel}>{t('inc_reportada_por')}</Text>
+                  <Text style={s.bloqueValor} noTranslate>
+                    {incidencia.empresa_nombre || t('inc_una_empresa')}
+                  </Text>
+                </View>
+                <View style={{ gap: 4 }}>
+                  <Text style={s.bloqueLabel}>{t('inc_sobre_el_estudiante')}</Text>
+                  <Text style={s.bloqueValor} noTranslate>{incidencia.estudiante_nombre}</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={{ gap: 4 }}>
+                  <Text style={s.bloqueLabel}>{t('inc_reportada_por')}</Text>
+                  <Text style={s.bloqueValor} noTranslate>{incidencia.estudiante_nombre}</Text>
+                </View>
+                {!!incidencia.empresa_nombre && (
+                  <View style={{ gap: 4 }}>
+                    <Text style={s.bloqueLabel}>{t('inc_empresa')}</Text>
+                    <Text style={s.bloqueValor} noTranslate>{incidencia.empresa_nombre}</Text>
+                  </View>
+                )}
+              </>
             )}
 
             <View style={{ gap: 4 }}>
@@ -287,6 +326,36 @@ function DetalleIncidencia({
                     ? <ActivityIndicator size="small" color="#FFF" />
                     : <Text style={s.btnTxt}>{t('inc_responder')}</Text>}
                 </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Vía "blanda": la universidad notifica al estudiante y le pide
+                corregir. Botón destacado (ámbar) porque es la acción principal
+                que se espera de la universidad al recibir un reporte. */}
+            {puedeNotificarEstudiante && !cerrada && (
+              <TouchableOpacity
+                style={[s.btnAmonestar, enviando && s.btnOff]}
+                disabled={enviando}
+                onPress={() => correr(() => notificarEstudianteIncidencia(
+                  incidencia.id,
+                  { motivo: incidencia.motivo, estudiante_id: incidencia.estudiante_id, estado: incidencia.estado },
+                  nombreUsuario,
+                ))}
+              >
+                {enviando
+                  ? <ActivityIndicator size="small" color="#FFF" />
+                  : (
+                    <>
+                      <Ionicons name="notifications-outline" size={16} color="#FFF" />
+                      <Text style={s.btnAmonestarTxt}>{t('inc_accion_notificar_estudiante')}</Text>
+                    </>
+                  )}
+              </TouchableOpacity>
+            )}
+            {rol === 'universidad' && deEmpresa && incidencia.visible_estudiante === true && !cerrada && (
+              <View style={s.notificadoRow}>
+                <Ionicons name="checkmark-circle" size={15} color={colors.success} />
+                <Text style={s.notificadoTxt}>{t('inc_estudiante_notificado')}</Text>
               </View>
             )}
 
@@ -370,6 +439,7 @@ const makeStyles = (COLORS: GradlyColors) =>
     fecha: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
     descripcion: { fontSize: 12.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 18 },
     filaBottom: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    origenHint: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.warning },
     pill: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
     pillTxt: { fontSize: 10.5, fontFamily: FONTS.interSemiBold },
     contraparte: { flex: 1, fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
@@ -420,6 +490,13 @@ const makeStyles = (COLORS: GradlyColors) =>
     },
     btnOff: { opacity: 0.45 },
     btnTxt: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: '#FFF' },
+    btnAmonestar: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+      backgroundColor: COLORS.warning, borderRadius: 12, paddingVertical: 12,
+    },
+    btnAmonestarTxt: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: '#FFF' },
+    notificadoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    notificadoTxt: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.success },
     acciones: {
       flexDirection: 'row', flexWrap: 'wrap', gap: 8,
       borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12,

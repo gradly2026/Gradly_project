@@ -846,6 +846,7 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Pasantes por cupo": "Slot-based interns",
   "Sin fecha de inicio": "No start date yet",
   "Primer día por definir": "First day not set yet",
+  "Primer día por definir · toca para fijarlo": "First day not set yet · tap to set it",
   // ── Currículum en el vistazo del perfil del estudiante ──
   "Currículum": "Résumé",
   "Ver CV": "View CV",
@@ -1485,6 +1486,13 @@ export const INCIDENCIAS_SEED_EN: Record<string, string> = {
   "Mis horas no se están registrando": "My hours are not being recorded",
   "Problema con la plataforma": "Problem with the platform",
   "Otro": "Other",
+  // MOTIVOS_INCIDENCIA_EMPRESA — cuando es la empresa la que reporta al pasante.
+  "Llegadas tarde reiteradas": "Repeated lateness",
+  "Ausencias sin aviso": "Unexcused absences",
+  "Incumplimiento de tareas asignadas": "Failure to complete assigned tasks",
+  "Bajo rendimiento sostenido": "Sustained poor performance",
+  "Conducta inadecuada": "Inappropriate conduct",
+  "Abandono del puesto": "Abandonment of the post",
 };
 
 // ── Rediseño de la sección "Reclutamiento" del dashboard empresa

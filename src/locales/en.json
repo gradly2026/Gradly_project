@@ -523,5 +523,29 @@
   "inc_accion_escalar": "Escalate to Gradly",
   "inc_accion_resolver": "Mark as resolved",
   "inc_accion_confirmar_cierre": "Close issue",
-  "inc_resolucion_placeholder": "Explain how it was resolved. The student will read this."
+  "inc_resolucion_placeholder": "Explain how it was resolved. The student will read this.",
+
+  "inc_origen_empresa": "Reported by the company",
+  "inc_origen_empresa_est": "Your company reported this",
+  "inc_una_empresa": "A company",
+  "inc_sobre_el_estudiante": "About the student",
+  "inc_accion_notificar_estudiante": "Notify the student",
+  "inc_estudiante_notificado": "The student has been notified",
+
+  "inc_emp_reportar_btn": "Report an intern",
+  "inc_emp_titulo": "Report an intern",
+  "inc_emp_ayuda": "Use this when the student falls short: repeated lateness, no-shows, unfinished tasks. Their university reviews it and decides whether to notify them or escalate to Gradly.",
+  "inc_emp_campo_estudiante": "Who are you reporting?",
+  "inc_emp_sin_pasantes": "You have no active interns to report.",
+  "inc_emp_desc_placeholder": "Describe the situation: what happened, when, and how often. The university needs the detail to act.",
+  "inc_emp_aviso": "The student's university will see it. The student only sees it once the university notifies or escalates it.",
+  "inc_emp_ok_titulo": "Report sent",
+  "inc_emp_ok_msg": "The student's university can now review it.",
+
+  "inc_aviso_est_titulo": "Issue in your internship",
+  "inc_aviso_est_notificado": "Your university reviewed a company report about your performance and is formally notifying you. It asks you to correct the situation and not let it happen again. You can reply in the issue thread.",
+  "inc_aviso_est_escalado": "Your university escalated this company report to the Gradly team due to its seriousness. Review it carefully and take action right away.",
+  "inc_aviso_est_motivo": "Report reason",
+  "inc_aviso_est_entendido": "Understood",
+  "inc_aviso_est_vacio": "Issue not found."
 }

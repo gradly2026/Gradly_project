@@ -523,5 +523,29 @@
   "inc_accion_escalar": "Escalar a Gradly",
   "inc_accion_resolver": "Marcar como resuelta",
   "inc_accion_confirmar_cierre": "Cerrar incidencia",
-  "inc_resolucion_placeholder": "Explica cómo se resolvió. El estudiante lo va a leer."
+  "inc_resolucion_placeholder": "Explica cómo se resolvió. El estudiante lo va a leer.",
+
+  "inc_origen_empresa": "Reportada por la empresa",
+  "inc_origen_empresa_est": "Tu empresa reportó esta situación",
+  "inc_una_empresa": "Una empresa",
+  "inc_sobre_el_estudiante": "Sobre el estudiante",
+  "inc_accion_notificar_estudiante": "Notificar al estudiante",
+  "inc_estudiante_notificado": "El estudiante ya fue notificado",
+
+  "inc_emp_reportar_btn": "Reportar a un pasante",
+  "inc_emp_titulo": "Reportar a un pasante",
+  "inc_emp_ayuda": "Úsalo cuando el estudiante incumple: llegadas tarde, ausencias, tareas sin hacer. Lo revisa su universidad, que decide si lo notifica o lo escala a Gradly.",
+  "inc_emp_campo_estudiante": "¿A quién reportas?",
+  "inc_emp_sin_pasantes": "No tienes pasantes activos para reportar.",
+  "inc_emp_desc_placeholder": "Describe la situación: qué pasó, cuándo y cuántas veces. La universidad necesita el detalle para actuar.",
+  "inc_emp_aviso": "Lo verá la universidad del estudiante. El estudiante solo lo verá cuando la universidad lo notifique o lo escale.",
+  "inc_emp_ok_titulo": "Reporte enviado",
+  "inc_emp_ok_msg": "La universidad del estudiante ya puede revisarlo.",
+
+  "inc_aviso_est_titulo": "Incidencia en tu práctica",
+  "inc_aviso_est_notificado": "Tu universidad revisó un reporte de la empresa sobre tu desempeño y te lo notifica formalmente. Te pide corregir la situación y que no se repita. Puedes responder en el hilo de la incidencia.",
+  "inc_aviso_est_escalado": "Tu universidad elevó este reporte de la empresa al equipo de Gradly por su gravedad. Revísalo con atención y toma medidas de inmediato.",
+  "inc_aviso_est_motivo": "Motivo del reporte",
+  "inc_aviso_est_entendido": "Entendido",
+  "inc_aviso_est_vacio": "No se encontró la incidencia."
 }

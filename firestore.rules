@@ -507,12 +507,27 @@ service cloud.firestore {
         || esAdmin()
       );
 
-      // Solo el estudiante abre incidencias, solo a su propio nombre y siempre
-      // en 'abierta' — así nadie puede crear una que ya nazca "resuelta".
-      allow create: if esRol('estudiante')
-        && request.resource.data.estudiante_id == request.auth.uid
-        && request.resource.data.estado == 'abierta'
-        && request.resource.data.seguimiento.size() == 0;
+      // Dos formas de abrir una incidencia, siempre en 'abierta' (nadie la crea
+      // ya "resuelta") y con el hilo vacío:
+      //   · el ESTUDIANTE, a su propio nombre (problema de su práctica); o
+      //   · la EMPRESA, sobre un estudiante suyo (llegadas tarde, tareas sin
+      //     cumplir, ausencias…). Nace `origen:'empresa'` y oculta al estudiante
+      //     (`visible_estudiante:false`); la universidad la ve de una y decide
+      //     si notificar al estudiante o escalar al admin — solo entonces el
+      //     estudiante la ve y recibe el aviso.
+      allow create: if (
+          esRol('estudiante')
+          && request.resource.data.estudiante_id == request.auth.uid
+          && request.resource.data.estado == 'abierta'
+          && request.resource.data.seguimiento.size() == 0
+        ) || (
+          esRol('empresa')
+          && request.resource.data.empresa_id == request.auth.uid
+          && request.resource.data.origen == 'empresa'
+          && request.resource.data.estado == 'abierta'
+          && request.resource.data.visible_estudiante == false
+          && request.resource.data.seguimiento.size() == 0
+        );
 
       // Las partes no se pueden reasignar NUNCA: sin este candado, la empresa
       // señalada podría cambiar `empresa_id` por el de otra y quitarse el caso

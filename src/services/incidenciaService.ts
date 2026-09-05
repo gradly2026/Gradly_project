@@ -46,8 +46,13 @@ import { enviarNotificacion } from './notificationService';
 
 export const COLECCION_INCIDENCIAS = 'incidencias';
 
-/** Quién o qué causó el problema. Decide a quién le llega el aviso. */
-export type CategoriaIncidencia = 'empresa' | 'universidad' | 'plataforma' | 'otro';
+/** Quién o qué causó el problema. Decide a quién le llega el aviso.
+ *  `'estudiante'` es para las incidencias que abre la EMPRESA sobre el pasante
+ *  (llegadas tarde, tareas sin cumplir…); las demás las abre el estudiante. */
+export type CategoriaIncidencia = 'empresa' | 'universidad' | 'plataforma' | 'estudiante' | 'otro';
+
+/** Quién abrió la incidencia. Ausente = `'estudiante'` (todas las históricas). */
+export type OrigenIncidencia = 'estudiante' | 'empresa';
 
 export type EstadoIncidencia = 'abierta' | 'en_seguimiento' | 'escalada' | 'resuelta';
 
@@ -60,6 +65,17 @@ export const MOTIVOS_INCIDENCIA = [
   'Trato inadecuado',
   'Mis horas no se están registrando',
   'Problema con la plataforma',
+  'Otro',
+] as const;
+
+/** Motivos sugeridos cuando es la EMPRESA quien reporta a un pasante. */
+export const MOTIVOS_INCIDENCIA_EMPRESA = [
+  'Llegadas tarde reiteradas',
+  'Ausencias sin aviso',
+  'Incumplimiento de tareas asignadas',
+  'Bajo rendimiento sostenido',
+  'Conducta inadecuada',
+  'Abandono del puesto',
   'Otro',
 ] as const;
 
@@ -88,6 +104,14 @@ export interface Incidencia {
   empresa_id: string;
   empresa_nombre: string;
   categoria: CategoriaIncidencia;
+  /** Quién la abrió. Ausente en las históricas = 'estudiante'. */
+  origen?: OrigenIncidencia;
+  /**
+   * Solo para `origen:'empresa'`: mientras es `false`, el estudiante NO la ve
+   * en su bandeja ni recibe aviso. Pasa a `true` cuando la universidad la
+   * notifica o la escala. Para `origen:'estudiante'` no aplica (él la abrió).
+   */
+  visible_estudiante?: boolean;
   motivo: string;
   descripcion: string;
   estado: EstadoIncidencia;
@@ -175,6 +199,73 @@ export async function crearIncidencia(p: CrearIncidenciaParams): Promise<string>
     }),
   );
   await Promise.allSettled(avisos);
+
+  return ref.id;
+}
+
+/** Datos que la empresa aporta al reportar a un pasante suyo. */
+export interface CrearIncidenciaEmpresaParams {
+  estudianteId: string;
+  estudianteNombre: string;
+  universidadId: string;
+  empresaId: string;
+  empresaNombre: string;
+  motivo: string;
+  descripcion: string;
+}
+
+/**
+ * La EMPRESA abre una incidencia SOBRE un pasante suyo (llegadas tarde, tareas
+ * sin cumplir, ausencias…). Va a la MISMA colección `incidencias` que las que
+ * abre el estudiante, con `origen: 'empresa'` para distinguirlas.
+ *
+ * Nace oculta al estudiante (`visible_estudiante: false`): la universidad la ve
+ * de inmediato y decide si la notifica al estudiante o la escala al admin —
+ * solo entonces el estudiante la ve y recibe el aviso. El admin NO se entera
+ * hasta que la universidad la escale (mismo criterio que el resto del módulo).
+ */
+export async function crearIncidenciaEmpresa(p: CrearIncidenciaEmpresaParams): Promise<string> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Sesión no válida.');
+  if (uid !== p.empresaId) throw new Error('Solo la empresa dueña puede reportar.');
+  if (!p.estudianteId) throw new Error('Elige al estudiante.');
+  if (!p.motivo.trim()) throw new Error('Selecciona un motivo.');
+  if (p.descripcion.trim().length < 10) {
+    throw new Error('Cuéntanos un poco más: al menos 10 caracteres.');
+  }
+
+  const universidadId = p.universidadId ?? '';
+
+  const ref = await addDoc(collection(db, COLECCION_INCIDENCIAS), {
+    estudiante_id: p.estudianteId,
+    estudiante_nombre: p.estudianteNombre ?? '',
+    universidad_id: universidadId,
+    empresa_id: p.empresaId,
+    empresa_nombre: p.empresaNombre ?? '',
+    categoria: 'estudiante' as CategoriaIncidencia,
+    origen: 'empresa' as OrigenIncidencia,
+    visible_estudiante: false,
+    motivo: p.motivo.trim(),
+    descripcion: p.descripcion.trim(),
+    estado: 'abierta' as EstadoIncidencia,
+    seguimiento: [],
+    resolucion: '',
+    fecha: serverTimestamp(),
+    fecha_actualizacion: serverTimestamp(),
+  });
+
+  // Aviso a la universidad (best-effort: la incidencia ya quedó registrada).
+  if (universidadId) {
+    try {
+      await enviarNotificacion(
+        universidadId,
+        'Una empresa reportó a un estudiante',
+        `${p.empresaNombre || 'Una empresa'} reportó a ${p.estudianteNombre || 'un estudiante'}: ${p.motivo.trim()}`,
+        'warning',
+        `incidencia:${ref.id}`,
+      );
+    } catch { /* no-op */ }
+  }
 
   return ref.id;
 }
@@ -280,7 +371,17 @@ export async function responderIncidencia(
 export async function cambiarEstadoIncidencia(
   incidenciaId: string,
   estado: EstadoIncidencia,
-  opts: { resolucion?: string; estudianteId?: string; motivo?: string } = {},
+  opts: {
+    resolucion?: string;
+    estudianteId?: string;
+    motivo?: string;
+    /** Campos extra a fijar en el mismo update (p. ej. `visible_estudiante`). */
+    extra?: Record<string, any>;
+    /** Deep link para la notificación al estudiante (p. ej. `incidencia:ID`). */
+    notifRef?: string;
+    /** Reemplaza el texto por defecto del aviso al estudiante. */
+    mensajeEstudiante?: string;
+  } = {},
 ): Promise<void> {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Sesión no válida.');
@@ -291,6 +392,7 @@ export async function cambiarEstadoIncidencia(
   await updateDoc(doc(db, COLECCION_INCIDENCIAS, incidenciaId), {
     estado,
     ...(opts.resolucion !== undefined ? { resolucion: opts.resolucion.trim() } : {}),
+    ...(opts.extra ?? {}),
     fecha_actualizacion: serverTimestamp(),
   });
 
@@ -305,8 +407,9 @@ export async function cambiarEstadoIncidencia(
       await enviarNotificacion(
         opts.estudianteId,
         'Actualización de tu incidencia',
-        `${textos[estado]}${opts.motivo ? ` (${opts.motivo})` : ''}`,
+        opts.mensajeEstudiante ?? `${textos[estado]}${opts.motivo ? ` (${opts.motivo})` : ''}`,
         estado === 'resuelta' ? 'success' : 'info',
+        opts.notifRef ?? null,
       );
     } catch { /* no-op */ }
   }
@@ -319,11 +422,21 @@ export async function cambiarEstadoIncidencia(
  */
 export async function escalarIncidencia(
   incidenciaId: string,
-  inc: Pick<Incidencia, 'motivo' | 'estudiante_id' | 'estudiante_nombre'>,
+  inc: Pick<Incidencia, 'motivo' | 'estudiante_id' | 'estudiante_nombre' | 'origen'>,
 ): Promise<void> {
+  const deEmpresa = inc.origen === 'empresa';
   await cambiarEstadoIncidencia(incidenciaId, 'escalada', {
     estudianteId: inc.estudiante_id,
     motivo: inc.motivo,
+    // Solo las incidencias de la empresa se revelan al estudiante al escalarlas
+    // y abren el modal de acuse; las que abrió el propio estudiante siguen igual.
+    ...(deEmpresa
+      ? {
+          extra: { visible_estudiante: true },
+          notifRef: `incidencia:${incidenciaId}`,
+          mensajeEstudiante: `Tu universidad elevó al equipo de Gradly el reporte de la empresa (${inc.motivo}). Es una situación grave: revísala y toma medidas.`,
+        }
+      : {}),
   });
   try {
     await addDoc(collection(db, 'admin_notifications'), {
@@ -339,4 +452,42 @@ export async function escalarIncidencia(
     // no-admin escribir en esa cola, la incidencia ya quedó escalada y
     // visible en la bandeja; el aviso es secundario.
   }
+}
+
+/**
+ * La UNIVERSIDAD "notifica" al estudiante una incidencia que abrió la empresa:
+ * la revela en su bandeja (`visible_estudiante: true`), la pasa a
+ * `en_seguimiento`, deja constancia en el hilo y le manda un aviso con deep
+ * link al modal de acuse. Es la vía "blanda" (la dura es escalar al admin).
+ */
+export async function notificarEstudianteIncidencia(
+  incidenciaId: string,
+  inc: Pick<Incidencia, 'motivo' | 'estudiante_id' | 'estado'>,
+  universidadNombre: string,
+): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Sesión no válida.');
+
+  await updateDoc(doc(db, COLECCION_INCIDENCIAS, incidenciaId), {
+    visible_estudiante: true,
+    ...(inc.estado === 'abierta' ? { estado: 'en_seguimiento' as EstadoIncidencia } : {}),
+    seguimiento: arrayUnion({
+      autor_id: uid,
+      autor_nombre: universidadNombre || 'Universidad',
+      autor_rol: 'universidad',
+      texto: `Revisamos el reporte de la empresa (${inc.motivo}). Te notificamos formalmente: corrige la situación y evita que se repita. Puedes responder en este hilo.`,
+      fecha: Timestamp.now(),
+    }),
+    fecha_actualizacion: serverTimestamp(),
+  });
+
+  try {
+    await enviarNotificacion(
+      inc.estudiante_id,
+      'Tu universidad te notificó una incidencia',
+      `La empresa reportó: ${inc.motivo}. Tu universidad ya fue informada y te pide corregirlo. Toca para ver el detalle.`,
+      'warning',
+      `incidencia:${incidenciaId}`,
+    );
+  } catch { /* no-op */ }
 }

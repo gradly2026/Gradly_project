@@ -151,6 +151,7 @@ import PostulacionRechazadaModal from './PostulacionRechazadaModal';
 import ContratoAvisoModal from './ContratoAvisoModal';
 import OfertaEmpleoModal from './OfertaEmpleoModal';
 import OfertaRespondidaModal from './OfertaRespondidaModal';
+import IncidenciaAvisoModal from './IncidenciaAvisoModal';
 // Los modales de detalle que se pueden abrir al tocar una notificación
 // con referencia estructurada "kind:id" (ver notifRoute.ts). Cada uno es
 // un componente separado, definido en su propio archivo.
@@ -238,6 +239,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const [contratoAvisoId, setContratoAvisoId] = useState<string | null>(null);
   const [ofertaEmpleoId, setOfertaEmpleoId] = useState<string | null>(null);
   const [ofertaRespondidaId, setOfertaRespondidaId] = useState<string | null>(null);
+  const [incidenciaAvisoId, setIncidenciaAvisoId] = useState<string | null>(null);
   // 4 estados, uno por cada tipo de modal de detalle posible. Cada uno
   // guarda `null` (modal cerrado) o el ID del documento a mostrar (modal
   // abierto, mostrando ese documento específico). Ver más abajo cómo
@@ -404,6 +406,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         case 'contratoAviso': setContratoAvisoId(ref.id); break;
         case 'ofertaEmpleo': setOfertaEmpleoId(ref.id); break;
         case 'ofertaRespondida': setOfertaRespondidaId(ref.id); break;
+        case 'incidencia': setIncidenciaAvisoId(ref.id); break;
       }
       return;
       // Termina aquí: si era una referencia estructurada, ya se decidió
@@ -727,6 +730,11 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         visible={!!ofertaRespondidaId}
         ofertaId={ofertaRespondidaId}
         onClose={() => setOfertaRespondidaId(null)}
+      />
+      <IncidenciaAvisoModal
+        visible={!!incidenciaAvisoId}
+        incidenciaId={incidenciaAvisoId}
+        onClose={() => setIncidenciaAvisoId(null)}
       />
     </>
   );

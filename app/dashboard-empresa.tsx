@@ -108,6 +108,8 @@ import { AREAS as AREAS_CATALOGO, tagsDeArea } from '../src/data/areas';
 import { normalizarHorario, textoHorario, valHorario, type HorarioPasantia } from '../src/data/disponibilidad';
 import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import CandidatosVacante from '../src/components/CandidatosVacante';
+import FechaPresentacionModal from '../src/components/FechaPresentacionModal';
+import ReportarIncidenciaEmpresaModal, { type PasanteReportable } from '../src/components/ReportarIncidenciaEmpresaModal';
 import SeccionReclutamiento from '../src/components/SeccionReclutamiento';
 import PerfilPublicoModal from '../components/PerfilPublicoModal';
 import MapViewer from '../src/components/MapViewer';
@@ -3244,6 +3246,10 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
   // Pasantes por CUPO en curso (`asignaciones_cupo` tomado y NO finalizado) —
   // el flujo nuevo, que esta sección no contemplaba (solo veía `aplicaciones`).
   const [cuposActivos, setCuposActivos] = useState<any[]>([]);
+  // Cupo seleccionado en "Pasantes por cupo" → abre FechaPresentacionModal (el
+  // mismo cuadro de "primer día" que ya vive en CandidatosVacante), acotado a
+  // ESE estudiante: ver los datos de su pasantía y fijarle/editarle el Día 1.
+  const [cupoSel, setCupoSel] = useState<any | null>(null);
   useEffect(() => {
     if (!empresaId) return;
     const unsub = onSnapshot(
@@ -3258,13 +3264,53 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
     return unsub;
   }, [empresaId]);
 
+  // Pasantes que la empresa puede reportar: cupos activos + contratados
+  // individuales en curso. Traen su `universidadId` real, así que la incidencia
+  // llega a la universidad correcta sin lecturas extra. (Los pasantes de GRUPO
+  // quedan fuera: `alumnos[].id` puede ser sintético, no un uid real.)
+  const pasantesReportables = useMemo<PasanteReportable[]>(() => {
+    const map = new Map<string, PasanteReportable>();
+    apps.filter(a => a.estado === 'contratado').forEach(a => {
+      if (a.estudiante_id) {
+        map.set(a.estudiante_id, {
+          id: a.estudiante_id,
+          nombre: a.estudiante_nombre || 'Estudiante',
+          universidadId: a.universidad_id ?? null,
+        });
+      }
+    });
+    cuposActivos.forEach(c => {
+      if (c.estudianteId) {
+        map.set(c.estudianteId, {
+          id: c.estudianteId,
+          nombre: c.estudianteNombre || 'Estudiante',
+          universidadId: c.universidadId ?? null,
+        });
+      }
+    });
+    return [...map.values()];
+  }, [apps, cuposActivos]);
+  const [reportarOpen, setReportarOpen] = useState(false);
+
   // Bandeja de incidencias: va en ESTA sección y no en Inicio porque una
   // incidencia siempre habla de una pasantía en curso — es el mismo contexto.
   // Se dibuja aunque esté vacía: si solo apareciera cuando hay problemas, la
   // empresa nunca sabría que este canal existe hasta el día que lo necesita.
   const Incidencias = (
     <View style={{ marginBottom: 20 }}>
-      <Text style={[s.activaNombre, { marginBottom: 10 }]}>{t('inc_titulo')}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
+        <Text style={s.activaNombre}>{t('inc_titulo')}</Text>
+        {pasantesReportables.length > 0 && (
+          <TouchableOpacity
+            onPress={() => setReportarOpen(true)}
+            activeOpacity={0.85}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.warning, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 }}
+          >
+            <Ionicons name="flag-outline" size={14} color={colors.warning} />
+            <Text style={{ fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: colors.warning }}>{t('inc_emp_reportar_btn')}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       <BandejaIncidencias rol="empresa" uid={empresaId} nombreUsuario={empresaNombre} />
     </View>
   );
@@ -3322,14 +3368,13 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
         <TouchableOpacity
           key={c.id}
           activeOpacity={0.85}
-          disabled={!c.estudianteId}
-          onPress={() => c.estudianteId && onVerPerfil(c.estudianteId)}
+          onPress={() => setCupoSel(c)}
         >
           <GlassCard style={{ marginBottom: 8 }} contentStyle={{ padding: 16, gap: 4 }}>
             <Text style={s.activaNombre} numberOfLines={1} noTranslate>{c.estudianteNombre ?? 'Estudiante'}</Text>
             {!!c.vacanteTitulo && <Text style={s.activaMeta} numberOfLines={1} noTranslate>{c.vacanteTitulo}</Text>}
-            <Text style={s.activaMeta}>
-              {c.fechaPresentacion ? `Día 1: ${c.fechaPresentacion}` : 'Primer día por definir'}
+            <Text style={[s.activaMeta, !c.fechaPresentacion && { color: colors.warning }]}>
+              {c.fechaPresentacion ? `Día 1: ${c.fechaPresentacion}` : 'Primer día por definir · toca para fijarlo'}
             </Text>
           </GlassCard>
         </TouchableOpacity>
@@ -3340,6 +3385,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
   const Header = <>{Incidencias}{Grupos}{PasantesCupo}</>;
 
   return (
+    <>
     <FlatList
       data={activos}
       keyExtractor={item => item.id}
@@ -3379,6 +3425,31 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
           : <Text style={s.emptyText}>Sin pasantes activos.</Text>
       }
     />
+
+    {/* Cuadro de "primer día" acotado al estudiante que se tocó en la lista de
+        arriba. Reutiliza tal cual FechaPresentacionModal (detalle de la
+        pasantía + establecer/editar Día 1 + coordinar por chat + ver perfil);
+        `asignaciones_cupo` en vivo hace que la fila se actualice al guardar. */}
+    <FechaPresentacionModal
+      visible={!!cupoSel}
+      asignacion={cupoSel}
+      empresaId={empresaId}
+      empresaNombre={empresaNombre}
+      onClose={() => setCupoSel(null)}
+      onVerPerfil={onVerPerfil}
+    />
+
+    {/* Reportar a un pasante (llegadas tarde, ausencias, tareas sin cumplir…).
+        Escribe en `incidencias` con origen 'empresa'; lo revisa la universidad
+        del estudiante. */}
+    <ReportarIncidenciaEmpresaModal
+      visible={reportarOpen}
+      onClose={() => setReportarOpen(false)}
+      empresaId={empresaId}
+      empresaNombre={empresaNombre}
+      estudiantes={pasantesReportables}
+    />
+    </>
   );
 }
 
