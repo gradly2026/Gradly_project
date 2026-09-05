@@ -332,6 +332,25 @@ export async function abrirChatDirectoUsuarios(params: {
   otro: { uid: string; nombre: string; rol: string };
 }): Promise<string> {
   const { yo, otro } = params;
+
+  // Un par empresa↔estudiante SIEMPRE resuelve a la MISMA sala canónica
+  // `direct_{empresaId}_{estudianteId}` que ya usan los botones de coordinación
+  // (Mi Progreso, FechaPresentacionModal, InscripcionExitoModal, feed…). Sin
+  // esto, pulsar "Chatear" desde un perfil o desde el buscador creaba un
+  // `dm_{a}_{b}` PARALELO y salían dos conversaciones con la misma persona.
+  const porRol: Record<string, { uid: string; nombre: string; rol: string }> = {
+    [yo.rol]: yo,
+    [otro.rol]: otro,
+  };
+  if (porRol.empresa && porRol.estudiante) {
+    return abrirChatDirectoEmpresaEstudiante({
+      empresaId: porRol.empresa.uid,
+      empresaNombre: porRol.empresa.nombre,
+      estudianteId: porRol.estudiante.uid,
+      estudianteNombre: porRol.estudiante.nombre,
+    });
+  }
+
   const [a, b] = [yo.uid, otro.uid].sort();
   const chatId = `dm_${a}_${b}`;
   const chatRef = doc(db, "chats", chatId);
@@ -410,6 +429,50 @@ export async function crearChatGrupoAdHoc(params: {
 }
 
 /**
+ * Colapsa los chats DIRECTOS duplicados de un mismo par de personas. Antes de
+ * unificar los flujos podía quedar un `direct_{empresaId}_{estudianteId}` (de
+ * los botones de coordinación) y un `dm_{a}_{b}` (del "Chatear" genérico) para
+ * la MISMA conversación. Se conserva UNO en la bandeja: el que tenga mensajes;
+ * a igualdad, el más reciente; a igualdad, el `direct_` (el canónico al que ya
+ * convergen los flujos nuevos). NO borra nada en la base: solo decide qué se
+ * muestra. Las salas de grupo y las de 3+ participantes no se tocan.
+ */
+function colapsarDirectosDuplicados(items: ChatListItem[]): ChatListItem[] {
+  const conMensaje = (c: ChatListItem) => !!c.lastMessage?.trim();
+  const mejor = (a: ChatListItem, b: ChatListItem): ChatListItem => {
+    if (conMensaje(a) !== conMensaje(b)) return conMensaje(a) ? a : b;
+    const ta = a.updatedAt?.getTime() ?? 0;
+    const tb = b.updatedAt?.getTime() ?? 0;
+    if (ta !== tb) return ta > tb ? a : b;
+    return a.id.startsWith("direct_") ? a : b;
+  };
+
+  // Solo entran las salas de los esquemas `direct_{empresaId}_{estudianteId}` y
+  // `dm_{a}_{b}`: son las únicas dos que pueden apuntar a la MISMA conversación
+  // de un par empresa↔estudiante. Los chats de coordinación de pasantía
+  // (`{uni}_{emp}_{grupo}`, sin prefijo) y los de grupo quedan intactos.
+  const esColapsable = (c: ChatListItem) =>
+    c.type === "direct" &&
+    c.users.length === 2 &&
+    (c.id.startsWith("direct_") || c.id.startsWith("dm_"));
+
+  const porPar = new Map<string, ChatListItem>();
+  const resto: ChatListItem[] = [];
+  for (const c of items) {
+    if (!esColapsable(c)) {
+      resto.push(c);
+      continue;
+    }
+    const clave = [...c.users].sort().join("|");
+    const prev = porPar.get(clave);
+    porPar.set(clave, prev ? mejor(prev, c) : c);
+  }
+  return [...resto, ...porPar.values()].sort(
+    (a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0),
+  );
+}
+
+/**
  * Suscripción en tiempo real a los chats donde participa `uid`.
  * Ordena por `updatedAt` desc (los más recientes primero).
  */
@@ -452,7 +515,7 @@ export function subscribeUserChats(
           escribiendo: parseEscribiendo(data, uid),
         };
       });
-      onData(items);
+      onData(colapsarDirectosDuplicados(items));
     },
     (error) => {
       console.warn("Error en listener (chats inbox):", error);

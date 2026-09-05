@@ -369,7 +369,7 @@ export function PerfilStatsUniversidad({ universidadId }: { universidadId: strin
 
   const resumen = useMemo(() => {
     const buckets = [0, 0, 0, 0, 0];
-    let sumaPct = 0, enProceso = 0, egresados = 0;
+    let enProceso = 0, egresados = 0;
     estudiantes.forEach(e => {
       const objetivo = Number(e.horas_objetivo) || 500;
       const pctCert = Math.max(0, Math.min(100, (Number(e.horas_aprobadas) || 0) / objetivo * 100));
@@ -378,12 +378,10 @@ export function PerfilStatsUniversidad({ universidadId }: { universidadId: strin
       const pct = Math.max(pctCert, led?.pct ?? 0);
       const idx = pct >= 100 ? 4 : pct >= 76 ? 3 : pct >= 51 ? 2 : pct >= 26 ? 1 : 0;
       buckets[idx]++;
-      sumaPct += pct;
       if ((Number(e.horas_en_proceso) || 0) > 0 || led?.enProceso) enProceso++;
       if (e.graduado === true) egresados++;
     });
-    const promedio = estudiantes.length ? Math.round(sumaPct / estudiantes.length) : 0;
-    return { buckets, promedio, enProceso, egresados };
+    return { buckets, enProceso, egresados };
   }, [estudiantes, ledgerPorEstudiante]);
 
   const chartConfig = makeChartConfig(colors, isDark);
@@ -409,7 +407,9 @@ export function PerfilStatsUniversidad({ universidadId }: { universidadId: strin
           />
           <Text style={styles.empty}>Estudiantes según su porcentaje de horas cumplidas.</Text>
           <View style={styles.statsRow}>
-            <MiniStat label="Avance prom." value={`${resumen.promedio}%` as any} color={colors.primaryLight} styles={styles} />
+            {/* "Avance prom." se quitó por pedido del usuario (ya se había
+                hablado): la barra de arriba ya muestra la distribución y la
+                abreviatura confundía al traductor automático. */}
             <MiniStat label="En proceso" value={resumen.enProceso} color={colors.success} styles={styles} />
             <MiniStat label="Egresados" value={resumen.egresados} color={colors.gold} styles={styles} />
           </View>
