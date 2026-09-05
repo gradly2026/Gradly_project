@@ -394,7 +394,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "¡Bienvenido a tu panel! 🏢": "Welcome to your dashboard! 🏢",
   "¡Cuenta creada!": "Account created!",
   "¡Felicidades!": "Congratulations!",
-  "¡Meta alcanzada! Eres un Graduado.": "Goal reached! You're a Graduate.",
+  "¡Meta alcanzada! Ya estás certificado.": "Goal reached! You're now certified.",
   "¡Pago Realizado!": "Payment completed!",
   "¡Vacante Publicada!": "Job posted!",
   "¿Cómo quieres usar Gradly?": "How do you want to use Gradly?",
@@ -863,6 +863,9 @@ export const CUPOS_SEED_EN: Record<string, string> = {
 
   // ── Cierre automático por horas (Fase E) ──
   "Día de práctica": "Practice day",
+  // CalendarioEventos — estado vacío del panel inferior (sin día seleccionado
+  // y sin próximos eventos).
+  "Sin eventos": "No events",
   "¡Culminaste tu pasantía!": "You finished your internship!",
   "Cumpliste todas tus horas de práctica. Tu universidad y la empresa ya fueron notificadas.":
     "You completed all your practice hours. Your university and the company have been notified.",
@@ -1181,7 +1184,7 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "están escribiendo…": "are typing…",
 
   // ── Pestaña Jobs: 3 estados según situación de pasantía del estudiante ──
-  "Disponible al graduarte": "Available once you graduate",
+  "Disponible al culminar tu pasantía": "Available once you finish your internship",
   "Otras pasantías para tu carrera": "Other internships for your major",
   "Sin pasantías disponibles todavía": "No internships available yet",
   "Aún no hay pasantías afines a tu carrera para autoservicio. Vuelve pronto, o espera a que tu universidad te asegure un cupo.":
@@ -1699,5 +1702,7 @@ export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
   "Web": "Website",
   "Sin grupo": "No group",
   "Estudiante de Alto Nivel": "High-Achieving Student",
-  "Graduado": "Graduate",
+  // Insignia / nivel tope de horas de pasantía (100%). "Certificado", no
+  // "Graduado": culminar la pasantía no es egresar de la universidad.
+  "Certificado": "Certified",
 };

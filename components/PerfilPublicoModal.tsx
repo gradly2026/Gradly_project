@@ -319,8 +319,8 @@ export default function PerfilPublicoModal({
                     )}
                     {esGraduado && (
                       <View style={[styles.gBadge, { borderColor: C.green + "88", backgroundColor: C.green + "1A" }]}>
-                        <Ionicons name="trophy" size={13} color={C.green} />
-                        <Text style={{ color: C.green, fontSize: 11, fontWeight: "700" }}>Graduado</Text>
+                        <Ionicons name="ribbon" size={13} color={C.green} />
+                        <Text style={{ color: C.green, fontSize: 11, fontWeight: "700" }}>Certificado</Text>
                       </View>
                     )}
                   </View>

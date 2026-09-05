@@ -25,6 +25,7 @@ import { AutoText as Text, useAutoText } from "./AutoText";
 import { PieChart } from 'react-native-chart-kit';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { progresoPorFechas } from '../utils/progresoPasantia';
+import { canonicalizarArea } from '../data/areas';
 import type { InscripcionActiva } from '../hooks/useInscripcionesActivas';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 
@@ -103,13 +104,15 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
   const totalEstados = estados.pendiente + estados.revision + estados.entrevista + estados.contratado + estados.rechazado;
 
   // ── Vacantes por área (barras) ──
+  // Se agrupa por el área CANÓNICA (canonicalizarArea): así "Finaza" y otras
+  // variantes con typo/tildes/mayúsculas caen en la misma barra que "Finanzas".
   const areas = useMemo(() => {
-    const map: Record<string, number> = {};
+    const map = new Map<string, number>();
     vacantes.forEach(v => {
-      const a = v.area || 'Otra';
-      map[a] = (map[a] ?? 0) + 1;
+      const a = canonicalizarArea(v.area);
+      map.set(a, (map.get(a) ?? 0) + 1);
     });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   }, [vacantes]);
   const maxArea = Math.max(...areas.map(a => a[1]), 1);
 

@@ -13,7 +13,7 @@
  *   pisando lo que `feedbackService.ts` ya había calculado (ver
  *   [[project_resenas_perfil_y_reportar_chat]]).
  * - Insignias gamificadas: "Estudiante de Alto Nivel" (promedio oficial ≥ 4.5) y
- *   "Graduado" (100% de horas completadas).
+ *   "Certificado" (100% de horas de pasantía completadas).
  */
 import { Ionicons } from '@expo/vector-icons';
 import { doc, getDoc } from 'firebase/firestore';
@@ -241,7 +241,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
               {tipo === 'estudiante' && (esGraduado || esAltoNivel) && (
                 <View style={styles.badgesRow}>
                   {esAltoNivel && <GlowBadge icon="star" label="Estudiante de Alto Nivel" color="#F59E0B" styles={styles} />}
-                  {esGraduado && <GlowBadge icon="trophy" label="Graduado" color={colors.success} styles={styles} />}
+                  {esGraduado && <GlowBadge icon="ribbon" label="Certificado" color={colors.success} styles={styles} />}
                 </View>
               )}
 

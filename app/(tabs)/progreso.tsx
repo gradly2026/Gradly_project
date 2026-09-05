@@ -123,7 +123,7 @@ function getLevel(pct: number) {
   // distinto (usa directamente `COLORS` fijo en vez de recibir la paleta
   // como parámetro), pero la idea de negocio es la misma: 5 escalones
   // según el % de horas.
-  if (pct >= 100) return { name: 'Graduado',    icon: 'trophy'    as const, color: COLORS.gold };
+  if (pct >= 100) return { name: 'Certificado', icon: 'ribbon'    as const, color: COLORS.gold };
   if (pct >= 76)  return { name: 'Experto',     icon: 'star'      as const, color: COLORS.warning };
   if (pct >= 51)  return { name: 'Profesional', icon: 'briefcase' as const, color: COLORS.success };
   if (pct >= 26)  return { name: 'Practicante', icon: 'bag'       as const, color: COLORS.primaryLight };
@@ -824,8 +824,8 @@ export default function ProgresoTab() {
             </View>
           ) : pct >= 100 ? (
             <View style={styles.metaBanner}>
-              <Ionicons name="trophy" size={18} color={COLORS.gold} />
-              <Text style={styles.metaText}>¡Meta alcanzada! Eres un Graduado.</Text>
+              <Ionicons name="ribbon" size={18} color={COLORS.gold} />
+              <Text style={styles.metaText}>¡Meta alcanzada! Ya estás certificado.</Text>
             </View>
           ) : null}
         </GlassCard>

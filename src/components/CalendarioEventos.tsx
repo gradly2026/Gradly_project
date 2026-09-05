@@ -409,12 +409,12 @@ export default function CalendarioEventos({
             eventosDiaSel.length === 0
               ? <Text style={styles.empty}>Sin eventos el {formatoFechaDetalle.format(diaSel)}.</Text>
               : eventosDiaSel.map(renderEvento)
+          ) : proximos.length === 0 ? (
+            <Text style={styles.empty}>Sin eventos</Text>
           ) : (
             <>
               <Text style={styles.detalleTitulo}>Próximos eventos</Text>
-              {proximos.length === 0
-                ? <Text style={styles.empty}>No hay eventos próximos.</Text>
-                : proximos.map(renderEvento)}
+              {proximos.map(renderEvento)}
             </>
           )}
         </View>

@@ -1745,7 +1745,7 @@ export default function DashboardEmpresa() {
   // de este componente principal) pasándole los datos y callbacks que necesita.
   const renderSeccion = () => {
     switch (seccion) {
-      case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} onVerPerfil={setPerfilCandidatoId} />;
+      case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} />;
       case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => { setVacanteEditando(null); setShowNuevaVacante(true); }} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} onEditar={abrirEditarVacante} onEliminar={handleEliminarVacante} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
       case 'kanban':   return (
         <SeccionReclutamiento
@@ -3035,9 +3035,9 @@ export default function DashboardEmpresa() {
 // ─────────────────────────────────────────────
 // SECCIÓN: INICIO
 // ─────────────────────────────────────────────
-function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitudesGrupo, onVerPerfil }: {
+function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitudesGrupo }: {
   metricas: any; apps: Aplicacion[]; perfil: PerfilEmpresa | null; empresaId: string;
-  vacantes: Vacante[]; solicitudesGrupo: SolicitudGrupo[]; onVerPerfil: (estudianteId: string) => void;
+  vacantes: Vacante[]; solicitudesGrupo: SolicitudGrupo[];
 }) {
   const { s, colors } = useThemedStyles();
   // Mismo criterio que el badge del encabezado: el rótulo depende del `plan`
@@ -3048,11 +3048,6 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
     planKeyBadge === 'premium' ? '⭐ Premium' : planKeyBadge === 'mensual' ? 'Plan Básico' : 'Plan Gratuito',
   );
   const inscripcionesActivas = useInscripcionesActivas('empresaId', empresaId);
-  const recientes = [...apps].sort((a, b) => {
-    const ta = a.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
-    const tb = b.fecha_aplicacion?.toDate?.()?.getTime() ?? 0;
-    return tb - ta;
-  }).slice(0, 5);
 
   return (
     <ScrollView contentContainerStyle={s.scroll}>
@@ -3087,30 +3082,12 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
         inscripciones={inscripcionesActivas}
       />
 
-      {/* ── Matchmaking: solicitudes entrantes de universidades ── */}
+      {/* ── Matchmaking: solo aparece si hay un reclamo de cupos por confirmar
+          o un grupo por evaluar (ocultarSiVacio). La universidad no "solicita"
+          alianzas: toma cupos y el sistema los asigna. ── */}
       <View style={{ marginTop: 8, marginBottom: 16 }}>
-        <SolicitudesEmpresa empresaId={empresaId} limiteAlianzas={perfil?.limiteAlianzas ?? 1} />
+        <SolicitudesEmpresa empresaId={empresaId} limiteAlianzas={perfil?.limiteAlianzas ?? 1} ocultarSiVacio />
       </View>
-
-      {/* Actividad reciente */}
-      <Text style={s.sectionTitle}>Actividad reciente</Text>
-      {recientes.length === 0
-        ? <Text style={s.emptyText}>Sin actividad reciente.</Text>
-        : recientes.map(a => (
-            <TouchableOpacity
-              key={a.id}
-              style={s.actividadRow}
-              activeOpacity={0.7}
-              onPress={() => a.estudiante_id && onVerPerfil(a.estudiante_id)}
-              disabled={!a.estudiante_id}
-            >
-              <View style={s.actividadDot} />
-              <Text style={s.actividadText} numberOfLines={1}>
-                {a.estudiante_nombre} — {a.estado.replace('_', ' ')}
-              </Text>
-            </TouchableOpacity>
-          ))
-      }
     </ScrollView>
   );
 }

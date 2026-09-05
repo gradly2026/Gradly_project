@@ -198,6 +198,71 @@ function normalizar(s: string): string {
 }
 
 /**
+ * Distancia de edición (Levenshtein) entre dos cadenas. Solo se usa para
+ * tolerar un typo leve de un área del catálogo ("Finaza" → "Finanzas"), así
+ * que basta la versión O(n·m) con dos filas.
+ */
+function distanciaEdicion(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  let curr = new Array<number>(n + 1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const costo = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + costo);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n];
+}
+
+/** Catálogo `AREAS` indexado por su forma normalizada, construido una sola vez. */
+let indiceAreas: Map<string, string> | null = null;
+
+/**
+ * Etiqueta de área CANÓNICA para agrupar y mostrar (p. ej. en el gráfico
+ * "Vacantes por área"). Une las variantes que en realidad son la misma área:
+ *
+ *   · mayúsculas/minúsculas y tildes  → "TECNOLOGIA" / "tecnología" = "Tecnología"
+ *   · espacios de sobra               → " Finanzas " = "Finanzas"
+ *   · un typo leve de un área del catálogo (distancia ≤ 2, sin ambigüedad, y
+ *     solo en nombres de 6+ letras para no fundir "Legal"/"Salud" con cualquier
+ *     cosa)                           → "Finaza" = "Finanzas"
+ *
+ * Un área realmente propia de la empresa (la opción "Otra" con texto libre que
+ * no se parece a ninguna del catálogo) se respeta tal cual se escribió.
+ */
+export function canonicalizarArea(raw?: string | null): string {
+  const limpio = (raw ?? "").trim();
+  if (!limpio) return "Otra";
+
+  if (!indiceAreas) {
+    indiceAreas = new Map();
+    for (const a of AREAS) indiceAreas.set(normalizar(a), a);
+  }
+
+  const norm = normalizar(limpio);
+  const exacta = indiceAreas.get(norm);
+  if (exacta) return exacta;
+
+  let candidata: string | null = null;
+  let ambigua = false;
+  for (const [normCat, etiqueta] of indiceAreas) {
+    if (etiqueta === "Otra") continue;
+    if (Math.min(norm.length, normCat.length) < 6) continue;
+    if (distanciaEdicion(norm, normCat) <= 2) {
+      if (candidata && candidata !== etiqueta) { ambigua = true; break; }
+      candidata = etiqueta;
+    }
+  }
+  return candidata && !ambigua ? candidata : limpio;
+}
+
+/**
  * Áreas afines a una carrera dada por NOMBRE (que es como se guarda en
  * `grupos.carrera` y `perfiles_estudiantes.carrera`).
  * Devuelve `[]` si la carrera no está en el catálogo — el punto de uso debe

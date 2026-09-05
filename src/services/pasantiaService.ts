@@ -151,7 +151,11 @@ export function calcularNivelEstudiante(
   //   - Math.round(...)                → redondea a un número entero.
   //   - Math.min(100, ...)              → nunca deja pasar de 100%, por si
   //     hubiera más horas aprobadas que el objetivo original.
-  if (pct >= 100) return { nivel: 'graduado',    titulo: 'Graduado',    icono: 'trophy',    color: '#D97706', porcentaje: 100 };
+  // `nivel: 'graduado'` es el identificador INTERNO que habilita las vacantes
+  // (ver estudianteHabilitadoParaVacantes) — no se toca. El `titulo` visible es
+  // "Certificado": el estudiante culminó su pasantía (y recibe constancia), que
+  // NO es lo mismo que haber egresado de la universidad.
+  if (pct >= 100) return { nivel: 'graduado',    titulo: 'Certificado', icono: 'ribbon',    color: '#D97706', porcentaje: 100 };
   if (pct >= 76)  return { nivel: 'experto',     titulo: 'Experto',     icono: 'star',      color: '#F59E0B', porcentaje: pct };
   if (pct >= 51)  return { nivel: 'profesional', titulo: 'Profesional', icono: 'briefcase', color: '#10B981', porcentaje: pct };
   if (pct >= 26)  return { nivel: 'practicante', titulo: 'Practicante', icono: 'bag',       color: '#A78BFA', porcentaje: pct };

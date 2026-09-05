@@ -741,7 +741,13 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
 // ═════════════════════════════════════════════
 // VISTA EMPRESA
 // ═════════════════════════════════════════════
-export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empresaId: string; limiteAlianzas?: number }) {
+export function SolicitudesEmpresa({
+  empresaId,
+  limiteAlianzas = 9999,
+  /** Inicio de la empresa: no montar nada si no hay un reclamo de cupos por
+   *  confirmar ni un grupo por evaluar (oculta la tarjeta y su estado vacío). */
+  ocultarSiVacio = false,
+}: { empresaId: string; limiteAlianzas?: number; ocultarSiVacio?: boolean }) {
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
@@ -812,6 +818,15 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
     [solicitudes],
   );
   const ilimitadas = limiteAlianzas >= 9999;
+
+  // En el Inicio de la empresa la tarjeta solo aparece si hay algo que
+  // atender: un reclamo de cupos por confirmar o un grupo por evaluar. Sin
+  // eso no se monta nada (ni el encabezado ni el "No tienes solicitudes
+  // pendientes."). La vista completa —"En proceso", cupo de alianzas, estado
+  // vacío— se sigue usando donde `ocultarSiVacio` es false. (Va después de
+  // todos los hooks para no romper el orden de render.)
+  const hayPendiente = reclamosPendientes.length > 0 || pendientes.length > 0;
+  if (ocultarSiVacio && !hayPendiente) return null;
 
   const abrir = (s: AplicacionGrupo) => {
     setSel(s);
@@ -960,37 +975,44 @@ export function SolicitudesEmpresa({ empresaId, limiteAlianzas = 9999 }: { empre
         </View>
       </Modal>
 
-      <View style={styles.rowBetween}>
-        <Text style={styles.heading}>Solicitudes de universidades</Text>
-        <Text style={styles.note}>
-          {ilimitadas
-            ? 'Alianzas ∞'
-            : `Alianzas ${universidadesAliadas.size}/${limiteAlianzas}`}
-        </Text>
-      </View>
-      {pendientes.length === 0 ? (
-        <Text style={styles.empty}>No tienes solicitudes pendientes.</Text>
-      ) : (
-        pendientes.map(s => (
-          <GlassCard key={s.id} colors={colors} isDark={isDark} column>
-            <View style={styles.rowBetween}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle} numberOfLines={1}>{s.grupoNombre || 'Grupo'}</Text>
-                <Text style={styles.cardMeta} numberOfLines={1}>{s.vacanteTitulo}</Text>
-              </View>
-              <EstadoBadge estado={s.estado} colors={colors} />
-            </View>
-            <View style={styles.tagsRow}>
-              <InfoTag icon="school-outline" text={s.carrera || '—'} color={colors.primaryLight} styles={styles} />
-              <InfoTag icon="time-outline" text={`${s.horasRequeridas ?? 0}h`} color={colors.primaryLight} styles={styles} />
-              <InfoTag icon="people-outline" text={`${s.estudiantesCount ?? 0} est.`} color={colors.primaryLight} styles={styles} />
-            </View>
-            <TouchableOpacity style={styles.cta} onPress={() => abrir(s)}>
-              <Ionicons name="create-outline" size={15} color="#fff" />
-              <Text style={styles.ctaText}>Evaluar grupo</Text>
-            </TouchableOpacity>
-          </GlassCard>
-        ))
+      {/* Encabezado + estado vacío: en el Inicio (ocultarSiVacio) solo se
+          muestran si hay grupos por evaluar; si la tarjeta está visible por un
+          reclamo de cupos, no se añade aquí un "No tienes solicitudes". */}
+      {(!ocultarSiVacio || pendientes.length > 0) && (
+        <>
+          <View style={styles.rowBetween}>
+            <Text style={styles.heading}>Solicitudes de universidades</Text>
+            <Text style={styles.note}>
+              {ilimitadas
+                ? 'Alianzas ∞'
+                : `Alianzas ${universidadesAliadas.size}/${limiteAlianzas}`}
+            </Text>
+          </View>
+          {pendientes.length === 0 ? (
+            <Text style={styles.empty}>No tienes solicitudes pendientes.</Text>
+          ) : (
+            pendientes.map(s => (
+              <GlassCard key={s.id} colors={colors} isDark={isDark} column>
+                <View style={styles.rowBetween}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle} numberOfLines={1}>{s.grupoNombre || 'Grupo'}</Text>
+                    <Text style={styles.cardMeta} numberOfLines={1}>{s.vacanteTitulo}</Text>
+                  </View>
+                  <EstadoBadge estado={s.estado} colors={colors} />
+                </View>
+                <View style={styles.tagsRow}>
+                  <InfoTag icon="school-outline" text={s.carrera || '—'} color={colors.primaryLight} styles={styles} />
+                  <InfoTag icon="time-outline" text={`${s.horasRequeridas ?? 0}h`} color={colors.primaryLight} styles={styles} />
+                  <InfoTag icon="people-outline" text={`${s.estudiantesCount ?? 0} est.`} color={colors.primaryLight} styles={styles} />
+                </View>
+                <TouchableOpacity style={styles.cta} onPress={() => abrir(s)}>
+                  <Ionicons name="create-outline" size={15} color="#fff" />
+                  <Text style={styles.ctaText}>Evaluar grupo</Text>
+                </TouchableOpacity>
+              </GlassCard>
+            ))
+          )}
+        </>
       )}
 
       {enProceso.length > 0 && (
