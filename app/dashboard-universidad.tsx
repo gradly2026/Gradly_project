@@ -92,7 +92,6 @@ import {
   Alert,
   Dimensions,
   FlatList,
-  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -103,7 +102,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { AutoText as Text, AutoTextInput as TextInput } from "../src/components/AutoText";
+import { AutoText as Text, AutoTextInput as TextInput, useAutoText } from "../src/components/AutoText";
 import * as XLSX from 'xlsx';
 // La librería "xlsx" (SheetJS): lee archivos de Excel (.xlsx) o CSV y los
 // convierte a arrays de objetos JavaScript — el corazón técnico de la
@@ -139,7 +138,7 @@ import { useInscripcionesActivas } from '../src/hooks/useInscripcionesActivas';
 import { useAuthBackGuard } from '../src/hooks/useSessionBackGuard';
 import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
-import { calcularHorasAcuerdo, progresoDeGrupo } from '../src/utils/horasPasantia';
+import { progresoDeGrupo } from '../src/utils/horasPasantia';
 // calcularHorasAcuerdo(acuerdo) → dado un acuerdo (horario + fechas),
 // calcula el total de horas de práctica que representa.
 // progresoDeGrupo(grupo, acuerdo) → calcula el % de avance de un grupo,
@@ -149,7 +148,9 @@ import { esCarreraSoportada, cargarOverridesCarreras, CARRERAS_EL_SALVADOR } fro
 import CarrerasEditorModal from '../src/components/CarrerasEditorModal';
 import { showConfirm, showAlert } from '../src/components/AppAlert';
 import ProfileViewerModal from '../src/components/ProfileViewerModal';
-import { certificarPasantia } from '../src/services/solicitudPracticaService';
+import CertificarPasanteModal from '../src/components/CertificarPasanteModal';
+import { suscribirComprobantesDeRol, type Comprobante } from '../src/services/comprobanteService';
+import { getFeedbackPendiente, type FeedbackPendiente } from '../src/services/feedbackService';
 import { eliminarEstudiante as eliminarEstudianteCF, eliminarGrupo as eliminarGrupoCF } from '../src/services/universidadService';
 // Estas 2 funciones (renombradas con "as" para aclarar que son Cloud
 // Functions, no lógica local) llaman a las Cloud Functions
@@ -1238,6 +1239,12 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
 
   // ── Pestañas ──
   const [tab, setTab] = useState<'grupos' | 'estudiantes'>('grupos');
+  // Rótulos traducidos por separado del contador: si el número viaja dentro
+  // del string que se manda a traducir ('Grupos Creados (N)'), AutoText puede
+  // quedarse mostrando el N de un render anterior. Fuera del traductor, con
+  // <Text noTranslate>, el número es siempre '.length' en vivo.
+  const lblGruposCreados = useAutoText('Grupos Creados');
+  const lblEstRegistrados = useAutoText('Estudiantes Registrados');
 
   // ── Grupos (tiempo real) ──
   const [grupos, setGrupos] = useState<Grupo[]>([]);
@@ -1445,7 +1452,9 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
       onAbrirChatEnMensajes(chatId, grupo.nombre);
     } catch (error) {
       console.warn('Error creando chat grupal:', error);
-      Alert.alert('Error', 'No se pudo crear el chat del grupo. Intenta de nuevo.');
+      // showAlert (AppAlert) y no Alert.alert: este último es un no-op silencioso
+      // en react-native-web (gotcha_alert_alert_web_noop) — el fallo quedaba mudo.
+      void showAlert('Error', 'No se pudo crear el chat del grupo. Intenta de nuevo.');
     } finally {
       setCreandoChatGrupo(null);
     }
@@ -1890,14 +1899,18 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
           onPress={() => setTab('grupos')}
           activeOpacity={0.8}
         >
-          <Text style={[s.tabText, tab === 'grupos' && s.tabTextActive]}>Grupos Creados ({grupos.length})</Text>
+          <Text style={[s.tabText, tab === 'grupos' && s.tabTextActive]}>
+            {lblGruposCreados} <Text noTranslate>({grupos.length})</Text>
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[s.tabBtn, tab === 'estudiantes' && s.tabBtnActive]}
           onPress={() => setTab('estudiantes')}
           activeOpacity={0.8}
         >
-          <Text style={[s.tabText, tab === 'estudiantes' && s.tabTextActive]}>Estudiantes Registrados ({estudiantes.length})</Text>
+          <Text style={[s.tabText, tab === 'estudiantes' && s.tabTextActive]}>
+            {lblEstRegistrados} <Text noTranslate>({estudiantes.length})</Text>
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -1931,20 +1944,11 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={s.estudianteMeta}>{item.estudiantes_registrados} est.</Text>
                 </View>
-                {!item.egresado && (
-                  <TouchableOpacity
-                    style={[s.grupoEgresarBtn, !grupoPuedeEgresar(item.id) && { opacity: 0.4 }]}
-                    onPress={() => egresarGrupo(item)}
-                    disabled={egresando === item.id}
-                    accessibilityLabel="Egresar grupo"
-                  >
-                    {egresando === item.id ? (
-                      <ActivityIndicator size="small" color={colors.gold} />
-                    ) : (
-                      <Ionicons name="school-outline" size={18} color={colors.gold} />
-                    )}
-                  </TouchableOpacity>
-                )}
+                {/* El botón "Graduar/Egresar grupo" se retiró por pedido del
+                    usuario: la culminación de la práctica va por la certificación
+                    del comprobante (sección Prácticas), no por un egreso a mano
+                    de todo el grupo. `egresarGrupo`/`grupoPuedeEgresar` quedan en
+                    el archivo por si se reactiva, pero ya no hay disparador. */}
                 <TouchableOpacity
                   style={s.grupoChatBtn}
                   onPress={() => abrirChatGrupo(item)}
@@ -2320,31 +2324,72 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
 }) {
   const { s, colors } = useThemedStyles();
   const { t } = useTranslation();
-  const [certificando, setCertificando] = useState<string | null>(null);
 
-  const porCertificar = solicitudes.filter(x => x.estado === 'finalizado' && (x as any).certificacion !== 'certificada');
-  const activas       = solicitudes.filter(x => x.estado === 'aprobado');
-  const certificadas  = solicitudes.filter(x => (x as any).certificacion === 'certificada');
-  // 3 listas derivadas por filtro simple del mismo array — se dibujan
-  // como 3 secciones separadas más abajo.
+  // Comprobantes de finalización de las pasantías por cupo de esta universidad
+  // (empresa `enviarComprobante` → 'enviado' → universidad `validarComprobante`
+  // → 'validado' = 100% certificado). Ver comprobanteService.ts.
+  const [comprobantes, setComprobantes] = useState<Comprobante[]>([]);
+  useEffect(() => {
+    if (!uid) return;
+    return suscribirComprobantesDeRol('universidad', uid, setComprobantes);
+  }, [uid]);
 
-  // Pasantías INDIVIDUALES en curso — flujos que no pasan por
-  // `solicitudes_practicas` (grupo): por cupo (`asignaciones_cupo` tomado) y el
-  // legado por `aplicaciones` contratado. Se listan solo lectura, para que la
-  // universidad vea a los mismos estudiantes que la empresa ve trabajando.
+  // Calificaciones (estrellas) que la universidad aún debe enviar de sus
+  // pasantías de cupo culminadas. Lectura de una vez; se recarga tras enviar
+  // una. Bloquea "Validar comprobante" hasta que estén todas.
+  const [feedbackPend, setFeedbackPend] = useState<FeedbackPendiente[]>([]);
+  const recargarFeedback = useCallback(() => {
+    if (!uid) return;
+    getFeedbackPendiente(uid, 'universidad').then(setFeedbackPend).catch(() => setFeedbackPend([]));
+  }, [uid]);
+  useEffect(() => { recargarFeedback(); }, [recargarFeedback]);
+
+  const compPorId = useMemo(() => {
+    const m: Record<string, Comprobante> = {};
+    comprobantes.forEach(c => { m[c.id] = c; });
+    return m;
+  }, [comprobantes]);
+
+  // Pasantías por cupo cuyo TIEMPO ya terminó (`finalizada === true`).
+  const finalizadas = useMemo(
+    () => (asignacionesCupo ?? [])
+      .filter((a: any) => a.finalizada === true && a.estado !== 'cancelado')
+      .sort((a: any, b: any) => String(a.estudianteNombre ?? '').localeCompare(String(b.estudianteNombre ?? ''))),
+    [asignacionesCupo],
+  );
+  // Por certificar = terminó su tiempo y la universidad aún NO validó el
+  // comprobante (esté 'enviado' o ni siquiera enviado por la empresa).
+  const porCertificar = useMemo(
+    () => finalizadas.filter((a: any) => compPorId[a.id]?.estado !== 'validado'),
+    [finalizadas, compPorId],
+  );
+  // Certificados = comprobante 'validado' → proceso 100% culminado.
+  const certificados = useMemo(
+    () => finalizadas.filter((a: any) => compPorId[a.id]?.estado === 'validado'),
+    [finalizadas, compPorId],
+  );
+
+  // Detalle abierto (una asignación culminada).
+  const [sel, setSel] = useState<any | null>(null);
+
+  // Pasantías INDIVIDUALES EN CURSO (todavía sin culminar) — por cupo
+  // (`asignaciones_cupo` tomado y NO finalizada) y el legado por `aplicaciones`
+  // contratado. Solo lectura: la empresa gestiona la pasantía.
   const horasDe = (estudianteId: string) =>
     estudiantes.find(e => e.id === estudianteId)?.horas_aprobadas ?? 0;
   const enPasantiaIndividual = useMemo(() => {
     const filas: { key: string; nombre: string; detalle: string; horas: number; carrera: string }[] = [];
-    (asignacionesCupo ?? []).forEach(a => {
-      filas.push({
-        key: `cupo-${a.id}`,
-        nombre: a.estudianteNombre || estudiantes.find(e => e.id === a.estudianteId)?.nombre_completo || 'Estudiante',
-        detalle: [a.vacanteTitulo, a.empresaNombre].filter(Boolean).join(' · ') || 'Pasantía por cupo',
-        horas: horasDe(a.estudianteId),
-        carrera: a.carrera || '',
+    (asignacionesCupo ?? [])
+      .filter((a: any) => a.finalizada !== true && a.estado !== 'cancelado')
+      .forEach((a: any) => {
+        filas.push({
+          key: `cupo-${a.id}`,
+          nombre: a.estudianteNombre || estudiantes.find(e => e.id === a.estudianteId)?.nombre_completo || 'Estudiante',
+          detalle: [a.vacanteTitulo, a.empresaNombre].filter(Boolean).join(' · ') || 'Pasantía por cupo',
+          horas: horasDe(a.estudianteId),
+          carrera: a.carrera || '',
+        });
       });
-    });
     (apps ?? [])
       .filter(ap => ap.estado === 'contratado')
       .forEach(ap => {
@@ -2359,100 +2404,42 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
     return filas.sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [asignacionesCupo, apps, estudiantes]);
 
-  const handleCertificar = async (sol: SolicitudGrupo) => {
-    const h = calcularHorasAcuerdo(sol.acuerdo);
-    const ok = await showConfirm({
-      title: 'Certificar pasantía',
-      message: `Grupo "${sol.grupoNombre ?? '—'}". Se acreditarán ${h.total} horas a ${sol.alumnos?.length ?? 0} estudiante(s). Esta acción es definitiva.`,
-      confirmText: 'Certificar',
-    });
-    if (!ok) return;
-    setCertificando(sol.id);
-    try {
-      // Servicio (solicitudPracticaService.ts): marca la solicitud como
-      // 'certificada' y ACREDITA las horas a TODOS los estudiantes del
-      // grupo de una vez (runTransaction/writeBatch por dentro).
-      const r = await certificarPasantia(sol.id);
-      void showAlert('✅ Certificada', `Se acreditaron ${r.horas} horas a ${r.totalEstudiantes} estudiante(s).`);
-    } catch {
-      void showAlert('Error', 'No se pudo certificar la pasantía.');
-    } finally {
-      setCertificando(null);
-    }
-  };
-
-  const Card = ({ sol, accion }: { sol: SolicitudGrupo; accion?: 'certificar' }) => {
-    // Componente LOCAL (definido dentro de SeccionPracticas, se recrea en
-    // cada render de la sección) reutilizado para las 3 listas — con un
-    // badge de color/texto distinto según el estado, y el botón
-    // "Certificar" solo visible cuando `accion === 'certificar'`.
-    const h = calcularHorasAcuerdo(sol.acuerdo);
-    const progreso = progresoDeGrupo({}, sol.acuerdo);
-    const cert = (sol as any).certificacion;
-    const badge =
-      cert === 'certificada' ? { txt: 'Certificada', col: colors.gold }
-      : sol.estado === 'finalizado' ? { txt: 'Por certificar', col: colors.warning }
-      : { txt: 'En curso', col: colors.success };
+  // Tarjeta de un estudiante culminado (misma para "Por certificar" y
+  // "Certificados"). Abre CertificarPasanteModal al tocarla.
+  const PasanteCard = ({ a }: { a: any }) => {
+    const comp = compPorId[a.id];
+    const validado = comp?.estado === 'validado';
+    const badge = validado
+      ? { txt: 'Certificado', col: colors.gold }
+      : comp?.estado === 'enviado'
+      ? { txt: 'Por validar', col: colors.warning }
+      : { txt: 'Esperando comprobante', col: colors.textMuted };
+    const horas = Math.round(Number(comp?.horasCumplidas) || Number(a.horasCumplidas) || 0);
     return (
-      <GlassCard style={{ marginBottom: 10 }} contentStyle={{ padding: 14, gap: 6 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 15, flex: 1 }} numberOfLines={1}>
-            {sol.grupoNombre ?? 'Grupo'}
-          </Text>
-          <View style={{ borderWidth: 1, borderColor: badge.col + '55', backgroundColor: badge.col + '22', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 }}>
-            <Text style={{ color: badge.col, fontSize: 11, fontWeight: '700' }}>{badge.txt}</Text>
-          </View>
-        </View>
-        <Text style={{ color: colors.textMuted, fontSize: 12 }}>{sol.carrera ?? '—'}</Text>
-        <Text style={{ color: colors.textMuted, fontSize: 12 }}>
-          {sol.alumnos?.length ?? 0} estudiante(s) {sol.fechaInicio ? `· ${sol.fechaInicio} → ${sol.fechaFin}` : ''}
-        </Text>
-        {progreso.visible && (
-          <View style={{ marginTop: 2 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ color: colors.textMuted, fontSize: 11 }}>Progreso</Text>
-              <Text style={{ color: colors.primaryLight, fontSize: 12, fontFamily: FONTS.rajdhaniBold }}>{progreso.label}</Text>
-            </View>
-            <View style={s.progresoTrack}>
-              <View style={[s.progresoFill, { width: `${progreso.pct}%` as any }]} />
+      <TouchableOpacity activeOpacity={0.85} onPress={() => setSel(a)}>
+        <GlassCard style={{ marginBottom: 10 }} contentStyle={{ padding: 14, gap: 5 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 15, flex: 1 }} numberOfLines={1} noTranslate>
+              {a.estudianteNombre || 'Estudiante'}
+            </Text>
+            <View style={{ borderWidth: 1, borderColor: badge.col + '55', backgroundColor: badge.col + '22', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 }}>
+              <Text style={{ color: badge.col, fontSize: 11, fontWeight: '700' }}>{badge.txt}</Text>
             </View>
           </View>
-        )}
-        {cert === 'certificada' && (
-          <Text style={{ color: colors.gold, fontSize: 12, fontWeight: '600' }}>
-            ✓ {(sol as any).horasCertificadas ?? h.total} horas acreditadas
+          <Text style={{ color: colors.textMuted, fontSize: 12 }} numberOfLines={1} noTranslate>
+            {[a.vacanteTitulo, a.empresaNombre].filter(Boolean).join(' · ') || 'Pasantía por cupo'}
           </Text>
-        )}
-        {accion === 'certificar' && (
-          <View style={{ gap: 6, marginTop: 4 }}>
-            {((sol as any).constancia?.tipo === 'pdf' && (sol as any).constancia?.url) ? (
-              <TouchableOpacity
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                onPress={() => Linking.openURL((sol as any).constancia.url)}
-              >
-                <Ionicons name="document-attach-outline" size={16} color={colors.primaryLight} />
-                <Text style={{ color: colors.primaryLight, fontSize: 12, fontWeight: '600', textDecorationLine: 'underline' }}>
-                  Ver constancia (PDF)
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="document-text-outline" size={15} color={colors.primaryLight} />
-                <Text style={{ color: colors.textMuted, fontSize: 12 }}>Constancia automática emitida</Text>
-              </View>
-            )}
-            <JellyButton
-              style={{ backgroundColor: colors.primary, borderRadius: 12 }}
-              contentStyle={{ paddingVertical: 10 }}
-              onPress={() => handleCertificar(sol)}
-            >
-              <Text style={{ color: '#fff', fontWeight: '700' }}>
-                {certificando === sol.id ? 'Certificando…' : 'Certificar y acreditar horas'}
-              </Text>
-            </JellyButton>
+          <Text style={{ color: colors.textMuted, fontSize: 12 }} noTranslate>
+            {a.carrera ? `${a.carrera} · ` : ''}{validado ? `${horas} h acreditadas` : `Objetivo ${horas} h`}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+            <Ionicons name="chevron-forward" size={13} color={colors.primaryLight} />
+            <Text style={{ color: colors.primaryLight, fontSize: 11.5, fontWeight: '600' }}>
+              {validado ? 'Ver detalle' : 'Revisar y validar'}
+            </Text>
           </View>
-        )}
-      </GlassCard>
+        </GlassCard>
+      </TouchableOpacity>
     );
   };
 
@@ -2498,28 +2485,35 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
         </>
       )}
 
-      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: enPasantiaIndividual.length > 0 ? 18 : 0, marginBottom: 8 }}>
+      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: enPasantiaIndividual.length > 0 ? 18 : 0, marginBottom: 4 }}>
         Por certificar ({porCertificar.length})
       </Text>
-      {porCertificar.length === 0
-        ? <Text style={s.emptyText}>No hay pasantías esperando certificación.</Text>
-        : porCertificar.map(sol => <Card key={sol.id} sol={sol} accion="certificar" />)}
-
-      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: 18, marginBottom: 8 }}>
-        En curso ({activas.length})
+      <Text style={[s.emptyText, { marginBottom: 8 }]}>
+        Ya cumplieron su tiempo de pasantía. Revisa el comprobante de la empresa, califica y valídalo.
       </Text>
-      {activas.length === 0
-        ? <Text style={s.emptyText}>Sin pasantías en curso.</Text>
-        : activas.map(sol => <Card key={sol.id} sol={sol} />)}
+      {porCertificar.length === 0
+        ? <Text style={s.emptyText}>No hay estudiantes esperando certificación.</Text>
+        : porCertificar.map((a: any) => <PasanteCard key={a.id} a={a} />)}
 
-      {certificadas.length > 0 && (
-        <>
-          <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: 18, marginBottom: 8 }}>
-            Certificadas ({certificadas.length})
-          </Text>
-          {certificadas.map(sol => <Card key={sol.id} sol={sol} />)}
-        </>
-      )}
+      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: 18, marginBottom: 4 }}>
+        Estudiantes certificados ({certificados.length})
+      </Text>
+      <Text style={[s.emptyText, { marginBottom: 8 }]}>
+        Culminaron su pasantía y su comprobante fue validado por la universidad. Certificados al 100%.
+      </Text>
+      {certificados.length === 0
+        ? <Text style={s.emptyText}>Aún no hay estudiantes certificados.</Text>
+        : certificados.map((a: any) => <PasanteCard key={a.id} a={a} />)}
+
+      <CertificarPasanteModal
+        visible={!!sel}
+        asignacion={sel}
+        comprobante={sel ? compPorId[sel.id] ?? null : null}
+        pendientesFeedback={sel ? feedbackPend.filter(p => p.solicitudId === sel.id) : []}
+        onValidado={recargarFeedback}
+        onFeedbackEnviado={recargarFeedback}
+        onClose={() => setSel(null)}
+      />
     </ScrollView>
   );
 }

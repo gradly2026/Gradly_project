@@ -14,7 +14,7 @@ import { BlurView } from 'expo-blur';
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { AutoText as Text } from "./AutoText";
+import { AutoText as Text, useAutoText } from "./AutoText";
 import { BarChart } from 'react-native-chart-kit';
 import PerfilPublicoModal from '../../components/PerfilPublicoModal';
 import { db } from '../config/firebaseConfig';
@@ -199,6 +199,10 @@ export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
   const [verPerfilId, setVerPerfilId] = useState<string | null>(null);
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  // El contador va aparte en <Text noTranslate>: dentro del string traducido
+  // ('Universidades aliadas (N)') AutoText podía mostrar un N viejo.
+  const lblUnisAliadas = useAutoText('Universidades aliadas');
+  const lblTrabajando = useAutoText('Estudiantes trabajando');
 
   // Marca durable de alianzas: `perfiles_empresas.aliados_universidades_ids`
   // (arrayUnion al aprobar una pasantía de grupo o reservar un cupo). No se
@@ -281,7 +285,7 @@ export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
     <View style={{ gap: 16 }}>
       {/* Universidades aliadas */}
       <View>
-        <Text style={styles.panelTitle}>Universidades aliadas ({unisAliadas.length})</Text>
+        <Text style={styles.panelTitle}>{lblUnisAliadas} <Text noTranslate>({unisAliadas.length})</Text></Text>
         {unisAliadas.length === 0 ? (
           <Text style={styles.empty}>Aún sin universidades aliadas.</Text>
         ) : (
@@ -296,7 +300,7 @@ export function PerfilStatsEmpresa({ empresaId }: { empresaId: string }) {
 
       {/* Estudiantes trabajando */}
       <View>
-        <Text style={styles.panelTitle}>Estudiantes trabajando ({trabajando.length})</Text>
+        <Text style={styles.panelTitle}>{lblTrabajando} <Text noTranslate>({trabajando.length})</Text></Text>
         {trabajando.length === 0 ? (
           <Text style={styles.empty}>Aún sin estudiantes trabajando.</Text>
         ) : (

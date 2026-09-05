@@ -166,10 +166,15 @@ export async function crearChatGrupoOficial(params: {
 }): Promise<string> {
   const { universidadId, grupoId, grupoNombre, empresaId } = params;
 
-  // Estudiantes reales del grupo (uids de Auth).
+  // Estudiantes reales del grupo (uids de Auth). El `where('universidad_id')`
+  // es OBLIGATORIO: la regla de `perfiles_estudiantes` solo deja a la
+  // universidad leer a SUS alumnos, y Firestore rechaza la query ENTERA con
+  // permission-denied si no está acotada a esa rama — por eso "el botón de
+  // chat del grupo no hacía nada" (ver gotcha_query_estudiantes_por_grupo).
   const estSnap = await getDocs(
     query(
       collection(db, "perfiles_estudiantes"),
+      where("universidad_id", "==", universidadId),
       where("grupo_id", "==", grupoId),
     ),
   );
