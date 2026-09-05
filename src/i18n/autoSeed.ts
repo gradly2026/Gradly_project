@@ -1375,6 +1375,10 @@ export const RESUMEN_HOME_SEED_EN: Record<string, string> = {
   "Grupos": "Groups",
   "En pasantía": "In internship",
   "Horas aprobadas": "Approved hours",
+  // Disponibilidad DERIVADA en la vista de perfil del estudiante (v86).
+  "Disponibilidad": "Availability",
+  "Disponible": "Available",
+  "Estado": "Status",
 
   // ── Pestaña "Análisis" de las mismas dos tarjetas: títulos de sección y
   // estados vacíos. Igual que arriba, sin sembrar dependían de la

@@ -338,11 +338,28 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                   </Text>
                 </View>
 
+                {/* Disponibilidad — la deriva el sistema (perfil.tsx la
+                    denormaliza en `disponibilidad_auto`); si no está, se estima
+                    del estado de pasantía. */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Disponibilidad</Text>
+                  <InfoRow
+                    icon="time-outline"
+                    label="Estado"
+                    value={
+                      data.disponibilidad_auto ||
+                      (data.estado_pasantia === 'en_proceso' ? 'En pasantía' : 'Disponible')
+                    }
+                    colors={colors}
+                    styles={styles}
+                  />
+                </View>
+
                 {/* Contacto */}
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Información de contacto</Text>
                   <InfoRow icon="mail-outline" label="Correo" value={correo || 'No disponible'} colors={colors} styles={styles} />
-                  <InfoRow icon="call-outline" label="Teléfono" value={data.telefono || 'No disponible'} colors={colors} styles={styles} />
+                  <InfoRow icon="call-outline" label="Teléfono" value={data.telefono || 'No disponible'} colors={colors} styles={styles} noTranslate={!!data.telefono} />
                   {!!data.web && (
                     <InfoRow icon="globe-outline" label="Web" value={String(data.web)} colors={colors} styles={styles} noTranslate />
                   )}
@@ -359,12 +376,15 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                     <InfoRow icon="home-outline" label="Dirección" value={String(data.direccion)} colors={colors} styles={styles} noTranslate />
                   )}
                   {!!data.instagram && (
-                    <InfoRow icon="logo-instagram" label="Instagram" value={String(data.instagram)} colors={colors} styles={styles} noTranslate />
+                    <InfoRow icon="logo-instagram" label="Instagram" value={`@${String(data.instagram).replace(/^@/, '')}`} colors={colors} styles={styles} noTranslate />
+                  )}
+                  {!!data.facebook && (
+                    <InfoRow icon="logo-facebook" label="Facebook" value={String(data.facebook)} colors={colors} styles={styles} noTranslate />
                   )}
                 </View>
 
                 {/* Redes */}
-                {(data.linkedin || data.portfolio) && (
+                {(data.linkedin || data.facebook) && (
                   <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Redes</Text>
                     <View style={styles.redesRow}>
@@ -374,10 +394,10 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                           <Text style={styles.redText}>LinkedIn</Text>
                         </TouchableOpacity>
                       )}
-                      {!!data.portfolio && (
-                        <TouchableOpacity style={styles.redBtn} onPress={() => abrirLink(data.portfolio)}>
-                          <Ionicons name="globe-outline" size={18} color={colors.primaryLight} />
-                          <Text style={styles.redText}>Portfolio</Text>
+                      {!!data.facebook && (
+                        <TouchableOpacity style={styles.redBtn} onPress={() => abrirLink(data.facebook)}>
+                          <Ionicons name="logo-facebook" size={18} color={colors.primaryLight} />
+                          <Text style={styles.redText}>Facebook</Text>
                         </TouchableOpacity>
                       )}
                     </View>

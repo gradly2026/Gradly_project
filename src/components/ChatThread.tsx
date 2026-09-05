@@ -31,6 +31,7 @@ import {
   FlatList,
   Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Switch,
 
@@ -280,6 +281,10 @@ export default function ChatThread({
   // Confirmación de "Vaciar chat" vía modal propio (Alert.alert con botones
   // es un no-op total en react-native-web: la acción real jamás se disparaba).
   const [showVaciarConfirm, setShowVaciarConfirm] = useState(false);
+  // Menú "⋮" del encabezado: notificaciones/traductor/tema + vaciar + reportar
+  // viven en un popover flotante debajo de la barra, no sueltos en ella.
+  const [menuAbierto, setMenuAbierto] = useState(false);
+  const [headerH, setHeaderH] = useState(0);
   // Acción al tocar un integrante del grupo (ver perfil / chatear).
   const [accionMiembro, setAccionMiembro] = useState<{
     uid: string;
@@ -1801,7 +1806,10 @@ export default function ChatThread({
   const peerEscribiendo = !isGroup && escribiendo.length > 0;
 
   const header = (
-    <View style={styles.header}>
+    <View
+      style={styles.header}
+      onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
+    >
       {onBack ? (
         <TouchableOpacity onPress={onBack} style={styles.iconBtn}>
           <Ionicons name="chevron-back" size={24} color={C.text} />
@@ -1867,37 +1875,17 @@ export default function ChatThread({
         </View>
       </TouchableOpacity>
 
-      {/* Notificaciones · Traducción · Tema — antes flotaban aparte, encima de
-          cualquier pantalla que mostrara este chat, con una posición fija
-          (offsetY) que no siempre coincidía con la altura real de esta
-          cabecera según desde dónde se hubiera entrado al chat (por eso a
-          veces "saltaban" de lugar tras ciertas acciones). Ahora viven
-          DENTRO de la barra: el diseño ya no depende de la pantalla que
-          montó este componente. */}
-      <FloatingTopBar userId={user?.uid} variant="inline" />
-
-      {/* Vaciar chat (solo para mi vista). */}
+      {/* Notificaciones · Traducción · Tema · Vaciar · Reportar — ya no van
+          sueltos en la barra: un solo botón "⋮" abre un popover flotante
+          justo debajo del encabezado con TODOS ellos, funcionando igual que
+          antes (ver `menuPopover` más abajo). */}
       <TouchableOpacity
-        onPress={() => setShowVaciarConfirm(true)}
+        onPress={() => setMenuAbierto((v) => !v)}
         style={styles.iconBtn}
-        accessibilityLabel="Vaciar chat"
+        accessibilityLabel="Más opciones"
       >
-        <Ionicons name="trash-outline" size={20} color={C.textMuted} />
+        <Ionicons name="ellipsis-vertical" size={22} color={C.textMuted} />
       </TouchableOpacity>
-
-      {/* Reportar a la contraparte — botón explícito (antes solo estaba
-          escondido en el menú de mantener presionado un mensaje). En grupos
-          el mismo flujo vive en "Detalles del grupo" → tocar un integrante,
-          porque ahí sí hay a quién reportar sin ambigüedad. */}
-      {!isGroup && peerUid ? (
-        <TouchableOpacity
-          onPress={() => setReportTarget({ id: peerUid, nombre: peerName || "Usuario" })}
-          style={styles.iconBtn}
-          accessibilityLabel="Reportar usuario"
-        >
-          <Ionicons name="flag-outline" size={20} color={C.textMuted} />
-        </TouchableOpacity>
-      ) : null}
 
       {/* El handshake de horario solo aplica al flujo de pasantía uni↔empresa,
           no a los grupos ni a los chats directos de recontratación. */}
@@ -2027,9 +2015,45 @@ export default function ChatThread({
     [C, styles],
   );
 
+  const opcionesMenu = menuAbierto ? (
+    <>
+      {/* Popover del "⋮": los mismos controles que estaban sueltos en la barra
+          (FloatingTopBar = notificaciones/traductor/tema, + vaciar + reportar),
+          ahora flotando justo debajo del encabezado. Va DESPUÉS del área de
+          mensajes en el árbol (para pintarse encima en cualquier plataforma) y
+          no usa <Modal> a propósito, para que el panel de notificaciones de
+          FloatingTopBar (que sí es Modal) se abra encima sin modales anidados. */}
+      <Pressable
+        style={styles.opcionesBackdrop}
+        onPress={() => setMenuAbierto(false)}
+        accessibilityLabel="Cerrar menú"
+      />
+      <View style={[styles.opcionesPopover, { top: (headerH || 56) + 4 }]}>
+        <FloatingTopBar userId={user?.uid} variant="inline" />
+        <TouchableOpacity
+          onPress={() => { setMenuAbierto(false); setShowVaciarConfirm(true); }}
+          style={styles.iconBtn}
+          accessibilityLabel="Vaciar chat"
+        >
+          <Ionicons name="trash-outline" size={20} color={C.textMuted} />
+        </TouchableOpacity>
+        {!isGroup && peerUid ? (
+          <TouchableOpacity
+            onPress={() => { setMenuAbierto(false); setReportTarget({ id: peerUid, nombre: peerName || "Usuario" }); }}
+            style={styles.iconBtn}
+            accessibilityLabel="Reportar usuario"
+          >
+            <Ionicons name="flag-outline" size={20} color={C.textMuted} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    </>
+  ) : null;
+
   const body = (
     <>
       {header}
+
       {/* `minHeight: 0` es clave en web: sin él, este contenedor flex no se
           "encoge" y la lista de mensajes de GiftedChat deja de hacer scroll y
           empuja el input fuera de pantalla. */}
@@ -2065,6 +2089,8 @@ export default function ChatThread({
           }}
         />
       </View>
+
+      {opcionesMenu}
 
       {/* Renegociación: se oculta el pago (no se toca en un cambio de horario;
           `modificarAcuerdo` conserva el pactado) y cambian los textos. */}
@@ -2799,6 +2825,36 @@ const makeStyles = (C: ChatColors) => StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+  },
+  // Capa transparente a pantalla completa: un toque fuera cierra el popover.
+  opcionesBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 90,
+  },
+  // Popover flotante bajo el encabezado con los controles del "⋮".
+  opcionesPopover: {
+    position: "absolute",
+    right: 8,
+    zIndex: 91,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    ...Platform.select({
+      web: { boxShadow: "0 8px 24px rgba(0,0,0,0.28)" } as any,
+      default: {
+        shadowColor: "#000",
+        shadowOpacity: 0.28,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 10,
+      },
+    }),
   },
   headerAvatar: {
     width: 42,

@@ -404,6 +404,17 @@ export default function PerfilPublicoModal({
                   </View>
                 )}
 
+                {/* Disponibilidad — derivada por el sistema (disponibilidad_auto). */}
+                {esEstudiante && (
+                  <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
+                    <Text style={[styles.sectionLabel, { color: C.muted }]}>Disponibilidad</Text>
+                    <Text style={{ color: C.text, fontSize: 13 }}>
+                      {perfil.disponibilidad_auto ||
+                        (perfil.estado_pasantia === "en_proceso" ? "En pasantía" : "Disponible")}
+                    </Text>
+                  </View>
+                )}
+
                 {/* Info de contacto pública */}
                 {[
                   { icon: "mail-outline", label: "Email", val: perfil.email ?? perfil.email_corporativo ?? perfil.email_institucional ?? perfil.correo },
@@ -417,7 +428,8 @@ export default function PerfilPublicoModal({
                     : []),
                   { icon: "location-outline", label: "Ubicación", val: [perfil.distrito ?? perfil.ciudad, perfil.departamento].filter(Boolean).join(", ") || null },
                   { icon: "home-outline", label: "Dirección", val: perfil.direccion },
-                  { icon: "logo-instagram", label: "Instagram", val: perfil.instagram },
+                  { icon: "logo-instagram", label: "Instagram", val: perfil.instagram ? `@${String(perfil.instagram).replace(/^@/, "")}` : null },
+                  { icon: "logo-facebook", label: "Facebook", val: perfil.facebook },
                 ].filter((f) => f.val).map((f) => (
                   <View key={f.label} style={[styles.infoRow, { borderBottomColor: C.border }]}>
                     <Ionicons name={f.icon as any} size={16} color={C.purple} />
@@ -425,7 +437,7 @@ export default function PerfilPublicoModal({
                       <Text style={{ color: C.muted, fontSize: 11 }}>{f.label}</Text>
                       <Text
                         style={{ color: C.text, fontSize: 13 }}
-                        noTranslate={["Universidad", "Grupo", "Web", "Instagram", "Email"].includes(f.label)}
+                        noTranslate={["Universidad", "Grupo", "Web", "Instagram", "Facebook", "Email"].includes(f.label)}
                       >
                         {f.val}
                       </Text>
@@ -433,8 +445,8 @@ export default function PerfilPublicoModal({
                   </View>
                 ))}
 
-                {/* Redes — mismas que ProfileViewerModal. */}
-                {esEstudiante && (perfil.linkedin || perfil.portfolio) && (
+                {/* Redes — mismas que ProfileViewerModal (portfolio se quitó). */}
+                {esEstudiante && (perfil.linkedin || perfil.facebook) && (
                   <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
                     <Text style={[styles.sectionLabel, { color: C.muted }]}>Redes</Text>
                     <View style={styles.tagsRow}>
@@ -450,16 +462,16 @@ export default function PerfilPublicoModal({
                           <Text style={{ color: C.purple, fontSize: 11 }}>LinkedIn</Text>
                         </TouchableOpacity>
                       )}
-                      {!!perfil.portfolio && (
+                      {!!perfil.facebook && (
                         <TouchableOpacity
                           style={[styles.tag, { backgroundColor: C.purpleDim, borderColor: C.border, flexDirection: "row", alignItems: "center", gap: 5 }]}
                           onPress={() => {
-                            const u = String(perfil.portfolio);
+                            const u = String(perfil.facebook);
                             Linking.openURL(u.startsWith("http") ? u : `https://${u}`).catch(() => {});
                           }}
                         >
-                          <Ionicons name="globe-outline" size={13} color={C.purple} />
-                          <Text style={{ color: C.purple, fontSize: 11 }}>Portfolio</Text>
+                          <Ionicons name="logo-facebook" size={13} color={C.purple} />
+                          <Text style={{ color: C.purple, fontSize: 11 }}>Facebook</Text>
                         </TouchableOpacity>
                       )}
                     </View>
