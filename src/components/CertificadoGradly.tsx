@@ -12,10 +12,21 @@ interface Props {
   /** Puntos de experiencia acumulados (`puntos_experiencia`). */
   xp: number;
   calificacion?: number;
+  /** @deprecated Ya no se muestra: contaba feedbacks recibidos (2 por pasantía
+   *  con la evaluación a 3 bandas), no pasantías. El conteo real sale de
+   *  `pasantiaCulminada`. Se mantiene en la firma por compatibilidad. */
   pasantias?: number;
   /** Nombre del titular del certificado. */
   nombre?: string;
   theme?: "dark" | "light";
+  /**
+   * true = el estudiante ya culminó su (única) pasantía. Entonces el rango que
+   * se MUESTRA pasa a "Experto", la barra se llena y el contador queda en 1.
+   * Sin culminar (en proceso o sin iniciar) se muestra "Novato", la barra
+   * refleja el avance de XP y el contador queda en 0. El `tier`/color/medalla
+   * del certificado siguen saliendo de la XP (calcularRango), no de este flag.
+   */
+  pasantiaCulminada?: boolean;
 }
 
 /** Medalla por tier. */
@@ -52,9 +63,9 @@ function Estrellas({ valor, color }: { valor: number; color: string }) {
 export default function CertificadoGradly({
   xp,
   calificacion = 0,
-  pasantias = 0,
   nombre,
   theme = "dark",
+  pasantiaCulminada = false,
 }: Props) {
   const dark = theme !== "light";
   const T = {
@@ -70,6 +81,13 @@ export default function CertificadoGradly({
   const progreso = progresoRango(xpSeguro, rango);
   const faltan = rango.siguiente !== null ? rango.siguiente - xpSeguro : 0;
   const esTop = rango.tier === "oro";
+
+  // Lo que se MUESTRA depende de si el estudiante ya culminó su única pasantía:
+  // culminada → "Experto", barra llena, 1 pasantía; en curso → "Novato", barra
+  // de XP y 0 pasantías. El color/medalla del certificado siguen siendo de XP.
+  const nivelMostrado = pasantiaCulminada ? "Experto" : "Novato";
+  const progresoMostrado = pasantiaCulminada ? 1 : progreso;
+  const pasantiasMostradas = pasantiaCulminada ? 1 : 0;
 
   return (
     <View
@@ -113,7 +131,7 @@ export default function CertificadoGradly({
           </Text>
         ) : null}
         <Text style={[styles.rango, { color: rango.color }]} numberOfLines={1}>
-          {rango.nivel}
+          {nivelMostrado}
         </Text>
         <View style={styles.estrellasRow}>
           <Estrellas valor={calificacion} color={T.star} />
@@ -123,24 +141,26 @@ export default function CertificadoGradly({
         </View>
       </View>
 
-      {/* Barra de XP */}
+      {/* Barra: avance de XP mientras cursa; llena cuando ya culminó */}
       <View style={[styles.track, { backgroundColor: T.track }]}>
         <View
           style={[
             styles.fill,
-            { width: `${Math.round(progreso * 100)}%`, backgroundColor: rango.color },
+            { width: `${Math.round(progresoMostrado * 100)}%`, backgroundColor: rango.color },
           ]}
         />
       </View>
       <View style={styles.metaRow}>
         <Text style={[styles.meta, { color: T.sub }]}>{xpSeguro} XP</Text>
         <Text style={[styles.meta, { color: T.sub }]}>
-          {rango.siguiente !== null
+          {pasantiaCulminada
+            ? "Pasantía culminada"
+            : rango.siguiente !== null
             ? `${faltan} XP para subir`
             : "Rango máximo"}
         </Text>
         <Text style={[styles.meta, { color: T.sub }]}>
-          {pasantias} pasantía{pasantias === 1 ? "" : "s"}
+          {pasantiasMostradas} pasantía{pasantiasMostradas === 1 ? "" : "s"}
         </Text>
       </View>
 

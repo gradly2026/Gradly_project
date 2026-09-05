@@ -1623,6 +1623,15 @@ export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
   // Fase 4 — "Puesto de trabajo" del estudiante en "Mi Progreso".
   "Puesto de trabajo": "Job position",
   "Pasantía culminada": "Completed internship",
+  // Rango mostrado en la Certificación Gradly del estudiante (binario: en curso
+  // vs pasantía culminada).
+  "Novato": "Novice",
+  "Experto": "Expert",
+  // Sello de prestigio de la Certificación Gradly (TIER_SELLO). Sin siembra, el
+  // traductor leía "Gradly" como "gradually" → "Talento Gradualmente".
+  "Talento Gradly": "Gradly Talent",
+  "Talento Profesional": "Professional Talent",
+  "Talento Destacado": "Featured Talent",
   "Mi institución": "My institution",
   "Mi calendario": "My calendar",
   "Empresa que me contrató": "Company that hired me",

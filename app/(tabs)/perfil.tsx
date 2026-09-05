@@ -293,6 +293,12 @@ export default function PerfilTab() {
   const horasObjetivo  = perfil?.horas_objetivo  ?? 500;
   const pct = Math.round((horasAprobadas / horasObjetivo) * 100);
   const nivel = getLevel(Math.min(pct, 100));
+  // ¿Ya culminó su (única) pasantía? `estado_pasantia === 'finalizada'` lo pone
+  // `finalizarInscripcionPorHoras` al cumplir la meta de horas del cupo; `pct
+  // >= 100` cubre a quien ya certificó. Con esto la Certificación Gradly pasa a
+  // "Experto" con la barra llena; en proceso / sin iniciar sigue en "Novato".
+  const pasantiaCulminada =
+    (perfil as any)?.estado_pasantia === 'finalizada' || pct >= 100;
 
   // ── Subir / cambiar foto de perfil ────────────────────────────────
   const handleUploadFoto = async () => {
@@ -582,9 +588,9 @@ export default function PerfilTab() {
               <CertificadoGradly
                 xp={Number((perfil as any)?.puntos_experiencia ?? 0)}
                 calificacion={Number(perfil?.calificacion_promedio ?? 0)}
-                pasantias={Number((perfil as any)?.pasantias_completadas ?? 0)}
                 nombre={perfil?.nombre_completo}
                 theme={isDark ? 'dark' : 'light'}
+                pasantiaCulminada={pasantiaCulminada}
               />
             ),
           },
