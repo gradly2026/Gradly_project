@@ -47,6 +47,7 @@ import { OnboardingBubble, useOnboarding } from '../../src/components/Onboarding
 
 import { useAuth } from '../../src/context/AuthContext';
 import { useTranslation } from '../../src/context/TranslationContext';
+import { useAuthGuard } from '../../src/hooks/useAuthGuard';
 import { useAuthBackGuard } from '../../src/hooks/useSessionBackGuard';
 // Hook propio que intercepta el botón "atrás" del sistema (sobre todo en
 // Android) para evitar que el usuario logueado termine, sin querer,
@@ -196,6 +197,12 @@ function GlassTabBar({
 export default function TabLayout() {
   const { user } = useAuth();
   const router = useRouter();
+  // Red de seguridad: si por lo que sea esta pantalla llegara a mostrarse
+  // sin sesión (p. ej. tras un "atrás" que quedara detrás de un cierre de
+  // sesión), redirige a login de inmediato — mismo hook que ya usan los
+  // otros 3 paneles (empresa/universidad/admin). Sin rol requerido: los
+  // tabs son de cualquier usuario autenticado.
+  useAuthGuard();
   // Las pestañas ya sincronizan su propia URL (expo-router), así que aquí
   // NO se le pasa `section` al guard (eso es solo para los dashboards, cuyo
   // cambio de sección es estado local puro sin historial propio) — evita
@@ -247,6 +254,18 @@ export default function TabLayout() {
     <>
       <Tabs
         screenOptions={{ headerShown: false }}
+        // backBehavior="history": el botón/gesto "atrás" NATIVO (Android
+        // físico, deslizar en iOS) recorre las pestañas en el orden REAL en
+        // que el usuario las visitó (Inicio → Progreso → Mensajes → "atrás"
+        // → Progreso → "atrás" → Inicio...), no simplemente "saltar a la
+        // primera". Al agotar ese recorrido, ya no queda nada que la
+        // barra de pestañas pueda deshacer, así que el sistema operativo
+        // sigue con su comportamiento por defecto (salir/minimizar la app)
+        // — igual que el resto del recorrido nativo (ver
+        // useBackNavigationGuard.ts). En web esto no cambia nada de la
+        // protección: ese guard nunca deja salir del panel salvo por el
+        // botón "Cerrar sesión".
+        backBehavior="history"
         tabBar={props => (
           // La prop `tabBar` reemplaza COMPLETAMENTE la barra de pestañas
           // por defecto de React Navigation por nuestro componente

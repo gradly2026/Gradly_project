@@ -1,4 +1,5 @@
 import { useIsFocused } from '@react-navigation/native';
+import { usePathname } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, Platform } from 'react-native';
 
@@ -61,11 +62,11 @@ interface BackNavigationGuardResult {
  *     los llamadores, pero ya nunca se pone en true.)
  * - mode 'block': igual — tampoco deja salir de login/registro.
  *
- * En NATIVO (Android) el botón físico "atrás" se maneja aparte con
- * `BackHandler` (solo `mode: 'protected'` CON `section`): recorre hacia
- * atrás las secciones internas y, al llegar a la primera, CONSUME el evento
- * para que el usuario se quede en el panel en vez de volver al login /
- * cerrar la app. iOS no tiene botón "atrás" físico (BackHandler es inerte).
+ * En NATIVO (Android/gesto iOS) la regla es DISTINTA a propósito: ahí SÍ se
+ * deja salir de la app (nunca al login, nunca cerrar sesión) una vez
+ * agotadas las secciones/pantallas visitadas — ver el bloque de
+ * `BackHandler` más abajo (solo `mode: 'protected'` CON `section`) y
+ * `backBehavior="history"` en los tabs de estudiante.
  */
 export function useBackNavigationGuard<S extends string = string>({
   mode,
@@ -96,6 +97,13 @@ export function useBackNavigationGuard<S extends string = string>({
   useEffect(() => {
     isFocusedRef.current = isFocused;
   }, [isFocused]);
+
+  // Ruta actual (expo-router) — solo se usa en web, para detectar navegación
+  // "real" (cambio de URL) que no pasó por `section`/`onSectionBack` — p. ej.
+  // los tabs de estudiante, donde cada pestaña ES una ruta de archivo
+  // distinta y expo-router empuja su PROPIA entrada de historial al cambiar
+  // de pestaña (ver el efecto que reacciona a `pathname` más abajo).
+  const pathname = usePathname();
 
   // Pila de secciones internas visitadas — arranca con la sección inicial
   // (si se pasó `section`) para que el primer "atrás" ya sepa que esa fue
@@ -131,6 +139,20 @@ export function useBackNavigationGuard<S extends string = string>({
     // el primer "atrás" sin dejar salir de la pantalla actual.
     window.history.pushState(null, '', window.location.href);
 
+    // Refuerzo diferido: justo después de iniciar sesión, la pantalla de
+    // login hace un `router.replace()` inmediato Y (por seguridad, ante
+    // casos raros donde el primero "no toma efecto") uno de RESPALDO medio
+    // segundo más tarde (ver app/auth/iniciosesion.tsx, completeSignIn). Si
+    // ese segundo `replace` llega DESPUÉS del ancla de arriba, la
+    // reemplaza en el sitio (sin dejar "colchón") y un solo "atrás" real
+    // podría entonces salir de la app. Este refuerzo re-apila el ancla una
+    // vez más, ya pasado ese margen, para que quede intacta pase lo que
+    // pase con esa navegación de respaldo.
+    const refuerzo = setTimeout(() => {
+      if (!isFocusedRef.current) return;
+      window.history.pushState(null, '', window.location.href);
+    }, 900);
+
     const handlePopState = () => {
       // Si esta pantalla no está activa (hay una pantalla hija encima que
       // absorbió el "atrás"), se deja navegar con normalidad — no es un
@@ -159,16 +181,47 @@ export function useBackNavigationGuard<S extends string = string>({
     };
 
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    return () => {
+      clearTimeout(refuerzo);
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, [mode]);
 
-  // ── NATIVO (Android): botón físico "atrás". En web lo cubre el listener de
-  //    `popstate` de arriba; en nativo no hay historial de navegador, así que
-  //    se usa BackHandler. Solo para pantallas protegidas CON secciones
-  //    internas (paneles de empresa/universidad): recorre hacia atrás las
-  //    secciones visitadas y, al llegar a "Inicio", CONSUME el evento para que
-  //    el usuario NO salga al login ni se cierre la app. Cerrar sesión: solo
-  //    el botón de "Mi Perfil". iOS no tiene "atrás" físico (BackHandler inerte).
+  // Re-anclar ante cualquier cambio REAL de URL mientras esta pantalla está
+  // enfocada — más allá de lo que `section` ya cubre. Caso concreto: los
+  // tabs de estudiante (app/(tabs)/_layout.tsx) NO pasan `section` (cada
+  // pestaña es su propia ruta de archivo, ya sincronizada por expo-router),
+  // así que cambiar de pestaña empuja una entrada de historial REAL que
+  // este hook no controla — sin este efecto, esa entrada podía quedar sin
+  // ancla propia encima, dejando un solo "atrás" más cerca de escapar del
+  // área protegida. Para pantallas con `section` (empresa/universidad) esto
+  // no cambia nada: su URL no cambia al cambiar de sección. Se ignora el
+  // primer valor (el mount de arriba ya se encarga de ese caso).
+  const pathnameMontadoRef = useRef(false);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    if (!pathnameMontadoRef.current) {
+      pathnameMontadoRef.current = true;
+      return;
+    }
+    if (!isFocusedRef.current) return;
+    window.history.pushState(null, '', window.location.href);
+  }, [pathname]);
+
+  // ── NATIVO (Android/gesto iOS): botón físico "atrás" o gesto de deslizar
+  //    para regresar. En web lo cubre el listener de `popstate` de arriba
+  //    (ahí SÍ debe quedarse siempre dentro del panel); en NATIVO la regla de
+  //    producto es DISTINTA a propósito: el usuario debe poder recorrer hacia
+  //    atrás cada sección/pantalla interna que haya visitado (en el orden
+  //    inverso en que las visitó) y, al llegar a la primera (justo donde
+  //    entró tras iniciar sesión), el siguiente "atrás" SÍ debe sacarlo de la
+  //    app (comportamiento nativo estándar) — nunca cerrar sesión ni mandar
+  //    al login. Solo aplica a pantallas protegidas CON secciones internas
+  //    (paneles de empresa/universidad); los tabs de estudiante logran el
+  //    mismo recorrido con `backBehavior="history"` en su propio `<Tabs>`
+  //    (ver app/(tabs)/_layout.tsx), que ya delega correctamente en el
+  //    sistema al agotarse. iOS no tiene botón físico (BackHandler inerte;
+  //    el gesto de deslizar de un Stack sí lo cubre React Navigation solo).
   const hasSection = section !== undefined;
   useEffect(() => {
     if (Platform.OS === 'web' || mode !== 'protected' || !hasSection) return;
@@ -184,9 +237,12 @@ export function useBackNavigationGuard<S extends string = string>({
         onSectionBackRef.current?.(stack[stack.length - 1]);
         return true;
       }
-      // Ya en la sección inicial: consumir el "atrás" — el usuario se queda
-      // en el panel (no vuelve al login ni se cierra la app).
-      return true;
+      // Ya en la sección inicial (la primera que visitó tras entrar): no hay
+      // nada más que deshacer — se deja pasar el "atrás" (return false) para
+      // que el sistema operativo haga lo suyo y cierre/minimice la app. NO
+      // se consume aquí: consumirlo dejaría al usuario "atrapado" en el
+      // panel, que es justo el comportamiento de WEB, no el de nativo.
+      return false;
     };
 
     const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
