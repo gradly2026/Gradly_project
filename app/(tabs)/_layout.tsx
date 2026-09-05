@@ -35,6 +35,7 @@ import FloatingSearchButton from '../../src/components/FloatingSearchButton';
 import FloatingTopBar from '../../src/components/FloatingTopBar';
 import SalirSesionModal from '../../src/components/SalirSesionModal';
 import OnboardingDireccionGate from '../../src/components/OnboardingDireccionGate';
+import DatosPersonalesGate from '../../src/components/DatosPersonalesGate';
 import AvisosGate from '../../src/components/AvisosGate';
 // Otra "compuerta": si al estudiante le falta completar su
 // departamento/distrito (dirección), bloquea la pantalla con ese
@@ -302,8 +303,13 @@ export default function TabLayout() {
       {/* Formulario obligatorio de experiencia (pasantías finalizadas) */}
       <FeedbackGate />
 
-      {/* Compuerta obligatoria: departamento/distrito si el perfil no los tiene */}
+      {/* Compuerta obligatoria: departamento/distrito + teléfono + documento
+          si el perfil no los tiene */}
       <OnboardingDireccionGate />
+
+      {/* Recordatorio (una vez) de teléfono/documento para quien ya pasó el
+          onboarding de dirección pero le faltan esos datos */}
+      <DatosPersonalesGate />
 
       {/* Aviso al iniciar sesión: cupos que la universidad reservó para el estudiante */}
       <AvisosGate />

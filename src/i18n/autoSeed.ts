@@ -1300,6 +1300,18 @@ export const UBICACION_SEED_EN: Record<string, string> = {
   "Habilidades (opcional)": "Skills (optional)",
   "Contanos brevemente sobre vos…": "Tell us briefly about yourself…",
   "Ej: Excel, atención al cliente…": "E.g: Excel, customer service…",
+  // ── Datos personales: onboarding ampliado + recordatorio (v87) ──
+  "Completa tu perfil": "Complete your profile",
+  "¿Dónde vivís? *": "Where do you live? *",
+  "Como sos usuario nuevo, antes de llevarte a tu perfil necesitamos tu ubicación, tu teléfono y tu documento de identidad. Solo se pide una vez. Tu documento es privado: no aparece en ningún perfil.":
+    "Since you're a new user, before taking you to your profile we need your location, your phone and your ID document. It's only asked once. Your ID is private: it doesn't appear on any profile.",
+  "Completa tu departamento, distrito, teléfono y documento para continuar.":
+    "Complete your department, district, phone and ID document to continue.",
+  "Agrega tu teléfono y tu documento de identidad. Tu documento es privado: no aparece en ningún perfil. Facebook e Instagram son opcionales.":
+    "Add your phone and your ID document. Your ID is private: it doesn't appear on any profile. Facebook and Instagram are optional.",
+  "Agrega tu teléfono y tu documento de identidad para tener tu perfil completo. Toca aquí para hacerlo.":
+    "Add your phone and your ID document to complete your profile. Tap here to do it.",
+  "Completa tu teléfono y documento para guardar.": "Complete your phone and ID document to save.",
 };
 
 // ── Eliminar vacante/grupo/estudiante (empresa y universidad deshacen su

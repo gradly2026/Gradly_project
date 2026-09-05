@@ -152,6 +152,7 @@ import ContratoAvisoModal from './ContratoAvisoModal';
 import OfertaEmpleoModal from './OfertaEmpleoModal';
 import OfertaRespondidaModal from './OfertaRespondidaModal';
 import IncidenciaAvisoModal from './IncidenciaAvisoModal';
+import CompletarPerfilModal from './CompletarPerfilModal';
 // Los modales de detalle que se pueden abrir al tocar una notificación
 // con referencia estructurada "kind:id" (ver notifRoute.ts). Cada uno es
 // un componente separado, definido en su propio archivo.
@@ -240,6 +241,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const [ofertaEmpleoId, setOfertaEmpleoId] = useState<string | null>(null);
   const [ofertaRespondidaId, setOfertaRespondidaId] = useState<string | null>(null);
   const [incidenciaAvisoId, setIncidenciaAvisoId] = useState<string | null>(null);
+  const [completarPerfilOpen, setCompletarPerfilOpen] = useState(false);
   // 4 estados, uno por cada tipo de modal de detalle posible. Cada uno
   // guarda `null` (modal cerrado) o el ID del documento a mostrar (modal
   // abierto, mostrando ese documento específico). Ver más abajo cómo
@@ -407,6 +409,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         case 'ofertaEmpleo': setOfertaEmpleoId(ref.id); break;
         case 'ofertaRespondida': setOfertaRespondidaId(ref.id); break;
         case 'incidencia': setIncidenciaAvisoId(ref.id); break;
+        case 'completarPerfil': setCompletarPerfilOpen(true); break;
       }
       return;
       // Termina aquí: si era una referencia estructurada, ya se decidió
@@ -735,6 +738,10 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         visible={!!incidenciaAvisoId}
         incidenciaId={incidenciaAvisoId}
         onClose={() => setIncidenciaAvisoId(null)}
+      />
+      <CompletarPerfilModal
+        visible={completarPerfilOpen}
+        onClose={() => setCompletarPerfilOpen(false)}
       />
     </>
   );

@@ -4,6 +4,12 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import UbicacionSelector from "./UbicacionSelector";
+import DatosPersonalesFields, {
+  DATOS_PERSONALES_VACIO,
+  datosPersonalesAFirestore,
+  datosPersonalesObligatoriosOk,
+  type DatosPersonalesValue,
+} from "./DatosPersonalesFields";
 import { db } from "../config/firebaseConfig";
 import { useTheme, type GradlyColors } from "../context/ThemeContext";
 import type { UbicacionEstudiante } from "../data/ubicacionElSalvador";
@@ -39,6 +45,10 @@ export default function OnboardingDireccionModal({ uid, onGuardado }: Props) {
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
 
+  // Datos personales (v87): teléfono + documento son OBLIGATORIOS aquí, igual
+  // que departamento/distrito; Facebook/Instagram opcionales.
+  const [datos, setDatos] = useState<DatosPersonalesValue>(DATOS_PERSONALES_VACIO);
+
   const agregarSkill = () => {
     const sk = skillInput.trim();
     if (!sk || skills.includes(sk)) { setSkillInput(""); return; }
@@ -50,7 +60,8 @@ export default function OnboardingDireccionModal({ uid, onGuardado }: Props) {
     setSkills((prev) => prev.filter((s) => s !== sk));
   };
 
-  const completo = !!valor.departamento && !!valor.distrito;
+  const completo =
+    !!valor.departamento && !!valor.distrito && datosPersonalesObligatoriosOk(datos);
 
   const guardar = async () => {
     if (!completo || guardando) return;
@@ -63,6 +74,7 @@ export default function OnboardingDireccionModal({ uid, onGuardado }: Props) {
         direccion: valor.direccion?.trim() || "",
         descripcion: descripcion.trim(),
         skills,
+        ...datosPersonalesAFirestore(datos),
       });
       onGuardado();
     } catch (e) {
@@ -82,14 +94,22 @@ export default function OnboardingDireccionModal({ uid, onGuardado }: Props) {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Text style={s.titulo}>¿Dónde vivís?</Text>
+            <Text style={s.titulo}>Completa tu perfil</Text>
             <Text style={s.subtitulo}>
-              Como sos usuario nuevo, antes de llevarte a tu nuevo perfil necesitamos
-              que completes este dato. Nos ayuda a mostrarte empresas y universidades
-              cercanas a vos, y solo se pide una vez.
+              Como sos usuario nuevo, antes de llevarte a tu perfil necesitamos
+              tu ubicación, tu teléfono y tu documento de identidad. Solo se pide
+              una vez. Tu documento es privado: no aparece en ningún perfil.
             </Text>
 
+            <Text style={[s.label, { marginBottom: 8 }]}>¿Dónde vivís? *</Text>
             <UbicacionSelector value={valor} onChange={setValor} />
+
+            <View style={{ marginTop: 16 }}>
+              <DatosPersonalesFields
+                value={datos}
+                onChange={(patch) => setDatos((d) => ({ ...d, ...patch }))}
+              />
+            </View>
 
             <Text style={[s.label, { marginTop: 18 }]}>Descripción (opcional)</Text>
             <TextInput
@@ -151,7 +171,7 @@ export default function OnboardingDireccionModal({ uid, onGuardado }: Props) {
               )}
             </TouchableOpacity>
             {!completo ? (
-              <Text style={s.hint}>Elige tu departamento y distrito para continuar.</Text>
+              <Text style={s.hint}>Completa tu departamento, distrito, teléfono y documento para continuar.</Text>
             ) : null}
           </ScrollView>
         </View>
