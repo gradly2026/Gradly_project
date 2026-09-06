@@ -123,6 +123,7 @@ import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import ResenasFeedback from '../src/components/ResenasFeedback';
 import UbicacionCardSV from '../src/components/UbicacionCardSV';
 import UbicacionPrecisaModal from '../src/components/UbicacionPrecisaModal';
+import UbicacionSelector from '../src/components/UbicacionSelector';
 import { getDistritoGeo } from '../src/utils/distritoGeo';
 import { VacantesDisponibles } from '../src/components/Matchmaking';
 import { RedGradlyBanner } from '../src/components/NetworkStats';
@@ -530,6 +531,32 @@ export default function DashboardUniversidad() {
   const [showCarrerasEditor, setShowCarrerasEditor] = useState(false);
   // Modal de la tarjeta "Mi ubicación" (punto preciso dentro del distrito).
   const [ubicModalOpen, setUbicModalOpen] = useState(false);
+  // Editor de departamento/distrito debajo de la tarjeta "Mi ubicación"
+  // (mismo toggle que el estudiante; se inicializa desde el perfil al abrir).
+  const [ubicEditOpen, setUbicEditOpen] = useState(false);
+  const [ubicSaving, setUbicSaving] = useState(false);
+  const [ubicSel, setUbicSel] = useState<{ departamento?: string; distrito?: string; direccion?: string }>({});
+  const abrirEdicionUbic = () => {
+    setUbicSel({
+      departamento: (perfil as any)?.departamento ?? '',
+      distrito: (perfil as any)?.distrito ?? (perfil as any)?.ciudad ?? '',
+      direccion: (perfil as any)?.direccion ?? '',
+    });
+    setUbicEditOpen(true);
+  };
+  const guardarUbicUniversidad = async () => {
+    if (!user || !ubicSel.departamento || !ubicSel.distrito) return;
+    setUbicSaving(true);
+    try {
+      await updateDoc(doc(db, 'perfiles_universidades', user.uid), {
+        departamento: ubicSel.departamento,
+        distrito: ubicSel.distrito,
+        direccion: (ubicSel.direccion ?? '').trim(),
+      });
+      setUbicEditOpen(false);
+    } catch { Alert.alert('Error', 'No se pudo guardar.'); }
+    finally { setUbicSaving(false); }
+  };
 
   // Nombres de las carreras ofertadas (normaliza string u objeto).
   const carrerasNombres = useMemo(() => {
@@ -925,13 +952,44 @@ export default function DashboardUniversidad() {
               icon: 'location-outline',
               tone: 'purple',
               render: () => (
-                <UbicacionCardSV
-                  departamento={(perfil as any)?.departamento}
-                  distrito={(perfil as any)?.distrito ?? (perfil as any)?.ciudad}
-                  puntoGuardado={(perfil as any)?.ubicacion_precisa ?? null}
-                  onPin={() => setUbicModalOpen(true)}
-                  pinHabilitado={!!getDistritoGeo((perfil as any)?.departamento, (perfil as any)?.distrito ?? (perfil as any)?.ciudad)}
-                />
+                <View style={{ gap: 12 }}>
+                  <UbicacionCardSV
+                    departamento={(perfil as any)?.departamento}
+                    distrito={(perfil as any)?.distrito ?? (perfil as any)?.ciudad}
+                    puntoGuardado={(perfil as any)?.ubicacion_precisa ?? null}
+                    onPin={() => setUbicModalOpen(true)}
+                    pinHabilitado={!!getDistritoGeo((perfil as any)?.departamento, (perfil as any)?.distrito ?? (perfil as any)?.ciudad)}
+                  />
+                  <TouchableOpacity
+                    style={styles.ubicEditToggle}
+                    onPress={() => (ubicEditOpen ? setUbicEditOpen(false) : abrirEdicionUbic())}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={ubicEditOpen ? 'chevron-up' : 'create-outline'}
+                      size={15}
+                      color={colors.primaryLight}
+                    />
+                    <Text style={styles.ubicEditToggleTxt}>
+                      {ubicEditOpen ? 'Cancelar' : 'Editar departamento y distrito'}
+                    </Text>
+                  </TouchableOpacity>
+                  {ubicEditOpen && (
+                    <>
+                      <UbicacionSelector value={ubicSel} onChange={setUbicSel} />
+                      <TouchableOpacity
+                        style={[styles.ubicSaveBtn, (!ubicSel.departamento || !ubicSel.distrito) && { opacity: 0.45 }]}
+                        onPress={guardarUbicUniversidad}
+                        disabled={ubicSaving || !ubicSel.departamento || !ubicSel.distrito}
+                      >
+                        {ubicSaving
+                          ? <ActivityIndicator size="small" color="#fff" />
+                          : <Ionicons name="checkmark" size={16} color="#fff" />}
+                        <Text style={styles.ubicSaveBtnTxt}>Guardar ubicación</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
               ),
             },
             {
@@ -2656,6 +2714,17 @@ function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudian
 // ─────────────────────────────────────────────
 const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.backgroundDark, paddingTop: 10 },
+  // Editor de ubicación (toggle + selector + guardar) bajo la tarjeta "Mi ubicación".
+  ubicEditToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+    paddingVertical: 6, paddingHorizontal: 4,
+  },
+  ubicEditToggleTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+  ubicSaveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    backgroundColor: COLORS.primary, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 16,
+  },
+  ubicSaveBtnTxt: { color: '#fff', fontSize: 13.5, fontFamily: FONTS.interSemiBold },
   headerAvatar: {
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: COLORS.primary12,
