@@ -4,10 +4,11 @@
 // contenido de siempre de progreso.tsx, intacto).
 //
 // Muestra el empleo REAL del graduado (colección `contratos_laborales`):
-//   · Mi institución  → empresa que contrató, puesto, compañeros, fecha inicio
-//   · Mi calendario   → el horario laboral, pintado en el mes (CalendarioEventos)
-//   · Tareas          → las que asignó la empresa; el estudiante las marca hechas
-//   · Renuncia        → aviso a la empresa, o renuncia definitiva (anula contrato)
+//   · Mi institución      → empresa que contrató, puesto, compañeros, fecha inicio
+//   · Mi calendario       → el horario laboral, pintado en el mes (CalendarioEventos)
+//   · Llamados de atención → reportes y advertencias que la empresa registró
+//                            sobre el desempeño; SOLO aparece si hay alguno
+//   · Renuncia            → aviso a la empresa, o renuncia definitiva (anula contrato)
 //
 // Cuando no hay contrato activo (nunca contratado, o renunció / fue despedido)
 // muestra un estado vacío hasta que vuelva a ser contratado.
@@ -31,12 +32,9 @@ import CalendarioEventos from './CalendarioEventos';
 import { textoHorario } from '../data/disponibilidad';
 import {
   COL_CONTRATOS,
-  COL_TAREAS,
   avisarEmpresaContrato,
-  completarTarea,
   renunciarPuesto,
   type ContratoLaboral,
-  type TareaLaboral,
 } from '../services/contratoService';
 
 /** Timestamp/Date/ISO → "12 sep 2026" (o "" si no parsea). */
@@ -76,7 +74,6 @@ export default function PuestoTrabajoEstudiante({
   const s = useMemo(() => makeStyles(colors), [colors]);
 
   const [contrato, setContrato] = useState<ContratoLaboral | null>(null);
-  const [tareas, setTareas] = useState<TareaLaboral[]>([]);
   const [cargando, setCargando] = useState(true);
   const [renunciaOpen, setRenunciaOpen] = useState(false);
 
@@ -96,15 +93,14 @@ export default function PuestoTrabajoEstudiante({
     return unsub;
   }, [uid]);
 
-  useEffect(() => {
-    if (!uid) return;
-    const unsub = onSnapshot(
-      query(collection(db, COL_TAREAS), where('estudianteId', '==', uid)),
-      (snap) => setTareas(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as TareaLaboral))),
-      (e) => console.warn('tareas estudiante:', e),
-    );
-    return unsub;
-  }, [uid]);
+  // El empleo no tiene fecha de fin: se pinta una ventana móvil de ~6 meses
+  // para que CalendarioEventos marque los días laborales del mes en curso.
+  // Va antes de los early return para no romper el orden de los hooks.
+  const ventanaCalendario = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 6);
+    return d;
+  }, []);
 
   if (cargando) {
     return (
@@ -125,19 +121,26 @@ export default function PuestoTrabajoEstudiante({
     );
   }
 
-  const tareasDelPuesto = tareas
-    .filter((t) => t.vacanteId === contrato.vacanteId)
-    .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+  // ── Llamados de atención: reportes y advertencias que la empresa registró
+  //    sobre este empleado. Viven en el propio contrato (ambas partes lo
+  //    pueden leer), así que no hace falta tocar la colección `reportes`.
+  //    El bloque solo se muestra si hay al menos uno.
+  const nReportes = Number(contrato.reportesCount) || 0;
+  const advertenciasEmpresa = Array.isArray(contrato.advertenciasEmpresa)
+    ? contrato.advertenciasEmpresa
+    : [];
+  const ultimoAviso = contrato.ultimoAvisoEmpleado;
+  const llamados = [
+    ...advertenciasEmpresa.map((a) => ({ tipo: 'advertencia' as const, texto: a.texto, fecha: a.fecha })),
+    ...(ultimoAviso && ultimoAviso.tipo === 'reporte'
+      ? [{ tipo: 'reporte' as const, texto: ultimoAviso.texto, fecha: ultimoAviso.fecha }]
+      : []),
+  ].sort((a, b) => (Date.parse(b.fecha) || 0) - (Date.parse(a.fecha) || 0));
+  const hayLlamados = nReportes > 0 || advertenciasEmpresa.length > 0;
+
   const companeros = Array.isArray(contrato.companeros) ? contrato.companeros : [];
   const horario = textoHorario(contrato.horario);
   const fechaInicioISO = fechaISOLocal(contrato.fechaInicio);
-  // El empleo no tiene fecha de fin: se pinta una ventana móvil de ~6 meses
-  // para que CalendarioEventos marque los días laborales del mes en curso.
-  const ventanaCalendario = useMemo(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + 6);
-    return d;
-  }, []);
 
   return (
     <>
@@ -200,39 +203,61 @@ export default function PuestoTrabajoEstudiante({
         </View>
       )}
 
-      {/* ── Tareas ── */}
-      <Text style={s.sectionTitle}>Tareas</Text>
-      {tareasDelPuesto.length === 0 ? (
-        <View style={s.vacio}>
-          <Text style={s.vacioTxt}>La empresa aún no te asignó tareas.</Text>
-        </View>
-      ) : (
-        <View style={{ gap: 8, marginBottom: 18 }}>
-          {tareasDelPuesto.map((t) => {
-            const hecha = t.estado === 'completada';
-            return (
-              <TouchableOpacity
-                key={t.id}
-                style={[s.tareaCard, hecha && s.tareaHecha]}
-                activeOpacity={0.8}
-                onPress={() => { void completarTarea(t.id, !hecha); }}
-              >
-                <Ionicons
-                  name={hecha ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={20}
-                  color={hecha ? colors.success : colors.textMuted}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.tareaTitulo, hecha && s.tareaTituloHecha]} noTranslate>{t.titulo}</Text>
-                  {!!t.detalle && <Text style={s.tareaDetalle} noTranslate>{t.detalle}</Text>}
+      {/* ── Llamados de atención ── (solo si la empresa levantó alguno) */}
+      {hayLlamados && (
+        <>
+          <Text style={s.sectionTitle}>Llamados de atención</Text>
+          <View style={s.llamadosNota}>
+            <Ionicons name="alert-circle" size={15} color={colors.warning} />
+            <Text style={s.llamadosNotaTxt}>
+              Reportes y advertencias que tu empresa registró sobre tu desempeño. Acumular varios puede terminar tu contrato.
+            </Text>
+          </View>
+
+          <View style={s.llamadosChips}>
+            {nReportes > 0 && (
+              <View style={[s.llamadoChip, { borderColor: colors.warning + '55', backgroundColor: colors.warning + '14' }]}>
+                <Ionicons name="flag" size={12} color={colors.warning} />
+                <Text style={[s.llamadoChipTxt, { color: colors.warning }]} noTranslate>{nReportes}</Text>
+                <Text style={[s.llamadoChipTxt, { color: colors.warning }]}>{nReportes === 1 ? 'reporte' : 'reportes'}</Text>
+              </View>
+            )}
+            {advertenciasEmpresa.length > 0 && (
+              <View style={[s.llamadoChip, { borderColor: colors.error + '55', backgroundColor: colors.error + '12' }]}>
+                <Ionicons name="alert-circle" size={12} color={colors.error} />
+                <Text style={[s.llamadoChipTxt, { color: colors.error }]} noTranslate>{advertenciasEmpresa.length}</Text>
+                <Text style={[s.llamadoChipTxt, { color: colors.error }]}>{advertenciasEmpresa.length === 1 ? 'advertencia' : 'advertencias'}</Text>
+              </View>
+            )}
+          </View>
+
+          {llamados.length > 0 ? (
+            <View style={{ gap: 8, marginBottom: 18 }}>
+              {llamados.map((it, i) => (
+                <View key={`${it.fecha}-${i}`} style={s.llamadoCard}>
+                  <Ionicons
+                    name={it.tipo === 'reporte' ? 'flag-outline' : 'alert-circle-outline'}
+                    size={16}
+                    color={it.tipo === 'reporte' ? colors.warning : colors.error}
+                    style={{ marginTop: 1 }}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.llamadoTipo}>{it.tipo === 'reporte' ? 'Reporte' : 'Advertencia'}</Text>
+                    <Text style={s.llamadoTexto} noTranslate>{it.texto}</Text>
+                    {!!fechaLegible(it.fecha) && <Text style={s.llamadoFecha} noTranslate>{fechaLegible(it.fecha)}</Text>}
+                  </View>
                 </View>
-                <Text style={[s.tareaEstado, { color: hecha ? colors.success : colors.textMuted }]}>
-                  {hecha ? 'Completada' : 'Marcar'}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+              ))}
+            </View>
+          ) : (
+            <View style={[s.llamadoCard, { marginBottom: 18 }]}>
+              <Ionicons name="flag-outline" size={16} color={colors.warning} style={{ marginTop: 1 }} />
+              <Text style={[s.llamadoTexto, { flex: 1 }]}>
+                Tu empresa registró {nReportes === 1 ? 'un reporte' : `${nReportes} reportes`} sobre tu desempeño. Abre tus notificaciones para ver el detalle.
+              </Text>
+            </View>
+          )}
+        </>
       )}
 
       {/* ── Renuncia ── */}
@@ -399,16 +424,26 @@ const makeStyles = (c: GradlyColors) =>
     },
     horarioPillTxt: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: c.primaryLight },
 
-    tareaCard: {
-      flexDirection: 'row', alignItems: 'center', gap: 10,
+    llamadosNota: {
+      flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+      backgroundColor: c.warning + '10', borderWidth: 1, borderColor: c.warning + '33',
+      borderRadius: 12, padding: 12, marginBottom: 10,
+    },
+    llamadosNotaTxt: { flex: 1, fontSize: 12, fontFamily: FONTS.interRegular, color: c.textSecondary, lineHeight: 17 },
+    llamadosChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+    llamadoChip: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
+    },
+    llamadoChipTxt: { fontSize: 11.5, fontFamily: FONTS.interSemiBold },
+    llamadoCard: {
+      flexDirection: 'row', alignItems: 'flex-start', gap: 10,
       backgroundColor: c.backgroundCard, borderWidth: 1, borderColor: c.border,
       borderRadius: 12, padding: 12,
     },
-    tareaHecha: { borderColor: c.success + '55', backgroundColor: c.success + '0E' },
-    tareaTitulo: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: c.textPrimary },
-    tareaTituloHecha: { textDecorationLine: 'line-through', color: c.textMuted },
-    tareaDetalle: { fontSize: 11.5, color: c.textMuted, marginTop: 2, lineHeight: 16 },
-    tareaEstado: { fontSize: 11, fontFamily: FONTS.interSemiBold },
+    llamadoTipo: { fontSize: 10.5, fontFamily: FONTS.interSemiBold, color: c.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
+    llamadoTexto: { fontSize: 13, fontFamily: FONTS.interRegular, color: c.textPrimary, marginTop: 2, lineHeight: 18 },
+    llamadoFecha: { fontSize: 11, fontFamily: FONTS.interRegular, color: c.textMuted, marginTop: 3 },
 
     renunciaBtn: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

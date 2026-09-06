@@ -39,11 +39,16 @@ export default function TableroCupos({
   universidadId,
   grupoId,
   estudianteNombre,
+  ocultarCupoTomado,
 }: {
   estudianteId: string;
   universidadId?: string | null;
   grupoId?: string | null;
   estudianteNombre?: string;
+  /** En "Mi Progreso" la pasantía de cupo ya tomada se muestra en "Tu pasantía
+   *  activa"; con esto el tablero no repite la tarjeta "Tu práctica asignada"
+   *  ni ofrece "Cancelar mi cupo" (el estudiante ya está inscrito). */
+  ocultarCupoTomado?: boolean;
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -130,6 +135,10 @@ export default function TableroCupos({
       void showAlert('Error', e?.message ?? 'No se pudo cancelar.');
     }
   };
+
+  // En "Mi Progreso" el cupo ya tomado se ve como "Tu pasantía activa": aquí
+  // no repetimos su tarjeta ni el botón de cancelar.
+  if (ocultarCupoTomado && asignacion) return null;
 
   // ── Ya eligió ────────────────────────────────────────────────────
   if (asignacion) {

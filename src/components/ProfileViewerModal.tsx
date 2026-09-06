@@ -303,8 +303,8 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
             </View>
 
             {/* Si quien mira es la empresa que tiene contratado a este estudiante:
-                "Trabaja para tu empresa" + "Añadir tarea". Se autooculta si no hay
-                contrato activo (query interna por empresaId == viewer). */}
+                tarjeta "Trabaja para tu empresa" (puesto + fecha). Se autooculta si
+                no hay contrato activo (query interna por empresaId == viewer). */}
             {tipo === 'estudiante' && rol === 'empresa' && !!user?.uid && !esMiPerfil && (
               <View style={{ marginHorizontal: 16, marginTop: 18 }}>
                 <TrabajaParaCard

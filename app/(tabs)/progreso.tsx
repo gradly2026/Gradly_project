@@ -553,16 +553,27 @@ export default function ProgresoTab() {
   const [cargando,      setCargando]      = useState(true);
 
   // ── "Puesto de trabajo" (empleo real, contratos_laborales) vs "Pasantía
-  //    culminada" (lo de siempre). La vista arranca en "Puesto de trabajo"
-  //    si hay un contrato activo; el usuario puede cambiarla con el toggle. ──
+  //    culminada" (lo de siempre). El toggle SOLO aparece una vez que el
+  //    estudiante fue contratado por una empresa al menos una vez (tiene, o
+  //    tuvo, un `contratos_laborales`). Antes de eso Mi Progreso muestra
+  //    directamente su pasantía —en proceso, culminada o el estado vacío—
+  //    sin pestañas. Con el toggle visible, arranca en "Puesto de trabajo"
+  //    si hay un contrato activo; el usuario puede cambiarla. ──
   const [tieneContratoActivo, setTieneContratoActivo] = useState(false);
+  const [tuvoContrato, setTuvoContrato] = useState(false);
   const [vistaManual, setVistaManual] = useState<'puesto' | 'pasantia' | null>(null);
-  const vista: 'puesto' | 'pasantia' = vistaManual ?? (tieneContratoActivo ? 'puesto' : 'pasantia');
+  const mostrarToggle = tuvoContrato;
+  const vista: 'puesto' | 'pasantia' = mostrarToggle
+    ? (vistaManual ?? (tieneContratoActivo ? 'puesto' : 'pasantia'))
+    : 'pasantia';
   useEffect(() => {
     if (!user) return;
     const unsub = onSnapshot(
       query(collection(db, 'contratos_laborales'), where('estudianteId', '==', user.uid)),
-      snap => setTieneContratoActivo(snap.docs.some(d => (d.data() as any).estado === 'activo')),
+      snap => {
+        setTieneContratoActivo(snap.docs.some(d => (d.data() as any).estado === 'activo'));
+        setTuvoContrato(!snap.empty);
+      },
       e => console.warn('Error en listener (contrato progreso):', e),
     );
     return unsub;
@@ -755,25 +766,28 @@ export default function ProgresoTab() {
         <Text style={styles.headerTitle}>Mi progreso</Text>
       </View>
 
-      {/* ── Toggle: Puesto de trabajo / Pasantía culminada ── */}
-      <View style={styles.vistaToggle}>
-        {([
-          { id: 'puesto', label: 'Puesto de trabajo' },
-          { id: 'pasantia', label: 'Pasantía culminada' },
-        ] as const).map((v) => {
-          const activo = vista === v.id;
-          return (
-            <TouchableOpacity
-              key={v.id}
-              style={[styles.vistaBtn, activo && styles.vistaBtnActivo]}
-              onPress={() => setVistaManual(v.id)}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.vistaBtnTxt, activo && styles.vistaBtnTxtActivo]}>{v.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      {/* ── Toggle: Puesto de trabajo / Pasantía culminada ──
+          Solo desde que el estudiante fue contratado alguna vez. */}
+      {mostrarToggle && (
+        <View style={styles.vistaToggle}>
+          {([
+            { id: 'puesto', label: 'Puesto de trabajo' },
+            { id: 'pasantia', label: 'Pasantía culminada' },
+          ] as const).map((v) => {
+            const activo = vista === v.id;
+            return (
+              <TouchableOpacity
+                key={v.id}
+                style={[styles.vistaBtn, activo && styles.vistaBtnActivo]}
+                onPress={() => setVistaManual(v.id)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.vistaBtnTxt, activo && styles.vistaBtnTxtActivo]}>{v.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
 
       <ScrollView
         style={webScrollStyle}
@@ -839,15 +853,8 @@ export default function ProgresoTab() {
             universidadId={perfil?.universidad_id ?? (userProfile as any)?.universidad_id}
             grupoId={perfil?.grupo_id}
             estudianteNombre={(userProfile as any)?.nombre_completo ?? ''}
+            ocultarCupoTomado
           />
-        )}
-
-        {/* ── Mi pasantía (acuerdo de grupo aprobado) ── */}
-        {acuerdo && (
-          <>
-            <Text style={styles.sectionTitle}>Mi pasantía</Text>
-            <MiPasantiaCard acuerdo={acuerdo} estadoServidor={pasantiaEstado} />
-          </>
         )}
 
         {/* ── Calendario: días acordados de asistencia a la práctica ── */}
@@ -870,12 +877,15 @@ export default function ProgresoTab() {
           </>
         )}
 
-        {/* ── Pasantía activa ── */}
-        <Text style={styles.sectionTitle}>Pasantía activa</Text>
-        {activa ? (
-          <PasantiaActivaCard app={activa} onFinalizar={() => handleFinalizar(activa.id)} />
-        ) : inscripcionActiva ? (
+        {/* ── Tu pasantía activa ── (un solo bloque: inscripción de cupo,
+             aplicación individual o acuerdo de grupo; el que aplique) */}
+        <Text style={styles.sectionTitle}>Tu pasantía activa</Text>
+        {inscripcionActiva ? (
           <MiInscripcionCard asignacion={inscripcionActiva} ledger={ledger} />
+        ) : activa ? (
+          <PasantiaActivaCard app={activa} onFinalizar={() => handleFinalizar(activa.id)} />
+        ) : acuerdo ? (
+          <MiPasantiaCard acuerdo={acuerdo} estadoServidor={pasantiaEstado} />
         ) : (
           <View style={styles.emptySection}>
             <Ionicons name="briefcase-outline" size={40} color={COLORS.border} />

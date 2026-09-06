@@ -22,8 +22,9 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useMemo } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -37,6 +38,24 @@ export default function MensajesTab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+
+  // El buscador de usuarios (la lupa dentro de SeccionMensajes) delega en
+  // `useIniciarChat`; estando ya en /mensajes, ese hook hace
+  // `router.setParams({ chat, peerName })` en vez de navegar. Sin consumir
+  // aquí ese parámetro, tocar un resultado de la búsqueda no abría ninguna
+  // conversación (los dashboards de empresa/universidad sí lo hacían porque
+  // su `SeccionMensajes` recibe `openChat` desde su propio estado local).
+  const params = useLocalSearchParams<{ chat?: string; peerName?: string }>();
+  const openChat = useMemo(
+    () =>
+      params.chat
+        ? {
+            id: String(params.chat),
+            peerName: params.peerName ? String(params.peerName) : "Chat",
+          }
+        : null,
+    [params.chat, params.peerName],
+  );
 
   // Vuelve a la pestaña principal (Vacantes) — mismo destino que la flecha
   // "atrás" de la sección "Mensajes" en los dashboards (allí es `inicio`).
@@ -65,7 +84,13 @@ export default function MensajesTab() {
         </TouchableOpacity>
       </View>
 
-      <SeccionMensajes onChatOpenChange={setChatPaneOpen} />
+      <SeccionMensajes
+        openChat={openChat}
+        onOpenChatConsumed={() =>
+          router.setParams({ chat: "", peerName: "" } as any)
+        }
+        onChatOpenChange={setChatPaneOpen}
+      />
     </LiquidBackground>
   );
 }

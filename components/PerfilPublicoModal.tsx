@@ -376,7 +376,7 @@ export default function PerfilPublicoModal({
                 </View>
 
                 {/* Si quien mira es la empresa que tiene contratado a este
-                    estudiante: "Trabaja para tu empresa" + botón "Añadir tarea". */}
+                    estudiante: tarjeta "Trabaja para tu empresa" (puesto + fecha). */}
                 {(rol === "talento" || rol === "alumno") && !!viewerUserId && (
                   <TrabajaParaCard estudianteId={userId} viewerUserId={viewerUserId} C={C} />
                 )}

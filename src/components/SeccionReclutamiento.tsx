@@ -65,18 +65,14 @@ import { scoreCandidato } from '../utils/rankingCandidatos';
 import { usePasantesEmpresa } from '../hooks/usePasantesEmpresa';
 import {
   COL_CONTRATOS,
-  COL_TAREAS,
   advertirEmpleado,
-  asignarTarea,
   cerrarVacante,
-  completarTarea,
   contratarCandidato,
   contratarExPasante,
   despedirEmpleado,
   reportarEmpleado,
   type ContratoLaboral,
   type OfertaEmpleo,
-  type TareaLaboral,
   type VacanteParaContrato,
 } from '../services/contratoService';
 import { enviarNotificacion } from '../services/notificationService';
@@ -1300,7 +1296,6 @@ function PuestoMicroseccion({
 
   const [reportarC, setReportarC] = useState<ContratoLaboral | null>(null);
   const [despedirC, setDespedirC] = useState<ContratoLaboral | null>(null);
-  const [asignarOpen, setAsignarOpen] = useState(false);
   const [sugerirDespido, setSugerirDespido] = useState<ContratoLaboral | null>(null);
 
   return (
@@ -1357,18 +1352,6 @@ function PuestoMicroseccion({
         </View>
       )}
 
-      {/* Tareas */}
-      <TareasSection
-        vacanteId={vacante.id}
-        vacanteTitulo={vacante.titulo}
-        empresaId={empresaId}
-        empresaNombre={empresaNombre}
-        empleados={foco ? [foco] : contratos}
-        colors={colors}
-        s={s}
-        onAbrirAsignar={() => setAsignarOpen(true)}
-      />
-
       {/* Empleados del puesto */}
       <View style={s.candHeader}>
         <Ionicons name="briefcase" size={16} color={colors.primaryLight} />
@@ -1411,18 +1394,6 @@ function PuestoMicroseccion({
         onClose={() => setDespedirC(null)}
         onDespedido={() => { setDespedirC(null); onVolver(); }}
       />
-      <AsignarTareaModal
-        visible={asignarOpen}
-        vacanteId={vacante.id}
-        vacanteTitulo={vacante.titulo}
-        empresaId={empresaId}
-        empresaNombre={empresaNombre}
-        empleados={foco ? [foco] : contratos}
-        colors={colors}
-        s={s}
-        onClose={() => setAsignarOpen(false)}
-      />
-
       {/* Modal motivacional: 3er reporte → sugerir despido */}
       <Modal visible={!!sugerirDespido} transparent animationType="none" onRequestClose={() => setSugerirDespido(null)}>
         <View style={s.modalOverlay}>
@@ -1514,101 +1485,6 @@ function EmpleadoRow({
           <Text style={[s.accionTxt, { color: '#fff' }]}>Despedir</Text>
         </TouchableOpacity>
       </View>
-    </View>
-  );
-}
-
-// ── Sección de Tareas del puesto ──
-function TareasSection({
-  vacanteId, vacanteTitulo, empresaId, empresaNombre, empleados, colors, s, onAbrirAsignar,
-}: {
-  vacanteId: string;
-  vacanteTitulo: string;
-  empresaId: string;
-  empresaNombre: string;
-  empleados: ContratoLaboral[];
-  colors: GradlyColors;
-  s: ReturnType<typeof makeStyles>;
-  onAbrirAsignar: () => void;
-}) {
-  const [tareas, setTareas] = useState<TareaLaboral[]>([]);
-  useEffect(() => {
-    if (!empresaId) return;
-    const unsub = onSnapshot(
-      query(collection(db, COL_TAREAS), where('empresaId', '==', empresaId)),
-      (snap) => setTareas(
-        snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as TareaLaboral)).filter((t) => t.vacanteId === vacanteId),
-      ),
-      (e) => console.warn('tareas puesto:', e),
-    );
-    return unsub;
-  }, [empresaId, vacanteId]);
-
-  const nombrePorId = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const c of empleados) m[c.estudianteId] = c.estudianteNombre;
-    return m;
-  }, [empleados]);
-
-  // Agrupa por loteId (o id suelto) para mostrar "a ambos" como una tarjeta.
-  const grupos = useMemo(() => {
-    const idsVisibles = new Set(empleados.map((e) => e.estudianteId));
-    const visibles = tareas.filter((t) => idsVisibles.has(t.estudianteId));
-    const m: Record<string, TareaLaboral[]> = {};
-    for (const t of visibles) (m[t.loteId || t.id] = m[t.loteId || t.id] ?? []).push(t);
-    return Object.values(m).sort((a, b) => {
-      const ta = a[0]?.createdAt?.seconds ?? 0;
-      const tb = b[0]?.createdAt?.seconds ?? 0;
-      return tb - ta;
-    });
-  }, [tareas, empleados]);
-
-  return (
-    <View style={s.microBox}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={s.microLabel}>Tareas</Text>
-        <TouchableOpacity style={s.asignarBtn} onPress={onAbrirAsignar} activeOpacity={0.85}>
-          <Ionicons name="add" size={14} color="#fff" />
-          <Text style={s.asignarBtnTxt}>Asignar tarea</Text>
-        </TouchableOpacity>
-      </View>
-      {grupos.length === 0 ? (
-        <Text style={s.vacio}>Sin tareas asignadas.</Text>
-      ) : (
-        <View style={{ gap: 8 }}>
-          {grupos.map((g) => {
-            const primera = g[0];
-            const completadas = g.filter((t) => t.estado === 'completada').length;
-            const paraTodos = g.length > 1;
-            const quien = paraTodos
-              ? 'Para todos'
-              : (nombrePorId[primera.estudianteId] || 'Empleado');
-            return (
-              <View key={primera.loteId || primera.id} style={s.tareaCard}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons
-                    name={completadas === g.length ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={15}
-                    color={completadas === g.length ? colors.success : colors.textMuted}
-                  />
-                  <Text style={s.tareaTitulo} numberOfLines={2} noTranslate>{primera.titulo}</Text>
-                </View>
-                {!!primera.detalle && <Text style={s.tareaDetalle} noTranslate>{primera.detalle}</Text>}
-                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                  <View style={[s.chip, s.chipSkill]}>
-                    <Text style={s.chipSkillTxt}>{paraTodos ? 'Para todos' : ''}</Text>
-                    {!paraTodos && <Text style={s.chipSkillTxt} noTranslate>{quien}</Text>}
-                  </View>
-                  <View style={[s.chip, s.chipSkill]}>
-                    <Text style={s.chipSkillTxt} noTranslate>{completadas}/{g.length}</Text>
-                    <Text style={s.chipSkillTxt}>completadas</Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      )}
     </View>
   );
 }
@@ -1804,113 +1680,6 @@ function DespedirEmpleadoModal({
             </TouchableOpacity>
             <TouchableOpacity style={s.modalCancelar} onPress={onClose} disabled={!!accion}>
               <Text style={s.modalCancelarTxt}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-// ── Modal: Asignar tarea ──
-function AsignarTareaModal({
-  visible, vacanteId, vacanteTitulo, empresaId, empresaNombre, empleados, colors, s, onClose,
-}: {
-  visible: boolean;
-  vacanteId: string;
-  vacanteTitulo: string;
-  empresaId: string;
-  empresaNombre: string;
-  empleados: ContratoLaboral[];
-  colors: GradlyColors;
-  s: ReturnType<typeof makeStyles>;
-  onClose: () => void;
-}) {
-  const [titulo, setTitulo] = useState('');
-  const [detalle, setDetalle] = useState('');
-  const [destino, setDestino] = useState<'todos' | string>('todos'); // 'todos' o un estudianteId
-  const [enviando, setEnviando] = useState(false);
-  const [err, setErr] = useState('');
-
-  useEffect(() => {
-    if (visible) {
-      setTitulo(''); setDetalle(''); setErr('');
-      setDestino(empleados.length === 1 ? empleados[0].estudianteId : 'todos');
-    }
-  }, [visible, empleados]);
-
-  const enviar = async () => {
-    if (!titulo.trim()) { setErr('La tarea necesita un título.'); return; }
-    const ids = destino === 'todos' ? empleados.map((e) => e.estudianteId) : [destino];
-    if (ids.length === 0) { setErr('No hay empleados a los que asignar.'); return; }
-    setEnviando(true);
-    setErr('');
-    try {
-      await asignarTarea({ vacanteId, vacanteTitulo, empresaId, empresaNombre, titulo, detalle, estudianteIds: ids });
-      onClose();
-    } catch (e: any) {
-      setErr(e?.message || 'No se pudo asignar la tarea.');
-    } finally {
-      setEnviando(false);
-    }
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <View style={s.modalOverlay}>
-        <View style={s.modalCard}>
-          <Text style={s.modalTitulo}>Asignar tarea</Text>
-          <TextInput
-            style={[s.modalInput, { minHeight: 44 }]}
-            value={titulo}
-            onChangeText={setTitulo}
-            placeholder="Título de la tarea"
-            placeholderTextColor={colors.textMuted}
-            selectionColor={colors.primary}
-          />
-          <TextInput
-            style={s.modalInput}
-            value={detalle}
-            onChangeText={setDetalle}
-            placeholder="Detalle (opcional)"
-            placeholderTextColor={colors.textMuted}
-            multiline
-            maxLength={600}
-            selectionColor={colors.primary}
-          />
-          {empleados.length > 1 && (
-            <>
-              <Text style={s.modalTexto}>¿A quién se la asignas?</Text>
-              <View style={s.chipsRow}>
-                <TouchableOpacity
-                  style={[s.candFiltro, destino === 'todos' && s.candFiltroActivo]}
-                  onPress={() => setDestino('todos')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={destino === 'todos' ? s.candFiltroTxtActivo : s.candFiltroTxt}>A todos</Text>
-                </TouchableOpacity>
-                {empleados.map((e) => (
-                  <TouchableOpacity
-                    key={e.id}
-                    style={[s.candFiltro, destino === e.estudianteId && s.candFiltroActivo]}
-                    onPress={() => setDestino(e.estudianteId)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={destino === e.estudianteId ? s.candFiltroTxtActivo : s.candFiltroTxt} noTranslate>
-                      {e.estudianteNombre}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          )}
-          {!!err && <Text style={s.modalError}>{err}</Text>}
-          <View style={s.modalBotones}>
-            <TouchableOpacity style={s.modalCancelar} onPress={onClose} disabled={enviando}>
-              <Text style={s.modalCancelarTxt}>Cancelar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[s.modalConfirmar, { backgroundColor: colors.primary }]} onPress={enviar} disabled={enviando}>
-              {enviando ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.modalConfirmarTxt}>Asignar</Text>}
             </TouchableOpacity>
           </View>
         </View>
@@ -2514,18 +2283,6 @@ const makeStyles = (c: GradlyColors) =>
       paddingVertical: 8, paddingHorizontal: 4,
     },
     companeroTxt: { flex: 1, fontSize: 13, fontFamily: FONTS.interSemiBold, color: c.primaryLight },
-    asignarBtn: {
-      flexDirection: 'row', alignItems: 'center', gap: 4,
-      paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
-      backgroundColor: c.primary,
-    },
-    asignarBtnTxt: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: '#fff' },
-    tareaCard: {
-      backgroundColor: c.backgroundSurface, borderWidth: 1, borderColor: c.border,
-      borderRadius: 10, padding: 11, gap: 6,
-    },
-    tareaTitulo: { flex: 1, fontSize: 13, fontFamily: FONTS.interSemiBold, color: c.textPrimary },
-    tareaDetalle: { fontSize: 11.5, color: c.textMuted, lineHeight: 16 },
 
     // ── Fase 5: filtro supremo + recontratar pasantes ──
     supremo: {
