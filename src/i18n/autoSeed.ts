@@ -1775,3 +1775,33 @@ export const FEEDBACK_TARDE_SEED_EN: Record<string, string> = {
   "Calificación pendiente": "Pending rating",
   "Ya no tienes esta calificación pendiente.": "You no longer have this rating pending.",
 };
+
+// ── Sección "Trabajos" (dashboard-empresa: pasantías + vacantes juntas):
+// renombre, botón, filtros por tipo y por cupos, y copys de plan que ahora
+// nombran también a las pasantías. "Vacantes"/"Pasantías" (chips de filtro),
+// "Presencial"/"Remoto"/"Híbrido" y "Nueva pasantía o vacante" ya viven en
+// AUTO_SEED_EN. Los textos con número interpolado ("Te quedan X de Y…",
+// "Límite alcanzado (N activas)…") los traduce la red, como siempre. ──
+export const EMPRESA_TRABAJOS_SEED_EN: Record<string, string> = {
+  "Mis vacantes y pasantías": "My job posts and internships",
+  "Trabajos": "Jobs",
+  "Publicar nueva pasantía o vacante": "Post a new internship or job post",
+  "Disponibles": "Available",
+  "Ocupados": "Full",
+  "Aún no has publicado ninguna pasantía o vacante.":
+    "You haven't posted any internship or job post yet.",
+  "Ninguna publicación coincide con el filtro.": "No posting matches the filter.",
+  "Todas las pasantías son presenciales.": "All internships are in-person.",
+  "Crea y gestiona tus pasantías y vacantes. Filtra por tipo o por disponibilidad de cupos, y actívalas o pausalas cuando quieras.":
+    "Create and manage your internships and job posts. Filter by type or by spot availability, and activate or pause them whenever you want.",
+  "Hasta 2 pasantías o vacantes activas": "Up to 2 active internships or job posts",
+  "Hasta 10 pasantías o vacantes activas": "Up to 10 active internships or job posts",
+  "Estadísticas de tus publicaciones": "Stats for your postings",
+  "Pasantías y vacantes ilimitadas": "Unlimited internships and job posts",
+  "Hasta 10 pasantías o vacantes activas simultáneas":
+    "Up to 10 simultaneous active internships or job posts",
+  "Pasantías y vacantes activas e históricas ILIMITADAS":
+    "UNLIMITED active and historical internships and job posts",
+  "Plan Premium · pasantías y vacantes ilimitadas":
+    "Premium Plan · unlimited internships and job posts",
+};

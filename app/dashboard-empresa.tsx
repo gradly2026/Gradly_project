@@ -104,7 +104,7 @@ import { useInscripcionesActivas } from '../src/hooks/useInscripcionesActivas';
 import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
 import { progresoDeGrupo } from '../src/utils/horasPasantia';
-import { cuposOcupados, cuposTotales, textoCupos, textoSalario, valCupos } from '../src/utils/cupos';
+import { cuposOcupados, cuposTotales, hayCupos, textoCupos, textoSalario, valCupos } from '../src/utils/cupos';
 import { AREAS as AREAS_CATALOGO, tagsDeArea } from '../src/data/areas';
 import { normalizarHorario, textoHorario, valHorario, type HorarioPasantia } from '../src/data/disponibilidad';
 import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
@@ -141,17 +141,17 @@ const PLAN_DISPLAY: Record<'gratuito' | 'mensual' | 'premium', { nombre: string;
   gratuito: {
     nombre: 'Gratuito',
     precio: '$0/mes',
-    beneficios: ['Hasta 2 vacantes activas', '1 alianza con universidad', 'Soporte por correo'],
+    beneficios: ['Hasta 2 pasantías o vacantes activas', '1 alianza con universidad', 'Soporte por correo'],
   },
   mensual: {
     nombre: 'Mensual',
     precio: '$15/mes',
-    beneficios: ['Hasta 10 vacantes activas', 'Hasta 5 alianzas', 'Estadísticas de tus vacantes'],
+    beneficios: ['Hasta 10 pasantías o vacantes activas', 'Hasta 5 alianzas', 'Estadísticas de tus publicaciones'],
   },
   premium: {
     nombre: 'Premium',
     precio: '$150/año',
-    beneficios: ['Vacantes ilimitadas', 'Alianzas ilimitadas', 'Insignia de Empresa Verificada ✓'],
+    beneficios: ['Pasantías y vacantes ilimitadas', 'Alianzas ilimitadas', 'Insignia de Empresa Verificada ✓'],
   },
 };
 
@@ -288,7 +288,7 @@ interface PerfilEmpresa {
 // Pestañas del menú lateral/flotante, en orden de aparición (icono de Ionicons + etiqueta).
 const MENU: { key: SeccionEmpresa; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'inicio',    label: 'Inicio',           icon: 'home-outline' },
-  { key: 'vacantes',  label: 'Mis Vacantes',     icon: 'briefcase-outline' },
+  { key: 'vacantes',  label: 'Mis vacantes y pasantías', icon: 'briefcase-outline' },
   { key: 'kanban',    label: 'Reclutamiento',    icon: 'people-outline' },
   { key: 'activas',   label: 'Pasantías Activas',icon: 'checkmark-circle-outline' },
   { key: 'historial', label: 'Historial de Pasantes', icon: 'time-outline' },
@@ -304,9 +304,9 @@ const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
       'Este es tu panel general. Aquí ves un resumen de tu actividad: vacantes publicadas, aplicaciones recibidas y pasantías en curso.',
   },
   vacantes: {
-    titulo: 'Mis Vacantes',
+    titulo: 'Mis vacantes y pasantías',
     texto:
-      'Crea y gestiona tus ofertas de pasantía o proyecto. Puedes activarlas o pausarlas cuando quieras.',
+      'Crea y gestiona tus pasantías y vacantes. Filtra por tipo o por disponibilidad de cupos, y actívalas o pausalas cuando quieras.',
   },
   kanban: {
     titulo: 'Reclutamiento',
@@ -574,7 +574,7 @@ export default function DashboardEmpresa() {
         nombre: 'Plan Básico',
         precio: periodoPlanes === 'mensual' ? '$9.99/mes' : '$49.99/año',
         beneficios: [
-          'Hasta 10 vacantes activas simultáneas',
+          'Hasta 10 pasantías o vacantes activas simultáneas',
           'Hasta 5 alianzas estratégicas con universidades',
           'Acceso completo a métricas básicas de postulantes',
           'Soporte estándar vía correo electrónico',
@@ -585,7 +585,7 @@ export default function DashboardEmpresa() {
         nombre: 'Plan Premium',
         precio: periodoPlanes === 'mensual' ? '$24.99/mes' : '$149.99/año',
         beneficios: [
-          'Vacantes activas e históricas ILIMITADAS',
+          'Pasantías y vacantes activas e históricas ILIMITADAS',
           'Alianzas con universidades ILIMITADAS',
           'Insignia de Empresa Verificada (Gold Star)',
           'Acceso prioritario a graduados destacados',
@@ -1257,7 +1257,13 @@ export default function DashboardEmpresa() {
     if (v !== 'Otra') setNvAreaOtra('');
   };
   const onSelectModalidad = (v: string) => { setNvModalidad(v); setErr('modalidad', ''); };
-  const onSelectTipo      = (v: string) => { setNvTipo(v);      setErr('tipo', ''); };
+  const onSelectTipo      = (v: string) => {
+    setNvTipo(v);
+    setErr('tipo', '');
+    // Todas las pasantías son presenciales: al elegir "Pasantía" se fija la
+    // modalidad y el picker queda bloqueado (ver PickerRow `disabled`).
+    if (v === 'Pasantía') { setNvModalidad('Presencial'); setErr('modalidad', ''); }
+  };
   const onSelectModalidadContrato = (v: string) => {
     setNvModalidadContrato(v);
     setNvErrors(prev => ({
@@ -1371,7 +1377,6 @@ export default function DashboardEmpresa() {
     const areaConocida = AREAS.includes(v.area as any);
     setNvArea(areaConocida ? (v.area ?? '') : 'Otra');
     setNvAreaOtra(areaConocida ? '' : (v.area ?? ''));
-    setNvModalidad(v.modalidad ?? '');
 
     // Migración de vacantes legadas: el Tipo tenía 3 valores libres
     // ('Pasantía'/'Proyecto'/'Tiempo parcial') y las 2 últimas colapsaban a
@@ -1381,6 +1386,9 @@ export default function DashboardEmpresa() {
     const esPasantiaLegacy = v.categoria === 'pasantia' || (!v.categoria && tipoLegacy === 'Pasantía');
     const tipoNuevo = esPasantiaLegacy ? 'Pasantía' : 'Vacante';
     setNvTipo(tipoNuevo);
+    // Todas las pasantías son presenciales: se fuerza al editar, aunque una
+    // publicación legada tuviera otra modalidad guardada.
+    setNvModalidad(tipoNuevo === 'Pasantía' ? 'Presencial' : (v.modalidad ?? ''));
 
     // La granularidad que antes vivía en Tipo ('Proyecto'→Por proyecto,
     // 'Tiempo parcial'→Medio tiempo) se traslada a Modalidad de contrato para
@@ -1438,7 +1446,7 @@ export default function DashboardEmpresa() {
     if (!vacanteEditando && !puedeCrearVacante) {
       Alert.alert(
         'Límite alcanzado',
-        `Tu plan permite ${limiteVacantes} vacantes activas. Pausa una vacante o mejora tu plan para publicar más.`,
+        `Tu plan permite ${limiteVacantes} pasantías o vacantes activas. Pausa una o mejora tu plan para publicar más.`,
       );
       return;
     }
@@ -1759,7 +1767,7 @@ export default function DashboardEmpresa() {
 
   // ── Items del menú flotante (etiquetas cortas para la barra) ──────
   const NAV_LABELS: Record<SeccionEmpresa, string> = {
-    inicio: 'Inicio', vacantes: 'Vacantes', kanban: 'Reclutar',
+    inicio: 'Inicio', vacantes: 'Trabajos', kanban: 'Reclutar',
     activas: 'Activas', historial: 'Historial', perfil: 'Mi Perfil', mensajes: 'Mensajes',
   };
   // "Mensajes" y "Mi Perfil" se añaden SIEMPRE como últimas opciones.
@@ -2410,7 +2418,16 @@ export default function DashboardEmpresa() {
                   error={nvErrors.areaOtra} valid={!nvErrors.areaOtra && !!nvAreaOtra.trim()}
                 />
               )}
-              <PickerRow label="Modalidad*" options={MODALIDADES} selected={nvModalidad} onSelect={onSelectModalidad} error={nvErrors.modalidad} />
+              <PickerRow
+                label="Modalidad*"
+                options={MODALIDADES}
+                selected={nvModalidad}
+                onSelect={onSelectModalidad}
+                error={nvErrors.modalidad}
+                // Todas las pasantías son presenciales → se fija y se bloquea.
+                disabled={nvTipo === 'Pasantía'}
+                hint={nvTipo === 'Pasantía' ? 'Todas las pasantías son presenciales.' : undefined}
+              />
 
               {(nvModalidad === 'Presencial' || nvModalidad === 'Híbrido') && (
                 <View style={mapStyles.glassBox}>
@@ -3215,6 +3232,37 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
 }) {
   const { s, colors } = useThemedStyles();
   const ilimitado = limiteVacantes >= 9999;
+
+  // ── Filtros de la lista ──────────────────────────────────────────
+  // Cada par es un filtro OPCIONAL e independiente: tocar la opción activa
+  // la deselecciona (vuelve a "todas"). Los dos pares se combinan con AND.
+  const [filtroTipo, setFiltroTipo] = useState<'vacante' | 'pasantia' | null>(null);
+  const [filtroCupo, setFiltroCupo] = useState<'disponibles' | 'ocupados' | null>(null);
+  const toggleTipo = (t: 'vacante' | 'pasantia') => setFiltroTipo(prev => (prev === t ? null : t));
+  const toggleCupo = (c: 'disponibles' | 'ocupados') => setFiltroCupo(prev => (prev === c ? null : c));
+
+  const visibles = vacantes.filter(v => v.estado_moderacion !== 'eliminada');
+  const listaFiltrada = visibles.filter(v => {
+    // Cualquier `categoria` distinta de 'vacante' (incluida la legada sin
+    // campo) cuenta como pasantía — mismo criterio que la tarjeta de abajo.
+    if (filtroTipo === 'vacante' && v.categoria !== 'vacante') return false;
+    if (filtroTipo === 'pasantia' && v.categoria === 'vacante') return false;
+    // `hayCupos` trata "sin límite declarado" (legada) como disponible.
+    if (filtroCupo === 'disponibles' && !hayCupos(v)) return false;
+    if (filtroCupo === 'ocupados' && hayCupos(v)) return false;
+    return true;
+  });
+
+  const FiltroBtn = ({ activo, label, onPress }: { activo: boolean; label: string; onPress: () => void }) => (
+    <TouchableOpacity
+      style={[s.filtroChip, activo && s.filtroChipOn]}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
+      <Text style={[s.filtroChipTxt, activo && s.filtroChipTxtOn]}>{label}</Text>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={s.vacantesWrap}>
       <View style={s.vacantesHeader}>
@@ -3225,8 +3273,18 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
         >
           {/* Botón morado sólido en ambos temas → ícono/texto siempre blancos. */}
           <Ionicons name={puedeCrear ? 'add-circle-outline' : 'lock-closed-outline'} size={18} color="#fff" />
-          <Text style={s.nuevaBtnText}>Publicar nueva pasantía</Text>
+          <Text style={s.nuevaBtnText}>Publicar nueva pasantía o vacante</Text>
         </JellyButton>
+
+        {/* Filtros: por tipo, y por disponibilidad de cupos. */}
+        <View style={s.filtroFila}>
+          <FiltroBtn activo={filtroTipo === 'vacante'} label="Vacantes" onPress={() => toggleTipo('vacante')} />
+          <FiltroBtn activo={filtroTipo === 'pasantia'} label="Pasantías" onPress={() => toggleTipo('pasantia')} />
+        </View>
+        <View style={s.filtroFila}>
+          <FiltroBtn activo={filtroCupo === 'disponibles'} label="Disponibles" onPress={() => toggleCupo('disponibles')} />
+          <FiltroBtn activo={filtroCupo === 'ocupados'} label="Ocupados" onPress={() => toggleCupo('ocupados')} />
+        </View>
       </View>
 
       {/* Cupo del plan */}
@@ -3234,18 +3292,18 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
         <Ionicons name={puedeCrear ? 'information-circle-outline' : 'alert-circle-outline'} size={14} color={puedeCrear ? colors.textMuted : colors.warning} />
         {puedeCrear || ilimitado ? (
            <Text style={s.cupoText}>
-             {ilimitado ? 'Plan Premium · vacantes ilimitadas' : `Te quedan ${vacantesRestantes} de ${limiteVacantes} vacantes activas en tu plan`}
+             {ilimitado ? 'Plan Premium · pasantías y vacantes ilimitadas' : `Te quedan ${vacantesRestantes} de ${limiteVacantes} pasantías o vacantes activas en tu plan`}
            </Text>
         ) : (
            <TouchableOpacity onPress={onMejorarPlan} activeOpacity={0.7} style={{ flex: 1 }}>
              <Text style={[s.cupoText, { color: colors.warning, textDecorationLine: 'underline' }]}>
-               Límite alcanzado ({limiteVacantes} activas). Pausa una o mejora tu plan.
+               Límite alcanzado ({limiteVacantes} activas). Pausa una publicación o mejora tu plan.
              </Text>
            </TouchableOpacity>
         )}
       </View>
       <FlatList
-        data={vacantes.filter(v => v.estado_moderacion !== 'eliminada')}
+        data={listaFiltrada}
         keyExtractor={item => item.id}
         contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
         renderItem={({ item }) => {
@@ -3314,7 +3372,13 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
             </GlassCard>
           );
         }}
-        ListEmptyComponent={<Text style={s.emptyText}>Sin vacantes publicadas.</Text>}
+        ListEmptyComponent={
+          <Text style={s.emptyText}>
+            {visibles.length === 0
+              ? 'Aún no has publicado ninguna pasantía o vacante.'
+              : 'Ninguna publicación coincide con el filtro.'}
+          </Text>
+        }
       />
     </View>
   );
@@ -3585,26 +3649,33 @@ function FieldInput({ label, value, onChange, placeholder, multiline, keyboardTy
   );
 }
 
-function PickerRow({ label, options, selected, onSelect, error }: {
+function PickerRow({ label, options, selected, onSelect, error, disabled, hint }: {
   label: string; options: string[]; selected: string; onSelect: (v: string) => void;
   error?: string;
+  /** Bloquea la elección (chips atenuados, sin onPress) — p. ej. la modalidad
+   *  cuando el tipo es "Pasantía" (siempre presencial). */
+  disabled?: boolean;
+  /** Nota corta bajo los chips (se muestra tal cual). */
+  hint?: string;
 }) {
   const { styles } = useThemedStyles();
   return (
     <>
       <Text style={styles.fieldLabel}>{label}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 6, marginBottom: 10 }}>
+        contentContainerStyle={{ gap: 6, marginBottom: hint ? 4 : 10 }}>
         {options.map(opt => (
           <TouchableOpacity
             key={opt}
-            style={[styles.pickerChip, selected === opt && styles.pickerChipActive]}
+            style={[styles.pickerChip, selected === opt && styles.pickerChipActive, disabled && { opacity: 0.45 }]}
             onPress={() => onSelect(opt)}
+            disabled={disabled}
           >
             <Text style={[styles.pickerText, selected === opt && styles.pickerTextActive]}>{opt}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
+      {!!hint && <Text style={styles.fieldHint}>{hint}</Text>}
       {!!error && <Text style={styles.fieldError}>{error}</Text>}
     </>
   );
@@ -3851,6 +3922,10 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     fontSize: 11, fontFamily: FONTS.interRegular,
     color: '#22C55E', marginBottom: 6, marginTop: -2,
   },
+  fieldHint: {
+    fontSize: 11, fontFamily: FONTS.interRegular,
+    color: COLORS.textMuted, marginBottom: 10, marginTop: -2,
+  },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   modalCancel: {
     flex: 1, height: 44, borderRadius: 12,
@@ -3935,6 +4010,15 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
   // se estira de borde a borde; en móvil ocupa todo el ancho disponible.
   vacantesWrap: { flex: 1, width: '100%', maxWidth: 820, alignSelf: 'center' },
   vacantesHeader: { padding: 16 },
+  filtroFila: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  filtroChip: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.backgroundCard,
+  },
+  filtroChipOn: { borderColor: COLORS.primary, backgroundColor: COLORS.primary12 },
+  filtroChipTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted },
+  filtroChipTxtOn: { color: COLORS.primaryLight },
   nuevaBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: COLORS.primaryDark,
