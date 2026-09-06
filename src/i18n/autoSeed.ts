@@ -1758,3 +1758,20 @@ export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
   // "Graduado": culminar la pasantía no es egresar de la universidad.
   "Certificado": "Certified",
 };
+
+// ── "Calificar más tarde" (FeedbackExperienciaModal / FeedbackGate /
+// AvisosGate / RecordatorioCalificacionCard / FeedbackPendienteByIdModal).
+// El modal de evaluación gana un botón para posponer; el recordatorio del
+// Inicio y la notificación `feedbackPendiente:<id>` la retoman. "Calificar
+// ahora" y "Calificación" ya viven en CUPOS_SEED_EN. El cuerpo de la
+// notificación va interpolado con un nombre propio → lo traduce la red, como
+// el resto de notificaciones. ──
+export const FEEDBACK_TARDE_SEED_EN: Record<string, string> = {
+  "Calificar más tarde": "Rate later",
+  "Tienes 1 calificación pendiente": "You have 1 pending rating",
+  "Tienes calificaciones pendientes": "You have pending ratings",
+  "Guardaste evaluaciones para más tarde. Complétalas cuando quieras.":
+    "You saved ratings for later. Complete them whenever you want.",
+  "Calificación pendiente": "Pending rating",
+  "Ya no tienes esta calificación pendiente.": "You no longer have this rating pending.",
+};

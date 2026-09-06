@@ -869,7 +869,10 @@ export async function finalizarInscripcionPorHoras(
     await enviarNotificacion(datos.estudianteId, '¡Culminaste tu pasantía!', `Cumpliste todas tus horas de "${cual}".`, 'success', '/(tabs)/progreso');
   }
   if (datos.universidadId) {
-    await enviarNotificacion(datos.universidadId, 'Estudiante culminó su pasantía', `${quien} cumplió sus horas de "${cual}"${datos.empresaNombre ? ` (${datos.empresaNombre})` : ''}.`, 'success', '/dashboard-universidad');
+    // Lleva a la universidad a "Pasantías → Por certificar" y abre el modal de
+    // ESTE estudiante para verlo, evaluarlo y esperar el comprobante. Ver
+    // notifRoute.ts (`certificarPasante`). Antes solo navegaba al panel.
+    await enviarNotificacion(datos.universidadId, 'Estudiante culminó su pasantía', `${quien} cumplió sus horas de "${cual}"${datos.empresaNombre ? ` (${datos.empresaNombre})` : ''}.`, 'success', `certificarPasante:${asignacionId}`);
   }
   if (datos.empresaId) {
     await enviarNotificacion(datos.empresaId, 'Estudiante culminó su pasantía', `${quien} cumplió sus horas de "${cual}".`, 'success', '/dashboard-empresa');

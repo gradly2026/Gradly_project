@@ -81,6 +81,7 @@ import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import EmpresaHomeCards from '../src/components/EmpresaHomeCards';
 import ComprobantePasantiaCard from '../src/components/ComprobantePasantiaCard';
+import RecordatorioCalificacionCard from '../src/components/RecordatorioCalificacionCard';
 import HistorialPasantes from '../src/components/HistorialPasantes';
 // PerfilMasterDetail: mismo componente config-driven (array de `sections`)
 // que arma "Mi Perfil" en app/(tabs)/perfil.tsx y en dashboard-universidad.tsx.
@@ -3165,6 +3166,9 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
 
       {/* ── Comprobantes de finalización por generar/enviar (pasantías por cupo) ── */}
       <ComprobantePasantiaCard rol="empresa" uid={empresaId} />
+
+      {/* ── Calificaciones pospuestas con "Calificar más tarde" (se auto-oculta) ── */}
+      <RecordatorioCalificacionCard rol="empresa" uid={empresaId} />
 
       {/* ── Tarjetas resumen agrupadas (Resumen / Análisis) ── */}
       <EmpresaHomeCards

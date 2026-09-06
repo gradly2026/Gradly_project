@@ -39,6 +39,13 @@ const C = {
 interface Props {
   pendiente: FeedbackPendiente;
   onSubmitted: () => void;
+  /**
+   * Si se pasa, se muestra el botón "Calificar más tarde": cierra el modal sin
+   * calificar. Quien lo pasa (FeedbackGate / AvisosGate) se encarga de posponer
+   * la evaluación (dejar de forzarla) y de crear el recordatorio + la
+   * notificación. Sin esta prop, el modal sigue siendo 100 % obligatorio.
+   */
+  onPosponer?: () => void;
 }
 
 /** Etiqueta legible del estado de una incidencia. */
@@ -89,6 +96,7 @@ function StarRow({
 export default function FeedbackExperienciaModal({
   pendiente,
   onSubmitted,
+  onPosponer,
 }: Props) {
   const criterios = useMemo(
     () => criteriosPara(pendiente.evaluadorRol, pendiente.evaluadoRol),
@@ -178,7 +186,14 @@ export default function FeedbackExperienciaModal({
       : `Evalúa el desempeño de ${pendiente.evaluadoNombre}`;
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={() => {}}>
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      // El botón "atrás" de Android pospone si esa opción está habilitada; si no,
+      // el modal sigue siendo imposible de cerrar (obligatorio).
+      onRequestClose={onPosponer ? onPosponer : () => {}}
+    >
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           {/* Cabecera */}
@@ -294,6 +309,17 @@ export default function FeedbackExperienciaModal({
                 <Text style={styles.hint}>
                   Califica todos los criterios para continuar.
                 </Text>
+              ) : null}
+
+              {onPosponer && !enviando ? (
+                <TouchableOpacity
+                  style={styles.laterBtn}
+                  onPress={onPosponer}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="time-outline" size={15} color={C.textSub} />
+                  <Text style={styles.laterText}>Calificar más tarde</Text>
+                </TouchableOpacity>
               ) : null}
             </ScrollView>
           )}
@@ -454,6 +480,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: "center",
     marginTop: 10,
+  },
+  laterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    alignSelf: "center",
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  laterText: {
+    color: C.textSub,
+    fontSize: 13,
+    fontWeight: "700",
   },
   errorMsg: {
     color: "#f87171",

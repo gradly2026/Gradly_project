@@ -29,6 +29,8 @@ export type NotifRefKind =
   | 'aplicacionGrupo'
   | 'reclamo'
   | 'comprobante'
+  | 'certificarPasante'
+  | 'feedbackPendiente'
   | 'postulacionRechazada'
   | 'contratoAviso'
   | 'ofertaEmpleo'
@@ -44,6 +46,18 @@ export type NotifRefKind =
 //   'comprobante'         → ComprobanteInfoModal.tsx (ciclo del comprobante de
 //                           finalización de una pasantía por cupo; el id es el
 //                           de la `asignaciones_cupo`)
+//   'certificarPasante'  → NO abre un modal propio de la campanita: lleva a la
+//                           UNIVERSIDAD a su panel (sección "Pasantías") y abre
+//                           ahí el CertificarPasanteModal del estudiante cuya
+//                           `asignaciones_cupo` tiene ese id — para revisar,
+//                           calificar y validar el comprobante. Lo consume
+//                           app/dashboard-universidad.tsx vía el parámetro de
+//                           ruta `verPasante`.
+//   'feedbackPendiente'  → reabre el FeedbackExperienciaModal de una evaluación
+//                           que el usuario pospuso con "Calificar más tarde". El
+//                           id es el `feedbackId` determinístico
+//                           (`${solicitudId}_${evaluadorId}_${evaluadoId}`).
+//                           Lo abre FloatingTopBar vía FeedbackPendienteByIdModal.
 //   'postulacionRechazada' → PostulacionRechazadaModal.tsx (el id es el de la
 //                           `aplicaciones`; muestra a qué vacante se postuló y
 //                           el motivo con que la empresa la descartó)
@@ -64,7 +78,7 @@ export interface NotifRef {
   id: string;
 }
 
-const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'postulacionRechazada', 'contratoAviso', 'ofertaEmpleo', 'ofertaRespondida', 'incidencia', 'completarPerfil'];
+const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'certificarPasante', 'feedbackPendiente', 'postulacionRechazada', 'contratoAviso', 'ofertaEmpleo', 'ofertaRespondida', 'incidencia', 'completarPerfil'];
 // La MISMA lista de valores que el tipo NotifRefKind de arriba, pero como
 // un ARRAY real (no solo un tipo). Se necesita en tiempo de ejecución
 // (los tipos de TypeScript desaparecen al compilar, no existen dentro del

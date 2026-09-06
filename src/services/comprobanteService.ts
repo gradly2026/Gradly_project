@@ -246,7 +246,9 @@ export async function enviarComprobante(
     'Comprobante de pasantía recibido',
     `${datos.empresaNombre || 'La empresa'} envió el comprobante de finalización de ${quien} ("${cual}"). Revísalo y valídalo.`,
     'warning',
-    `comprobante:${datos.asignacionId}`,
+    // Lleva a la universidad a "Pasantías → Por certificar" y abre el modal
+    // de ESTE estudiante (revisar / calificar / validar). Ver notifRoute.ts.
+    `certificarPasante:${datos.asignacionId}`,
   );
   await enviarNotificacion(
     datos.estudianteId,
@@ -323,7 +325,9 @@ export async function validarComprobante(
       'Pasantía culminada al 100%',
       `Validaste el comprobante de ${info.estudianteNombre || 'el estudiante'}. El proceso quedó cerrado.`,
       'success',
-      `comprobante:${asignacionId}`,
+      // Lleva a la universidad a "Pasantías → Estudiantes certificados" y abre
+      // el modal (ya en modo solo lectura) de ESTE estudiante. Ver notifRoute.ts.
+      `certificarPasante:${asignacionId}`,
     );
   }
   return true;

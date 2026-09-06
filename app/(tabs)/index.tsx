@@ -90,6 +90,7 @@ import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/Th
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import MiInstitucionCard from '../../src/components/MiInstitucionCard';
 import ComprobantePasantiaCard from '../../src/components/ComprobantePasantiaCard';
+import RecordatorioCalificacionCard from '../../src/components/RecordatorioCalificacionCard';
 // Línea de identidad "UES · Grupo 2026-A" bajo el saludo: le recuerda al
 // estudiante a qué universidad y grupo pertenece, dato que ya estaba en su
 // perfil pero no se mostraba en ninguna pantalla.
@@ -1091,6 +1092,10 @@ export default function FeedVacantes() {
         {/* Estado del comprobante de finalización tras culminar una pasantía por
             cupo — se auto-oculta si no hay ninguno pendiente. */}
         {user?.uid && <ComprobantePasantiaCard rol="estudiante" uid={user.uid} />}
+
+        {/* Recordatorio de calificaciones pospuestas con "Calificar más tarde"
+            — se auto-oculta si no hay ninguna pendiente. */}
+        {user?.uid && <RecordatorioCalificacionCard rol="estudiante" uid={user.uid} />}
 
         {/* Búsqueda y filtros: hay algo que buscar en los 3 estados del feed
             (vacantes, vacantes en modo lectura, o pasantías de autoservicio) —

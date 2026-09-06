@@ -1,4 +1,5 @@
 import {
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -6,6 +7,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../config/firebaseConfig";
@@ -575,4 +577,61 @@ export async function enviarFeedback(
       subioDeRango: rango.tier !== rangoPrev.tier,
     };
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// "CALIFICAR MÁS TARDE" — posponer una evaluación obligatoria
+// ═══════════════════════════════════════════════════════════════════
+//
+// El modal obligatorio (FeedbackExperienciaModal, vía FeedbackGate y el flujo
+// "culminó tu pasantía" de AvisosGate) gana un botón "Calificar más tarde".
+// Al pulsarlo se guarda el `feedbackId` en el perfil del usuario para que la
+// compuerta NO lo vuelva a forzar en el próximo inicio de sesión; el usuario lo
+// retoma desde la tarjeta de recordatorio del Inicio o desde la notificación
+// (referencia `feedbackPendiente:<feedbackId>`).
+//
+// `getFeedbackPendiente` NO cambia (lo consumen varias pantallas): la lista de
+// pendientes sigue completa; solo la compuerta filtra los pospuestos.
+
+const COL_PERFIL_POR_ROL: Record<EntidadRol, string> = {
+  estudiante: "perfiles_estudiantes",
+  empresa: "perfiles_empresas",
+  universidad: "perfiles_universidades",
+};
+
+/** IDs (`feedbackId`) de evaluaciones que el usuario marcó "calificar más tarde". */
+export async function getFeedbackPospuestos(
+  uid: string,
+  rol: EntidadRol,
+): Promise<string[]> {
+  if (!uid) return [];
+  try {
+    const snap = await getDoc(
+      doc(db, COL_PERFIL_POR_ROL[rol] ?? "perfiles_estudiantes", uid),
+    );
+    const arr = (snap.data() as any)?.feedback_pospuestos;
+    return Array.isArray(arr)
+      ? arr.filter((x: unknown): x is string => typeof x === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Marca una evaluación como pospuesta ("calificar más tarde"): la compuerta
+ * obligatoria deja de forzarla. El dueño escribe su propio perfil — las reglas
+ * de Firestore ya lo permiten (sin cambio ni despliegue), igual que
+ * `reclamos_avisados` / `inscripciones_fin_avisadas`.
+ */
+export async function posponerFeedback(
+  uid: string,
+  rol: EntidadRol,
+  feedbackId: string,
+): Promise<void> {
+  if (!uid || !feedbackId) return;
+  await updateDoc(
+    doc(db, COL_PERFIL_POR_ROL[rol] ?? "perfiles_estudiantes", uid),
+    { feedback_pospuestos: arrayUnion(feedbackId) },
+  );
 }

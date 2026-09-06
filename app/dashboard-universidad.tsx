@@ -32,7 +32,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   addDoc,
@@ -115,6 +115,7 @@ import BandejaIncidencias from '../src/components/BandejaIncidencias';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import UniversidadHomeCards from '../src/components/UniversidadHomeCards';
 import ComprobantePasantiaCard from '../src/components/ComprobantePasantiaCard';
+import RecordatorioCalificacionCard from '../src/components/RecordatorioCalificacionCard';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 // Ya explicado a fondo en app/(tabs)/perfil.tsx: recibe una lista
@@ -445,7 +446,7 @@ function extraerEstudiantes(rows: ExcelRow[]): EstudianteNuevo[] {
 const MENU: { key: SeccionUni; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'inicio',       label: 'Inicio',            icon: 'home-outline' },
   { key: 'estudiantes',  label: 'Mis Estudiantes',   icon: 'people-outline' },
-  { key: 'aprobar',      label: 'Prácticas',         icon: 'ribbon-outline' },
+  { key: 'aprobar',      label: 'Pasantías',         icon: 'ribbon-outline' },
 ];
 
 // ── Onboarding (guía por globos) — mismo orden que MENU, terminando en
@@ -495,7 +496,27 @@ export default function DashboardUniversidad() {
   const router = useRouter();
   const { styles, colors, isDark } = useThemedStyles();
 
+  // Deep link desde la campanita: una notificación de fin de pasantía por cupo
+  // ("Estudiante culminó su pasantía" / "Comprobante de pasantía recibido" /
+  // "Pasantía culminada al 100%") trae `?verPasante=<asignacionId>` → saltamos a
+  // la sección "Pasantías" y abrimos ahí el CertificarPasanteModal de ese
+  // estudiante. El parámetro se consume (se limpia) una vez leído, igual que
+  // `?chat=` en app/(tabs)/mensajes.tsx.
+  const params = useLocalSearchParams<{ verPasante?: string }>();
+  const [pasanteAAbrir, setPasanteAAbrir] = useState<string | null>(null);
+
   const [seccion,      setSeccion]      = useState<SeccionUni>('inicio');
+
+  useEffect(() => {
+    const id = params.verPasante ? String(params.verPasante) : '';
+    if (!id) return;
+    setSeccion('aprobar');
+    setPasanteAAbrir(id);
+    // Consumir el parámetro (mismo patrón que `?chat=` en app/(tabs)/mensajes.tsx)
+    // para que no se vuelva a disparar en cada render ni al volver a esta pantalla.
+    router.setParams({ verPasante: '' } as any);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.verPasante]);
   // useAuthBackGuard(): controla el botón "atrás" del navegador para que
   // primero recorra las secciones internas visitadas (Inicio → Estudiantes →
   // Mensajes → ...) y solo al final pregunte si desea cerrar sesión — con
@@ -881,7 +902,7 @@ export default function DashboardUniversidad() {
     switch (seccion) {
       case 'inicio':       return <SeccionInicio metricas={metricas} perfil={perfil} nombreUni={nombreUni} uid={user!.uid} estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
       case 'estudiantes':  return <SeccionEstudiantes estudiantes={estudiantes} uid={user!.uid} solicitudesGrupo={solicitudesGrupo} onAbrirChatEnMensajes={(id, peerName) => { setChatAAbrir({ id, peerName }); setSeccion('mensajes'); }} />;
-      case 'aprobar':      return <SeccionPracticas solicitudes={solicitudesGrupo} asignacionesCupo={asignacionesCupo} apps={apps} estudiantes={estudiantes} uid={user!.uid} nombreUni={nombreUni} />;
+      case 'aprobar':      return <SeccionPracticas solicitudes={solicitudesGrupo} asignacionesCupo={asignacionesCupo} apps={apps} estudiantes={estudiantes} uid={user!.uid} nombreUni={nombreUni} abrirPasanteId={pasanteAAbrir} onPasanteConsumido={() => setPasanteAAbrir(null)} />;
       case 'estadisticas': return <SeccionEstadisticas estudiantes={estudiantes} apps={apps} solicitudesGrupo={solicitudesGrupo} />;
       case 'mensajes':     return (
         <SeccionMensajes
@@ -1262,6 +1283,9 @@ function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, so
 
       {/* ── Comprobantes de finalización pendientes de validar (pasantías por cupo) ── */}
       <ComprobantePasantiaCard rol="universidad" uid={uid} />
+
+      {/* ── Calificaciones pospuestas con "Calificar más tarde" (se auto-oculta) ── */}
+      <RecordatorioCalificacionCard rol="universidad" uid={uid} />
 
       {/* ── Tarjetas resumen agrupadas (Resumen / Análisis) — sustituyen a la
              grilla de métricas y a la vieja sección "Estadísticas" ── */}
@@ -2392,13 +2416,17 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
 // Gestiona las pasantías de grupo (solicitudes_practicas): en curso, por
 // certificar (la empresa ya finalizó y emitió constancia) y certificadas.
 // La universidad revisa la constancia y pulsa "Certificar" → acredita horas.
-function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, uid, nombreUni }: {
+function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, uid, nombreUni, abrirPasanteId, onPasanteConsumido }: {
   solicitudes: SolicitudGrupo[];
   asignacionesCupo: any[];
   apps: Aplicacion[];
   estudiantes: EstudianteRow[];
   uid: string;
   nombreUni: string;
+  /** id de una `asignaciones_cupo` a abrir directo (deep link de notificación). */
+  abrirPasanteId?: string | null;
+  /** se llama una vez abierto el modal, para que el padre limpie el estado. */
+  onPasanteConsumido?: () => void;
 }) {
   const { s, colors } = useThemedStyles();
   const { t } = useTranslation();
@@ -2449,6 +2477,32 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
 
   // Detalle abierto (una asignación culminada).
   const [sel, setSel] = useState<any | null>(null);
+
+  // ── Deep link desde una notificación de la campanita ──
+  // El padre pasa `abrirPasanteId` (id de `asignaciones_cupo`) cuando la
+  // universidad tocó "Comprobante de pasantía recibido" / "Estudiante culminó su
+  // pasantía" / "Pasantía culminada al 100%". Al montar (o cuando el listener
+  // ya trajo esa asignación), abrimos su CertificarPasanteModal y hacemos
+  // scroll a la sub-lista donde vive ("Por certificar" o "Estudiantes
+  // certificados"). Solo abre el modal — nada del flujo existente cambia.
+  const scrollRef = useRef<ScrollView>(null);
+  const yPorCertificar = useRef(0);
+  const yCertificados = useRef(0);
+  const pasanteAbierto = useRef<string | null>(null); // id ya atendido (evita reabrir)
+  useEffect(() => {
+    if (!abrirPasanteId) { pasanteAbierto.current = null; return; }
+    if (pasanteAbierto.current === abrirPasanteId) return;
+    const a = (asignacionesCupo ?? []).find((x: any) => x.id === abrirPasanteId);
+    if (!a) return; // el listener aún no la trajo — se reintenta al actualizarse
+    pasanteAbierto.current = abrirPasanteId;
+    setSel(a);
+    const validado = compPorId[a.id]?.estado === 'validado';
+    const destino = validado ? yCertificados : yPorCertificar;
+    setTimeout(() => {
+      try { scrollRef.current?.scrollTo({ y: Math.max(0, destino.current - 12), animated: true }); } catch { /* noop */ }
+    }, 80);
+    onPasanteConsumido?.();
+  }, [abrirPasanteId, asignacionesCupo, compPorId, onPasanteConsumido]);
 
   // Pasantías INDIVIDUALES EN CURSO (todavía sin culminar) — por cupo
   // (`asignaciones_cupo` tomado y NO finalizada) y el legado por `aplicaciones`
@@ -2522,7 +2576,7 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
+    <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: 110, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
       {/* ── Incidencias reportadas por sus estudiantes ──
           Van PRIMERO y no al final: son lo único de esta pantalla que puede
           estar esperando una respuesta de la universidad ahora mismo. Es
@@ -2563,7 +2617,10 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
         </>
       )}
 
-      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: enPasantiaIndividual.length > 0 ? 18 : 0, marginBottom: 4 }}>
+      <Text
+        onLayout={e => { yPorCertificar.current = e.nativeEvent.layout.y; }}
+        style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: enPasantiaIndividual.length > 0 ? 18 : 0, marginBottom: 4 }}
+      >
         Por certificar ({porCertificar.length})
       </Text>
       <Text style={[s.emptyText, { marginBottom: 8 }]}>
@@ -2573,7 +2630,10 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
         ? <Text style={s.emptyText}>No hay estudiantes esperando certificación.</Text>
         : porCertificar.map((a: any) => <PasanteCard key={a.id} a={a} />)}
 
-      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: 18, marginBottom: 4 }}>
+      <Text
+        onLayout={e => { yCertificados.current = e.nativeEvent.layout.y; }}
+        style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: 18, marginBottom: 4 }}
+      >
         Estudiantes certificados ({certificados.length})
       </Text>
       <Text style={[s.emptyText, { marginBottom: 8 }]}>

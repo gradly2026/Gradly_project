@@ -153,6 +153,7 @@ import OfertaEmpleoModal from './OfertaEmpleoModal';
 import OfertaRespondidaModal from './OfertaRespondidaModal';
 import IncidenciaAvisoModal from './IncidenciaAvisoModal';
 import CompletarPerfilModal from './CompletarPerfilModal';
+import FeedbackPendienteByIdModal from './FeedbackPendienteByIdModal';
 // Los modales de detalle que se pueden abrir al tocar una notificación
 // con referencia estructurada "kind:id" (ver notifRoute.ts). Cada uno es
 // un componente separado, definido en su propio archivo.
@@ -242,6 +243,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const [ofertaRespondidaId, setOfertaRespondidaId] = useState<string | null>(null);
   const [incidenciaAvisoId, setIncidenciaAvisoId] = useState<string | null>(null);
   const [completarPerfilOpen, setCompletarPerfilOpen] = useState(false);
+  const [feedbackPendienteId, setFeedbackPendienteId] = useState<string | null>(null);
   // 4 estados, uno por cada tipo de modal de detalle posible. Cada uno
   // guarda `null` (modal cerrado) o el ID del documento a mostrar (modal
   // abierto, mostrando ese documento específico). Ver más abajo cómo
@@ -388,6 +390,23 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
     // Intenta interpretar link_accion como referencia estructurada
     // "kind:id" usando la función de notifRoute.ts.
     if (ref) {
+      // ── Caso especial: fin de pasantía por cupo visto por la UNIVERSIDAD.
+      // No abrimos un modal de la campanita; llevamos a la universidad a su
+      // panel (sección "Pasantías") pasándole el id de la `asignaciones_cupo`
+      // por el parámetro de ruta `verPasante`. Allí, dashboard-universidad.tsx
+      // abre el CertificarPasanteModal de ese estudiante (revisar, calificar
+      // y validar el comprobante). Ver src/utils/notifRoute.ts.
+      if (ref.kind === 'certificarPasante') {
+        if (rol === 'universidad') {
+          try {
+            // `navigate` (no `push`): la universidad normalmente YA está en
+            // /dashboard-universidad, así que esto solo actualiza el parámetro
+            // `verPasante` de esa misma pantalla en vez de apilar otra copia.
+            router.navigate({ pathname: '/dashboard-universidad', params: { verPasante: ref.id } } as any);
+          } catch { /* ruta inválida → no navega */ }
+        }
+        return;
+      }
       const ruta = dashboardDelRol();
       if (ruta) { try { router.push(ruta as any); } catch { /* ya estamos ahí, o ruta inválida */ } }
       // Primero navega al dashboard correspondiente al rol del usuario
@@ -410,6 +429,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         case 'ofertaRespondida': setOfertaRespondidaId(ref.id); break;
         case 'incidencia': setIncidenciaAvisoId(ref.id); break;
         case 'completarPerfil': setCompletarPerfilOpen(true); break;
+        case 'feedbackPendiente': setFeedbackPendienteId(ref.id); break;
       }
       return;
       // Termina aquí: si era una referencia estructurada, ya se decidió
@@ -742,6 +762,13 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
       <CompletarPerfilModal
         visible={completarPerfilOpen}
         onClose={() => setCompletarPerfilOpen(false)}
+      />
+      <FeedbackPendienteByIdModal
+        visible={!!feedbackPendienteId}
+        feedbackId={feedbackPendienteId}
+        uid={userId}
+        rol={rol}
+        onClose={() => setFeedbackPendienteId(null)}
       />
     </>
   );

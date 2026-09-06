@@ -4,9 +4,11 @@ import { textoHorario } from '../data/disponibilidad';
 import { cuposLibresEnReclamo } from '../utils/cupos';
 import {
   getFeedbackPendiente,
+  posponerFeedback,
   type EntidadRol,
   type FeedbackPendiente,
 } from '../services/feedbackService';
+import { enviarNotificacion } from '../services/notificationService';
 import {
   getAvisoFinalizacionEstudiante,
   getAvisosCuposEstudiante,
@@ -173,6 +175,26 @@ function CulminacionFlow({
         key={actual.feedbackId}
         pendiente={actual}
         onSubmitted={() => setTimeout(() => setSubIdx(i => i + 1), 0)}
+        onPosponer={() => {
+          const fb = actual;
+          // Posponer = dejar de forzarla + recordatorio/notificación; seguimos
+          // con la siguiente evaluación de este mismo estudiante (o su cierre).
+          void (async () => {
+            try {
+              await posponerFeedback(uid, rol, fb.feedbackId);
+              await enviarNotificacion(
+                uid,
+                'Calificación pendiente',
+                `Guardaste tu evaluación de "${fb.evaluadoNombre}" para más tarde. Ábrela cuando quieras desde aquí o desde tu inicio.`,
+                'info',
+                `feedbackPendiente:${fb.feedbackId}`,
+              );
+            } catch (e) {
+              console.warn('No se pudo posponer la evaluación:', e);
+            }
+          })();
+          setTimeout(() => setSubIdx(i => i + 1), 0);
+        }}
       />
     );
   }
