@@ -1848,9 +1848,7 @@ export default function DashboardEmpresa() {
               { key: 'descripcion', label: 'Descripción', value: (perfil as any)?.descripcion ?? '', multiline: true },
               { key: 'sitio_web', label: 'Sitio web', value: (perfil as any)?.sitio_web ?? '', keyboardType: 'url', autoCapitalize: 'none' },
               { key: 'telefono', label: 'Teléfono', value: (perfil as any)?.telefono ?? '', keyboardType: 'phone-pad' },
-              { key: 'direccion', label: 'Dirección', value: (perfil as any)?.direccion ?? '' },
-              { key: 'departamento', label: 'Departamento', value: (perfil as any)?.departamento ?? '' },
-              { key: 'distrito', label: 'Distrito', value: (perfil as any)?.distrito ?? (perfil as any)?.ciudad ?? '' },
+              // Departamento / distrito / dirección se editan en la sección "Mi ubicación".
               { key: 'instagram', label: 'Instagram', value: (perfil as any)?.instagram ?? '', autoCapitalize: 'none' },
               { key: 'facebook', label: 'Facebook', value: (perfil as any)?.facebook ?? '', autoCapitalize: 'none' },
             ],
@@ -1863,9 +1861,6 @@ export default function DashboardEmpresa() {
                   descripcion: v.descripcion,
                   sitio_web: v.sitio_web,
                   telefono: v.telefono,
-                  direccion: v.direccion,
-                  departamento: v.departamento,
-                  distrito: v.distrito,
                   instagram: v.instagram,
                   facebook: v.facebook,
                 });
