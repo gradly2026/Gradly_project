@@ -121,6 +121,9 @@ import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 // `sections` (título/ícono/campos o render personalizado) y dibuja toda
 // la pantalla de perfil de forma consistente.
 import ResenasFeedback from '../src/components/ResenasFeedback';
+import UbicacionCardSV from '../src/components/UbicacionCardSV';
+import UbicacionPrecisaModal from '../src/components/UbicacionPrecisaModal';
+import { getDistritoGeo } from '../src/utils/distritoGeo';
 import { VacantesDisponibles } from '../src/components/Matchmaking';
 import { PerfilStatsUniversidad, RedGradlyBanner } from '../src/components/NetworkStats';
 import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTour';
@@ -525,6 +528,8 @@ export default function DashboardUniversidad() {
   const [showEditPerfil, setShowEditPerfil] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [showCarrerasEditor, setShowCarrerasEditor] = useState(false);
+  // Modal de la tarjeta "Mi ubicación" (punto preciso dentro del distrito).
+  const [ubicModalOpen, setUbicModalOpen] = useState(false);
 
   // Nombres de las carreras ofertadas (normaliza string u objeto).
   const carrerasNombres = useMemo(() => {
@@ -860,11 +865,11 @@ export default function DashboardUniversidad() {
       );
       case 'perfil':       return (
         // ── Patrón PerfilMasterDetail con `sections`, ya explicado a
-        // fondo en app/(tabs)/perfil.tsx: 4 secciones ('datos', 'contacto',
-        // 'carreras', 'stats', 'resenas') definidas como configuración,
-        // con `fields`+`onSave` para edición de texto simple, o `render`
-        // para contenido personalizado (el editor de carreras, las
-        // estadísticas, el promedio de calificación). ──
+        // fondo en app/(tabs)/perfil.tsx: secciones ('datos', 'ubicacion',
+        // 'contacto', 'carreras', 'stats', 'resenas') definidas como
+        // configuración, con `fields`+`onSave` para edición de texto simple,
+        // o `render` para contenido personalizado. ──
+        <>
         <PerfilMasterDetail
           name={nombreUni}
           subtitle={perfil?.dominio_correo || 'Universidad'}
@@ -912,6 +917,22 @@ export default function DashboardUniversidad() {
                   });
                 } catch { Alert.alert('Error', 'No se pudo guardar.'); }
               },
+            },
+            {
+              id: 'ubicacion',
+              title: 'Mi ubicación',
+              subtitle: [(perfil as any)?.departamento, (perfil as any)?.distrito ?? (perfil as any)?.ciudad].filter(Boolean).join(' · ') || 'Sin definir',
+              icon: 'location-outline',
+              tone: 'purple',
+              render: () => (
+                <UbicacionCardSV
+                  departamento={(perfil as any)?.departamento}
+                  distrito={(perfil as any)?.distrito ?? (perfil as any)?.ciudad}
+                  puntoGuardado={(perfil as any)?.ubicacion_precisa ?? null}
+                  onPin={() => setUbicModalOpen(true)}
+                  pinHabilitado={!!getDistritoGeo((perfil as any)?.departamento, (perfil as any)?.distrito ?? (perfil as any)?.ciudad)}
+                />
+              ),
             },
             {
               id: 'contacto',
@@ -1009,6 +1030,18 @@ export default function DashboardUniversidad() {
             },
           ]}
         />
+        <UbicacionPrecisaModal
+          visible={ubicModalOpen}
+          onClose={() => setUbicModalOpen(false)}
+          departamento={(perfil as any)?.departamento}
+          distrito={(perfil as any)?.distrito ?? (perfil as any)?.ciudad}
+          puntoGuardado={(perfil as any)?.ubicacion_precisa ?? null}
+          soloLectura={!!(perfil as any)?.ubicacion_precisa}
+          onGuardar={async ({ lat, lng }) => {
+            await updateDoc(doc(db, 'perfiles_universidades', user!.uid), { ubicacion_precisa: { lat, lng } });
+          }}
+        />
+        </>
       );
       default:             return null;
     }

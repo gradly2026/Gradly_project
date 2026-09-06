@@ -1312,6 +1312,25 @@ export const UBICACION_SEED_EN: Record<string, string> = {
   "Agrega tu teléfono y tu documento de identidad para tener tu perfil completo. Toca aquí para hacerlo.":
     "Add your phone and your ID document to complete your profile. Tap here to do it.",
   "Completa tu teléfono y documento para guardar.": "Complete your phone and ID document to save.",
+  // ── Tarjeta "Mi ubicación" + modal de punto preciso (empresa / universidad, v91) ──
+  "Mi ubicación": "My location",
+  "Sin definir": "Not set",
+  "Ubicación precisa": "Precise location",
+  "Distrito sin definir": "District not set",
+  "Define tu departamento y distrito para ver el mapa aquí.": "Set your department and district to see the map here.",
+  "Registra tu ubicación": "Register your location",
+  "Tu ubicación registrada": "Your registered location",
+  "Toca el mapa para marcar tu punto exacto. Debe quedar dentro de tu distrito.":
+    "Tap the map to mark your exact spot. It must be within your district.",
+  "Este es el punto exacto que registraste dentro de tu distrito.":
+    "This is the exact spot you registered within your district.",
+  "Aún no marcas un punto.": "You haven't marked a spot yet.",
+  "Tu punto está dentro de tu distrito.": "Your spot is within your district.",
+  "El punto debe estar dentro de tu distrito.": "The spot must be within your district.",
+  "Guardar ubicación": "Save location",
+  "No se pudo guardar la ubicación.": "Couldn't save the location.",
+  "No pudimos ubicar el mapa de tu distrito. Revisa que tu departamento y distrito estén bien escritos en \"Datos\".":
+    "We couldn't load your district's map. Check that your department and district are spelled correctly in \"Details\".",
 };
 
 // ── Eliminar vacante/grupo/estudiante (empresa y universidad deshacen su

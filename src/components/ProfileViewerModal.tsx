@@ -40,6 +40,8 @@ import StorageAvatar from './StorageAvatar';
 import { ResenasResumen } from './ResenasFeedback';
 import TrabajaParaCard from './TrabajaParaCard';
 import ReportarUsuarioModal from './ReportarUsuarioModal';
+import UbicacionCardSV from './UbicacionCardSV';
+import UbicacionPrecisaModal from './UbicacionPrecisaModal';
 
 export type ProfileTipo = 'estudiante' | 'empresa' | 'universidad';
 
@@ -75,6 +77,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
   const [loading, setLoading] = useState(true);
 
   const [showReportar, setShowReportar] = useState(false);
+  const [verUbicPrecisa, setVerUbicPrecisa] = useState(false);
 
   const puedeVerUbicacion = rol === 'empresa' || rol === 'universidad';
 
@@ -475,6 +478,19 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                 <InfoRow icon="location-outline" label="Dirección" value={data.direccion || '—'} colors={colors} styles={styles} />
               </View>
             )}
+
+            {(tipo === 'empresa' || tipo === 'universidad') && (data.departamento || data.distrito || data.ciudad) && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Ubicación</Text>
+                <UbicacionCardSV
+                  departamento={data.departamento}
+                  distrito={data.distrito ?? data.ciudad}
+                  puntoGuardado={data.ubicacion_precisa ?? null}
+                  onPin={() => setVerUbicPrecisa(true)}
+                  pinHabilitado={!!data.ubicacion_precisa}
+                />
+              </View>
+            )}
           </ScrollView>
         )}
       </View>
@@ -486,6 +502,17 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
         reportadoId={profileId}
         reportadoNombre={nombre}
         onClose={() => setShowReportar(false)}
+      />
+    )}
+
+    {!!data && (tipo === 'empresa' || tipo === 'universidad') && (
+      <UbicacionPrecisaModal
+        visible={verUbicPrecisa}
+        onClose={() => setVerUbicPrecisa(false)}
+        departamento={data.departamento}
+        distrito={data.distrito ?? data.ciudad}
+        puntoGuardado={data.ubicacion_precisa ?? null}
+        soloLectura
       />
     )}
     </>

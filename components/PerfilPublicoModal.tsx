@@ -19,6 +19,8 @@ import RangoCard from "../src/components/RangoCard";
 import { ResenasResumen } from "../src/components/ResenasFeedback";
 import SelloEmpresa from "../src/components/SelloEmpresa";
 import TrabajaParaCard from "../src/components/TrabajaParaCard";
+import UbicacionCardSV from "../src/components/UbicacionCardSV";
+import UbicacionPrecisaModal from "../src/components/UbicacionPrecisaModal";
 import { calcularRango } from "../src/services/feedbackService";
 import ReportarModal from "./ReportarModal";
 
@@ -139,6 +141,7 @@ export default function PerfilPublicoModal({
   const [perfil, setPerfil] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
   const [showReportar, setShowReportar] = useState(false);
+  const [verUbicPrecisa, setVerUbicPrecisa] = useState(false);
   const [universidadNombre, setUniversidadNombre] = useState<string | null>(null);
   const [grupoNombre, setGrupoNombre] = useState<string | null>(null);
   const [aliados, setAliados] = useState<string[]>([]);
@@ -445,6 +448,19 @@ export default function PerfilPublicoModal({
                   </View>
                 ))}
 
+                {(rol === "empresa" || rol === "universidad") && (perfil.departamento || perfil.distrito || perfil.ciudad) && (
+                  <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
+                    <Text style={[styles.sectionLabel, { color: C.muted }]}>Ubicación</Text>
+                    <UbicacionCardSV
+                      departamento={perfil.departamento}
+                      distrito={perfil.distrito ?? perfil.ciudad}
+                      puntoGuardado={perfil.ubicacion_precisa ?? null}
+                      onPin={() => setVerUbicPrecisa(true)}
+                      pinHabilitado={!!perfil.ubicacion_precisa}
+                    />
+                  </View>
+                )}
+
                 {/* Redes — mismas que ProfileViewerModal (portfolio se quitó). */}
                 {esEstudiante && (perfil.linkedin || perfil.facebook) && (
                   <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
@@ -593,6 +609,17 @@ export default function PerfilPublicoModal({
         reportanteId={viewerUserId}
         theme={theme}
       />
+
+      {!!perfil && (rol === "empresa" || rol === "universidad") && (
+        <UbicacionPrecisaModal
+          visible={verUbicPrecisa}
+          onClose={() => setVerUbicPrecisa(false)}
+          departamento={perfil.departamento}
+          distrito={perfil.distrito ?? perfil.ciudad}
+          puntoGuardado={perfil.ubicacion_precisa ?? null}
+          soloLectura
+        />
+      )}
     </>
   );
 }

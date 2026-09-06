@@ -113,6 +113,9 @@ import ReportarIncidenciaEmpresaModal, { type PasanteReportable } from '../src/c
 import SeccionReclutamiento from '../src/components/SeccionReclutamiento';
 import PerfilPublicoModal from '../components/PerfilPublicoModal';
 import MapViewer from '../src/components/MapViewer';
+import UbicacionCardSV from '../src/components/UbicacionCardSV';
+import UbicacionPrecisaModal from '../src/components/UbicacionPrecisaModal';
+import { getDistritoGeo } from '../src/utils/distritoGeo';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../components/ui/liquid-glass/JellyButton';
@@ -789,6 +792,9 @@ export default function DashboardEmpresa() {
   const [nvAreaOtra, setNvAreaOtra] = useState('');
   // Errores de validación en tiempo real por campo ('' = válido).
   const [nvErrors, setNvErrors] = useState<Record<string, string>>({});
+
+  // Modal de la tarjeta "Mi ubicación" (punto preciso dentro del distrito).
+  const [ubicModalOpen, setUbicModalOpen] = useState(false);
 
   // ── Mapa interactivo / ubicación de la vacante ──
   const [mapRegion, setMapRegion] = useState({ latitude: 13.6929, longitude: -89.2182, latitudeDelta: 0.0922, longitudeDelta: 0.0421 });
@@ -1784,7 +1790,11 @@ export default function DashboardEmpresa() {
     const info = PLAN_DISPLAY[planKey];
     const ilimitado = (perfil?.limiteVacantes ?? 0) >= 9999;
     const tieneTarjeta = !!perfil?.tarjeta_numero;
+    const ubicDep = (perfil as any)?.departamento;
+    const ubicDist = (perfil as any)?.distrito ?? (perfil as any)?.ciudad;
+    const ubicPrecisa = (perfil as any)?.ubicacion_precisa ?? null;
     return (
+      <>
       <PerfilMasterDetail
         name={nombreEmpresa}
         subtitle={`${perfil?.industria ?? 'Empresa'} · ${planBadgeLabel}`}
@@ -1834,6 +1844,22 @@ export default function DashboardEmpresa() {
                 });
               } catch { Alert.alert('Error', 'No se pudo guardar.'); }
             },
+          },
+          {
+            id: 'ubicacion',
+            title: 'Mi ubicación',
+            subtitle: [ubicDep, ubicDist].filter(Boolean).join(' · ') || 'Sin definir',
+            icon: 'location-outline',
+            tone: 'purple',
+            render: () => (
+              <UbicacionCardSV
+                departamento={ubicDep}
+                distrito={ubicDist}
+                puntoGuardado={ubicPrecisa}
+                onPin={() => setUbicModalOpen(true)}
+                pinHabilitado={!!getDistritoGeo(ubicDep, ubicDist)}
+              />
+            ),
           },
           {
             id: 'contacto',
@@ -2005,6 +2031,18 @@ export default function DashboardEmpresa() {
           },
         ]}
       />
+      <UbicacionPrecisaModal
+        visible={ubicModalOpen}
+        onClose={() => setUbicModalOpen(false)}
+        departamento={ubicDep}
+        distrito={ubicDist}
+        puntoGuardado={ubicPrecisa}
+        soloLectura={!!ubicPrecisa}
+        onGuardar={async ({ lat, lng }) => {
+          await updateDoc(doc(db, 'perfiles_empresas', user!.uid), { ubicacion_precisa: { lat, lng } });
+        }}
+      />
+      </>
     );
   };
 
