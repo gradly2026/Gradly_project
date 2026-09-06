@@ -13,6 +13,13 @@ import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput } from './AutoText';
 import { useTranslation } from '../context/TranslationContext';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import {
+  limpiarDocumento,
+  limpiarTelefono,
+  REGLAS_DOC,
+  validarDocumento,
+  validarTelefono,
+} from '../utils/validacionesSV';
 
 export type DocTipo = 'dui' | 'pasaporte' | 'licencia' | '';
 
@@ -28,9 +35,9 @@ export const DATOS_PERSONALES_VACIO: DatosPersonalesValue = {
   telefono: '', docTipo: '', docNumero: '', facebook: '', instagram: '',
 };
 
-/** true cuando están los dos campos obligatorios (teléfono + documento). */
+/** true cuando teléfono y documento están presentes Y con formato válido. */
 export function datosPersonalesObligatoriosOk(v: DatosPersonalesValue): boolean {
-  return !!v.telefono.trim() && !!v.docTipo && !!v.docNumero.trim();
+  return !validarTelefono(v.telefono) && !validarDocumento(v.docTipo, v.docNumero);
 }
 
 /** Objeto listo para escribir en `perfiles_estudiantes` (Instagram sin `@`). */
@@ -60,8 +67,8 @@ export default function DatosPersonalesFields({
       <TextInput
         style={s.input}
         value={value.telefono}
-        onChangeText={v => onChange({ telefono: v })}
-        placeholder="2222 3333"
+        onChangeText={v => onChange({ telefono: limpiarTelefono(v) })}
+        placeholder="22223333"
         placeholderTextColor={colors.textMuted}
         keyboardType="phone-pad"
       />
@@ -85,11 +92,14 @@ export default function DatosPersonalesFields({
       <TextInput
         style={s.input}
         value={value.docNumero}
-        onChangeText={v => onChange({ docNumero: v })}
+        onChangeText={v => onChange({ docNumero: limpiarDocumento(v, value.docTipo) })}
         placeholder={t('perfil_doc_numero_ph')}
         placeholderTextColor={colors.textMuted}
         autoCapitalize="characters"
       />
+      {value.docTipo ? (
+        <Text style={s.hint} noTranslate>{REGLAS_DOC[value.docTipo].hint}</Text>
+      ) : null}
 
       <Text style={[s.label, { marginTop: 6 }]}>Facebook</Text>
       <TextInput
@@ -130,4 +140,5 @@ const makeStyles = (COLORS: GradlyColors) =>
     chipOn: { borderColor: COLORS.primary, backgroundColor: COLORS.primary12 },
     chipTxt: { fontSize: 12.5, fontFamily: FONTS.interRegular, color: COLORS.textSecondary },
     chipTxtOn: { color: COLORS.primaryLight, fontFamily: FONTS.interSemiBold },
+    hint: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
   });

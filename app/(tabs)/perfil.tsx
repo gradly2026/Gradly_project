@@ -76,6 +76,17 @@ import DisponibilidadSelector from '../../src/components/DisponibilidadSelector'
 import UbicacionSelector from '../../src/components/UbicacionSelector';
 import { resumenDisponibilidadEstudiante } from '../../src/utils/disponibilidadEstudiante';
 import {
+  limpiarDocumento,
+  limpiarTelefono,
+  validarDescripcion,
+  validarDocumento,
+  validarFacebook,
+  validarInstagram,
+  validarLinkedin,
+  validarTelefono,
+  type DocTipoSV,
+} from '../../src/utils/validacionesSV';
+import {
   contarBloques,
   normalizarDisponibilidad,
   resumenDisponibilidad,
@@ -221,17 +232,10 @@ export default function PerfilTab() {
   const [ubicDirty, setUbicDirty] = useState(false);
   const [ubicSaving, setUbicSaving] = useState(false);
 
-  // ── Información personal (borrador local + guardado explícito, igual patrón). ──
-  type InfoDraft = {
-    descripcion: string; linkedin: string; telefono: string;
-    facebook: string; instagram: string;
-    docTipo: 'dui' | 'pasaporte' | 'licencia' | ''; docNumero: string;
-  };
-  const [infoDraft, setInfoDraft] = useState<InfoDraft>({
-    descripcion: '', linkedin: '', telefono: '', facebook: '', instagram: '', docTipo: '', docNumero: '',
-  });
-  const [infoDirty, setInfoDirty] = useState(false);
-  const [infoSaving, setInfoSaving] = useState(false);
+  // La sección "Información personal" usa el patrón `fields`+`onSave` de
+  // PerfilMasterDetail (vista → Editar → formulario → Guardar), igual que
+  // empresa/universidad, con `type:'select'` para el tipo de documento y
+  // `sanitize`/`validate` por campo (ver defs en `sections`).
 
   // ── Horario del puesto de trabajo activo (para la disponibilidad derivada). ──
   const [contratoHorario, setContratoHorario] = useState<any>(null);
@@ -284,20 +288,6 @@ export default function PerfilTab() {
         }
         return dirty;
       });
-      setInfoDirty(dirty => {
-        if (!dirty) {
-          setInfoDraft({
-            descripcion: data.descripcion ?? '',
-            linkedin: data.linkedin ?? '',
-            telefono: data.telefono ?? '',
-            facebook: data.facebook ?? '',
-            instagram: data.instagram ?? '',
-            docTipo: (data.doc_tipo ?? '') as InfoDraft['docTipo'],
-            docNumero: data.doc_numero ?? '',
-          });
-        }
-        return dirty;
-      });
     });
     return unsub;
   }, [user]);
@@ -338,27 +328,6 @@ export default function PerfilTab() {
       Alert.alert(t('error_generico'), t('err_guardar'));
     } finally {
       setUbicSaving(false);
-    }
-  };
-
-  const guardarInfo = async () => {
-    if (!user) return;
-    setInfoSaving(true);
-    try {
-      await updateDoc(doc(db, 'perfiles_estudiantes', user.uid), {
-        descripcion: infoDraft.descripcion.trim(),
-        linkedin: infoDraft.linkedin.trim(),
-        telefono: infoDraft.telefono.trim(),
-        facebook: infoDraft.facebook.trim(),
-        instagram: infoDraft.instagram.trim().replace(/^@/, ''),
-        doc_tipo: infoDraft.docTipo,
-        doc_numero: infoDraft.docNumero.trim(),
-      });
-      setInfoDirty(false);
-    } catch {
-      Alert.alert(t('error_generico'), t('err_guardar'));
-    } finally {
-      setInfoSaving(false);
     }
   };
 
@@ -763,112 +732,74 @@ export default function PerfilTab() {
             ),
           },
           {
-            // Formulario propio (no el patrón `fields` genérico) para tener el
-            // selector de tipo de documento y los datos de solo lectura.
-            // 'disponibilidad' y 'portfolio' se quitaron a pedido del usuario:
-            // la disponibilidad ahora la deriva el sistema (ver dispResumen).
+            // Mismo patrón `fields`+`onSave` que empresa/universidad: vista de
+            // solo lectura + botón Editar → formulario validado → Guardar.
+            // 'disponibilidad' y 'portfolio' se quitaron: la disponibilidad la
+            // deriva el sistema; el documento de identidad NO se muestra en
+            // ninguna vista de perfil, solo aquí.
             id: 'info',
             title: t('perfil_info_personal'),
             subtitle: perfil?.nombre_completo || t('perfil_no_especificado'),
             icon: 'person-outline',
             tone: 'blue',
-            render: () => (
-              <View style={{ gap: 10 }}>
-                {/* Solo lectura: nombre (del registro) y correo (del login) */}
-                <View style={styles.infoRO}>
-                  <Text style={styles.fieldLabel}>{t('campo_nombre')}</Text>
-                  <Text style={styles.infoROValue} noTranslate>{perfil?.nombre_completo || '—'}</Text>
-                  <Text style={[styles.fieldLabel, { marginTop: 8 }]}>{t('campo_email')}</Text>
-                  <Text style={styles.infoROValue} noTranslate>{user?.email || '—'}</Text>
-                </View>
-
-                {/* Documento de identidad — NO se muestra en ninguna vista de
-                    perfil, solo aquí. */}
-                <Text style={styles.fieldLabel}>{t('perfil_doc_identidad')}</Text>
-                <View style={styles.docChips}>
-                  {([['dui', t('perfil_doc_dui')], ['pasaporte', t('perfil_doc_pasaporte')], ['licencia', t('perfil_doc_licencia')]] as const).map(([k, lbl]) => {
-                    const activo = infoDraft.docTipo === k;
-                    return (
-                      <TouchableOpacity
-                        key={k}
-                        style={[styles.docChip, activo && styles.docChipOn]}
-                        onPress={() => { setInfoDraft(d => ({ ...d, docTipo: activo ? '' : k })); setInfoDirty(true); }}
-                      >
-                        <Text style={[styles.docChipTxt, activo && styles.docChipTxtOn]}>{lbl}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                <TextInput
-                  style={styles.modalInput}
-                  value={infoDraft.docNumero}
-                  onChangeText={v => { setInfoDraft(d => ({ ...d, docNumero: v })); setInfoDirty(true); }}
-                  placeholder={t('perfil_doc_numero_ph')}
-                  placeholderTextColor={COLORS.textMuted}
-                  autoCapitalize="characters"
-                />
-
-                <Text style={styles.fieldLabel}>{t('campo_telefono')}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={infoDraft.telefono}
-                  onChangeText={v => { setInfoDraft(d => ({ ...d, telefono: v })); setInfoDirty(true); }}
-                  placeholder="2222 3333"
-                  placeholderTextColor={COLORS.textMuted}
-                  keyboardType="phone-pad"
-                />
-
-                <Text style={styles.fieldLabel}>Facebook</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={infoDraft.facebook}
-                  onChangeText={v => { setInfoDraft(d => ({ ...d, facebook: v })); setInfoDirty(true); }}
-                  placeholder="facebook.com/tu-perfil"
-                  placeholderTextColor={COLORS.textMuted}
-                  autoCapitalize="none"
-                />
-
-                <Text style={styles.fieldLabel}>Instagram</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={infoDraft.instagram}
-                  onChangeText={v => { setInfoDraft(d => ({ ...d, instagram: v })); setInfoDirty(true); }}
-                  placeholder="@tu.usuario"
-                  placeholderTextColor={COLORS.textMuted}
-                  autoCapitalize="none"
-                />
-
-                <Text style={styles.fieldLabel}>{t('campo_linkedin')}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={infoDraft.linkedin}
-                  onChangeText={v => { setInfoDraft(d => ({ ...d, linkedin: v })); setInfoDirty(true); }}
-                  placeholder="https://linkedin.com/in/tu-perfil"
-                  placeholderTextColor={COLORS.textMuted}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                />
-
-                <Text style={styles.fieldLabel}>{t('campo_descripcion')}</Text>
-                <TextInput
-                  style={[styles.modalInput, { height: 88, textAlignVertical: 'top', paddingTop: 10 }]}
-                  value={infoDraft.descripcion}
-                  onChangeText={v => { setInfoDraft(d => ({ ...d, descripcion: v })); setInfoDirty(true); }}
-                  placeholder={t('perfil_descripcion_placeholder')}
-                  placeholderTextColor={COLORS.textMuted}
-                  multiline
-                />
-
-                {infoDirty && (
-                  <TouchableOpacity style={styles.dispSaveBtn} onPress={guardarInfo} disabled={infoSaving}>
-                    {infoSaving
-                      ? <ActivityIndicator size="small" color="#FFF" />
-                      : <Ionicons name="checkmark" size={16} color="#FFF" />}
-                    <Text style={styles.dispSaveTxt}>{t('accion_guardar')}</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ),
+            fields: [
+              { key: 'nombre', label: t('campo_nombre'), value: perfil?.nombre_completo ?? '', readonly: true },
+              { key: 'email', label: t('campo_email'), value: user?.email ?? '', readonly: true },
+              {
+                key: 'doc_tipo', label: t('perfil_doc_identidad'), value: (perfil as any)?.doc_tipo ?? '',
+                type: 'select',
+                options: [
+                  { value: 'dui', label: t('perfil_doc_dui') },
+                  { value: 'pasaporte', label: t('perfil_doc_pasaporte') },
+                  { value: 'licencia', label: t('perfil_doc_licencia') },
+                ],
+                validate: (v) => (v ? '' : t('perfil_doc_elige_tipo')),
+              },
+              {
+                key: 'doc_numero', label: t('perfil_doc_numero_ph'), value: (perfil as any)?.doc_numero ?? '',
+                placeholder: t('perfil_doc_numero_ph'), autoCapitalize: 'characters',
+                sanitize: (v, form) => limpiarDocumento(v, form.doc_tipo as DocTipoSV),
+                validate: (v, form) => validarDocumento(form.doc_tipo as DocTipoSV, v),
+              },
+              {
+                key: 'telefono', label: t('campo_telefono'), value: (perfil as any)?.telefono ?? '',
+                placeholder: '22223333', keyboardType: 'phone-pad',
+                sanitize: limpiarTelefono, validate: validarTelefono,
+              },
+              {
+                key: 'facebook', label: 'Facebook', value: (perfil as any)?.facebook ?? '',
+                placeholder: 'facebook.com/tu-perfil', autoCapitalize: 'none',
+                validate: validarFacebook,
+              },
+              {
+                key: 'instagram', label: 'Instagram', value: (perfil as any)?.instagram ?? '',
+                placeholder: '@tu.usuario', autoCapitalize: 'none',
+                validate: validarInstagram,
+              },
+              {
+                key: 'linkedin', label: t('campo_linkedin'), value: perfil?.linkedin ?? '',
+                placeholder: 'https://linkedin.com/in/tu-perfil', autoCapitalize: 'none', keyboardType: 'url',
+                validate: validarLinkedin,
+              },
+              {
+                key: 'descripcion', label: t('campo_descripcion'), value: perfil?.descripcion ?? '',
+                placeholder: t('perfil_descripcion_placeholder'), multiline: true,
+                validate: validarDescripcion,
+              },
+            ],
+            onSave: async (v) => {
+              try {
+                await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), {
+                  doc_tipo: v.doc_tipo,
+                  doc_numero: v.doc_numero.trim(),
+                  telefono: v.telefono.trim(),
+                  facebook: v.facebook.trim(),
+                  instagram: v.instagram.trim().replace(/^@/, ''),
+                  linkedin: v.linkedin.trim(),
+                  descripcion: v.descripcion.trim(),
+                });
+              } catch { Alert.alert(t('error_generico'), t('err_guardar')); }
+            },
           },
           {
             id: 'skills',
@@ -1219,21 +1150,6 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderRadius: 12, paddingVertical: 11, paddingHorizontal: 16,
   },
   dispSaveTxt: { color: '#FFF', fontSize: 13.5, fontFamily: FONTS.interSemiBold },
-
-  // ── Información personal
-  infoRO: {
-    backgroundColor: COLORS.backgroundSurface, borderRadius: 12,
-    borderWidth: 1, borderColor: COLORS.border, padding: 12, marginBottom: 4,
-  },
-  infoROValue: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary, marginTop: 2 },
-  docChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  docChip: {
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 8,
-  },
-  docChipOn: { borderColor: COLORS.primary, backgroundColor: COLORS.primary12 },
-  docChipTxt: { fontSize: 12.5, fontFamily: FONTS.interRegular, color: COLORS.textSecondary },
-  docChipTxtOn: { color: COLORS.primaryLight, fontFamily: FONTS.interSemiBold },
 
   addSkillBtn: {
     width: 34, height: 34, borderRadius: 17,

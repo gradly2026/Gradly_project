@@ -66,6 +66,7 @@
   "perfil_doc_pasaporte": "Passport",
   "perfil_doc_licencia": "Driver's license",
   "perfil_doc_numero_ph": "Document number",
+  "perfil_doc_elige_tipo": "Choose the document type",
   "campo_ciudad": "City",
   "campo_departamento": "Department",
   "campo_descripcion": "Description",

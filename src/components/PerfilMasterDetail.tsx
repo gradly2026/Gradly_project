@@ -42,6 +42,18 @@ export interface PerfilField {
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad' | 'url';
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   multiline?: boolean;
+  /** 'select' → chips en edición; en lectura muestra el `label` de la opción.
+   *  Cualquier otro valor (o ausente) → input de texto normal. */
+  type?: 'text' | 'select';
+  /** Opciones para `type: 'select'`. */
+  options?: { value: string; label: string }[];
+  /** Solo lectura: se muestra el valor tanto en vista como en edición, sin input. */
+  readonly?: boolean;
+  /** Limpia el valor MIENTRAS se escribe (bloquea caracteres no permitidos). */
+  sanitize?: (raw: string, form: Record<string, string>) => string;
+  /** Devuelve un mensaje de error, o '' si el valor es válido. Se corre al
+   *  Guardar; si algún campo devuelve error, no se guarda. */
+  validate?: (value: string, form: Record<string, string>) => string;
 }
 
 export interface PerfilSection {
@@ -128,23 +140,36 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   const active = sections.find(s => s.id === activeId) ?? null;
   const isPrefs = activeId === PREFS_ID;
 
-  const abrir = (id: string) => { setActiveId(id); setEditing(false); };
-  const cerrar = () => { setActiveId(null); setEditing(false); };
+  const abrir = (id: string) => { setActiveId(id); setEditing(false); setErrors({}); };
+  const cerrar = () => { setActiveId(null); setEditing(false); setErrors({}); };
+  const salirEdicion = () => { setEditing(false); setErrors({}); };
 
   const entrarEdicion = (sec: PerfilSection) => {
     const init: Record<string, string> = {};
     (sec.fields ?? []).forEach(f => { init[f.key] = f.value ?? ''; });
     setForm(init);
+    setErrors({});
     setEditing(true);
   };
 
   const guardar = async (sec: PerfilSection) => {
-    if (!sec.onSave) { setEditing(false); return; }
+    if (!sec.onSave) { salirEdicion(); return; }
+    // Validación por campo: si alguno devuelve mensaje, no se guarda.
+    const errs: Record<string, string> = {};
+    (sec.fields ?? []).forEach(f => {
+      if (f.readonly || !f.validate) return;
+      const msg = f.validate(form[f.key] ?? '', form);
+      if (msg) errs[f.key] = msg;
+    });
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+
+    setErrors({});
     setSaving(true);
     try {
       await sec.onSave(form);
@@ -268,26 +293,64 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
                 )}
               </View>
 
-              {active.fields.map(f => (
-                <View key={f.key} style={styles.formGroup}>
-                  <Text style={styles.fieldLabel}>{f.label}</Text>
-                  {editing ? (
-                    <TextInput
-                      style={[styles.input, f.multiline && { height: 88, textAlignVertical: 'top' }]}
-                      value={form[f.key] ?? ''}
-                      onChangeText={v => setForm(prev => ({ ...prev, [f.key]: v }))}
-                      placeholder={f.placeholder}
-                      placeholderTextColor={colors.textMuted}
-                      keyboardType={f.keyboardType as any}
-                      autoCapitalize={f.autoCapitalize}
-                      multiline={f.multiline}
-                      selectionColor={colors.primary}
-                    />
-                  ) : (
-                    <Text style={styles.readValue}>{f.value?.trim() ? f.value : '—'}</Text>
-                  )}
-                </View>
-              ))}
+              {active.fields.map(f => {
+                const enEdicion = editing && !f.readonly;
+                const cur = form[f.key] ?? '';
+                const labelOpcion = f.type === 'select'
+                  ? (f.options?.find(o => o.value === (enEdicion ? cur : f.value))?.label ?? '')
+                  : '';
+                return (
+                  <View key={f.key} style={styles.formGroup}>
+                    <Text style={styles.fieldLabel}>{f.label}</Text>
+                    {!enEdicion ? (
+                      <Text style={styles.readValue}>
+                        {f.type === 'select'
+                          ? (labelOpcion || '—')
+                          : (f.value?.trim() ? f.value : '—')}
+                      </Text>
+                    ) : f.type === 'select' ? (
+                      <View style={styles.mdChips}>
+                        {(f.options ?? []).map(o => {
+                          const on = cur === o.value;
+                          return (
+                            <TouchableOpacity
+                              key={o.value}
+                              style={[styles.mdChip, on && styles.mdChipOn]}
+                              onPress={() => setForm(prev => ({ ...prev, [f.key]: on ? '' : o.value }))}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.mdChipTxt, on && styles.mdChipTxtOn]}>{o.label}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    ) : (
+                      <TextInput
+                        style={[
+                          styles.input,
+                          f.multiline && { height: 88, textAlignVertical: 'top' },
+                          !!errors[f.key] && { borderColor: colors.error },
+                        ]}
+                        value={cur}
+                        onChangeText={v => {
+                          const limpio = f.sanitize ? f.sanitize(v, form) : v;
+                          setForm(prev => ({ ...prev, [f.key]: limpio }));
+                          if (errors[f.key]) setErrors(prev => ({ ...prev, [f.key]: '' }));
+                        }}
+                        placeholder={f.placeholder}
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType={f.keyboardType as any}
+                        autoCapitalize={f.autoCapitalize}
+                        multiline={f.multiline}
+                        selectionColor={colors.primary}
+                      />
+                    )}
+                    {enEdicion && !!errors[f.key] && (
+                      <Text style={styles.mdFieldError}>{errors[f.key]}</Text>
+                    )}
+                  </View>
+                );
+              })}
 
               {editing && (
                 <View style={styles.saveActions}>
@@ -300,7 +363,7 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
                       ? <ActivityIndicator size="small" color={colors.textPrimary} />
                       : <><Ionicons name="checkmark" size={16} color={colors.textPrimary} /><Text style={styles.btnPrimaryText}>{labels.guardar}</Text></>}
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.btn, styles.btnSecondary]} onPress={() => setEditing(false)} disabled={saving}>
+                  <TouchableOpacity style={[styles.btn, styles.btnSecondary]} onPress={salirEdicion} disabled={saving}>
                     <Text style={styles.btnSecondaryText}>{labels.cancelar}</Text>
                   </TouchableOpacity>
                 </View>
@@ -452,6 +515,15 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 15, fontFamily: FONTS.interRegular, color: COLORS.textPrimary,
   },
+  mdChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  mdChip: {
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  mdChipOn: { borderColor: COLORS.primary, backgroundColor: COLORS.primary12 },
+  mdChipTxt: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textSecondary },
+  mdChipTxtOn: { color: COLORS.primaryLight, fontFamily: FONTS.interSemiBold },
+  mdFieldError: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.error, marginTop: 6 },
 
   saveActions: { gap: 10, marginTop: 16 },
   btn: {
