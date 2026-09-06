@@ -28,6 +28,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -573,6 +574,48 @@ export default function AdminPreview() {
 
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [recalcularConfirmOpen, setRecalcularConfirmOpen] = useState(false);
+
+  // Contacto de soporte (doc `config/soporte`): lo que los 3 roles ven en la
+  // pantalla "Ayuda". Se edita solo desde aquí (reglas: escritura = admin).
+  const [soporteTel, setSoporteTel] = useState("");
+  const [soporteCorreo, setSoporteCorreo] = useState("");
+  const [soporteHorario, setSoporteHorario] = useState("");
+  const [soporteCargado, setSoporteCargado] = useState(false);
+  const [soporteGuardando, setSoporteGuardando] = useState(false);
+  useEffect(() => {
+    let cancel = false;
+    getDoc(doc(db, "config", "soporte"))
+      .then((s) => {
+        if (cancel) return;
+        const d = (s.exists() ? s.data() : {}) as any;
+        setSoporteTel(d.telefono ?? "");
+        setSoporteCorreo(d.correo ?? "");
+        setSoporteHorario(d.horario ?? "");
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancel) setSoporteCargado(true); });
+    return () => { cancel = true; };
+  }, []);
+  const guardarSoporte = async () => {
+    setSoporteGuardando(true);
+    try {
+      await setDoc(
+        doc(db, "config", "soporte"),
+        {
+          telefono: soporteTel.trim(),
+          correo: soporteCorreo.trim(),
+          horario: soporteHorario.trim(),
+          actualizado_en: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      mostrarAviso("exito", "Contacto de soporte guardado", "Los cambios ya se ven en la pantalla de Ayuda de los 3 roles.");
+    } catch (error) {
+      mostrarAviso("error", "No se pudo guardar", "Vuelve a intentarlo.", translateSync(adminDataErrorMessage(error, "guardar el contacto de soporte")));
+    } finally {
+      setSoporteGuardando(false);
+    }
+  };
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [rolePermissions, setRolePermissions] = useState<Set<string>>(new Set());
@@ -4589,6 +4632,52 @@ export default function AdminPreview() {
             </TouchableOpacity>
           </View>
         </Card>
+
+      <Card style={{ marginBottom: 14 }}>
+        <Text style={s.cardTitle}>Contacto de soporte</Text>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          Estos datos son los que ven todos los usuarios (estudiantes, empresas y universidades) en
+          la pantalla de Ayuda. Edítalos aquí y se actualizan para todos.
+        </Text>
+        <Text style={[s.inputLabel, { marginTop: 14 }]}>Teléfono</Text>
+        <TextInput
+          style={s.input}
+          value={soporteTel}
+          onChangeText={setSoporteTel}
+          placeholder="+503 7000-4545"
+          placeholderTextColor={C.textMuted}
+          keyboardType="phone-pad"
+          editable={soporteCargado && !soporteGuardando}
+        />
+        <Text style={[s.inputLabel, { marginTop: 12 }]}>Correo electrónico</Text>
+        <TextInput
+          style={s.input}
+          value={soporteCorreo}
+          onChangeText={setSoporteCorreo}
+          placeholder="hola@gradly.app"
+          placeholderTextColor={C.textMuted}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          editable={soporteCargado && !soporteGuardando}
+        />
+        <Text style={[s.inputLabel, { marginTop: 12 }]}>Horario de atención</Text>
+        <TextInput
+          style={s.input}
+          value={soporteHorario}
+          onChangeText={setSoporteHorario}
+          placeholder="Lunes a viernes, 8:00 AM a 5:00 PM"
+          placeholderTextColor={C.textMuted}
+          editable={soporteCargado && !soporteGuardando}
+        />
+        <TouchableOpacity
+          style={[s.btnPrimary, { marginTop: 14, opacity: soporteCargado && !soporteGuardando ? 1 : 0.6 }]}
+          disabled={!soporteCargado || soporteGuardando}
+          onPress={guardarSoporte}
+          activeOpacity={0.85}
+        >
+          <Text style={s.btnPrimaryText}>{soporteGuardando ? "Guardando…" : "Guardar contacto"}</Text>
+        </TouchableOpacity>
+      </Card>
 
       <Card style={{ marginBottom: 14 }}>
         <Text style={s.cardTitle}>Mantenimiento</Text>

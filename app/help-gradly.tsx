@@ -11,9 +11,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from '../src/components/AutoText';
+import { db } from '../src/config/firebaseConfig';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 // GlassCard: componente reutilizable que dibuja una "tarjeta" con el
@@ -31,6 +33,25 @@ function useThemedStyles() {
   // lógica de useMemo cada vez.
   const { colors } = useTheme();
   return useMemo(() => ({ colors, styles: makeStyles(colors) }), [colors]);
+}
+
+/**
+ * Contacto de soporte. Los valores por defecto viven en i18n
+ * (`help_screen_*_value`), pero el admin los puede sobrescribir desde
+ * "Config → Contacto de soporte" (doc `config/soporte`, campos
+ * `telefono` / `correo` / `horario`). Lectura para cualquier usuario
+ * autenticado; escritura solo admin (regla `match /config/{docId}`).
+ */
+function useSoporte() {
+  const [soporte, setSoporte] = useState<{ telefono?: string; correo?: string; horario?: string }>({});
+  useEffect(() => {
+    let cancel = false;
+    getDoc(doc(db, 'config', 'soporte'))
+      .then((s) => { if (!cancel && s.exists()) setSoporte(s.data() as any); })
+      .catch(() => {});
+    return () => { cancel = true; };
+  }, []);
+  return soporte;
 }
 
 function ContactItem({
@@ -58,7 +79,8 @@ function ContactItem({
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.contactLabel}>{label}</Text>
-        <Text style={styles.contactValue}>{value}</Text>
+        {/* Dato de contacto: se muestra tal cual, sin pasar por el traductor. */}
+        <Text style={styles.contactValue} noTranslate>{value}</Text>
       </View>
     </GlassCard>
   );
@@ -68,6 +90,7 @@ export default function HelpGradlyScreen() {
   const router = useRouter();
   const { styles, colors } = useThemedStyles();
   const { t } = useTranslation();
+  const soporte = useSoporte();
   const webScrollStyle = Platform.OS === 'web'
     ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
     : undefined;
@@ -145,17 +168,17 @@ export default function HelpGradlyScreen() {
             <ContactItem
               icon="call-outline"
               label={t('help_screen_phone_label')}
-              value={t('help_screen_phone_value')}
+              value={soporte.telefono?.trim() || t('help_screen_phone_value')}
             />
             <ContactItem
               icon="mail-outline"
               label={t('help_screen_email_label')}
-              value={t('help_screen_email_value')}
+              value={soporte.correo?.trim() || t('help_screen_email_value')}
             />
             <ContactItem
               icon="time-outline"
               label={t('help_screen_hours_label')}
-              value={t('help_screen_hours_value')}
+              value={soporte.horario?.trim() || t('help_screen_hours_value')}
             />
           </View>
         </ScrollView>

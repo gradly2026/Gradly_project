@@ -56,7 +56,7 @@ import { esVacanteAfin, puntuarVacante } from '../../src/data/areas';
 // puntuarVacante(carrera, skills, vacante) → un número: qué tan bien
 // "encaja" esa vacante con el perfil del estudiante (se usa para
 // ORDENAR el feed, mostrando primero lo más afín).
-import { hayCupos, sePuedeTomar, textoSalario } from '../../src/utils/cupos';
+import { cuposDisponibles, cuposTotales, hayCupos, sePuedeTomar, textoSalario } from '../../src/utils/cupos';
 import { cargarOverridesCarreras, mensajeZonaRoja, zonaDeCarrera } from '../../src/data/carreras';
 import {
   ActivityIndicator,
@@ -205,6 +205,18 @@ function relativeTime(ts: any, t: (k: string, p?: Record<string, string | number
   return t('feed_fecha_meses', { n: Math.floor(days / 30) });
 }
 
+/**
+ * Contador de plazas para el feed de "Vacantes de trabajo": solo aplica a las
+ * COLECTIVAS (más de un cupo). Devuelve "Quedan 2 de 3 cupos" o `null` (vacante
+ * de un solo cupo, o legada sin límite declarado — ahí no se muestra contador).
+ */
+function cuposTextoFeed(v: Vacante): string | null {
+  const total = cuposTotales(v);
+  if (!total || total <= 1) return null;
+  const libres = cuposDisponibles(v) ?? 0;
+  return `Quedan ${libres} de ${total} cupos`;
+}
+
 // ─────────────────────────────────────────────
 // COMPONENTE TARJETA
 // ─────────────────────────────────────────────
@@ -218,6 +230,8 @@ function VacanteCard({
   empresaTier,
   readOnly,
   accionLabel,
+  cuposTexto,
+  contratadoAqui,
 }: {
   vacante: Vacante;
   yaAplico: boolean;
@@ -235,6 +249,11 @@ function VacanteCard({
    * El autoservicio de pasantías lo pone en "Inscribir": ahí el clic inscribe
    * al instante, no crea una aplicación pendiente. */
   accionLabel?: string;
+  /** Contador "Quedan X de Y cupos" para vacantes de trabajo colectivas. */
+  cuposTexto?: string | null;
+  /** El estudiante que mira YA fue contratado en esta vacante: se le muestra
+   *  solo el contador, sin botón de postularse. */
+  contratadoAqui?: boolean;
 }) {
   const { styles } = useThemedStyles();
   const { t } = useTranslation();
@@ -340,6 +359,10 @@ function VacanteCard({
               textColor={COLORS.success}
             />
           )}
+          {/* Contador de plazas (solo vacantes de trabajo colectivas). */}
+          {!!cuposTexto && (
+            <Chip label={cuposTexto} color={COLORS.warning + '22'} textColor={COLORS.warning} />
+          )}
         </View>
 
         {/* Skills */}
@@ -358,26 +381,34 @@ function VacanteCard({
       {/* Footer */}
       <View style={styles.cardFooter}>
         <Text style={styles.dateText}>{relativeTime(vacante.fecha_publicacion, t)}</Text>
-        <JellyButton
-          style={[
-            styles.aplicarBtn,
-            { backgroundColor: btnColor },
-            applying && { opacity: 0.6 },
-            readOnly && { opacity: 0.7 },
-          ]}
-          contentStyle={{ paddingVertical: 8, paddingHorizontal: 18 }}
-          onPress={() => !readOnly && !yaAplico && onAplicar?.(vacante)}
-          // "onAplicar?.(vacante)" — optional chaining sobre una función:
-          // si `onAplicar` no vino como prop (undefined), esta expresión
-          // simplemente no hace nada, en vez de lanzar un error por
-          // "intentar llamar algo que no es una función".
-          disabled={readOnly || yaAplico || applying}
-        >
-          {applying
-            ? <ActivityIndicator size="small" color={COLORS.textPrimary} />
-            : <Text style={[styles.aplicarBtnText, readOnly && { color: COLORS.textMuted }]}>{btnLabel}</Text>
-          }
-        </JellyButton>
+        {contratadoAqui ? (
+          // Ya contratado en esta plaza: solo el estado, sin botón de postularse.
+          <View style={styles.contratadoPill}>
+            <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
+            <Text style={styles.contratadoPillText}>Ya estás en esta plaza</Text>
+          </View>
+        ) : (
+          <JellyButton
+            style={[
+              styles.aplicarBtn,
+              { backgroundColor: btnColor },
+              applying && { opacity: 0.6 },
+              readOnly && { opacity: 0.7 },
+            ]}
+            contentStyle={{ paddingVertical: 8, paddingHorizontal: 18 }}
+            onPress={() => !readOnly && !yaAplico && onAplicar?.(vacante)}
+            // "onAplicar?.(vacante)" — optional chaining sobre una función:
+            // si `onAplicar` no vino como prop (undefined), esta expresión
+            // simplemente no hace nada, en vez de lanzar un error por
+            // "intentar llamar algo que no es una función".
+            disabled={readOnly || yaAplico || applying}
+          >
+            {applying
+              ? <ActivityIndicator size="small" color={COLORS.textPrimary} />
+              : <Text style={[styles.aplicarBtnText, readOnly && { color: COLORS.textMuted }]}>{btnLabel}</Text>
+            }
+          </JellyButton>
+        )}
       </View>
     </GlassCard>
   );
@@ -803,8 +834,21 @@ export default function FeedVacantes() {
     if (filtroActivo !== 'todas') {
       res = res.filter(v => v.modalidad === filtroActivo || v.area === filtroActivo);
     }
+
+    // Ocultar las vacantes sin plazas libres: una de 1 cupo ya ocupada no
+    // tiene nada que ofrecer, y una colectiva llena tampoco — salvo que el
+    // estudiante YA esté contratado en esa colectiva, en cuyo caso la sigue
+    // viendo con el contador "Quedan 0 de N". Las legadas sin límite
+    // declarado (`cuposDisponibles` === null) nunca se ocultan.
+    res = res.filter(v => {
+      const libres = cuposDisponibles(v);
+      if (libres === null || libres > 0) return true;
+      const total = cuposTotales(v) ?? 0;
+      return total > 1 && aplicaciones[v.id] === 'contratado';
+    });
+
     return res;
-  }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, userProfile]);
+  }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, userProfile, aplicaciones]);
   // useMemo: este cálculo (filtrar + ordenar) solo se vuelve a ejecutar
   // cuando cambia alguna de sus dependencias — no en CADA render de la
   // pantalla (por ejemplo, no se recalcula solo porque `applying` cambió).
@@ -998,6 +1042,7 @@ export default function FeedVacantes() {
               onVerDetalle={setVacanteDetalle}
               applying={false}
               empresaTier={empresaTiers[item.empresa_id]}
+              cuposTexto={cuposTextoFeed(item)}
               readOnly
             />
           </View>
@@ -1171,6 +1216,8 @@ export default function FeedVacantes() {
               onVerDetalle={setVacanteDetalle}
               applying={applying === item.id}
               empresaTier={empresaTiers[item.empresa_id]}
+              cuposTexto={cuposTextoFeed(item)}
+              contratadoAqui={aplicaciones[item.id] === 'contratado'}
             />
           )}
           showsVerticalScrollIndicator
@@ -1209,6 +1256,8 @@ export default function FeedVacantes() {
               onVerDetalle={setVacanteDetalle}
               applying={false}
               empresaTier={empresaTiers[item.empresa_id]}
+              cuposTexto={cuposTextoFeed(item)}
+              contratadoAqui={aplicaciones[item.id] === 'contratado'}
               readOnly
               // No se pasa onAplicar en absoluto — VacanteCard ya sabe
               // manejar esa ausencia (ver "onAplicar?.(vacante)" arriba).
@@ -1494,6 +1543,12 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     minWidth: 80, alignItems: 'center',
   },
   aplicarBtnText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  contratadoPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10,
+    backgroundColor: COLORS.success + '18', borderWidth: 1, borderColor: COLORS.success + '44',
+  },
+  contratadoPillText: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: COLORS.success },
 
   // ── States
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },

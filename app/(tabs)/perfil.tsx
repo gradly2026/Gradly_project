@@ -35,16 +35,9 @@ import {
   Alert,
   Animated,
   Image,
-  KeyboardAvoidingView,
-  // KeyboardAvoidingView: un contenedor especial que EMPUJA su contenido
-  // hacia arriba automáticamente cuando el teclado del celular aparece,
-  // para que el campo que se está escribiendo no quede tapado.
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
-
-
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -55,7 +48,6 @@ import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/Th
 import { useTranslation } from '../../src/context/TranslationContext';
 import { shadow } from '../../src/utils/shadow';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
-import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import CertificadoGradly from '../../src/components/CertificadoGradly';
 // Componente que dibuja el "certificado" visual del estudiante (con su
@@ -125,8 +117,6 @@ interface EstudiantePerfil {
   linkedin:           string;
   portfolio:          string;
   calificacion_promedio: number;
-  tarjeta_numero:     string;
-  tarjeta_alias:      string;
   // ── Datos personales que el estudiante puede completar (v86) ──
   telefono?:          string;
   facebook?:          string;
@@ -154,24 +144,6 @@ function getLevel(pct: number) {
   return 'nivel_explorador';
 }
 
-function formatCardNumber(raw: string) {
-  // Formatea lo que el usuario escribe en el campo de número de tarjeta,
-  // agrupándolo de a 4 dígitos con espacios ("1234 5678 9012 3456"),
-  // como se ve en una tarjeta física real.
-  return raw.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim();
-  // Paso a paso:
-  //   .replace(/\D/g, '')     → elimina TODO lo que no sea un dígito
-  //                              (\D = "no dígito"), por si el usuario
-  //                              pegara texto con espacios o guiones.
-  //   .slice(0, 16)            → se queda con máximo 16 dígitos (el
-  //                              largo estándar de una tarjeta).
-  //   .replace(/(.{4})/g, '$1 ') → inserta un espacio después de cada
-  //                              grupo de 4 caracteres ("$1" se refiere
-  //                              al grupo capturado por (.{4})).
-  //   .trim()                   → quita el espacio final sobrante que
-  //                              deja el reemplazo anterior.
-}
-
 // ─────────────────────────────────────────────
 // PANTALLA PRINCIPAL
 // ─────────────────────────────────────────────
@@ -190,15 +162,8 @@ export default function PerfilTab() {
   // Modales
   const [skillInput,      setSkillInput]      = useState('');
   const [showAddSkill,    setShowAddSkill]     = useState(false);
-  const [showCardModal,   setShowCardModal]    = useState(false);
   const [showEditModal,   setShowEditModal]    = useState(false);
   const [deletingSkill,   setDeletingSkill]    = useState<string | null>(null);
-
-  // Formulario de tarjeta
-  const [cardNumero,     setCardNumero]     = useState('');
-  const [cardNombre,     setCardNombre]     = useState('');
-  const [cardVence,      setCardVence]      = useState('');
-  const [cardAlias,      setCardAlias]      = useState('');
 
   // Formulario de edición de perfil
   const [editDisp,      setEditDisp]      = useState('');
@@ -512,32 +477,6 @@ export default function PerfilTab() {
       await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), { skills: current });
     } catch { Alert.alert(t('error_generico'), t('err_eliminar_skill')); }
     setDeletingSkill(null);
-  };
-
-  // ── Guardar tarjeta ───────────────────────────────────────────────
-  const handleGuardarTarjeta = async () => {
-    const digits = cardNumero.replace(/\s/g, '');
-    // Quita los espacios que formatCardNumber() había insertado, para
-    // volver a tener solo los dígitos puros.
-    if (digits.length !== 16) { Alert.alert(t('perfil_num_invalido'), t('perfil_num_invalido_msg')); return; }
-    if (!cardAlias.trim()) { Alert.alert(t('perfil_alias_req'), t('perfil_alias_req_msg')); return; }
-    try {
-      // SOLO guardamos los últimos 4 dígitos. NUNCA el número completo.
-      await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), {
-        tarjeta_numero: digits.slice(-4),
-        // .slice(-4) toma los ÚLTIMOS 4 caracteres del texto — una nota
-        // de seguridad importante marcada en el propio comentario
-        // original: NUNCA se guarda el número completo de la tarjeta en
-        // Firestore (esta es una "tarjeta simulada" de demostración del
-        // proyecto, no un sistema de pagos real, pero igual sigue esta
-        // buena práctica de no persistir datos sensibles completos).
-        tarjeta_alias:  cardAlias.trim(),
-      });
-      Alert.alert(t('perfil_tarjeta_guardada'), t('perfil_tarjeta_guardada_msg'));
-      setShowCardModal(false);
-      setCardNumero(''); setCardNombre(''); setCardVence(''); setCardAlias('');
-      // Limpia todo el formulario tras guardar exitosamente.
-    } catch { Alert.alert(t('error_generico'), t('err_guardar_tarjeta')); }
   };
 
   // ── Guardar perfil ────────────────────────────────────────────────
@@ -880,33 +819,6 @@ export default function PerfilTab() {
               </JellyButton>
             ),
           },
-          {
-            id: 'tarjeta',
-            title: t('perfil_tarjeta_titulo'),
-            subtitle: perfil?.tarjeta_numero ? `•••• ${perfil.tarjeta_numero}` : t('perfil_sin_tarjeta'),
-            icon: 'card-outline',
-            tone: 'blue',
-            render: () => (
-              <>
-                <GlassCard style={{ borderColor: COLORS.primary35 }} contentStyle={{ padding: 20, gap: 12 }}>
-                  <View style={styles.bankCardTop}>
-                    <Text style={styles.bankCardBrand}>GRADLY PAY</Text>
-                    <Ionicons name="card-outline" size={24} color={COLORS.primaryLight} />
-                  </View>
-                  <Text style={styles.bankCardNumber}>
-                    •••• •••• •••• {perfil?.tarjeta_numero || '????'}
-                  </Text>
-                  <Text style={styles.bankCardAlias}>{perfil?.tarjeta_alias || t('perfil_sin_tarjeta')}</Text>
-                </GlassCard>
-                <TouchableOpacity style={[styles.actionBtnOutline, { marginTop: 12 }]} onPress={() => setShowCardModal(true)}>
-                  <Ionicons name="add-circle-outline" size={18} color={COLORS.primaryLight} />
-                  <Text style={styles.actionBtnOutlineText}>
-                    {perfil?.tarjeta_numero ? t('perfil_cambiar_tarjeta') : t('perfil_agregar_tarjeta')}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ),
-          },
         ]}
       />
 
@@ -935,82 +847,6 @@ export default function PerfilTab() {
             </View>
           </View>
         </View>
-      </Modal>
-
-      {/* ── MODAL: Tarjeta bancaria ── */}
-      <Modal visible={showCardModal} transparent animationType="slide">
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          {/* behavior distinto por plataforma: iOS y Android manejan el
-              ajuste del teclado de forma distinta a bajo nivel — 'padding'
-              funciona mejor en iOS, 'height' en Android. */}
-          <View style={styles.sheetCard}>
-            <Text style={styles.modalTitle}>{t('perfil_datos_tarjeta')}</Text>
-            <Text style={styles.modalDesc}>{t('perfil_tarjeta_desc')}</Text>
-
-            <Text style={styles.fieldLabel}>{t('perfil_num_tarjeta')}</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={cardNumero}
-              onChangeText={t => setCardNumero(formatCardNumber(t))}
-              // Cada tecla que se escribe pasa por formatCardNumber()
-              // ANTES de guardarse en el estado — así el formato con
-              // espacios se aplica EN VIVO mientras el usuario escribe.
-              placeholder="1234 5678 9012 3456"
-              placeholderTextColor={COLORS.textMuted}
-              keyboardType="number-pad"
-              maxLength={19}
-              // 16 dígitos + 3 espacios entre grupos = 19 caracteres máximo.
-              selectionColor={COLORS.primary}
-            />
-
-            <Text style={styles.fieldLabel}>{t('perfil_titular')}</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={cardNombre}
-              onChangeText={setCardNombre}
-              placeholder="JUAN PÉREZ"
-              placeholderTextColor={COLORS.textMuted}
-              autoCapitalize="characters"
-              selectionColor={COLORS.primary}
-            />
-
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>{t('perfil_vencimiento')}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={cardVence}
-                  onChangeText={setCardVence}
-                  placeholder="MM/YY"
-                  placeholderTextColor={COLORS.textMuted}
-                  keyboardType="number-pad"
-                  maxLength={5}
-                  selectionColor={COLORS.primary}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>{t('perfil_alias')}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={cardAlias}
-                  onChangeText={setCardAlias}
-                  placeholder={t('perfil_mi_tarjeta')}
-                  placeholderTextColor={COLORS.textMuted}
-                  selectionColor={COLORS.primary}
-                />
-              </View>
-            </View>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowCardModal(false)}>
-                <Text style={styles.modalCancelText}>{t('accion_cancelar')}</Text>
-              </TouchableOpacity>
-              <JellyButton style={styles.modalSave} contentStyle={{ paddingVertical: 0 }} onPress={handleGuardarTarjeta}>
-                <Text style={styles.modalSaveText}>{t('accion_guardar')}</Text>
-              </JellyButton>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── MODAL: Confirmar cierre de sesión ── */}
@@ -1184,18 +1020,6 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   infoLabel: { fontSize: 11, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
   infoValue: { fontSize: 14, fontFamily: FONTS.interRegular, color: COLORS.textPrimary },
 
-  // ── Tarjeta bancaria
-  bankCard: {
-    backgroundColor: COLORS.backgroundSurface,
-    borderRadius: 16, padding: 20, gap: 12,
-    borderWidth: 1, borderColor: COLORS.primary35,
-    ...shadow({ color: COLORS.primary, y: 4, blur: 12, opacity: 0.2, elevation: 0 }),
-  },
-  bankCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  bankCardBrand: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, letterSpacing: 2 },
-  bankCardNumber: { fontSize: 22, fontFamily: FONTS.rajdhaniBold, color: COLORS.textPrimary, letterSpacing: 4 },
-  bankCardAlias: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
-
   // ── Logout
   logoutBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -1215,28 +1039,8 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderRadius: 20, padding: 24, width: '100%',
     borderWidth: 1, borderColor: COLORS.border, gap: 10,
   },
-  sheetCard: {
-    backgroundColor: COLORS.backgroundCard,
-    borderRadius: 20, padding: 24, width: '100%',
-    borderWidth: 1, borderColor: COLORS.border, gap: 8,
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    // position: 'absolute' + bottom/left/right: 0 hace que esta tarjeta
-    // se pegue al FONDO de la pantalla, como una "hoja" que sube desde
-    // abajo (bottom sheet) — distinto al modalCard de arriba, que queda
-    // centrado en la pantalla.
-  },
   modalTitle: { fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
   modalDesc: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 18 },
-  fieldLabel: {
-    fontSize: 11, fontFamily: FONTS.interMedium,
-    color: COLORS.primaryLight, marginTop: 6, letterSpacing: 0.3,
-  },
-  modalInput: {
-    backgroundColor: COLORS.backgroundSurface,
-    borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
-    height: 46, paddingHorizontal: 14,
-    fontSize: 14, fontFamily: FONTS.interRegular, color: COLORS.textPrimary,
-  },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 8 },
   modalCancel: {
     flex: 1, height: 44, borderRadius: 12,
@@ -1250,10 +1054,4 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   modalDeleteText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.error },
-  modalSave: {
-    flex: 1, height: 44, borderRadius: 12,
-    backgroundColor: COLORS.primaryDark,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  modalSaveText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
 });
