@@ -1058,6 +1058,12 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "¡Cambios guardados!": "Changes saved!",
   "No puedes cambiar el tipo": "You can't change the type",
   "Vacante actualizada": "Job post updated",
+  // Título de la notificación de confirmación al publicar/editar — según el
+  // tipo real ("Vacante ..." o "Pasantía ..."). El cuerpo va interpolado con
+  // el título de la publicación → lo traduce la red, como el resto.
+  "Vacante publicada": "Job post published",
+  "Pasantía publicada": "Internship posted",
+  "Pasantía actualizada": "Internship updated",
 
   // ── Áreas nuevas del catálogo ──
   "Administración": "Administration",

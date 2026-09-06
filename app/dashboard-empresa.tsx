@@ -1551,6 +1551,14 @@ export default function DashboardEmpresa() {
         if (payloadVacante[key] === undefined) delete payloadVacante[key];
       });
 
+      // La notificación de confirmación nombra el tipo real de la publicación
+      // (una pasantía NO debe anunciarse como "Vacante publicada"). Ambas
+      // palabras son femeninas → "publicada"/"actualizada" concuerdan igual.
+      const esPasantiaPub = nvTipo === 'Pasantía';
+      const tipoTituloNotif = esPasantiaPub ? 'Pasantía' : 'Vacante';
+      const tipoTextoNotif = esPasantiaPub ? 'pasantía' : 'vacante';
+      const audienciaNotif = esPasantiaPub ? 'los estudiantes' : 'el talento';
+
       if (vacanteEditando) {
         // ── EDICIÓN ──────────────────────────────────────────────────
         // Se descartan los campos que NO deben reescribirse al editar: los
@@ -1580,7 +1588,7 @@ export default function DashboardEmpresa() {
         try {
           await enviarNotificacion(
             user?.uid ?? '',
-            'Vacante actualizada',
+            `${tipoTituloNotif} actualizada`,
             `Los cambios en "${payloadVacante.titulo ?? ''}" se guardaron correctamente.`,
             'success',
             `vacante:${vacanteEditando.id}`,
@@ -1593,8 +1601,8 @@ export default function DashboardEmpresa() {
         try {
           await enviarNotificacion(
             user?.uid ?? '',
-            'Vacante publicada',
-            `Tu vacante "${payloadVacante.titulo ?? ''}" se publicó correctamente y ya es visible para el talento.`,
+            `${tipoTituloNotif} publicada`,
+            `Tu ${tipoTextoNotif} "${payloadVacante.titulo ?? ''}" se publicó correctamente y ya es visible para ${audienciaNotif}.`,
             'success',
             `vacante:${vacanteRef.id}`,
           );
