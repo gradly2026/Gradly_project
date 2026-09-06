@@ -154,6 +154,7 @@ import CarrerasEditorModal from '../src/components/CarrerasEditorModal';
 import { showConfirm, showAlert } from '../src/components/AppAlert';
 import ProfileViewerModal from '../src/components/ProfileViewerModal';
 import CertificarPasanteModal from '../src/components/CertificarPasanteModal';
+import GrupoEstudiantesModal from '../src/components/GrupoEstudiantesModal';
 import { suscribirComprobantesDeRol, type Comprobante } from '../src/services/comprobanteService';
 import { getFeedbackPendiente, type FeedbackPendiente } from '../src/services/feedbackService';
 import { eliminarEstudiante as eliminarEstudianteCF, eliminarGrupo as eliminarGrupoCF } from '../src/services/universidadService';
@@ -1362,6 +1363,8 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
 
   // ── Flujo de modales ──
   const [verPerfilEstudianteId, setVerPerfilEstudianteId] = useState<string | null>(null);
+  // Grupo cuyo detalle (estudiantes + progreso + chats) se está viendo.
+  const [grupoModalId, setGrupoModalId] = useState<string | null>(null);
   const [showModalGrupo, setShowModalGrupo]       = useState(false); // Paso 1
   const [showModalExcel, setShowModalExcel]       = useState(false); // Paso 2
   const [showProgreso, setShowProgreso]           = useState(false); // Creando cuentas
@@ -2027,6 +2030,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
           renderItem={({ item }) => {
             const progreso = progresoPorGrupo[item.id];
             return (
+            <TouchableOpacity activeOpacity={0.85} onPress={() => setGrupoModalId(item.id)}>
             <GlassCard contentStyle={{ padding: 14, gap: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <View style={s.estudianteAvatar}>
@@ -2088,6 +2092,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
                 </View>
               )}
             </GlassCard>
+            </TouchableOpacity>
             );
           }}
           ListEmptyComponent={<Text style={s.emptyText}>Aún no has creado grupos.</Text>}
@@ -2161,6 +2166,14 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
           onClose={() => setVerPerfilEstudianteId(null)}
         />
       ) : null}
+
+      <GrupoEstudiantesModal
+        visible={!!grupoModalId}
+        grupoId={grupoModalId}
+        universidadId={uid}
+        onClose={() => setGrupoModalId(null)}
+        onAbrirChat={onAbrirChatEnMensajes}
+      />
 
       {/* ── MODAL · PASO 1: Crear grupo (validación en tiempo real) ── */}
       <Modal visible={showModalGrupo} transparent animationType="none" onRequestClose={() => setShowModalGrupo(false)}>

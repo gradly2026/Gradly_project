@@ -152,6 +152,16 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Descripción de la vacante...": "Job description...",
   "Descripción*": "Description*",
   "Detalles de Vacante": "Job details",
+  // Título del modal de detalle según el tipo real de la publicación.
+  "Detalles de la vacante": "Vacancy details",
+  // Matchmaking (vista universidad): la lista solo trae pasantías.
+  "Pasantías disponibles": "Available internships",
+  "No hay pasantías disponibles por ahora.": "No internships available right now.",
+  // Badge de estado en VacanteDetailModal (compartido; el de pasantía ya
+  // estaba sembrado como "Active internship").
+  "Vacante activa": "Vacancy active",
+  "Vacante inactiva": "Vacancy inactive",
+  "Pasantía inactiva": "Internship inactive",
   "Dirección": "Address",
   "Dirección (opcional)": "Address (optional)",
   "Dirección:": "Address:",
@@ -1810,4 +1820,22 @@ export const EMPRESA_TRABAJOS_SEED_EN: Record<string, string> = {
     "UNLIMITED active and historical internships and job posts",
   "Plan Premium · pasantías y vacantes ilimitadas":
     "Premium Plan · unlimited internships and job posts",
+};
+
+// ── Modal de detalle de un grupo (universidad, "Mis Estudiantes") +
+// cuadro de "Estudiantes inscritos" del VacanteDetailModal + botón
+// "Liberar cupos" del Matchmaking. Varias frases ("Horas a cumplir",
+// "Estudiantes del grupo", "Progreso de la pasantía", "Cupos liberados",
+// "Eliminar estudiante"…) ya viven sembradas en otros bloques. ──
+export const GRUPO_DETALLE_SEED_EN: Record<string, string> = {
+  "Detalle del grupo": "Group details",
+  "Carrera o especialidad": "Major or specialty",
+  "Fecha de creación": "Created on",
+  "Docente": "Instructor",
+  "Chat del grupo": "Group chat",
+  "Sin pasantía activa.": "No active internship.",
+  "Estudiantes inscritos": "Enrolled students",
+  "Aún ningún estudiante de tu universidad se inscribió a esta pasantía.":
+    "No student from your university has enrolled in this internship yet.",
+  "Sin cupos por liberar": "No spots to release",
 };

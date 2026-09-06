@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,6 +16,7 @@ import {
 import { db } from "../config/firebaseConfig";
 import { AutoText, AutoText as Text } from "./AutoText";
 import MapViewer from "./MapViewer";
+import ProfileViewerModal from "./ProfileViewerModal";
 import { cuposDisponibles, hayCupos, textoCupos, textoSalario } from "../utils/cupos";
 import { afinidadCarreraVacante } from "../data/areas";
 import { useTranslation } from "../context/TranslationContext";
@@ -83,6 +84,13 @@ interface Props {
    * reservarle cupos, en vez de que el sistema decida por ella.
    */
   carrerasAfinidad?: string[];
+  /**
+   * uid de la universidad que mira. Si se provee, se agrega un cuadro
+   * "Estudiantes inscritos" con los alumnos de esa universidad que YA tomaron
+   * un cupo de esta pasantía (`asignaciones_cupo` en estado 'tomado'). Cada
+   * nombre abre su perfil. Solo lo pasa el dashboard de universidad.
+   */
+  inscritosUniversidadId?: string;
 }
 
 const C = {
@@ -123,10 +131,44 @@ function normalizarUrl(v: string): string {
 
 export default function VacanteDetailModal({
   visible, vacante, onClose, onContactarEmpresa, carreraEstudiante, carrerasAfinidad,
+  inscritosUniversidadId,
 }: Props) {
   const { t } = useTranslation();
   const [empresa, setEmpresa] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // ── Estudiantes de la universidad ya inscritos a esta pasantía ──
+  const [inscritos, setInscritos] = useState<{ id: string; nombre: string; estudianteId: string }[]>([]);
+  const [perfilInscritoId, setPerfilInscritoId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!visible || !inscritosUniversidadId || !vacante?.id) {
+      setInscritos([]);
+      return;
+    }
+    // Query por `universidadId` (rama de igualdad que las reglas de
+    // `asignaciones_cupo` sí saben validar) + filtro por vacante en memoria.
+    const unsub = onSnapshot(
+      query(
+        collection(db, "asignaciones_cupo"),
+        where("universidadId", "==", inscritosUniversidadId),
+        where("estado", "==", "tomado"),
+      ),
+      (snap) => {
+        setInscritos(
+          snap.docs
+            .map((d) => ({ id: d.id, ...(d.data() as any) }))
+            .filter((a: any) => a.vacanteId === vacante.id)
+            .map((a: any) => ({
+              id: a.id,
+              nombre: a.estudianteNombre || "Estudiante",
+              estudianteId: a.estudianteId || "",
+            })),
+        );
+      },
+      (e) => console.warn("Error en listener (inscritos vacante):", e),
+    );
+    return unsub;
+  }, [visible, inscritosUniversidadId, vacante?.id]);
 
   useEffect(() => {
     if (!visible || !vacante?.empresa_id) {
@@ -153,6 +195,10 @@ export default function VacanteDetailModal({
   if (!vacante) return null;
 
   const activa = vacante.activa !== false;
+  // Una publicación de `categoria:'pasantia'` (o un `tipo` legado 'Pasantía')
+  // NO es una vacante: el badge y los textos de tipo lo nombran como pasantía.
+  const esPasantia = vacante.categoria === 'pasantia' || vacante.tipo === 'Pasantía';
+  const tipoNombre = esPasantia ? 'Pasantía' : 'Vacante';
 
   // ── Afinidad y competencia (solo cuando mira un estudiante) ─────────
   // `afinidadCarreraVacante` es el MISMO motor que ya ordena el feed: si aquí
@@ -194,6 +240,7 @@ export default function VacanteDetailModal({
   ].filter(Boolean) as { icon: any; label: string; url: string }[];
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <BlurView intensity={40} tint="dark" style={styles.overlay}>
         <View style={styles.card}>
@@ -207,12 +254,12 @@ export default function VacanteDetailModal({
             <View style={[styles.estadoBadge, { backgroundColor: activa ? C.greenBg : C.redBg }]}>
               <View style={[styles.dot, { backgroundColor: activa ? C.green : C.red }]} />
               <Text style={[styles.estadoText, { color: activa ? C.green : C.red }]}>
-                {activa ? "Vacante activa" : "Vacante inactiva"}
+                {activa ? `${tipoNombre} activa` : `${tipoNombre} inactiva`}
               </Text>
             </View>
 
             {/* Título */}
-            <AutoText style={styles.titulo}>{vacante.titulo ?? "Vacante"}</AutoText>
+            <AutoText style={styles.titulo}>{vacante.titulo ?? tipoNombre}</AutoText>
             <Text style={styles.fecha}>{fechaLegible(vacante.fecha_publicacion)}</Text>
 
             {/* Chips */}
@@ -380,6 +427,40 @@ export default function VacanteDetailModal({
               </View>
             )}
 
+            {/* ── Estudiantes de la universidad ya inscritos ──
+                Solo cuando mira la universidad (prop `inscritosUniversidadId`). */}
+            {inscritosUniversidadId && (
+              <View style={styles.section}>
+                <View style={styles.inscritosHeader}>
+                  <Text style={styles.sectionLabel}>Estudiantes inscritos</Text>
+                  <Text style={styles.inscritosCount} noTranslate>{inscritos.length}</Text>
+                </View>
+                {inscritos.length === 0 ? (
+                  <Text style={styles.bodyText}>
+                    Aún ningún estudiante de tu universidad se inscribió a esta pasantía.
+                  </Text>
+                ) : (
+                  inscritos.map((it) => (
+                    <TouchableOpacity
+                      key={it.id}
+                      style={styles.inscritoRow}
+                      activeOpacity={it.estudianteId ? 0.7 : 1}
+                      disabled={!it.estudianteId}
+                      onPress={() => it.estudianteId && setPerfilInscritoId(it.estudianteId)}
+                    >
+                      <View style={styles.inscritoAvatar}>
+                        <Ionicons name="person" size={15} color={C.purple} />
+                      </View>
+                      <Text style={styles.inscritoNombre} numberOfLines={1} noTranslate>{it.nombre}</Text>
+                      {!!it.estudianteId && (
+                        <Ionicons name="chevron-forward" size={15} color={C.muted} />
+                      )}
+                    </TouchableOpacity>
+                  ))
+                )}
+              </View>
+            )}
+
             {/* Empresa */}
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>Empresa</Text>
@@ -438,6 +519,15 @@ export default function VacanteDetailModal({
         </View>
       </BlurView>
     </Modal>
+    {perfilInscritoId && (
+      <ProfileViewerModal
+        visible
+        tipo="estudiante"
+        profileId={perfilInscritoId}
+        onClose={() => setPerfilInscritoId(null)}
+      />
+    )}
+    </>
   );
 }
 
@@ -614,4 +704,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   contactText: { flex: 1, fontSize: 14, color: C.text },
+  inscritosHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
+  inscritosCount: {
+    fontSize: 12, fontWeight: "700", color: C.purple,
+    backgroundColor: C.purpleDim, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
+  },
+  inscritoRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 9, borderTopWidth: 1, borderTopColor: C.border,
+  },
+  inscritoAvatar: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: C.purpleDim, alignItems: "center", justifyContent: "center",
+  },
+  inscritoNombre: { flex: 1, fontSize: 13.5, color: C.text, fontWeight: "600" },
 });

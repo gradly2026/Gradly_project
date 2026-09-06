@@ -2261,7 +2261,11 @@ export default function DashboardEmpresa() {
         <View style={styles.modalOverlay}>
           <View style={styles.sheetCard}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={styles.modalTitle}>Detalles de Vacante</Text>
+              <Text style={styles.modalTitle}>
+                {vacanteSeleccionada?.categoria === 'pasantia' || vacanteSeleccionada?.tipo === 'Pasantía'
+                  ? 'Detalles de la pasantía'
+                  : 'Detalles de la vacante'}
+              </Text>
               <TouchableOpacity onPress={() => setVacanteSeleccionada(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="close" size={24} color={colors.textMuted} />
               </TouchableOpacity>

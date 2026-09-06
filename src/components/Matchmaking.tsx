@@ -285,10 +285,39 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
     }
   };
 
+  // Abre el detalle de la pasantía de una reserva de cupos. Reusa la vacante
+  // ya cargada si sigue activa; si no, arma una vista mínima con lo que trae
+  // el propio reclamo. `inscritosUniversidadId` hace que el modal muestre el
+  // cuadro de estudiantes de esta universidad ya inscritos.
+  const abrirDetalleReclamo = (r: ReclamoCupos) => {
+    const v = vacantes.find(x => x.id === r.vacanteId);
+    setDetalleVac(
+      (v as VacanteDetalle) ??
+        ({
+          id: r.vacanteId,
+          titulo: r.vacanteTitulo,
+          nombre_empresa: r.empresaNombre,
+          empresa_id: r.empresaId,
+          horario: r.horario,
+          categoria: 'pasantia',
+        } as VacanteDetalle),
+    );
+  };
+
   const liberar = async (r: ReclamoCupos) => {
+    // Solo se liberan los cupos que NINGÚN estudiante tomó todavía: los ya
+    // tomados quedan intactos (el estudiante ya está inscrito). Si todos
+    // fueron tomados, el botón está deshabilitado y esto no corre.
+    const porLiberar = r.cantidad - (r.tomados ?? 0);
+    if (porLiberar <= 0) return;
     try {
-      await liberarCupos(r.id, r.cantidad);
-      void showAlert('Cupos liberados', 'Vuelven a estar disponibles y se avisó a la empresa.');
+      await liberarCupos(r.id, porLiberar);
+      void showAlert(
+        'Cupos liberados',
+        (r.tomados ?? 0) === 0
+          ? 'Vuelven a estar disponibles y se avisó a la empresa.'
+          : `Se liberaron los ${porLiberar} cupo(s) que ningún estudiante tomó. Los ya tomados siguen inscritos.`,
+      );
     } catch (e: any) {
       void showAlert('Error', e?.message ?? 'No se pudo liberar.');
     }
@@ -345,51 +374,64 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
             .map(r => {
               const tomados = r.tomados ?? 0;
               const pctTomados = Math.min(100, Math.round((tomados / Math.max(1, r.cantidad)) * 100));
+              // "Liberar cupos" solo tiene sentido si queda algún cupo SIN
+              // tomar: cuando todos fueron tomados, el botón se deshabilita.
+              const puedeLiberar = r.cantidad - tomados > 0;
               return (
               <GlassCard key={r.id} colors={colors} isDark={isDark} column>
-                <View style={styles.rowBetween}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cardTitle} numberOfLines={1}>
-                      {r.cantidad} cupo(s) · {r.vacanteTitulo || 'Vacante'}
+                {/* Toda la tarjeta (menos el botón de abajo) abre el detalle de
+                    la pasantía + el cuadro de estudiantes ya inscritos. */}
+                <TouchableOpacity activeOpacity={0.7} onPress={() => abrirDetalleReclamo(r)}>
+                  <View style={styles.rowBetween}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.cardTitle} numberOfLines={1}>
+                        {r.cantidad} cupo(s) · {r.vacanteTitulo || 'Pasantía'}
+                      </Text>
+                      <Text style={styles.cardMeta} numberOfLines={1}>
+                        {r.empresaNombre || 'Empresa'}
+                        {r.grupoNombre ? ` · ${r.grupoNombre}` : ''}
+                      </Text>
+                      {textoHorario(r.horario) && (
+                        <Text style={styles.cardMeta}>{textoHorario(r.horario)}</Text>
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        styles.badgeReclamo,
+                        { color: r.estado === 'aceptado' ? colors.success : colors.warning },
+                      ]}
+                    >
+                      {r.estado === 'aceptado' ? 'Confirmado' : 'Esperando empresa'}
                     </Text>
-                    <Text style={styles.cardMeta} numberOfLines={1}>
-                      {r.empresaNombre || 'Empresa'}
-                      {r.grupoNombre ? ` · ${r.grupoNombre}` : ''}
-                    </Text>
-                    {textoHorario(r.horario) && (
-                      <Text style={styles.cardMeta}>{textoHorario(r.horario)}</Text>
-                    )}
                   </View>
-                  <Text
-                    style={[
-                      styles.badgeReclamo,
-                      { color: r.estado === 'aceptado' ? colors.success : colors.warning },
-                    ]}
-                  >
-                    {r.estado === 'aceptado' ? 'Confirmado' : 'Esperando empresa'}
+                  {/* Cuántos de estos cupos ya fueron tomados por un estudiante real
+                      (no solo reservados) — responde "¿mis estudiantes ya recibieron
+                      el espacio?", no solo "¿ya reservé?". */}
+                  <Text style={styles.cardMeta}>
+                    {tomados === 0
+                      ? 'Aún ningún estudiante ha elegido este cupo'
+                      : tomados === r.cantidad
+                        ? `Los ${tomados} estudiante(s) ya eligieron su cupo`
+                        : `${tomados}/${r.cantidad} estudiantes ya eligieron su cupo`}
                   </Text>
-                </View>
-                {/* Cuántos de estos cupos ya fueron tomados por un estudiante real
-                    (no solo reservados) — responde "¿mis estudiantes ya recibieron
-                    el espacio?", no solo "¿ya reservé?". */}
-                <Text style={styles.cardMeta}>
-                  {tomados === 0
-                    ? 'Aún ningún estudiante ha elegido este cupo'
-                    : tomados === r.cantidad
-                      ? `Los ${tomados} estudiante(s) ya eligieron su cupo`
-                      : `${tomados}/${r.cantidad} estudiantes ya eligieron su cupo`}
-                </Text>
-                <View style={styles.barraFondo}>
-                  <View
-                    style={[
-                      styles.barraRelleno,
-                      { width: `${pctTomados}%`, backgroundColor: colors.success },
-                    ]}
-                  />
-                </View>
-                <TouchableOpacity style={styles.liberarBtn} onPress={() => liberar(r)}>
+                  <View style={styles.barraFondo}>
+                    <View
+                      style={[
+                        styles.barraRelleno,
+                        { width: `${pctTomados}%`, backgroundColor: colors.success },
+                      ]}
+                    />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.liberarBtn, !puedeLiberar && { opacity: 0.4 }]}
+                  onPress={() => liberar(r)}
+                  disabled={!puedeLiberar}
+                >
                   <Ionicons name="return-up-back-outline" size={14} color={colors.textMuted} />
-                  <Text style={styles.liberarTxt}>Liberar cupos</Text>
+                  <Text style={styles.liberarTxt}>
+                    {puedeLiberar ? 'Liberar cupos' : 'Sin cupos por liberar'}
+                  </Text>
                 </TouchableOpacity>
               </GlassCard>
               );
@@ -397,17 +439,19 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
         </>
       )}
 
-      {/* ── Vacantes disponibles ── */}
-      <Text style={styles.heading}>Vacantes disponibles</Text>
+      {/* ── Pasantías disponibles ── */}
+      {/* Esta lista solo trae publicaciones `categoria !== 'vacante'` (ver
+          `vacantesOrdenadas`): todas son pasantías, así que el rótulo lo dice. */}
+      <Text style={styles.heading}>Pasantías disponibles</Text>
       {vacantesOrdenadas.length === 0 ? (
-        <Text style={styles.empty}>No hay vacantes disponibles por ahora.</Text>
+        <Text style={styles.empty}>No hay pasantías disponibles por ahora.</Text>
       ) : (
         <View style={styles.vacantesGrid}>
           {vacantesOrdenadas.map(v => (
             <View key={v.id} style={styles.vacanteCardWrap}>
               <GlassCard colors={colors} isDark={isDark} column>
                 <TouchableOpacity activeOpacity={0.7} onPress={() => setDetalleVac(v as VacanteDetalle)}>
-                  <Text style={styles.cardTitle} numberOfLines={1}>{v.titulo ?? 'Vacante'}</Text>
+                  <Text style={styles.cardTitle} numberOfLines={1}>{v.titulo ?? 'Pasantía'}</Text>
                   <Text style={styles.cardMeta} numberOfLines={2}>
                     {v.nombre_empresa ?? 'Empresa'}{v.area ? ` · ${v.area}` : ''}{v.modalidad ? ` · ${v.modalidad}` : ''}
                   </Text>
@@ -717,12 +761,14 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
         </View>
       </Modal>
 
-      {/* ── Modal: detalle de vacante ── */}
+      {/* ── Modal: detalle de pasantía (incluye el cuadro de estudiantes de
+             esta universidad ya inscritos, vía `inscritosUniversidadId`) ── */}
       <VacanteDetailModal
         visible={!!detalleVac}
         vacante={detalleVac}
         onClose={() => setDetalleVac(null)}
         carrerasAfinidad={carrerasDeGrupos}
+        inscritosUniversidadId={universidadId}
       />
 
       {/* ── Modal: reportar pasantía al admin ── */}
