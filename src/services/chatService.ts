@@ -248,6 +248,48 @@ export async function crearChatGrupoOficial(params: {
 export type ContextoChatDirecto = "recontratacion" | "candidatura";
 
 /**
+ * Busca una conversación 1:1 YA existente entre `uidA` y `uidB`, sin importar
+ * bajo qué esquema de id se creó (`direct_{empresa}_{estudiante}`, `dm_{a}_{b}`,
+ * etc.). Devuelve el id de la mejor candidata (la que tiene mensajes; a
+ * igualdad, la más reciente) o `null` si no hay ninguna.
+ *
+ * Se usa para NO duplicar el chat cuando ya se había hablado antes con esa
+ * persona: al abrir el chat desde "Recontratar pasantes" (u otros botones) se
+ * reutiliza la conversación previa —con todo su historial— en vez de crear una
+ * sala nueva vacía con el mismo nombre.
+ */
+async function buscarChatDirectoPrevio(
+  uidA: string,
+  uidB: string,
+): Promise<string | null> {
+  try {
+    const snap = await getDocs(
+      query(collection(db, "chats"), where("users", "array-contains", uidA)),
+    );
+    const candidatas = snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() as any) }))
+      .filter(
+        (c) =>
+          c.type === "direct" &&
+          Array.isArray(c.users) &&
+          c.users.length === 2 &&
+          c.users.includes(uidB),
+      )
+      .sort((a, b) => {
+        const am = a.lastMessage?.trim() ? 1 : 0;
+        const bm = b.lastMessage?.trim() ? 1 : 0;
+        if (am !== bm) return bm - am;
+        const ta = a.updatedAt?.toMillis?.() ?? 0;
+        const tb = b.updatedAt?.toMillis?.() ?? 0;
+        return tb - ta;
+      });
+    return candidatas[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Crea o **reactiva** el chat directo (`type: 'direct'`) empresa↔estudiante.
  * ID determinístico `direct_{empresaId}_{estudianteId}` → idempotente: si ya
  * existía (p. ej. el grupal se archivó, o la empresa ya contactó al candidato)
@@ -277,6 +319,25 @@ export async function abrirChatDirectoEmpresaEstudiante(params: {
   const chatId = `direct_${empresaId}_${estudianteId}`;
   const chatRef = doc(db, "chats", chatId);
   const yaExiste = await chatYaExiste(chatRef);
+
+  // Si el chat canónico todavía no existe, puede haber YA una conversación
+  // previa con esta misma persona bajo otro esquema de id (p. ej. un
+  // `dm_{a}_{b}` creado desde el buscador). En ese caso se reutiliza esa —con
+  // todo su historial— en vez de crear un chat nuevo duplicado.
+  if (!yaExiste) {
+    const previa = await buscarChatDirectoPrevio(empresaId, estudianteId);
+    if (previa) {
+      try {
+        await updateDoc(doc(db, "chats", previa), {
+          archivado: false,
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        /* reactivar es best-effort: no romper la apertura del chat */
+      }
+      return previa;
+    }
+  }
 
   const base: Record<string, unknown> = {
     type: "direct",

@@ -161,7 +161,16 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
   // Horas de avance
   const horasAprobadas = data?.horas_aprobadas ?? 0;
   const horasObjetivo  = data?.horas_objetivo ?? 500;
-  const pct = Math.min(100, Math.round((horasAprobadas / Math.max(horasObjetivo, 1)) * 100));
+  // El estudiante ya cumplió sus horas cuando alcanza (o supera) la meta, o
+  // cuando el sistema marcó su pasantía como 'finalizada' — eso lo pone
+  // `finalizarInscripcionPorHoras` al cumplir la meta de horas del cupo, aunque
+  // la certificación todavía no haya acreditado `horas_aprobadas` al expediente.
+  // En ese caso la barra va llena al 100%.
+  const horasCompletas =
+    (data as any)?.estado_pasantia === 'finalizada' || horasAprobadas >= horasObjetivo;
+  const pct = horasCompletas
+    ? 100
+    : Math.min(100, Math.round((horasAprobadas / Math.max(horasObjetivo, 1)) * 100));
 
   const esGraduado  = pct >= 100;
   // Insignia "Alto Nivel": promedio OFICIAL del perfil (feedback_pasantias, vía
@@ -337,7 +346,9 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                     <View style={[styles.progressFill, { width: `${pct}%` }]} />
                   </View>
                   <Text style={styles.progressLabel}>
-                    {horasAprobadas} / {horasObjetivo} horas · {pct}%
+                    {horasCompletas
+                      ? `${Math.max(horasAprobadas, horasObjetivo)} / ${horasObjetivo} horas · 100% · Completó sus horas`
+                      : `${horasAprobadas} / ${horasObjetivo} horas · ${pct}%`}
                   </Text>
                 </View>
 

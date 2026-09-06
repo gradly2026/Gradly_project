@@ -4,8 +4,7 @@
  *
  *   1. "Resumen"  → Vacantes activas · Aplicaciones pendientes · Pasantes
  *      activos · Horas validadas · Universidades aliadas · Pasantías de grupo.
- *   2. "Análisis" → Estado de las aplicaciones (pastel) · Vacantes por área
- *      (barras) · Progreso de las pasantías de grupo activas.
+ *   2. "Análisis" → Vacantes por área · Pasantías por cupo (libro de horas).
  *
  * Deslizable (swipe + flechas + puntos). Datos reales de Firestore vía props.
  */
@@ -21,21 +20,13 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { AutoText as Text, useAutoText } from "./AutoText";
-import { PieChart } from 'react-native-chart-kit';
+import { AutoText as Text } from "./AutoText";
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
-import { progresoPorFechas } from '../utils/progresoPasantia';
 import { canonicalizarArea } from '../data/areas';
 import type { InscripcionActiva } from '../hooks/useInscripcionesActivas';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 
 const MAX_CARD_W = 640;
-
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace('#', '');
-  const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
 
 interface Props {
   metricas: { vacantesActivas: number; pendientes: number; activos: number; horasValidadas: number };
@@ -50,22 +41,8 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  // Leyendas del gráfico de pastel y fragmentos de la línea de progreso: se
-  // traducen aquí (react-native-chart-kit dibuja su leyenda con
-  // react-native-svg, fuera del árbol de AutoText, y la línea de progreso
-  // trae fechas/números que no se pueden sembrar como string fijo).
-  const lblContratados = useAutoText('Contratados');
-  const lblEntrevista = useAutoText('Entrevista');
-  const lblEnRevision = useAutoText('En revisión');
-  const lblPendientes = useAutoText('Pendientes');
-  const lblRechazados = useAutoText('Rechazados');
-  const txtInicia = useAutoText('Inicia');
-  const txtDia = useAutoText('Día');
-  const txtDe = useAutoText('de');
-
   const { width: winW } = useWindowDimensions();
   const cardWidth = Math.min(winW - 32, MAX_CARD_W);
-  const chartWidth = cardWidth - 36;
 
   const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(0);
@@ -87,25 +64,11 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
     [solicitudesGrupo],
   );
 
-  // ── Estado de las aplicaciones (pastel) ──
-  const estados = useMemo(() => {
-    let pendiente = 0, revision = 0, entrevista = 0, contratado = 0, rechazado = 0;
-    apps.forEach(a => {
-      switch (a.estado) {
-        case 'pendiente': pendiente++; break;
-        case 'en_revision': revision++; break;
-        case 'entrevista': entrevista++; break;
-        case 'contratado': contratado++; break;
-        case 'rechazado': rechazado++; break;
-      }
-    });
-    return { pendiente, revision, entrevista, contratado, rechazado };
-  }, [apps]);
-  const totalEstados = estados.pendiente + estados.revision + estados.entrevista + estados.contratado + estados.rechazado;
-
-  // ── Vacantes por área (barras) ──
+  // ── Vacantes por área ──
   // Se agrupa por el área CANÓNICA (canonicalizarArea): así "Finaza" y otras
   // variantes con typo/tildes/mayúsculas caen en la misma barra que "Finanzas".
+  // Si se crea una vacante en un área existente su número sube; si el área es
+  // nueva, aparece sola en la lista.
   const areas = useMemo(() => {
     const map = new Map<string, number>();
     vacantes.forEach(v => {
@@ -114,28 +77,6 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
     });
     return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   }, [vacantes]);
-  const maxArea = Math.max(...areas.map(a => a[1]), 1);
-
-  // ── Pasantías de grupo activas (progreso) ──
-  const activas = useMemo(
-    () => solicitudesGrupo.filter(sg => sg.estado === 'aprobado' && sg.fechaInicio),
-    [solicitudesGrupo],
-  );
-
-  const [pr, pg, pb] = hexToRgb(colors.primary);
-  const [tr, tg, tb] = hexToRgb(colors.textMuted);
-  const chartConfig = {
-    color: (o = 1) => `rgba(${pr},${pg},${pb},${o})`,
-    labelColor: (o = 1) => `rgba(${tr},${tg},${tb},${o})`,
-    decimalPlaces: 0,
-  };
-  const pieData = [
-    { name: lblContratados, population: estados.contratado, color: colors.success, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: lblEntrevista, population: estados.entrevista, color: colors.accent, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: lblEnRevision, population: estados.revision, color: colors.primaryLight, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: lblPendientes, population: estados.pendiente, color: colors.warning, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: lblRechazados, population: estados.rechazado, color: colors.error, legendFontColor: colors.textMuted, legendFontSize: 12 },
-  ].filter(d => d.population > 0);
 
   const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / cardWidth);
@@ -166,6 +107,8 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
         onMomentumScrollEnd={onScrollEnd}
         scrollEventThrottle={16}
         decelerationRate="fast"
+        // Cada tarjeta ajusta su altura a su propio contenido (no se estiran para igualarse)
+        contentContainerStyle={{ alignItems: 'flex-start' }}
       >
         {/* ── TARJETA 1: RESUMEN ── */}
         <View style={{ width: cardWidth }}>
@@ -194,66 +137,17 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
               <Text style={styles.cardTitle}>Análisis</Text>
             </View>
 
-            {/* Estado de las aplicaciones */}
-            <Text style={styles.blockTitle}>Estado de las aplicaciones</Text>
-            {totalEstados === 0 ? (
-              <Text style={styles.empty}>Aún no hay aplicaciones.</Text>
-            ) : (
-              <PieChart
-                data={pieData}
-                width={chartWidth}
-                height={170}
-                chartConfig={chartConfig as any}
-                accessor="population"
-                backgroundColor="transparent"
-                paddingLeft="8"
-                absolute
-              />
-            )}
-
             {/* Vacantes por área */}
-            <Text style={[styles.blockTitle, { marginTop: 16 }]}>Vacantes por área</Text>
+            <Text style={styles.blockTitle}>Vacantes por área</Text>
             {areas.length === 0 ? (
               <Text style={styles.empty}>Aún no has publicado vacantes.</Text>
             ) : (
               areas.map(([area, count]) => (
                 <View key={area} style={styles.barRow}>
                   <Text style={styles.barLabel} numberOfLines={1}>{area}</Text>
-                  <View style={styles.barTrack}>
-                    <View style={[styles.barFill, { width: `${(count / maxArea) * 100}%` as any }]} />
-                  </View>
                   <Text style={styles.barValue}>{count}</Text>
                 </View>
               ))
-            )}
-
-            {/* Pasantías de grupo activas (progreso) */}
-            <Text style={[styles.blockTitle, { marginTop: 16 }]}>Pasantías de grupo activas</Text>
-            {activas.length === 0 ? (
-              <Text style={styles.empty}>No hay pasantías de grupo en curso.</Text>
-            ) : (
-              activas.map(sg => {
-                const prog = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
-                const color = prog.estado === 'completado' ? colors.gold : prog.estado === 'en_curso' ? colors.success : colors.primaryLight;
-                return (
-                  <View key={sg.id} style={{ marginBottom: 14 }}>
-                    <View style={styles.progHeader}>
-                      {sg.grupoNombre
-                        ? <Text style={styles.barLabel} numberOfLines={1} noTranslate>{sg.grupoNombre}</Text>
-                        : <Text style={styles.barLabel} numberOfLines={1}>Grupo</Text>}
-                      <Text style={[styles.barValue, { color, width: 40 }]}>{prog.pct}%</Text>
-                    </View>
-                    <View style={styles.barTrack}>
-                      <View style={[styles.barFill, { width: `${prog.pct}%` as any, backgroundColor: color }]} />
-                    </View>
-                    <Text style={styles.progSub} noTranslate>
-                      {prog.estado === 'por_iniciar'
-                        ? `${txtInicia} ${sg.fechaInicio}`
-                        : `${txtDia} ${prog.diasTranscurridos} ${txtDe} ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
-                    </Text>
-                  </View>
-                );
-              })
             )}
 
             {/* Pasantías por cupo (libro de horas — Fase D) */}

@@ -125,7 +125,7 @@ import UbicacionCardSV from '../src/components/UbicacionCardSV';
 import UbicacionPrecisaModal from '../src/components/UbicacionPrecisaModal';
 import { getDistritoGeo } from '../src/utils/distritoGeo';
 import { VacantesDisponibles } from '../src/components/Matchmaking';
-import { PerfilStatsUniversidad, RedGradlyBanner } from '../src/components/NetworkStats';
+import { RedGradlyBanner } from '../src/components/NetworkStats';
 import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTour';
 import SeccionMensajes from '../src/components/SeccionMensajes';
 import { useAuth } from '../src/context/AuthContext';
@@ -1005,14 +1005,6 @@ export default function DashboardUniversidad() {
                   </View>
                 );
               },
-            },
-            {
-              id: 'stats',
-              title: 'Estadísticas',
-              subtitle: 'Avance de tus estudiantes',
-              icon: 'stats-chart-outline',
-              tone: 'purple',
-              render: () => <PerfilStatsUniversidad universidadId={user!.uid} />,
             },
             {
               id: 'resenas',
