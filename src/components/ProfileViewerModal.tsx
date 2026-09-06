@@ -490,14 +490,20 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
               </View>
             )}
 
-            {(tipo === 'empresa' || tipo === 'universidad') && (data.departamento || data.distrito || data.ciudad) && (
+            {(data.departamento || data.distrito || data.ciudad) && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Ubicación</Text>
                 <UbicacionCardSV
                   departamento={data.departamento}
                   distrito={data.distrito ?? data.ciudad}
                   puntoGuardado={data.ubicacion_precisa ?? null}
-                  onPin={() => setVerUbicPrecisa(true)}
+                  // El punto preciso solo se puede consultar en perfiles de
+                  // empresa/universidad; el de un estudiante es su domicilio.
+                  onPin={
+                    (tipo === 'empresa' || tipo === 'universidad')
+                      ? () => setVerUbicPrecisa(true)
+                      : undefined
+                  }
                   pinHabilitado={!!data.ubicacion_precisa}
                 />
               </View>

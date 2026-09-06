@@ -448,14 +448,20 @@ export default function PerfilPublicoModal({
                   </View>
                 ))}
 
-                {(rol === "empresa" || rol === "universidad") && (perfil.departamento || perfil.distrito || perfil.ciudad) && (
+                {(perfil.departamento || perfil.distrito || perfil.ciudad) && (
                   <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
                     <Text style={[styles.sectionLabel, { color: C.muted }]}>Ubicación</Text>
                     <UbicacionCardSV
                       departamento={perfil.departamento}
                       distrito={perfil.distrito ?? perfil.ciudad}
                       puntoGuardado={perfil.ubicacion_precisa ?? null}
-                      onPin={() => setVerUbicPrecisa(true)}
+                      // El punto preciso solo se consulta en perfiles de
+                      // empresa/universidad (el de un estudiante es su domicilio).
+                      onPin={
+                        rol === "empresa" || rol === "universidad"
+                          ? () => setVerUbicPrecisa(true)
+                          : undefined
+                      }
                       pinHabilitado={!!perfil.ubicacion_precisa}
                     />
                   </View>

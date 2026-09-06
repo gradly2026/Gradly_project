@@ -66,6 +66,9 @@ import PerfilMasterDetail from '../../src/components/PerfilMasterDetail';
 // de cada sección a mano.
 import DisponibilidadSelector from '../../src/components/DisponibilidadSelector';
 import UbicacionSelector from '../../src/components/UbicacionSelector';
+import UbicacionCardSV from '../../src/components/UbicacionCardSV';
+import UbicacionPrecisaModal from '../../src/components/UbicacionPrecisaModal';
+import { getDistritoGeo } from '../../src/utils/distritoGeo';
 import { resumenDisponibilidadEstudiante } from '../../src/utils/disponibilidadEstudiante';
 import {
   limpiarDocumento,
@@ -196,6 +199,10 @@ export default function PerfilTab() {
   // pero sin distrito todavía).
   const [ubicDirty, setUbicDirty] = useState(false);
   const [ubicSaving, setUbicSaving] = useState(false);
+  // Tarjeta "Mi ubicación" (igual que empresa/universidad): vista por defecto,
+  // con el modal del punto preciso y un toggle para editar depto/distrito.
+  const [ubicPrecisaOpen, setUbicPrecisaOpen] = useState(false);
+  const [ubicEditOpen, setUbicEditOpen] = useState(false);
 
   // La sección "Información personal" usa el patrón `fields`+`onSave` de
   // PerfilMasterDetail (vista → Editar → formulario → Guardar), igual que
@@ -649,26 +656,62 @@ export default function PerfilTab() {
             subtitle: textoUbicacion(ubicDraft) || t('ubicacion_sin_definir'),
             icon: 'location-outline',
             tone: ubicDraft.departamento && ubicDraft.distrito ? 'green' : 'orange',
-            render: () => (
-              <View style={{ gap: 12 }}>
-                <UbicacionSelector
-                  value={ubicDraft}
-                  onChange={next => { setUbicDraft(next); setUbicDirty(true); }}
-                />
-                {ubicDirty && (
+            render: () => {
+              const uDep = ubicDraft.departamento || perfil?.departamento;
+              const uDist = ubicDraft.distrito || perfil?.distrito;
+              const uPrecisa = (perfil as any)?.ubicacion_precisa ?? null;
+              return (
+                <View style={{ gap: 12 }}>
+                  {/* Igual que empresa/universidad: la tarjeta con el contorno
+                      del distrito + el botón del punto preciso. */}
+                  <UbicacionCardSV
+                    departamento={uDep}
+                    distrito={uDist}
+                    puntoGuardado={uPrecisa}
+                    onPin={() => setUbicPrecisaOpen(true)}
+                    pinHabilitado={!!getDistritoGeo(uDep, uDist)}
+                  />
+
+                  {/* El estudiante no tiene una sección "Datos" con estos
+                      campos, así que aquí queda el editor de depto/distrito. */}
                   <TouchableOpacity
-                    style={[styles.dispSaveBtn, (!ubicDraft.departamento || !ubicDraft.distrito) && { opacity: 0.45 }]}
-                    onPress={guardarUbicacion}
-                    disabled={ubicSaving || !ubicDraft.departamento || !ubicDraft.distrito}
+                    style={styles.ubicEditToggle}
+                    onPress={() => setUbicEditOpen(v => !v)}
+                    activeOpacity={0.8}
                   >
-                    {ubicSaving
-                      ? <ActivityIndicator size="small" color="#FFF" />
-                      : <Ionicons name="checkmark" size={16} color="#FFF" />}
-                    <Text style={styles.dispSaveTxt}>{t('ubicacion_guardar')}</Text>
+                    <Ionicons
+                      name={ubicEditOpen ? 'chevron-up' : 'create-outline'}
+                      size={15}
+                      color={colors.primaryLight}
+                    />
+                    <Text style={styles.ubicEditToggleTxt}>
+                      {ubicEditOpen ? t('accion_cancelar') : 'Editar departamento y distrito'}
+                    </Text>
                   </TouchableOpacity>
-                )}
-              </View>
-            ),
+
+                  {ubicEditOpen && (
+                    <>
+                      <UbicacionSelector
+                        value={ubicDraft}
+                        onChange={next => { setUbicDraft(next); setUbicDirty(true); }}
+                      />
+                      {ubicDirty && (
+                        <TouchableOpacity
+                          style={[styles.dispSaveBtn, (!ubicDraft.departamento || !ubicDraft.distrito) && { opacity: 0.45 }]}
+                          onPress={async () => { await guardarUbicacion(); setUbicEditOpen(false); }}
+                          disabled={ubicSaving || !ubicDraft.departamento || !ubicDraft.distrito}
+                        >
+                          {ubicSaving
+                            ? <ActivityIndicator size="small" color="#FFF" />
+                            : <Ionicons name="checkmark" size={16} color="#FFF" />}
+                          <Text style={styles.dispSaveTxt}>{t('ubicacion_guardar')}</Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  )}
+                </View>
+              );
+            },
           },
           {
             // Mismo patrón `fields`+`onSave` que empresa/universidad: vista de
@@ -855,6 +898,19 @@ export default function PerfilTab() {
         onConfirm={confirmarCierreSesion}
         onCancel={() => setLogoutModalVisible(false)}
       />
+
+      {/* ── MODAL: Ubicación precisa (dentro del distrito) ── */}
+      <UbicacionPrecisaModal
+        visible={ubicPrecisaOpen}
+        onClose={() => setUbicPrecisaOpen(false)}
+        departamento={ubicDraft.departamento || perfil?.departamento}
+        distrito={ubicDraft.distrito || perfil?.distrito}
+        puntoGuardado={(perfil as any)?.ubicacion_precisa ?? null}
+        soloLectura={!!(perfil as any)?.ubicacion_precisa}
+        onGuardar={async ({ lat, lng }) => {
+          await updateDoc(doc(db, 'perfiles_estudiantes', user!.uid), { ubicacion_precisa: { lat, lng } });
+        }}
+      />
     </View>
     </LiquidBackground>
   );
@@ -986,6 +1042,11 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderRadius: 12, paddingVertical: 11, paddingHorizontal: 16,
   },
   dispSaveTxt: { color: '#FFF', fontSize: 13.5, fontFamily: FONTS.interSemiBold },
+  ubicEditToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+    paddingVertical: 6, paddingHorizontal: 4,
+  },
+  ubicEditToggleTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
 
   addSkillBtn: {
     width: 34, height: 34, borderRadius: 17,
