@@ -6,14 +6,12 @@
  *      activos · Horas validadas · Universidades aliadas · Estudiantes contratados.
  *   2. "Análisis" → Vacantes por área (barras) · Pasantías por cupo (libro de horas).
  *
- * Deslizable (swipe + flechas + puntos). Datos reales de Firestore vía props.
+ * Navegable con flechas + puntos (solo se monta la página activa). Datos reales
+ * de Firestore vía props.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  ScrollView,
   StyleSheet,
 
   TouchableOpacity,
@@ -47,7 +45,6 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
   const { width: winW } = useWindowDimensions();
   const cardWidth = Math.min(winW - 32, MAX_CARD_W);
 
-  const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(0);
 
   // ── Métricas derivadas ──
@@ -78,14 +75,8 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
   // Escala de las barras: el área con más vacantes llena la barra completa.
   const maxArea = useMemo(() => Math.max(...areas.map(([, n]) => n), 1), [areas]);
 
-  const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.x / cardWidth);
-    if (idx !== page) setPage(idx);
-  };
   const goTo = (idx: number) => {
-    const clamped = Math.max(0, Math.min(1, idx));
-    scrollRef.current?.scrollTo({ x: clamped * cardWidth, animated: true });
-    setPage(clamped);
+    setPage(Math.max(0, Math.min(1, idx)));
   };
 
   const stats: { icon: keyof typeof Ionicons.glyphMap; label: string; value: number; color: string }[] = [
@@ -99,19 +90,10 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
 
   return (
     <View style={{ marginBottom: 16, width: cardWidth, alignSelf: 'center' }}>
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={onScrollEnd}
-        scrollEventThrottle={16}
-        decelerationRate="fast"
-        // Cada tarjeta ajusta su altura a su propio contenido (no se estiran para igualarse)
-        contentContainerStyle={{ alignItems: 'flex-start' }}
-      >
-        {/* ── TARJETA 1: RESUMEN ── */}
-        <View style={{ width: cardWidth }}>
+      {/* Solo se monta la página activa: así el contenedor toma exactamente la
+          altura de esa página y no queda espacio vacío bajo la más corta. */}
+      <View style={{ width: cardWidth }}>
+        {page === 0 && (
           <GlassCard contentStyle={{ padding: 18 }}>
             <View style={styles.cardHeader}>
               <Ionicons name="stats-chart-outline" size={18} color={colors.primaryLight} />
@@ -127,10 +109,10 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
               ))}
             </View>
           </GlassCard>
-        </View>
+        )}
 
         {/* ── TARJETA 2: ANÁLISIS ── */}
-        <View style={{ width: cardWidth }}>
+        {page === 1 && (
           <GlassCard contentStyle={{ padding: 18 }}>
             <View style={styles.cardHeader}>
               <Ionicons name="pie-chart-outline" size={18} color={colors.primaryLight} />
@@ -178,8 +160,8 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
               </>
             )}
           </GlassCard>
-        </View>
-      </ScrollView>
+        )}
+      </View>
 
       {/* ── Controles: flechas + puntos ── */}
       <View style={styles.controls}>

@@ -1,13 +1,12 @@
 /**
  * UniversidadHomeCards.tsx — Carrusel de tarjetas resumen para el Inicio de la
- * universidad. Agrupa en DOS tarjetas deslizables (swipe + puntos + flechas):
+ * universidad. Agrupa en DOS tarjetas navegables con puntos + flechas (solo se
+ * monta la página activa):
  *
  *   1. "Resumen"  → métricas numéricas clave calculadas de Firestore:
  *        Estudiantes Activos · Certificados · Instituciones Afiliadas ·
  *        Grupos · En pasantía · Horas aprobadas.
  *   2. "Análisis" → gráficos con datos reales:
- *        · Estado de las pasantías de grupo (pastel)
- *        · Carreras con más pasantías (barras)
  *        · Progreso de las pasantías activas (barras de tiempo)
  *
  * Sustituye a la vieja sección "Estadísticas": todo su contenido vive aquí.
@@ -19,11 +18,8 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  ScrollView,
   StyleSheet,
 
   TouchableOpacity,
@@ -31,7 +27,6 @@ import {
   View,
 } from 'react-native';
 import { AutoText as Text, useAutoText } from "./AutoText";
-import { PieChart } from 'react-native-chart-kit';
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { progresoPorFechas } from '../utils/progresoPasantia';
@@ -41,12 +36,6 @@ import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 // Ancho máximo de la tarjeta en pantallas anchas (escritorio/tablet); en móvil
 // ocupa el ancho disponible menos el padding del Inicio.
 const MAX_CARD_W = 640;
-
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace('#', '');
-  const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
 
 interface Props {
   uid: string;
@@ -62,13 +51,8 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  // Leyendas del gráfico de pastel y fragmentos de la línea de progreso: se
-  // traducen aquí (react-native-chart-kit dibuja su leyenda con
-  // react-native-svg, fuera del árbol de AutoText, y la línea de progreso
-  // trae fechas/números que no se pueden sembrar como string fijo).
-  const lblEnCurso = useAutoText('En curso');
-  const lblPorIniciar = useAutoText('Por iniciar');
-  const lblCompletadas = useAutoText('Completadas');
+  // Fragmentos de la línea de progreso: se traducen aquí porque traen
+  // fechas/números que no se pueden sembrar como string fijo.
   const txtInicia = useAutoText('Inicia');
   const txtDia = useAutoText('Día');
   const txtDe = useAutoText('de');
@@ -78,9 +62,7 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
   // tiene padding 16 a cada lado.
   const { width: winW } = useWindowDimensions();
   const cardWidth = Math.min(winW - 32, MAX_CARD_W);
-  const chartWidth = cardWidth - 36;
 
-  const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(0);
 
   // ── Nº de grupos de esta universidad (suscripción propia y ligera) ──
@@ -140,67 +122,14 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
   // que antes no se contaban en ninguna parte.
   const enPasantiaTotal = (metricas?.enPasantia ?? 0) + inscripciones.length;
 
-  // ── Carreras con más pasantías (reusa la lógica de la vieja "Estadísticas") ──
-  const carreras = useMemo(() => {
-    const map: Record<string, number> = {};
-    apps
-      .filter(a => a.estado === 'contratado' || a.estado === 'finalizado' || a.estado === 'aprobado')
-      .forEach(a => {
-        const e = estudiantes.find(est => est.id === a.estudiante_id);
-        if (e?.carrera) map[e.carrera] = (map[e.carrera] ?? 0) + 1;
-      });
-    solicitudesGrupo
-      .filter(sg => sg.estado === 'aprobado' || sg.estado === 'finalizado')
-      .forEach(sg => {
-        if (sg.carrera) map[sg.carrera] = (map[sg.carrera] ?? 0) + (sg.alumnos?.length ?? 1);
-      });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  }, [estudiantes, apps, solicitudesGrupo]);
-  const maxCarrera = Math.max(...carreras.map(c => c[1]), 1);
-
   // ── Pasantías de grupo activas (con línea de tiempo porcentual) ──
   const activas = useMemo(
     () => solicitudesGrupo.filter(sg => sg.estado === 'aprobado' && sg.fechaInicio),
     [solicitudesGrupo],
   );
 
-  // ── Distribución de estados de las pasantías de grupo (pastel) ──
-  const estadosPasantia = useMemo(() => {
-    let porIniciar = 0, enCurso = 0, completadas = 0;
-    solicitudesGrupo.forEach(sg => {
-      if (sg.estado === 'finalizado') { completadas++; return; }
-      if (sg.estado === 'aprobado' && sg.fechaInicio) {
-        const p = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
-        if (p.estado === 'completado') completadas++;
-        else if (p.estado === 'en_curso') enCurso++;
-        else porIniciar++;
-      }
-    });
-    return { porIniciar, enCurso, completadas };
-  }, [solicitudesGrupo]);
-  const totalEstados = estadosPasantia.porIniciar + estadosPasantia.enCurso + estadosPasantia.completadas;
-
-  const [pr, pg, pb] = hexToRgb(colors.primary);
-  const [tr, tg, tb] = hexToRgb(colors.textMuted);
-  const chartConfig = {
-    color: (o = 1) => `rgba(${pr},${pg},${pb},${o})`,
-    labelColor: (o = 1) => `rgba(${tr},${tg},${tb},${o})`,
-    decimalPlaces: 0,
-  };
-  const pieData = [
-    { name: lblEnCurso, population: estadosPasantia.enCurso, color: colors.success, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: lblPorIniciar, population: estadosPasantia.porIniciar, color: colors.primaryLight, legendFontColor: colors.textMuted, legendFontSize: 12 },
-    { name: lblCompletadas, population: estadosPasantia.completadas, color: colors.gold, legendFontColor: colors.textMuted, legendFontSize: 12 },
-  ].filter(d => d.population > 0);
-
-  const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.x / cardWidth);
-    if (idx !== page) setPage(idx);
-  };
   const goTo = (idx: number) => {
-    const clamped = Math.max(0, Math.min(1, idx));
-    scrollRef.current?.scrollTo({ x: clamped * cardWidth, animated: true });
-    setPage(clamped);
+    setPage(Math.max(0, Math.min(1, idx)));
   };
 
   const stats: { icon: keyof typeof Ionicons.glyphMap; label: string; value: number; color: string }[] = [
@@ -214,17 +143,11 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
 
   return (
     <View style={{ marginBottom: 16, width: cardWidth, alignSelf: 'center' }}>
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={onScrollEnd}
-        scrollEventThrottle={16}
-        decelerationRate="fast"
-      >
+      {/* Solo se monta la página activa: así el contenedor toma exactamente la
+          altura de esa página y no queda espacio vacío bajo la más corta. */}
+      <View style={{ width: cardWidth }}>
         {/* ── TARJETA 1: RESUMEN ── */}
-        <View style={{ width: cardWidth }}>
+        {page === 0 && (
           <GlassCard contentStyle={{ padding: 18 }}>
             <View style={styles.cardHeader}>
               <Ionicons name="stats-chart-outline" size={18} color={colors.primaryLight} />
@@ -240,51 +163,18 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
               ))}
             </View>
           </GlassCard>
-        </View>
+        )}
 
         {/* ── TARJETA 2: ANÁLISIS ── */}
-        <View style={{ width: cardWidth }}>
+        {page === 1 && (
           <GlassCard contentStyle={{ padding: 18 }}>
             <View style={styles.cardHeader}>
               <Ionicons name="pie-chart-outline" size={18} color={colors.primaryLight} />
               <Text style={styles.cardTitle}>Análisis</Text>
             </View>
 
-            {/* Estado de pasantías de grupo */}
-            <Text style={styles.blockTitle}>Estado de las pasantías de grupo</Text>
-            {totalEstados === 0 ? (
-              <Text style={styles.empty}>Aún no hay pasantías de grupo.</Text>
-            ) : (
-              <PieChart
-                data={pieData}
-                width={chartWidth}
-                height={170}
-                chartConfig={chartConfig as any}
-                accessor="population"
-                backgroundColor="transparent"
-                paddingLeft="8"
-                absolute
-              />
-            )}
-
-            {/* Carreras con más pasantías */}
-            <Text style={[styles.blockTitle, { marginTop: 16 }]}>Carreras con más pasantías</Text>
-            {carreras.length === 0 ? (
-              <Text style={styles.empty}>Sin datos suficientes.</Text>
-            ) : (
-              carreras.map(([carrera, count]) => (
-                <View key={carrera} style={styles.barRow}>
-                  <Text style={styles.barLabel} numberOfLines={1}>{carrera}</Text>
-                  <View style={styles.barTrack}>
-                    <View style={[styles.barFill, { width: `${(count / maxCarrera) * 100}%` as any }]} />
-                  </View>
-                  <Text style={styles.barValue}>{count}</Text>
-                </View>
-              ))
-            )}
-
             {/* Pasantías activas (progreso) */}
-            <Text style={[styles.blockTitle, { marginTop: 16 }]}>Pasantías activas</Text>
+            <Text style={styles.blockTitle}>Pasantías activas</Text>
             {activas.length === 0 && inscripciones.length === 0 ? (
               <Text style={styles.empty}>No hay pasantías en curso.</Text>
             ) : (
@@ -332,8 +222,8 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
               </>
             )}
           </GlassCard>
-        </View>
-      </ScrollView>
+        )}
+      </View>
 
       {/* ── Controles: flechas + puntos ── */}
       <View style={styles.controls}>
