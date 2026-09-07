@@ -15,15 +15,12 @@ import { AutoText as Text } from "../src/components/AutoText";
 import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "../src/config/firebaseConfig";
 import CertificadoGradly from "../src/components/CertificadoGradly";
-import RangoCard from "../src/components/RangoCard";
 import { ResenasResumen } from "../src/components/ResenasFeedback";
-import SelloEmpresa from "../src/components/SelloEmpresa";
 import TrabajaParaCard from "../src/components/TrabajaParaCard";
 import UbicacionCardSV from "../src/components/UbicacionCardSV";
 import UbicacionPrecisaModal from "../src/components/UbicacionPrecisaModal";
 import TopEstudiantesCard from "../src/components/TopEstudiantesCard";
 import type { TopEstudianteEntry } from "../src/services/topEstudiantesService";
-import { calcularRango } from "../src/services/feedbackService";
 import ReportarModal from "./ReportarModal";
 
 export type PerfilRol = "empresa" | "talento" | "alumno" | "universidad";
@@ -78,7 +75,7 @@ async function resolverNombres(
   coleccion: string,
   ids: string[],
   campoNombre: string,
-): Promise<string[]> {
+): Promise<{ id: string; nombre: string }[]> {
   const unicos = [...new Set(ids)].filter(Boolean);
   if (unicos.length === 0) return [];
   const chunks: string[][] = [];
@@ -88,14 +85,14 @@ async function resolverNombres(
       getDocs(query(collection(db, coleccion), where(documentId(), "in", chunk))),
     ),
   );
-  const nombres: string[] = [];
+  const filas: { id: string; nombre: string }[] = [];
   snaps.forEach((snap) =>
     snap.docs.forEach((d) => {
       const nombre = (d.data() as any)?.[campoNombre];
-      if (nombre) nombres.push(nombre);
+      if (nombre) filas.push({ id: d.id, nombre });
     }),
   );
-  return nombres.sort((a, b) => a.localeCompare(b));
+  return filas.sort((a, b) => a.nombre.localeCompare(b.nombre));
 }
 
 // Colecciones de perfil en Firestore por rol.
@@ -146,10 +143,13 @@ export default function PerfilPublicoModal({
   const [verUbicPrecisa, setVerUbicPrecisa] = useState(false);
   const [universidadNombre, setUniversidadNombre] = useState<string | null>(null);
   const [grupoNombre, setGrupoNombre] = useState<string | null>(null);
-  const [aliados, setAliados] = useState<string[]>([]);
+  const [aliados, setAliados] = useState<{ id: string; nombre: string }[]>([]);
   // Estudiante destacado abierto desde el cuadro (este modal solo lo abren
   // empresas/universidades, así que no hay problema de permisos).
   const [verEstId, setVerEstId] = useState<string | null>(null);
+  // Aliado (universidad o empresa) abierto desde el chip "Universidades/Empresas
+  // aliadas". El rol del aliado es el opuesto al del perfil que se está viendo.
+  const [verAliado, setVerAliado] = useState<{ rol: PerfilRol; id: string } | null>(null);
   const [empresaPasantia, setEmpresaPasantia] = useState<string | null>(null);
   const topEstudiantes: TopEstudianteEntry[] = Array.isArray(perfil?.top_estudiantes) ? perfil!.top_estudiantes : [];
 
@@ -350,22 +350,11 @@ export default function PerfilPublicoModal({
                   </View>
                 )}
 
-                {/* Estudiante: certificación digital · Empresa: rango + sello */}
-                {rol === "empresa" ? (
-                  <View style={{ marginBottom: 12, gap: 10 }}>
-                    <SelloEmpresa
-                      tier={calcularRango(Number(perfil.puntos_experiencia ?? 0), "empresa").tier}
-                      size="md"
-                    />
-                    <RangoCard
-                      xp={Number(perfil.puntos_experiencia ?? 0)}
-                      calificacion={Number(perfil.calificacion_promedio ?? 0)}
-                      pasantias={Number(perfil.pasantias_completadas ?? 0)}
-                      rol="empresa"
-                      theme={theme}
-                    />
-                  </View>
-                ) : null}
+                {/* Rango/XP y sello de la empresa: OCULTOS en el perfil público
+                    (pedido del usuario, 2026-09-06) — el "cuadro morado" de
+                    rango y el sello "Empresa Nueva" ya no se muestran aquí. El
+                    sello sigue apareciendo en el buscador y en las tarjetas de
+                    vacante; el rango propio se ve en "Mi rango" del dashboard. */}
                 {/* ── "Certificación Gradly" del estudiante: OCULTA por ahora
                        (pedido del usuario, 2026-09-01). Descomentar para volver
                        a mostrarla en el perfil público.
@@ -470,16 +459,17 @@ export default function PerfilPublicoModal({
                   </View>
                 ))}
 
-                {/* Estudiantes destacados — solo en perfiles de empresa/universidad.
-                    Este modal únicamente lo abren empresas/universidades. */}
-                {(rol === "empresa" || rol === "universidad") && topEstudiantes.length > 0 && (
+                {/* Estudiantes destacados (cuadro morado detallado) — SOLO en
+                    perfiles de universidad. En el perfil de empresa el usuario
+                    pidió quitarlo (2026-09-06): abajo queda la lista simple
+                    "Mejores estudiantes que trabajaron aquí". */}
+                {rol === "universidad" && topEstudiantes.length > 0 && (
                   <View style={{ marginTop: 4 }}>
                     <TopEstudiantesCard
-                      titulo={rol === "empresa" ? "Estudiantes destacados en sus puestos" : "Estudiantes más destacados"}
+                      titulo="Estudiantes más destacados"
                       entries={topEstudiantes}
                       onVerEstudiante={setVerEstId}
                       detallado
-                      relacionEmpresa={rol === "empresa"}
                     />
                   </View>
                 )}
@@ -590,10 +580,16 @@ export default function PerfilPublicoModal({
                       {rol === "empresa" ? "Universidades aliadas" : "Empresas aliadas"}
                     </Text>
                     <View style={styles.tagsRow}>
-                      {aliados.map((nombre, i) => (
-                        <View key={`${nombre}-${i}`} style={[styles.tag, { backgroundColor: C.purpleDim, borderColor: C.border }]}>
+                      {aliados.map(({ id, nombre }, i) => (
+                        <TouchableOpacity
+                          key={`${id}-${i}`}
+                          style={[styles.tag, { backgroundColor: C.purpleDim, borderColor: C.border, flexDirection: "row", alignItems: "center", gap: 4 }]}
+                          activeOpacity={0.7}
+                          onPress={() => setVerAliado({ rol: rol === "empresa" ? "universidad" : "empresa", id })}
+                        >
                           <Text style={{ color: C.purple, fontSize: 11 }} noTranslate>{nombre}</Text>
-                        </View>
+                          <Ionicons name="chevron-forward" size={11} color={C.purple} />
+                        </TouchableOpacity>
                       ))}
                     </View>
                   </View>
@@ -608,22 +604,32 @@ export default function PerfilPublicoModal({
                       {rol === "empresa" ? "Mejores estudiantes que trabajaron aquí" : "Mejores estudiantes de esta universidad"}
                     </Text>
                     <View style={{ gap: 8, marginTop: 4 }}>
-                      {perfil.top_estudiantes.map((e: any, i: number) => (
-                        <View key={e.uid ?? i} style={[styles.topEstudianteRow, { borderColor: C.border }]}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ color: C.text, fontSize: 13, fontWeight: "600" }} noTranslate>{e.nombre}</Text>
-                            {!!e.carrera && (
-                              <Text style={{ color: C.muted, fontSize: 11, marginTop: 1 }} noTranslate>{e.carrera}</Text>
-                            )}
-                          </View>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                            <Ionicons name="star" size={13} color="#f5b50a" />
-                            <Text style={{ color: C.text, fontSize: 12.5, fontWeight: "700" }}>
-                              {Number(e.calificacion_promedio ?? 0).toFixed(1)}
-                            </Text>
-                          </View>
-                        </View>
-                      ))}
+                      {perfil.top_estudiantes.map((e: any, i: number) => {
+                        const estId = e.uid ?? e.id ?? null;
+                        return (
+                          <TouchableOpacity
+                            key={estId ?? i}
+                            style={[styles.topEstudianteRow, { borderColor: C.border }]}
+                            activeOpacity={estId ? 0.7 : 1}
+                            disabled={!estId}
+                            onPress={() => estId && setVerEstId(estId)}
+                          >
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: C.text, fontSize: 13, fontWeight: "600" }} noTranslate>{e.nombre}</Text>
+                              {!!e.carrera && (
+                                <Text style={{ color: C.muted, fontSize: 11, marginTop: 1 }} noTranslate>{e.carrera}</Text>
+                              )}
+                            </View>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                              <Ionicons name="star" size={13} color="#f5b50a" />
+                              <Text style={{ color: C.text, fontSize: 12.5, fontWeight: "700" }}>
+                                {Number(e.calificacion_promedio ?? e.stars ?? 0).toFixed(1)}
+                              </Text>
+                              {!!estId && <Ionicons name="chevron-forward" size={12} color={C.muted} />}
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                   </View>
                 )}
@@ -672,6 +678,18 @@ export default function PerfilPublicoModal({
           viewerUserId={viewerUserId}
           theme={theme}
           onClose={() => setVerEstId(null)}
+        />
+      )}
+
+      {/* Perfil de una universidad/empresa aliada, abierto desde su chip. */}
+      {verAliado && (
+        <PerfilPublicoModal
+          visible
+          rol={verAliado.rol}
+          userId={verAliado.id}
+          viewerUserId={viewerUserId}
+          theme={theme}
+          onClose={() => setVerAliado(null)}
         />
       )}
     </>
