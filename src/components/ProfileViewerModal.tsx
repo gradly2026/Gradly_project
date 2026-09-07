@@ -44,6 +44,7 @@ import UbicacionCardSV from './UbicacionCardSV';
 import UbicacionPrecisaModal from './UbicacionPrecisaModal';
 import TopEstudiantesCard from './TopEstudiantesCard';
 import type { TopEstudianteEntry } from '../services/topEstudiantesService';
+import { progresoPorMeta, type ProgresoMeta } from '../utils/horasPasantia';
 
 export type ProfileTipo = 'estudiante' | 'empresa' | 'universidad';
 
@@ -84,6 +85,10 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
   const [verEstudianteId, setVerEstudianteId] = useState<string | null>(null);
   // "En qué empresa hizo su pasantía" (solo si el que mira puede leerlo).
   const [empresaPasantia, setEmpresaPasantia] = useState<{ id: string; nombre: string } | null>(null);
+  // Progreso REAL del libro de horas de la pasantía por cupo EN CURSO del
+  // estudiante (`progresoPorMeta`). Durante la pasantía las horas viven aquí,
+  // no en `horas_aprobadas` (que solo se acredita al certificar).
+  const [progresoLibro, setProgresoLibro] = useState<ProgresoMeta | null>(null);
 
   const puedeVerUbicacion = rol === 'empresa' || rol === 'universidad';
   // Los cuadros de "estudiantes destacados" (auto-reportados en el perfil) solo
@@ -171,6 +176,43 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     return () => { cancel = true; };
   }, [visible, profileId, tipo]);
 
+  // ── Progreso del libro de horas (pasantía por cupo en curso) ──────
+  // Best-effort. La consulta usa UN solo `where` de igualdad (sin índice
+  // compuesto) elegido por el rol del que mira, para que las reglas de
+  // `asignaciones_cupo` (OR de igualdades por uid) la dejen pasar: universidad
+  // → where('universidadId'), empresa → where('empresaId'), admin (rol puro) /
+  // propio estudiante → where('estudianteId'). El filtro por estudiante y por
+  // estado se hace en memoria.
+  useEffect(() => {
+    if (!visible || !profileId || tipo !== 'estudiante') { setProgresoLibro(null); return; }
+    let cancel = false;
+    (async () => {
+      try {
+        const q =
+          rol === 'universidad' && user?.uid
+            ? query(collection(db, 'asignaciones_cupo'), where('universidadId', '==', user.uid))
+            : rol === 'empresa' && user?.uid
+            ? query(collection(db, 'asignaciones_cupo'), where('empresaId', '==', user.uid))
+            : query(collection(db, 'asignaciones_cupo'), where('estudianteId', '==', profileId));
+        const snap = await getDocs(q);
+        if (cancel) return;
+        const activa = snap.docs
+          .map(d => d.data() as any)
+          .find(x => x.estudianteId === profileId && x.estado !== 'cancelado' && x.finalizada !== true && x.fechaPresentacion && x.grupoId);
+        if (!activa) { setProgresoLibro(null); return; }
+        const g = await getDoc(doc(db, 'grupos', activa.grupoId));
+        if (cancel) return;
+        const gd = g.exists() ? (g.data() as any) : {};
+        const meta = Number(gd.horasRequeridas ?? gd.total_horas ?? 0);
+        const p = progresoPorMeta(activa.horario, activa.fechaPresentacion, meta);
+        if (!cancel) setProgresoLibro(p.valido ? p : null);
+      } catch {
+        if (!cancel) setProgresoLibro(null);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [visible, profileId, tipo, rol, user?.uid]);
+
   // ── Grupos en común con este perfil ──────────────────────────────
   useEffect(() => {
     if (!visible || !user?.uid || !profileId || esMiPerfil) {
@@ -188,18 +230,24 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     return unsub;
   }, [visible, user?.uid, profileId, esMiPerfil]);
 
-  // Horas de avance
-  const horasAprobadas = data?.horas_aprobadas ?? 0;
-  const horasObjetivo  = data?.horas_objetivo ?? 500;
+  // Horas de avance. Con una pasantía por cupo EN CURSO, las horas reales salen
+  // del libro de horas (`progresoLibro`); si no, del expediente
+  // (`horas_aprobadas`, que solo se acredita al certificar).
+  const progVal = !!progresoLibro?.valido;
+  const horasAprobadas = progVal ? Math.round(progresoLibro!.cumplidas) : (data?.horas_aprobadas ?? 0);
+  const horasObjetivo  = progVal ? progresoLibro!.meta : (data?.horas_objetivo ?? 500);
   // El estudiante ya cumplió sus horas cuando alcanza (o supera) la meta, o
   // cuando el sistema marcó su pasantía como 'finalizada' — eso lo pone
   // `finalizarInscripcionPorHoras` al cumplir la meta de horas del cupo, aunque
   // la certificación todavía no haya acreditado `horas_aprobadas` al expediente.
   // En ese caso la barra va llena al 100%.
   const horasCompletas =
-    (data as any)?.estado_pasantia === 'finalizada' || horasAprobadas >= horasObjetivo;
+    (data as any)?.estado_pasantia === 'finalizada' ||
+    (progVal ? progresoLibro!.completado : horasAprobadas >= horasObjetivo);
   const pct = horasCompletas
     ? 100
+    : progVal
+    ? progresoLibro!.pct
     : Math.min(100, Math.round((horasAprobadas / Math.max(horasObjetivo, 1)) * 100));
 
   const esGraduado  = pct >= 100;
