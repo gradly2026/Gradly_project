@@ -1,0 +1,56 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Gradly · Reglas de servidor para el sitio web (gradly.website / Hostinger).
+#
+# `expo export -p web` copia TODO lo que haya en `public/` (incluidos los
+# archivos que empiezan con punto) a la raíz de `dist/` en cada build del
+# workflow `.github/workflows/deploy-web.yml`, y de ahí el sitio llega a
+# Hostinger. Por eso este archivo vive aquí y no se toca a mano en el hosting.
+#
+# PROBLEMA QUE RESUELVE
+# El build genera UN .html por ruta (dashboard-empresa.html,
+# dashboard-universidad.html, dashboard-estudiante.html, iniciosesion.html…).
+# Cuando entras directo a "gradly.website/dashboard-empresa" —o recargas
+# estando en esa página— el servidor busca un archivo o carpeta llamado
+# "dashboard-empresa" (sin .html), no lo encuentra, y muestra el 404 de
+# Hostinger ("This Page Does Not Exist").
+#
+# CÓMO LO RESUELVE
+#   1) Un archivo o carpeta que existe de verdad (JS, CSS, imágenes,
+#      _expo/*, favicon…) se sirve tal cual.
+#   2) Una URL "bonita" sin extensión cuyo .html generado SÍ existe se
+#      reescribe a ese .html  →  /dashboard-empresa  →  /dashboard-empresa.html
+#   3) Cualquier otra ruta cae en index.html. A partir de ahí manda la app:
+#      el router de Expo lee la URL y `useAuthGuard` decide el destino:
+#        · sin sesión               →  /auth/iniciosesion
+#        · sesión con OTRO rol       →  su propio dashboard (no el que pediste)
+#        · ruta que no existe        →  pantalla "no encontrado" de la app
+#      NUNCA carga el dashboard equivocado: el guardia de rol corre en cuanto
+#      arranca el JavaScript, antes de pintar el panel.
+#
+# NOTA: si Hostinger ya tenía un .htaccess propio (por ejemplo forzar HTTPS
+# o "www"), hay que FUSIONAR: conservar esas reglas y añadir el bloque
+# RewriteEngine de abajo; no reemplazar el archivo entero a ciegas.
+# ═══════════════════════════════════════════════════════════════════════════
+
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1) El archivo o la carpeta existe → servir tal cual.
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 2) URL sin extensión cuyo .html generado existe → servir ese .html.
+  RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+  RewriteRule ^(.+?)/?$ $1.html [L]
+
+  # 3) Cualquier otra ruta → index.html (la app resuelve sesión y rol).
+  RewriteRule ^ /index.html [L]
+</IfModule>
+
+# Respaldo por si el módulo de reescritura no estuviera disponible: que el
+# 404 entregue la app en vez de la página de error del hosting.
+ErrorDocument 404 /index.html
