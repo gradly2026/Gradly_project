@@ -3204,6 +3204,23 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
   );
   const inscripcionesActivas = useInscripcionesActivas('empresaId', empresaId);
 
+  // "Estudiantes contratados": empleados que la empresa tomó en un puesto real
+  // vía Reclutamiento (`contratos_laborales` en estado 'activo'). Misma fuente y
+  // criterio que "Todos los contratados" de SeccionReclutamiento; el estado se
+  // filtra en cliente para no exigir el índice compuesto (empresaId + estado).
+  const [contratadosActivos, setContratadosActivos] = useState(0);
+  useEffect(() => {
+    if (!empresaId) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'contratos_laborales'), where('empresaId', '==', empresaId)),
+      snap => setContratadosActivos(
+        snap.docs.filter(d => (d.data() as any).estado === 'activo').length,
+      ),
+      error => console.warn('Error en listener (contratos activos empresa):', error),
+    );
+    return unsub;
+  }, [empresaId]);
+
   return (
     <ScrollView contentContainerStyle={s.scroll}>
       {/* ── Estadísticas de la Red Gradly ── */}
@@ -3237,6 +3254,7 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
         vacantes={vacantes}
         apps={apps}
         solicitudesGrupo={solicitudesGrupo}
+        contratadosActivos={contratadosActivos}
         inscripciones={inscripcionesActivas}
       />
 

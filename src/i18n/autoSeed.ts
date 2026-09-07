@@ -1412,6 +1412,9 @@ export const RESUMEN_HOME_SEED_EN: Record<string, string> = {
   "Pasantes activos": "Active interns",
   "Horas validadas": "Validated hours",
   "Universidades aliadas": "Partner universities",
+  // Tile del "Resumen general" de la empresa: nº de `contratos_laborales`
+  // 'activo' (reemplazó a "Pasantías de grupo" — v105).
+  "Estudiantes contratados": "Hired students",
   "Empresas aliadas": "Partner companies",
   "Mejores estudiantes que trabajaron aquí": "Top-rated students who worked here",
   "Mejores estudiantes de esta universidad": "Top-rated students from this university",

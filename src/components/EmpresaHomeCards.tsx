@@ -3,7 +3,7 @@
  * empresa (equivalente a UniversidadHomeCards, con métricas propias):
  *
  *   1. "Resumen"  → Vacantes activas · Aplicaciones pendientes · Pasantes
- *      activos · Horas validadas · Universidades aliadas · Pasantías de grupo.
+ *      activos · Horas validadas · Universidades aliadas · Estudiantes contratados.
  *   2. "Análisis" → Vacantes por área (barras) · Pasantías por cupo (libro de horas).
  *
  * Deslizable (swipe + flechas + puntos). Datos reales de Firestore vía props.
@@ -33,11 +33,14 @@ interface Props {
   vacantes: any[];
   apps: any[];
   solicitudesGrupo: any[];
+  /** Empleados que la empresa contrató en un puesto real (`contratos_laborales`
+   *  en estado 'activo') — alimenta la tile "Estudiantes contratados". */
+  contratadosActivos?: number;
   /** Inscripciones de cupo activas en sus vacantes, con su libro de horas (Fase D). */
   inscripciones?: InscripcionActiva[];
 }
 
-export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudesGrupo, inscripciones = [] }: Props) {
+export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudesGrupo, contratadosActivos = 0, inscripciones = [] }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -58,11 +61,6 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
     });
     return ids.size;
   }, [apps, solicitudesGrupo]);
-
-  const pasantiasGrupo = useMemo(
-    () => solicitudesGrupo.filter(sg => sg.estado === 'aprobado' || sg.estado === 'finalizado').length,
-    [solicitudesGrupo],
-  );
 
   // ── Vacantes por área ──
   // Se agrupa por el área CANÓNICA (canonicalizarArea): así "Finaza" y otras
@@ -96,7 +94,7 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
     { icon: 'people-outline',      label: 'Pasantes activos',     value: metricas.activos,         color: colors.success },
     { icon: 'time-outline',        label: 'Horas validadas',      value: metricas.horasValidadas,  color: colors.accent },
     { icon: 'school-outline',      label: 'Universidades aliadas', value: universidadesAliadas,    color: colors.primaryLight },
-    { icon: 'albums-outline',      label: 'Pasantías de grupo',   value: pasantiasGrupo,           color: colors.gold },
+    { icon: 'id-card-outline',     label: 'Estudiantes contratados', value: contratadosActivos,    color: colors.gold },
   ];
 
   return (
