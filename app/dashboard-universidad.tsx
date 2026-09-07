@@ -152,6 +152,7 @@ import { esCarreraSoportada, cargarOverridesCarreras, CARRERAS_EL_SALVADOR } fro
 import CarrerasEditorModal from '../src/components/CarrerasEditorModal';
 import { showConfirm, showAlert } from '../src/components/AppAlert';
 import ProfileViewerModal from '../src/components/ProfileViewerModal';
+import VacanteDetailModal, { type VacanteDetalle } from '../src/components/VacanteDetailModal';
 import CertificarPasanteModal from '../src/components/CertificarPasanteModal';
 import GrupoEstudiantesModal from '../src/components/GrupoEstudiantesModal';
 import { recomputarTopEstudiantesUniversidad } from '../src/services/topEstudiantesService';
@@ -2449,6 +2450,30 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
 }) {
   const { s, colors } = useThemedStyles();
 
+  // Perfil de estudiante / detalle de pasantía abiertos desde cualquier filtro
+  // (al tocar el nombre del estudiante o el título de su pasantía).
+  const [verPerfilId, setVerPerfilId] = useState<string | null>(null);
+  const [vacDetalle, setVacDetalle] = useState<VacanteDetalle | null>(null);
+  const abrirDetallePasantia = async (vacanteId?: string | null, fallback?: Partial<VacanteDetalle>) => {
+    if (!vacanteId) { if (fallback?.titulo) setVacDetalle(fallback as VacanteDetalle); return; }
+    try {
+      const snap = await getDoc(doc(db, 'vacantes', vacanteId));
+      setVacDetalle(
+        snap.exists()
+          ? ({ id: snap.id, ...(snap.data() as any) } as VacanteDetalle)
+          : ({ id: vacanteId, categoria: 'pasantia', ...(fallback ?? {}) } as VacanteDetalle),
+      );
+    } catch {
+      setVacDetalle({ id: vacanteId, categoria: 'pasantia', ...(fallback ?? {}) } as VacanteDetalle);
+    }
+  };
+
+  // Libro de horas (Fase D) de las inscripciones de cupo ACTIVAS de esta
+  // universidad → barra "X/Y h" real por estudiante en "En pasantía".
+  const inscripcionesActivas = useInscripcionesActivas('universidadId', uid);
+  const progresoDeAsig = (asignacionId: string) =>
+    inscripcionesActivas.find(i => i.asignacion.id === asignacionId)?.progreso ?? null;
+
   // Comprobantes de finalización de las pasantías por cupo de esta universidad
   // (empresa `enviarComprobante` → 'enviado' → universidad `validarComprobante`
   // → 'validado' = 100% certificado). Ver comprobanteService.ts.
@@ -2523,7 +2548,16 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
   const horasDe = (estudianteId: string) =>
     estudiantes.find(e => e.id === estudianteId)?.horas_aprobadas ?? 0;
   const enPasantiaIndividual = useMemo(() => {
-    const filas: { key: string; nombre: string; detalle: string; horas: number; carrera: string }[] = [];
+    // Un estudiante con CUALQUIER pasantía por cupo ya culminada no está "en
+    // pasantía" aunque su `aplicaciones` legado siga en 'contratado'.
+    const idsCulminados = new Set(
+      (finalizadas as any[]).map(a => a.estudianteId).filter(Boolean),
+    );
+    const filas: {
+      key: string; nombre: string; detalle: string; horas: number; carrera: string;
+      estudianteId: string | null; asignacionId: string | null;
+      vacanteId: string | null; empresaNombre: string;
+    }[] = [];
     (asignacionesCupo ?? [])
       .filter((a: any) => a.finalizada !== true && a.estado !== 'cancelado')
       .forEach((a: any) => {
@@ -2533,6 +2567,10 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
           detalle: [a.vacanteTitulo, a.empresaNombre].filter(Boolean).join(' · ') || 'Pasantía por cupo',
           horas: horasDe(a.estudianteId),
           carrera: a.carrera || '',
+          estudianteId: a.estudianteId ?? null,
+          asignacionId: a.id ?? null,
+          vacanteId: a.vacanteId ?? null,
+          empresaNombre: a.empresaNombre ?? '',
         });
       });
     (apps ?? [])
@@ -2544,10 +2582,16 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
           detalle: [ap.titulo_vacante, ap.nombre_empresa].filter(Boolean).join(' · ') || 'Pasantía individual',
           horas: ap.horas_completadas ?? horasDe(ap.estudiante_id),
           carrera: estudiantes.find(e => e.id === ap.estudiante_id)?.carrera || '',
+          estudianteId: ap.estudiante_id ?? null,
+          asignacionId: null,
+          vacanteId: (ap as any).vacante_id ?? null,
+          empresaNombre: ap.nombre_empresa ?? '',
         });
       });
-    return filas.sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [asignacionesCupo, apps, estudiantes]);
+    return filas
+      .filter(f => !f.estudianteId || !idsCulminados.has(f.estudianteId))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [asignacionesCupo, apps, estudiantes, finalizadas]);
 
   // Tarjeta de un estudiante culminado (misma para "Por certificar" y
   // "Certificados"). Abre CertificarPasanteModal al tocarla.
@@ -2564,16 +2608,29 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
       <TouchableOpacity activeOpacity={0.85} onPress={() => setSel(a)}>
         <GlassCard style={{ marginBottom: 10 }} contentStyle={{ padding: 14, gap: 5 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 15, flex: 1 }} numberOfLines={1} noTranslate>
-              {a.estudianteNombre || 'Estudiante'}
-            </Text>
+            <TouchableOpacity
+              style={{ flex: 1 }}
+              activeOpacity={0.7}
+              disabled={!a.estudianteId}
+              onPress={() => a.estudianteId && setVerPerfilId(a.estudianteId)}
+            >
+              <Text style={{ color: a.estudianteId ? colors.primaryLight : colors.textPrimary, fontWeight: '700', fontSize: 15 }} numberOfLines={1} noTranslate>
+                {a.estudianteNombre || 'Estudiante'}
+              </Text>
+            </TouchableOpacity>
             <View style={{ borderWidth: 1, borderColor: badge.col + '55', backgroundColor: badge.col + '22', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 }}>
               <Text style={{ color: badge.col, fontSize: 11, fontWeight: '700' }}>{badge.txt}</Text>
             </View>
           </View>
-          <Text style={{ color: colors.textMuted, fontSize: 12 }} numberOfLines={1} noTranslate>
-            {[a.vacanteTitulo, a.empresaNombre].filter(Boolean).join(' · ') || 'Pasantía por cupo'}
-          </Text>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            disabled={!a.vacanteId}
+            onPress={() => abrirDetallePasantia(a.vacanteId, { titulo: a.vacanteTitulo, nombre_empresa: a.empresaNombre, empresa_id: a.empresaId })}
+          >
+            <Text style={{ color: a.vacanteId ? colors.primaryLight : colors.textMuted, fontSize: 12 }} numberOfLines={1} noTranslate>
+              {[a.vacanteTitulo, a.empresaNombre].filter(Boolean).join(' · ') || 'Pasantía por cupo'}
+            </Text>
+          </TouchableOpacity>
           <Text style={{ color: colors.textMuted, fontSize: 12 }} noTranslate>
             {a.carrera ? `${a.carrera} · ` : ''}{validado ? `${horas} h acreditadas` : `Objetivo ${horas} h`}
           </Text>
@@ -2633,22 +2690,49 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
           </Text>
           {enPasantiaIndividual.length === 0
             ? <Text style={s.emptyText}>No hay estudiantes en pasantía.</Text>
-            : enPasantiaIndividual.map(fila => (
-              <GlassCard key={fila.key} style={{ marginBottom: 10 }} contentStyle={{ padding: 14, gap: 4 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 15, flex: 1 }} numberOfLines={1} noTranslate>
-                    {fila.nombre}
-                  </Text>
-                  <View style={{ borderWidth: 1, borderColor: colors.success + '55', backgroundColor: colors.success + '22', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 }}>
-                    <Text style={{ color: colors.success, fontSize: 11, fontWeight: '700' }}>En curso</Text>
+            : enPasantiaIndividual.map(fila => {
+              const prog = fila.asignacionId ? progresoDeAsig(fila.asignacionId) : null;
+              return (
+                <GlassCard key={fila.key} style={{ marginBottom: 10 }} contentStyle={{ padding: 14, gap: 5 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TouchableOpacity
+                      style={{ flex: 1 }}
+                      activeOpacity={0.7}
+                      disabled={!fila.estudianteId}
+                      onPress={() => fila.estudianteId && setVerPerfilId(fila.estudianteId)}
+                    >
+                      <Text style={{ color: fila.estudianteId ? colors.primaryLight : colors.textPrimary, fontWeight: '700', fontSize: 15 }} numberOfLines={1} noTranslate>
+                        {fila.nombre}
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={{ borderWidth: 1, borderColor: colors.success + '55', backgroundColor: colors.success + '22', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 }}>
+                      <Text style={{ color: colors.success, fontSize: 11, fontWeight: '700' }}>En curso</Text>
+                    </View>
                   </View>
-                </View>
-                <Text style={{ color: colors.textMuted, fontSize: 12 }} numberOfLines={1} noTranslate>{fila.detalle}</Text>
-                <Text style={{ color: colors.textMuted, fontSize: 12 }}>
-                  {fila.carrera ? `${fila.carrera} · ` : ''}{fila.horas} h acumuladas
-                </Text>
-              </GlassCard>
-            ))}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    disabled={!fila.vacanteId}
+                    onPress={() => abrirDetallePasantia(fila.vacanteId, { titulo: fila.detalle.split(' · ')[0], nombre_empresa: fila.empresaNombre })}
+                  >
+                    <Text style={{ color: fila.vacanteId ? colors.primaryLight : colors.textMuted, fontSize: 12 }} numberOfLines={1} noTranslate>{fila.detalle}</Text>
+                  </TouchableOpacity>
+                  {prog?.valido ? (
+                    <View style={{ gap: 4, marginTop: 2 }}>
+                      <View style={{ height: 6, backgroundColor: colors.backgroundSurface, borderRadius: 3, overflow: 'hidden' }}>
+                        <View style={{ height: '100%', width: `${prog.pct}%` as any, backgroundColor: prog.completado ? colors.gold : colors.success, borderRadius: 3 }} />
+                      </View>
+                      <Text style={{ color: colors.textMuted, fontSize: 12 }} noTranslate>
+                        {fila.carrera ? `${fila.carrera} · ` : ''}{prog.cumplidas}/{prog.meta} h · {prog.pct}%
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={{ color: colors.textMuted, fontSize: 12 }}>
+                      {fila.carrera ? `${fila.carrera} · ` : ''}{fila.horas} h acumuladas
+                    </Text>
+                  )}
+                </GlassCard>
+              );
+            })}
         </>
       )}
 
@@ -2682,6 +2766,21 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
         onValidado={recargarFeedback}
         onFeedbackEnviado={recargarFeedback}
         onClose={() => setSel(null)}
+      />
+
+      {verPerfilId ? (
+        <ProfileViewerModal
+          visible
+          tipo="estudiante"
+          profileId={verPerfilId}
+          onClose={() => setVerPerfilId(null)}
+        />
+      ) : null}
+
+      <VacanteDetailModal
+        visible={!!vacDetalle}
+        vacante={vacDetalle}
+        onClose={() => setVacDetalle(null)}
       />
     </ScrollView>
   );
