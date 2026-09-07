@@ -201,9 +201,14 @@ export default function TabLayout() {
   // Red de seguridad: si por lo que sea esta pantalla llegara a mostrarse
   // sin sesión (p. ej. tras un "atrás" que quedara detrás de un cierre de
   // sesión), redirige a login de inmediato — mismo hook que ya usan los
-  // otros 3 paneles (empresa/universidad/admin). Sin rol requerido: los
-  // tabs son de cualquier usuario autenticado.
-  useAuthGuard();
+  // otros 3 paneles (empresa/universidad/admin). El grupo (tabs) es la
+  // experiencia del ESTUDIANTE: si una empresa/universidad/admin llega
+  // aquí escribiendo la URL a mano (gradly.website/dashboard-estudiante,
+  // /perfil, /progreso...), `useAuthGuard('estudiante')` la devuelve a su
+  // propio dashboard en cuanto el rol resuelve, sin llegar a mostrar la UI
+  // de estudiante. Con rol aún desconocido NO redirige (espera), igual que
+  // el resto de guardias.
+  useAuthGuard('estudiante');
   // Las pestañas ya sincronizan su propia URL (expo-router), así que aquí
   // NO se le pasa `section` al guard (eso es solo para los dashboards, cuyo
   // cambio de sección es estado local puro sin historial propio) — evita
