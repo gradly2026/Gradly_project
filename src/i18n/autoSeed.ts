@@ -1383,6 +1383,7 @@ export const GESTION_SEED_EN: Record<string, string> = {
   "Certificadas": "Certified",
   "Estudiantes tuyos trabajando por cupo o vacante individual (la empresa gestiona esta pasantía).":
     "Your students working via a slot or an individual vacancy (the company manages this internship).",
+  "No hay estudiantes en pasantía.": "No students on internship.",
   "h acumuladas": "h accrued",
   // ── Aviso a la empresa cuando un admin modera una de sus publicaciones
   // (ModeracionVacanteModal/Gate) ──

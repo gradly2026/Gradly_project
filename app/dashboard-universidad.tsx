@@ -107,7 +107,6 @@ import * as XLSX from 'xlsx';
 // La librería "xlsx" (SheetJS): lee archivos de Excel (.xlsx) o CSV y los
 // convierte a arrays de objetos JavaScript — el corazón técnico de la
 // función de "importar estudiantes desde Excel" más abajo.
-import { useTranslation } from '../src/context/TranslationContext';
 import BandejaIncidencias from '../src/components/BandejaIncidencias';
 // Bandeja de incidencias de práctica. El MISMO componente que ven el
 // estudiante y la empresa; la prop `rol` decide qué puede hacer cada uno —
@@ -2449,7 +2448,6 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
   onPasanteConsumido?: () => void;
 }) {
   const { s, colors } = useThemedStyles();
-  const { t } = useTranslation();
 
   // Comprobantes de finalización de las pasantías por cupo de esta universidad
   // (empresa `enviarComprobante` → 'enviado' → universidad `validarComprobante`
@@ -2497,17 +2495,16 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
 
   // Detalle abierto (una asignación culminada).
   const [sel, setSel] = useState<any | null>(null);
+  // Filtro activo. La sección arranca SIEMPRE en "Incidencias" (pedido del
+  // usuario): son lo único que puede estar esperando una respuesta ahora mismo.
+  const [filtro, setFiltro] = useState<'incidencias' | 'enPasantia' | 'porCertificar' | 'certificados'>('incidencias');
 
   // ── Deep link desde una notificación de la campanita ──
   // El padre pasa `abrirPasanteId` (id de `asignaciones_cupo`) cuando la
   // universidad tocó "Comprobante de pasantía recibido" / "Estudiante culminó su
   // pasantía" / "Pasantía culminada al 100%". Al montar (o cuando el listener
-  // ya trajo esa asignación), abrimos su CertificarPasanteModal y hacemos
-  // scroll a la sub-lista donde vive ("Por certificar" o "Estudiantes
-  // certificados"). Solo abre el modal — nada del flujo existente cambia.
-  const scrollRef = useRef<ScrollView>(null);
-  const yPorCertificar = useRef(0);
-  const yCertificados = useRef(0);
+  // ya trajo esa asignación), selecciona el filtro donde vive ese pasante
+  // ("Por certificar" o "Certificados") y abre su CertificarPasanteModal.
   const pasanteAbierto = useRef<string | null>(null); // id ya atendido (evita reabrir)
   useEffect(() => {
     if (!abrirPasanteId) { pasanteAbierto.current = null; return; }
@@ -2516,11 +2513,7 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
     if (!a) return; // el listener aún no la trajo — se reintenta al actualizarse
     pasanteAbierto.current = abrirPasanteId;
     setSel(a);
-    const validado = compPorId[a.id]?.estado === 'validado';
-    const destino = validado ? yCertificados : yPorCertificar;
-    setTimeout(() => {
-      try { scrollRef.current?.scrollTo({ y: Math.max(0, destino.current - 12), animated: true }); } catch { /* noop */ }
-    }, 80);
+    setFiltro(compPorId[a.id]?.estado === 'validado' ? 'certificados' : 'porCertificar');
     onPasanteConsumido?.();
   }, [abrirPasanteId, asignacionesCupo, compPorId, onPasanteConsumido]);
 
@@ -2595,73 +2588,91 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
     );
   };
 
-  return (
-    <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: 110, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
-      {/* ── Incidencias reportadas por sus estudiantes ──
-          Van PRIMERO y no al final: son lo único de esta pantalla que puede
-          estar esperando una respuesta de la universidad ahora mismo. Es
-          también la única de las tres bandejas que puede ESCALAR al equipo
-          de Gradly, porque la universidad es la responsable del estudiante
-          ante la práctica. */}
-      <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginBottom: 8 }}>
-        {t('inc_titulo')}
+  // Chip de filtro de la parte principal de la sección.
+  const FiltroChip = ({ label, activo, onPress }: { label: string; activo: boolean; onPress: () => void }) => (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
+      style={{
+        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1,
+        borderColor: activo ? colors.primary : colors.border,
+        backgroundColor: activo ? colors.primary + '22' : 'transparent',
+      }}
+    >
+      <Text style={{ fontSize: 12.5, fontWeight: '700', color: activo ? colors.primaryLight : colors.textMuted }}>
+        {label}
       </Text>
-      <View style={{ marginBottom: 18 }}>
-        <BandejaIncidencias rol="universidad" uid={uid} nombreUsuario={nombreUni} />
-      </View>
+    </TouchableOpacity>
+  );
 
-      {enPasantiaIndividual.length > 0 && (
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
+      {/* ── Botones-filtro: la sección arranca en "Incidencias" ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 8, paddingBottom: 4 }}
+        style={{ marginBottom: 16 }}
+      >
+        <FiltroChip label="Incidencias" activo={filtro === 'incidencias'} onPress={() => setFiltro('incidencias')} />
+        <FiltroChip label={`En pasantía (${enPasantiaIndividual.length})`} activo={filtro === 'enPasantia'} onPress={() => setFiltro('enPasantia')} />
+        <FiltroChip label={`Por certificar (${porCertificar.length})`} activo={filtro === 'porCertificar'} onPress={() => setFiltro('porCertificar')} />
+        <FiltroChip label={`Certificados (${certificados.length})`} activo={filtro === 'certificados'} onPress={() => setFiltro('certificados')} />
+      </ScrollView>
+
+      {/* ── Incidencias — lo único que puede estar esperando una respuesta de la
+          universidad ahora mismo, y la única bandeja que puede ESCALAR a Gradly. */}
+      {filtro === 'incidencias' && (
+        <BandejaIncidencias rol="universidad" uid={uid} nombreUsuario={nombreUni} />
+      )}
+
+      {filtro === 'enPasantia' && (
         <>
-          <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginBottom: 8 }}>
-            En pasantía ({enPasantiaIndividual.length})
-          </Text>
-          <Text style={[s.emptyText, { marginTop: -4, marginBottom: 8 }]}>
+          <Text style={[s.emptyText, { marginBottom: 8 }]}>
             Estudiantes tuyos trabajando por cupo o vacante individual (la empresa gestiona esta pasantía).
           </Text>
-          {enPasantiaIndividual.map(fila => (
-            <GlassCard key={fila.key} style={{ marginBottom: 10 }} contentStyle={{ padding: 14, gap: 4 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 15, flex: 1 }} numberOfLines={1}>
-                  {fila.nombre}
-                </Text>
-                <View style={{ borderWidth: 1, borderColor: colors.success + '55', backgroundColor: colors.success + '22', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 }}>
-                  <Text style={{ color: colors.success, fontSize: 11, fontWeight: '700' }}>En curso</Text>
+          {enPasantiaIndividual.length === 0
+            ? <Text style={s.emptyText}>No hay estudiantes en pasantía.</Text>
+            : enPasantiaIndividual.map(fila => (
+              <GlassCard key={fila.key} style={{ marginBottom: 10 }} contentStyle={{ padding: 14, gap: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 15, flex: 1 }} numberOfLines={1} noTranslate>
+                    {fila.nombre}
+                  </Text>
+                  <View style={{ borderWidth: 1, borderColor: colors.success + '55', backgroundColor: colors.success + '22', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 }}>
+                    <Text style={{ color: colors.success, fontSize: 11, fontWeight: '700' }}>En curso</Text>
+                  </View>
                 </View>
-              </View>
-              <Text style={{ color: colors.textMuted, fontSize: 12 }} numberOfLines={1}>{fila.detalle}</Text>
-              <Text style={{ color: colors.textMuted, fontSize: 12 }}>
-                {fila.carrera ? `${fila.carrera} · ` : ''}{fila.horas} h acumuladas
-              </Text>
-            </GlassCard>
-          ))}
+                <Text style={{ color: colors.textMuted, fontSize: 12 }} numberOfLines={1} noTranslate>{fila.detalle}</Text>
+                <Text style={{ color: colors.textMuted, fontSize: 12 }}>
+                  {fila.carrera ? `${fila.carrera} · ` : ''}{fila.horas} h acumuladas
+                </Text>
+              </GlassCard>
+            ))}
         </>
       )}
 
-      <Text
-        onLayout={e => { yPorCertificar.current = e.nativeEvent.layout.y; }}
-        style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: enPasantiaIndividual.length > 0 ? 18 : 0, marginBottom: 4 }}
-      >
-        Por certificar ({porCertificar.length})
-      </Text>
-      <Text style={[s.emptyText, { marginBottom: 8 }]}>
-        Ya cumplieron su tiempo de pasantía. Revisa el comprobante de la empresa, califica y valídalo.
-      </Text>
-      {porCertificar.length === 0
-        ? <Text style={s.emptyText}>No hay estudiantes esperando certificación.</Text>
-        : porCertificar.map((a: any) => <PasanteCard key={a.id} a={a} />)}
+      {filtro === 'porCertificar' && (
+        <>
+          <Text style={[s.emptyText, { marginBottom: 8 }]}>
+            Ya cumplieron su tiempo de pasantía. Revisa el comprobante de la empresa, califica y valídalo.
+          </Text>
+          {porCertificar.length === 0
+            ? <Text style={s.emptyText}>No hay estudiantes esperando certificación.</Text>
+            : porCertificar.map((a: any) => <PasanteCard key={a.id} a={a} />)}
+        </>
+      )}
 
-      <Text
-        onLayout={e => { yCertificados.current = e.nativeEvent.layout.y; }}
-        style={{ color: colors.textPrimary, fontWeight: '700', fontSize: 16, marginTop: 18, marginBottom: 4 }}
-      >
-        Estudiantes certificados ({certificados.length})
-      </Text>
-      <Text style={[s.emptyText, { marginBottom: 8 }]}>
-        Culminaron su pasantía y su comprobante fue validado por la universidad. Certificados al 100%.
-      </Text>
-      {certificados.length === 0
-        ? <Text style={s.emptyText}>Aún no hay estudiantes certificados.</Text>
-        : certificados.map((a: any) => <PasanteCard key={a.id} a={a} />)}
+      {filtro === 'certificados' && (
+        <>
+          <Text style={[s.emptyText, { marginBottom: 8 }]}>
+            Culminaron su pasantía y su comprobante fue validado por la universidad. Certificados al 100%.
+          </Text>
+          {certificados.length === 0
+            ? <Text style={s.emptyText}>Aún no hay estudiantes certificados.</Text>
+            : certificados.map((a: any) => <PasanteCard key={a.id} a={a} />)}
+        </>
+      )}
 
       <CertificarPasanteModal
         visible={!!sel}
