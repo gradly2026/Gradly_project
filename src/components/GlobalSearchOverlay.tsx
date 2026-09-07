@@ -5,7 +5,8 @@
  * FadeIn de react-native-reanimated. La barra superior filtra por nombre o
  * carrera y, según el rol activo, busca en distintas colecciones:
  *   - Universidad → vacantes · empresas · estudiantes (propios)
- *   - Empresa     → universidades · estudiantes · grupos
+ *   - Empresa     → universidades · estudiantes
+ * Los grupos de universidad NO aparecen en el buscador (pedido del usuario).
  * Al pulsar un usuario/estudiante se abre el ProfileViewerModal.
  */
 import { Ionicons } from '@expo/vector-icons';
@@ -51,7 +52,7 @@ interface Props {
   onResultPress?: (tipo: ProfileTipo, id: string) => void;
 }
 
-type ResultTipo = 'estudiante' | 'empresa' | 'universidad' | 'vacante' | 'grupo';
+type ResultTipo = 'estudiante' | 'empresa' | 'universidad' | 'vacante';
 
 interface SearchItem {
   id: string;
@@ -77,7 +78,6 @@ const TIPO_META: Record<ResultTipo, { icon: keyof typeof Ionicons.glyphMap; labe
   empresa:     { icon: 'business',         label: 'Empresa' },
   universidad: { icon: 'school',           label: 'Universidad' },
   vacante:     { icon: 'briefcase',        label: 'Vacante' },
-  grupo:       { icon: 'people',           label: 'Grupo' },
 };
 
 const PERFIL_TIPOS: ResultTipo[] = ['estudiante', 'empresa', 'universidad'];
@@ -94,7 +94,6 @@ const TIPO_KEYWORDS: Record<ResultTipo, string[]> = {
   empresa: ['empresa', 'empresas'],
   universidad: ['universidad', 'universidades'],
   vacante: ['vacante', 'vacantes', 'pasantia', 'pasantias', 'empleo', 'empleos'],
-  grupo: ['grupo', 'grupos'],
 };
 
 // Marcas diacríticas combinantes (U+0300–U+036F) que deja `normalize("NFD")`.
@@ -176,15 +175,13 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
           emp.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'empresa', titulo: x.nombre_empresa ?? 'Empresa', subtitulo: x.industria ?? '', foto: x.logo_url, verificado: x.verificado ?? false, empresaTier: tierEmpresa(x) }); });
           est.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'estudiante', titulo: x.nombre_completo ?? 'Estudiante', subtitulo: x.carrera ?? '', carrera: x.carrera, foto: x.foto_url }); });
         } else if (rol === 'empresa') {
-          const [uni, est, gru, vacPropias] = await Promise.all([
+          const [uni, est, vacPropias] = await Promise.all([
             getDocs(query(collection(db, 'perfiles_universidades'), limit(50))),
             getDocs(query(collection(db, 'perfiles_estudiantes'), limit(100))),
-            getDocs(query(collection(db, 'grupos'), limit(80))),
             getDocs(query(collection(db, 'vacantes'), where('empresa_id', '==', user.uid), where('activa', '==', true), limit(50))),
           ]);
           uni.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'universidad', titulo: x.nombre_universidad ?? 'Universidad', subtitulo: x.dominio_correo ?? '', foto: x.logo_url }); });
           est.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'estudiante', titulo: x.nombre_completo ?? 'Estudiante', subtitulo: x.carrera ?? '', carrera: x.carrera, foto: x.foto_url }); });
-          gru.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'grupo', titulo: x.nombre ?? 'Grupo', subtitulo: x.carrera ?? '', carrera: x.carrera }); });
           // Áreas de mis propias vacantes activas: sirven para priorizar, en la
           // lista de estudiantes, a quienes tienen una carrera afín a lo que
           // esta empresa está publicando ahora mismo.
@@ -192,11 +189,10 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
           vacPropias.docs.forEach((d: any) => { const a = d.data()?.area; if (a) areas.add(a); });
           if (!cancel) setMisAreasEmpresa(areas);
         } else {
-          // Estudiante (y otros roles): empresas · universidades · grupos
-          const [emp, uni, gru, miPerfil, vacActivas, misCupos] = await Promise.all([
+          // Estudiante (y otros roles): empresas · universidades
+          const [emp, uni, miPerfil, vacActivas, misCupos] = await Promise.all([
             getDocs(query(collection(db, 'perfiles_empresas'), limit(50))),
             getDocs(query(collection(db, 'perfiles_universidades'), limit(50))),
-            getDocs(query(collection(db, 'grupos'), limit(80))),
             getDoc(doc(db, 'perfiles_estudiantes', user.uid)),
             getDocs(query(collection(db, 'vacantes'), where('activa', '==', true), limit(300))),
             rol === 'estudiante'
@@ -205,7 +201,6 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
           ]);
           emp.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'empresa', titulo: x.nombre_empresa ?? 'Empresa', subtitulo: x.industria ?? '', foto: x.logo_url, verificado: x.verificado ?? false, empresaTier: tierEmpresa(x) }); });
           uni.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'universidad', titulo: x.nombre_universidad ?? 'Universidad', subtitulo: x.dominio_correo ?? '', foto: x.logo_url }); });
-          gru.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'grupo', titulo: x.nombre ?? 'Grupo', subtitulo: x.carrera ?? '', carrera: x.carrera }); });
 
           // ── Publicaciones para el estudiante, según su estado de pasantía ──
           if (rol === 'estudiante') {
@@ -333,7 +328,7 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
       }
       return;
     }
-    // Grupos: por ahora solo cierran el buscador.
+    // Cualquier otro tipo sin vista propia: solo cierra el buscador.
     onClose();
   };
 

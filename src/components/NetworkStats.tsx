@@ -81,10 +81,11 @@ export function RedGradlyBanner() {
 
   const [topEmpresas, setTopEmpresas] = useState<RankEntry[]>([]);
   const [topUnis, setTopUnis] = useState<RankEntry[]>([]);
-  // Top 5 de estudiantes certificados destacados — agregado de los
-  // `top_estudiantes` auto-reportados en cada perfil de empresa/universidad
-  // (topEstudiantesService). Solo se muestra a quien puede leer datos de
-  // estudiantes: NO se arma ni se pinta para el rol 'estudiante'.
+  // Top 3 de estudiantes destacados — agregado de los `top_estudiantes`
+  // auto-reportados en cada perfil de empresa/universidad (topEstudiantesService).
+  // Solo entran los que YA tienen calificación en reseñas (`stars > 0`); un
+  // estudiante sin reseñas no aparece. Solo se muestra a quien puede leer datos
+  // de estudiantes: NO se arma ni se pinta para el rol 'estudiante'.
   const [topEst, setTopEst] = useState<TopEstudianteEntry[]>([]);
   // Perfil (empresa / universidad / estudiante) abierto desde un ranking.
   const [verPerfil, setVerPerfil] = useState<{ rol: PerfilRol; id: string } | null>(null);
@@ -145,9 +146,10 @@ export function RedGradlyBanner() {
         setTopEmpresas(construirRanking(empSnap.docs, 'nombre_empresa', 'aliados_universidades_ids'));
         setTopUnis(construirRanking(uniSnap.docs, 'nombre_universidad', 'aliados_empresas_ids'));
 
-        // ── Top 5 estudiantes: agrega los `top_estudiantes` de todos los
+        // ── Top 3 estudiantes: agrega los `top_estudiantes` de todos los
         // perfiles leídos, dedup por id (se prefiere la entrada con datos de
-        // empleo — la de la empresa), y ordena por estrellas. ──
+        // empleo — la de la empresa), descarta a los que aún no tienen
+        // calificación en reseñas (`stars > 0`) y ordena por estrellas. ──
         if (rol !== 'estudiante') {
           const porId = new Map<string, TopEstudianteEntry>();
           const absorber = (arr: any) => {
@@ -161,8 +163,9 @@ export function RedGradlyBanner() {
           uniSnap.docs.forEach(d => absorber((d.data() as any).top_estudiantes));
           setTopEst(
             Array.from(porId.values())
+              .filter(e => (Number(e.stars) || 0) > 0)
               .sort((a, b) => (Number(b.stars) || 0) - (Number(a.stars) || 0))
-              .slice(0, 5),
+              .slice(0, 3),
           );
         } else {
           setTopEst([]);
@@ -231,9 +234,9 @@ export function RedGradlyBanner() {
         <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} perfilRol="universidad" />
       </ScrollView>
 
-      {/* Top 5 estudiantes certificados destacados — BAJO el carrusel, a lo
-          ancho (no dentro del scroll horizontal). Solo empresa / universidad /
-          admin (no se arma para 'estudiante'). */}
+      {/* Top 3 estudiantes destacados (con calificación en reseñas) — BAJO el
+          carrusel, a lo ancho (no dentro del scroll horizontal). Solo empresa /
+          universidad / admin (no se arma para 'estudiante'). */}
       {rol !== 'estudiante' && topEst.length > 0 && (
         <View style={{ marginTop: 12, paddingRight: 16 }}>
           <TopEstudiantesCard
