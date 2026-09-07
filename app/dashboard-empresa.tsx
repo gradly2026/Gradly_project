@@ -960,8 +960,11 @@ export default function DashboardEmpresa() {
 
   // Reparto de cupos (flujo alterno de pasantía) — necesario junto a
   // solicitudesGrupo/apps para saber CON QUIÉN trabajó esta empresa en los
-  // 3 caminos posibles, al autoreportar el top de mejores estudiantes.
-  const [asignacionesCupoEmpresa, setAsignacionesCupoEmpresa] = useState<{ id: string; estudianteId?: string; estado?: string }[]>([]);
+  // 3 caminos posibles: alimenta el autoreporte del top de mejores
+  // estudiantes, el conteo "Pasantes activos" y "Universidades aliadas" del
+  // Resumen (cada asignación pertenece a una universidad, y la alianza queda
+  // aunque la pasantía ya haya culminado / certificado).
+  const [asignacionesCupoEmpresa, setAsignacionesCupoEmpresa] = useState<{ id: string; estudianteId?: string; estado?: string; universidadId?: string; finalizada?: boolean }[]>([]);
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'asignaciones_cupo'), where('empresaId', '==', user.uid));
@@ -1116,15 +1119,18 @@ export default function DashboardEmpresa() {
   const metricas = useMemo(() => ({
     vacantesActivas: vacantes.filter(v => v.activa).length,
     pendientes:      apps.filter(a => a.estado === 'pendiente').length,
-    // "Pasantes activos": headcount actual, sumando el flujo individual legado
-    // (aplicaciones 'contratado') + estudiantes de grupos con pasantía
-    // aprobada (acuerdo firmado, aún sin finalizar) — mismo criterio de estado
-    // que usa la universidad para "En pasantía".
+    // "Pasantes activos": headcount actual por los TRES caminos —
+    // individual legado (aplicaciones 'contratado') + estudiantes de grupos
+    // con pasantía aprobada (acuerdo firmado, aún sin finalizar) + reparto de
+    // cupos en curso (`asignaciones_cupo` tomado y NO finalizado, mismo
+    // criterio que el filtro "Pasantes por cupo" de la sección Pasantías).
+    // Antes el flujo de cupo no sumaba aquí y una empresa 100% por cupos veía "0".
     activos:
       apps.filter(a => a.estado === 'contratado').length +
       solicitudesGrupo
         .filter(sg => sg.estado === 'aprobado')
-        .reduce((acc, sg) => acc + (sg.alumnos?.length ?? 0), 0),
+        .reduce((acc, sg) => acc + (sg.alumnos?.length ?? 0), 0) +
+      asignacionesCupoEmpresa.filter(ac => ac.estado === 'tomado' && ac.finalizada !== true).length,
     // "Horas validadas": horas certificadas por los TRES caminos de pasantía —
     // flujo individual (`aplicaciones.horas_completadas`), grupo (`horasPorGrupo`)
     // y cupo con comprobante validado por la universidad (`horasCupoValidadas`).
@@ -1132,7 +1138,7 @@ export default function DashboardEmpresa() {
       apps.reduce((acc, a) => acc + (a.horas_completadas ?? 0), 0) +
       Object.values(horasPorGrupo).reduce((acc, h) => acc + h, 0) +
       horasCupoValidadas,
-  }), [vacantes, apps, solicitudesGrupo, horasPorGrupo, horasCupoValidadas]);
+  }), [vacantes, apps, solicitudesGrupo, horasPorGrupo, horasCupoValidadas, asignacionesCupoEmpresa]);
 
   // ── Límite de vacantes según el plan ─────────────────────────────
   const limiteVacantes   = perfil?.limiteVacantes ?? 2;
@@ -1825,7 +1831,7 @@ export default function DashboardEmpresa() {
   // de este componente principal) pasándole los datos y callbacks que necesita.
   const renderSeccion = () => {
     switch (seccion) {
-      case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} />;
+      case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} asignacionesCupo={asignacionesCupoEmpresa} />;
       case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => { setVacanteEditando(null); setShowNuevaVacante(true); }} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} onEditar={abrirEditarVacante} onEliminar={handleEliminarVacante} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
       case 'kanban':   return (
         <SeccionReclutamiento
@@ -3185,9 +3191,10 @@ export default function DashboardEmpresa() {
 // ─────────────────────────────────────────────
 // SECCIÓN: INICIO
 // ─────────────────────────────────────────────
-function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitudesGrupo }: {
+function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitudesGrupo, asignacionesCupo }: {
   metricas: any; apps: Aplicacion[]; perfil: PerfilEmpresa | null; empresaId: string;
   vacantes: Vacante[]; solicitudesGrupo: SolicitudGrupo[];
+  asignacionesCupo: { id: string; estudianteId?: string; estado?: string; universidadId?: string; finalizada?: boolean }[];
 }) {
   const { s, colors } = useThemedStyles();
   // Mismo criterio que el badge del encabezado: el rótulo depende del `plan`
@@ -3249,6 +3256,7 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
         vacantes={vacantes}
         apps={apps}
         solicitudesGrupo={solicitudesGrupo}
+        asignacionesCupo={asignacionesCupo}
         contratadosActivos={contratadosActivos}
         inscripciones={inscripcionesActivas}
       />

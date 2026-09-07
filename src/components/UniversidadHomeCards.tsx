@@ -80,12 +80,19 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
   // ── Nº de estudiantes CERTIFICADOS (comprobante de pasantía validado por la
   //    universidad). Mismo criterio que "Estudiantes certificados" de la
   //    sección Pasantías: `comprobantes_pasantia` en estado 'validado'. ──
+  //    De paso se guardan las empresas de esos comprobantes: la alianza con
+  //    ellas queda registrada aunque la pasantía ya haya culminado.
   const [certificadosCount, setCertificadosCount] = useState(0);
+  const [certificadoEmpresaIds, setCertificadoEmpresaIds] = useState<string[]>([]);
   useEffect(() => {
     if (!uid) return;
     const unsub = onSnapshot(
       query(collection(db, 'comprobantes_pasantia'), where('universidadId', '==', uid)),
-      snap => setCertificadosCount(snap.docs.filter(d => (d.data() as any).estado === 'validado').length),
+      snap => {
+        const validados = snap.docs.map(d => d.data() as any).filter(c => c.estado === 'validado');
+        setCertificadosCount(validados.length);
+        setCertificadoEmpresaIds(validados.map(c => c.empresaId).filter(Boolean));
+      },
       error => console.warn('Error en listener (comprobantes certificados):', error),
     );
     return unsub;
@@ -99,7 +106,9 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
 
   // Instituciones afiliadas: empresas con una relación de pasantía real
   // (solicitudes de grupo aprobadas/finalizadas + estudiantes contratados +
-  //  inscripciones de cupo activas — este último flujo antes no contaba).
+  //  inscripciones de cupo activas + empresas de pasantías por cupo ya
+  //  certificadas — la alianza queda aunque la pasantía haya culminado,
+  //  mismo criterio que "Universidades aliadas" del lado empresa).
   const institucionesAfiliadas = useMemo(() => {
     const ids = new Set<string>();
     solicitudesGrupo.forEach(sg => {
@@ -113,8 +122,9 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
     inscripciones.forEach(({ asignacion }) => {
       if (asignacion.empresaId) ids.add(asignacion.empresaId);
     });
+    certificadoEmpresaIds.forEach(id => ids.add(id));
     return ids.size;
-  }, [solicitudesGrupo, apps, inscripciones]);
+  }, [solicitudesGrupo, apps, inscripciones, certificadoEmpresaIds]);
 
   // "En pasantía": estudiantes cursando una práctica AHORA por cualquier vía —
   // el `metricas.enPasantia` que llega ya suma grupo + individual legado; aquí

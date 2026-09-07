@@ -31,6 +31,10 @@ interface Props {
   vacantes: any[];
   apps: any[];
   solicitudesGrupo: any[];
+  /** Todas las `asignaciones_cupo` de la empresa (cualquier estado) — cada una
+   *  pertenece a una universidad; alimenta la tile "Universidades aliadas"
+   *  (la alianza queda aunque la pasantía ya haya culminado / certificado). */
+  asignacionesCupo?: { universidadId?: string; estado?: string }[];
   /** Empleados que la empresa contrató en un puesto real (`contratos_laborales`
    *  en estado 'activo') — alimenta la tile "Estudiantes contratados". */
   contratadosActivos?: number;
@@ -38,7 +42,7 @@ interface Props {
   inscripciones?: InscripcionActiva[];
 }
 
-export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudesGrupo, contratadosActivos = 0, inscripciones = [] }: Props) {
+export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudesGrupo, asignacionesCupo = [], contratadosActivos = 0, inscripciones = [] }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -48,6 +52,12 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
   const [page, setPage] = useState(0);
 
   // ── Métricas derivadas ──
+  // Universidades aliadas: contrapartes únicas por CUALQUIERA de los caminos —
+  // aplicaciones (individual legado), solicitudes de grupo, y reparto de cupos
+  // (`asignaciones_cupo`, cada una de una universidad). El flujo de cupos NO se
+  // filtra por estado: la alianza queda registrada aunque la pasantía ya haya
+  // culminado o esté certificada (mismo criterio que PerfilStatsEmpresa en Mi
+  // Perfil). Sin esto, una empresa que solo trabaja por cupos veía "0".
   const universidadesAliadas = useMemo(() => {
     const ids = new Set<string>();
     apps.forEach(a => {
@@ -56,8 +66,11 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
     solicitudesGrupo.forEach(sg => {
       if ((sg.estado === 'aprobado' || sg.estado === 'finalizado') && sg.universidadId) ids.add(sg.universidadId);
     });
+    asignacionesCupo.forEach(c => {
+      if (c.universidadId) ids.add(c.universidadId);
+    });
     return ids.size;
-  }, [apps, solicitudesGrupo]);
+  }, [apps, solicitudesGrupo, asignacionesCupo]);
 
   // ── Vacantes por área ──
   // Se agrupa por el área CANÓNICA (canonicalizarArea): así "Finaza" y otras
