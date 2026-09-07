@@ -28,6 +28,7 @@ import {
   deleteField,
   doc,
   documentId,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -111,6 +112,7 @@ import { normalizarHorario, textoHorario, valHorario, type HorarioPasantia } fro
 import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import CandidatosVacante from '../src/components/CandidatosVacante';
 import FechaPresentacionModal from '../src/components/FechaPresentacionModal';
+import VacanteDetailModal, { type VacanteDetalle } from '../src/components/VacanteDetailModal';
 import ReportarIncidenciaEmpresaModal, { type PasanteReportable } from '../src/components/ReportarIncidenciaEmpresaModal';
 import SeccionReclutamiento from '../src/components/SeccionReclutamiento';
 import PerfilPublicoModal from '../components/PerfilPublicoModal';
@@ -185,7 +187,7 @@ const IS_WIDE = SCREEN_W >= 768;
 // ─────────────────────────────────────────────
 // Las 7 pestañas del menú (5 visibles en MENU + 'perfil'/'mensajes' que se
 // añaden siempre al final — ver navItems más abajo).
-type SeccionEmpresa = 'inicio' | 'vacantes' | 'kanban' | 'activas' | 'historial' | 'perfil' | 'mensajes';
+type SeccionEmpresa = 'inicio' | 'vacantes' | 'kanban' | 'activas' | 'perfil' | 'mensajes';
 
 /** Forma de un documento de la colección `vacantes` en Firestore. */
 interface Vacante {
@@ -291,13 +293,12 @@ const MENU: { key: SeccionEmpresa; label: string; icon: keyof typeof Ionicons.gl
   { key: 'inicio',    label: 'Inicio',           icon: 'home-outline' },
   { key: 'vacantes',  label: 'Mis vacantes y pasantías', icon: 'briefcase-outline' },
   { key: 'kanban',    label: 'Reclutamiento',    icon: 'people-outline' },
-  { key: 'activas',   label: 'Pasantías Activas',icon: 'checkmark-circle-outline' },
-  { key: 'historial', label: 'Historial de Pasantes', icon: 'time-outline' },
+  { key: 'activas',   label: 'Pasantías',        icon: 'checkmark-circle-outline' },
 ];
 
 // ── Onboarding (guía por globos) — mismo orden que MENU, terminando en
 // 'perfil' (Mi Perfil es siempre la última parada del recorrido). ──
-const TOUR_CLAVES: SeccionEmpresa[] = ['inicio', 'vacantes', 'kanban', 'activas', 'historial', 'perfil'];
+const TOUR_CLAVES: SeccionEmpresa[] = ['inicio', 'vacantes', 'kanban', 'activas', 'perfil'];
 const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
   inicio: {
     titulo: '¡Bienvenido a tu panel! 🏢',
@@ -315,14 +316,9 @@ const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
       'Revisa tus vacantes de empleo y sus postulantes. Cada vacante muestra cuántos graduados se postularon; ábrela para ver el detalle, contratar o descartar. La pestaña "Contratado" reúne los puestos ya cubiertos.',
   },
   activas: {
-    titulo: 'Pasantías Activas',
+    titulo: 'Pasantías',
     texto:
-      'Da seguimiento a las pasantías en curso y firma las constancias de horas de tus estudiantes.',
-  },
-  historial: {
-    titulo: 'Historial de Pasantes',
-    texto:
-      'Reencuentra a los estudiantes que finalizaron sus pasantías contigo y re-contáctalos para ofrecerles empleo.',
+      'Filtra entre incidencias, pasantes en curso, pasantes por certificar y el historial de quienes ya culminaron contigo. Fija el primer día, envía comprobantes y re-contacta para ofrecer empleo.',
   },
   perfil: {
     titulo: 'Mi Perfil',
@@ -1808,7 +1804,7 @@ export default function DashboardEmpresa() {
   // ── Items del menú flotante (etiquetas cortas para la barra) ──────
   const NAV_LABELS: Record<SeccionEmpresa, string> = {
     inicio: 'Inicio', vacantes: 'Trabajos', kanban: 'Reclutar',
-    activas: 'Activas', historial: 'Historial', perfil: 'Mi Perfil', mensajes: 'Mensajes',
+    activas: 'Pasantías', perfil: 'Mi Perfil', mensajes: 'Mensajes',
   };
   // "Mensajes" y "Mi Perfil" se añaden SIEMPRE como últimas opciones.
   type NavKey = SeccionEmpresa | 'mensajes' | 'perfil';
@@ -1841,8 +1837,7 @@ export default function DashboardEmpresa() {
           onChatCandidato={handleChatConCandidato}
         />
       );
-      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? 'Empresa'} />;
-      case 'historial': return <HistorialPasantes empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
+      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
       case 'perfil':   return renderPerfilSeccion();
       case 'mensajes': return (
         <SeccionMensajes
@@ -3447,11 +3442,15 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
 }
 
 // ─────────────────────────────────────────────
-// SECCIÓN: PASANTÍAS ACTIVAS — junta los 2 caminos de admisión que puede
-// tener una empresa: pasantes individuales (`apps` con estado 'contratado'/
-// 'finalizado', el flujo del Kanban) y pasantías de grupo aprobadas por
-// matchmaking universidad↔empresa (`solicitudesGrupo`, con su propia barra
-// de progreso). El botón "Firmar constancia" solo aplica al camino individual.
+// SECCIÓN: PASANTÍAS — la parte principal se filtra con cuatro botones-chip:
+//   · Incidencias           — BandejaIncidencias + "Reportar a un pasante".
+//   · Pasantes por cupo     — en curso: cupos (`asignaciones_cupo` tomado y NO
+//     finalizado) + pasantías de grupo + pasantes individuales legacy, juntos.
+//   · Pasantes por certificar — ya cumplieron su tiempo; la empresa envía el
+//     comprobante (ComprobantePasantiaCard) para que la universidad valide.
+//   · Historial de pasantes — quienes ya culminaron contigo (HistorialPasantes),
+//     así ya no hace falta una sección aparte para el historial.
+// Se entra SIEMPRE en "Incidencias".
 // ─────────────────────────────────────────────
 function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresaId, empresaNombre }: {
   apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[]; onFirmar: (a: Aplicacion) => void;
@@ -3460,17 +3459,19 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
 }) {
   const { s, colors } = useThemedStyles();
   const { t } = useTranslation();
-  const activos    = apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado');
-  const pendFirma  = apps.filter(a => a.estado === 'finalizado');
+
+  const [filtro, setFiltro] = useState<'incidencias' | 'porCupo' | 'porCertificar' | 'historial'>('incidencias');
+
+  const activos = apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado');
   const grupoActivas = solicitudesGrupo.filter(sg => sg.estado === 'aprobado' && sg.fechaInicio);
 
-  // Pasantes por CUPO en curso (`asignaciones_cupo` tomado y NO finalizado) —
-  // el flujo nuevo, que esta sección no contemplaba (solo veía `aplicaciones`).
+  // Pasantes por CUPO en curso (`asignaciones_cupo` tomado y NO finalizado).
   const [cuposActivos, setCuposActivos] = useState<any[]>([]);
-  // Cupo seleccionado en "Pasantes por cupo" → abre FechaPresentacionModal (el
-  // mismo cuadro de "primer día" que ya vive en CandidatosVacante), acotado a
-  // ESE estudiante: ver los datos de su pasantía y fijarle/editarle el Día 1.
+  // Cupo seleccionado → FechaPresentacionModal (detalle de su pasantía + fijar/
+  // editar el Día 1 + chat + ver perfil).
   const [cupoSel, setCupoSel] = useState<any | null>(null);
+  // Pasantía cuyo detalle se abre al tocar su nombre dentro de una tarjeta.
+  const [vacDetalle, setVacDetalle] = useState<VacanteDetalle | null>(null);
   useEffect(() => {
     if (!empresaId) return;
     const unsub = onSnapshot(
@@ -3485,192 +3486,260 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
     return unsub;
   }, [empresaId]);
 
-  // Pasantes que la empresa puede reportar: cupos activos + contratados
-  // individuales en curso. Traen su `universidadId` real, así que la incidencia
-  // llega a la universidad correcta sin lecturas extra. (Los pasantes de GRUPO
-  // quedan fuera: `alumnos[].id` puede ser sintético, no un uid real.)
+  // Libro de horas por cupo (Fase D): alimenta la barra "X/Y h" de cada tarjeta.
+  // Mismo hook que ya usan el Inicio y "Mis Estudiantes".
+  const inscripcionesCupo = useInscripcionesActivas('empresaId', empresaId);
+  const progresoDeCupo = (asignacionId: string) =>
+    inscripcionesCupo.find(i => i.asignacion.id === asignacionId)?.progreso ?? null;
+
+  // Abre el modal de detalle de la pasantía (mismo patrón que GrupoEstudiantesModal).
+  const abrirDetallePasantia = async (c: any) => {
+    if (!c.vacanteId) return;
+    try {
+      const snap = await getDoc(doc(db, 'vacantes', c.vacanteId));
+      setVacDetalle(
+        snap.exists()
+          ? ({ id: snap.id, ...(snap.data() as any) } as VacanteDetalle)
+          : ({ id: c.vacanteId, titulo: c.vacanteTitulo, nombre_empresa: c.empresaNombre, empresa_id: c.empresaId, horario: c.horario, categoria: 'pasantia' } as VacanteDetalle),
+      );
+    } catch {
+      setVacDetalle({ id: c.vacanteId, titulo: c.vacanteTitulo, nombre_empresa: c.empresaNombre, empresa_id: c.empresaId, horario: c.horario, categoria: 'pasantia' } as VacanteDetalle);
+    }
+  };
+
+  // Pasantes que la empresa puede reportar: cupos activos + contratados en curso.
   const pasantesReportables = useMemo<PasanteReportable[]>(() => {
     const map = new Map<string, PasanteReportable>();
     apps.filter(a => a.estado === 'contratado').forEach(a => {
-      if (a.estudiante_id) {
-        map.set(a.estudiante_id, {
-          id: a.estudiante_id,
-          nombre: a.estudiante_nombre || 'Estudiante',
-          universidadId: a.universidad_id ?? null,
-        });
-      }
+      if (a.estudiante_id) map.set(a.estudiante_id, { id: a.estudiante_id, nombre: a.estudiante_nombre || 'Estudiante', universidadId: a.universidad_id ?? null });
     });
     cuposActivos.forEach(c => {
-      if (c.estudianteId) {
-        map.set(c.estudianteId, {
-          id: c.estudianteId,
-          nombre: c.estudianteNombre || 'Estudiante',
-          universidadId: c.universidadId ?? null,
-        });
-      }
+      if (c.estudianteId) map.set(c.estudianteId, { id: c.estudianteId, nombre: c.estudianteNombre || 'Estudiante', universidadId: c.universidadId ?? null });
     });
     return [...map.values()];
   }, [apps, cuposActivos]);
   const [reportarOpen, setReportarOpen] = useState(false);
 
-  // Bandeja de incidencias: va en ESTA sección y no en Inicio porque una
-  // incidencia siempre habla de una pasantía en curso — es el mismo contexto.
-  // Se dibuja aunque esté vacía: si solo apareciera cuando hay problemas, la
-  // empresa nunca sabría que este canal existe hasta el día que lo necesita.
-  const Incidencias = (
-    <View style={{ marginBottom: 20 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
-        <Text style={s.activaNombre}>{t('inc_titulo')}</Text>
-        {pasantesReportables.length > 0 && (
-          <TouchableOpacity
-            onPress={() => setReportarOpen(true)}
-            activeOpacity={0.85}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.warning, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 }}
-          >
-            <Ionicons name="flag-outline" size={14} color={colors.warning} />
-            <Text style={{ fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: colors.warning }}>{t('inc_emp_reportar_btn')}</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <BandejaIncidencias rol="empresa" uid={empresaId} nombreUsuario={empresaNombre} />
-    </View>
+  const FiltroChip = ({ label, activo, onPress }: { label: string; activo: boolean; onPress: () => void }) => (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
+      style={{
+        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1,
+        borderColor: activo ? colors.primary : colors.border,
+        backgroundColor: activo ? colors.primary + '22' : 'transparent',
+      }}
+    >
+      <Text style={{ fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: activo ? colors.primaryLight : colors.textMuted }}>
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 
-  // Encabezado con las pasantías de grupo y su línea de tiempo porcentual.
-  const Grupos = grupoActivas.length === 0 ? null : (
-    <View style={{ marginBottom: 16 }}>
-      <Text style={[s.activaNombre, { marginBottom: 10 }]}>Pasantías de grupo</Text>
-      {grupoActivas.map(sg => {
-        const prog = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
-        // Con acuerdo firmado (el caso normal aquí, ya que `estado==='aprobado'`
-        // siempre lo trae), el % y el contador vienen de horas REALES
-        // trabajadas — más preciso que el % por fechas de calendario. Mismo
-        // helper que usa "Mis Estudiantes" del lado universidad, para que
-        // ambos vean el mismo avance de una misma pasantía.
-        const progreso = progresoDeGrupo({}, sg.acuerdo);
-        const pct = progreso.visible ? progreso.pct : prog.pct;
-        const color = prog.estado === 'completado' ? colors.gold : prog.estado === 'en_curso' ? colors.success : colors.primaryLight;
-        const conPago = sg.pago?.tipo === 'con_pago';
-        return (
-          <GlassCard key={sg.id} style={{ marginBottom: 8 }} contentStyle={{ padding: 16, gap: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.activaNombre} numberOfLines={1}>{sg.grupoNombre ?? 'Grupo'}</Text>
-                <Text style={s.activaMeta} numberOfLines={1}>
-                  {sg.carrera ?? ''}{sg.alumnos?.length ? ` · ${sg.alumnos.length} estudiante(s)` : ''}
-                </Text>
-              </View>
-              <Text style={[s.activaNombre, { color }]}>{pct}%</Text>
-            </View>
-            <View style={{ height: 6, backgroundColor: colors.backgroundSurface, borderRadius: 3, overflow: 'hidden' }}>
-              <View style={{ height: '100%', width: `${pct}%` as any, backgroundColor: color, borderRadius: 3 }} />
-            </View>
-            <Text style={s.activaMeta}>
-              {progreso.visible
-                ? progreso.label
-                : prog.estado === 'por_iniciar'
-                  ? `Inicia ${sg.fechaInicio}`
-                  : `Día ${prog.diasTranscurridos} de ${prog.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
-            </Text>
-            <Text style={[s.activaMeta, conPago && { color: colors.success }]}>
-              {conPago ? `Pago: $${Number(sg.pago?.monto ?? 0).toFixed(2)} / estudiante` : 'Sin pago'}
-            </Text>
-          </GlassCard>
-        );
-      })}
-      <Text style={[s.activaNombre, { marginTop: 14, marginBottom: 4 }]}>Pasantes individuales</Text>
-    </View>
-  );
-
-  const PasantesCupo = cuposActivos.length === 0 ? null : (
-    <View style={{ marginBottom: 16 }}>
-      <Text style={[s.activaNombre, { marginBottom: 10 }]}>Pasantes por cupo</Text>
-      {cuposActivos.map(c => (
-        <TouchableOpacity
-          key={c.id}
-          activeOpacity={0.85}
-          onPress={() => setCupoSel(c)}
-        >
-          <GlassCard style={{ marginBottom: 8 }} contentStyle={{ padding: 16, gap: 4 }}>
-            <Text style={s.activaNombre} numberOfLines={1} noTranslate>{c.estudianteNombre ?? 'Estudiante'}</Text>
-            {!!c.vacanteTitulo && <Text style={s.activaMeta} numberOfLines={1} noTranslate>{c.vacanteTitulo}</Text>}
-            <Text style={[s.activaMeta, !c.fechaPresentacion && { color: colors.warning }]}>
-              {c.fechaPresentacion ? `Día 1: ${c.fechaPresentacion}` : 'Primer día por definir · toca para fijarlo'}
-            </Text>
-          </GlassCard>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-
-  const Header = <>{Incidencias}{Grupos}{PasantesCupo}</>;
-
-  return (
+  // ── Contenido del filtro "Pasantes por cupo": cupos en curso + pasantías de
+  //    grupo + pasantes individuales legacy, todo junto (decisión del usuario). ──
+  const cuerpoPorCupo = (
     <>
-    <FlatList
-      data={activos}
-      keyExtractor={item => item.id}
-      ListHeaderComponent={Header}
-      contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
-      renderItem={({ item }) => {
-        const necesitaFirma = item.estado === 'finalizado';
+      {cuposActivos.map(c => {
+        const prog = progresoDeCupo(c.id);
         return (
-          <TouchableOpacity
-            activeOpacity={0.85}
-            disabled={!item.estudiante_id}
-            onPress={() => item.estudiante_id && onVerPerfil(item.estudiante_id)}
-          >
-            <GlassCard style={[{ marginBottom: 8 }, necesitaFirma && s.activaCardPendiente]} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.activaNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
-                {!!item.acuerdo && (
-                  <Text style={s.activaMeta} numberOfLines={1}>
-                    Horario: {item.acuerdo.dias.join(', ')} · {item.acuerdo.horaInicio} - {item.acuerdo.horaFin}
+          <TouchableOpacity key={c.id} activeOpacity={0.85} onPress={() => setCupoSel(c)}>
+            <GlassCard style={{ marginBottom: 8 }} contentStyle={{ padding: 16, gap: 6 }}>
+              {/* Nombre del estudiante → su vista de perfil */}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                disabled={!c.estudianteId}
+                onPress={() => c.estudianteId && onVerPerfil(c.estudianteId)}
+              >
+                <Text style={[s.activaNombre, !!c.estudianteId && { color: colors.primaryLight }]} numberOfLines={1} noTranslate>
+                  {c.estudianteNombre ?? 'Estudiante'}
+                </Text>
+              </TouchableOpacity>
+              <Text style={[s.activaMeta, !c.fechaPresentacion && { color: colors.warning }]}>
+                {c.fechaPresentacion ? `Día 1: ${c.fechaPresentacion}` : 'Primer día por definir · toca para fijarlo'}
+              </Text>
+              {/* Nombre de la pasantía → modal de detalle de esa pasantía */}
+              {!!c.vacanteTitulo && (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => abrirDetallePasantia(c)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}
+                >
+                  <Ionicons name="briefcase-outline" size={13} color={colors.primaryLight} />
+                  <Text style={{ flex: 1, fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: colors.primaryLight }} numberOfLines={1} noTranslate>
+                    {c.vacanteTitulo}
                   </Text>
-                )}
-                <Text style={s.activaMeta}>Horas: {item.horas_completadas ?? 0}</Text>
-              </View>
-              {necesitaFirma && (
-                <JellyButton style={s.firmarBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 }} onPress={() => onFirmar(item)}>
-                  <Ionicons name="pencil-outline" size={14} color="#fff" />
-                  <Text style={s.firmarText}>Firmar constancia</Text>
-                </JellyButton>
+                  <Ionicons name="chevron-forward" size={13} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+              {/* Barra de progreso "X/Y h" del libro de horas */}
+              {prog?.valido ? (
+                <View style={{ marginTop: 4, gap: 4 }}>
+                  <View style={{ height: 6, backgroundColor: colors.backgroundSurface, borderRadius: 3, overflow: 'hidden' }}>
+                    <View style={{ height: '100%', width: `${prog.pct}%` as any, backgroundColor: prog.completado ? colors.gold : colors.success, borderRadius: 3 }} />
+                  </View>
+                  <Text style={s.activaMeta} noTranslate>{prog.cumplidas}/{prog.meta} h · {prog.pct}%</Text>
+                </View>
+              ) : (
+                <Text style={s.activaMeta}>Sin fecha de inicio — el contador arranca cuando fijes el Día 1.</Text>
               )}
             </GlassCard>
           </TouchableOpacity>
         );
-      }}
-      ListEmptyComponent={
-        cuposActivos.length > 0 || grupoActivas.length > 0
-          ? null
-          : <Text style={s.emptyText}>Sin pasantes activos.</Text>
-      }
-    />
+      })}
 
-    {/* Cuadro de "primer día" acotado al estudiante que se tocó en la lista de
-        arriba. Reutiliza tal cual FechaPresentacionModal (detalle de la
-        pasantía + establecer/editar Día 1 + coordinar por chat + ver perfil);
-        `asignaciones_cupo` en vivo hace que la fila se actualice al guardar. */}
-    <FechaPresentacionModal
-      visible={!!cupoSel}
-      asignacion={cupoSel}
-      empresaId={empresaId}
-      empresaNombre={empresaNombre}
-      onClose={() => setCupoSel(null)}
-      onVerPerfil={onVerPerfil}
-    />
+      {grupoActivas.length > 0 && (
+        <>
+          <Text style={[s.activaNombre, { marginTop: cuposActivos.length ? 14 : 0, marginBottom: 10 }]}>Pasantías de grupo</Text>
+          {grupoActivas.map(sg => {
+            const progF = progresoPorFechas(sg.fechaInicio, sg.fechaFin);
+            const progreso = progresoDeGrupo({}, sg.acuerdo);
+            const pct = progreso.visible ? progreso.pct : progF.pct;
+            const color = progF.estado === 'completado' ? colors.gold : progF.estado === 'en_curso' ? colors.success : colors.primaryLight;
+            const conPago = sg.pago?.tipo === 'con_pago';
+            return (
+              <GlassCard key={sg.id} style={{ marginBottom: 8 }} contentStyle={{ padding: 16, gap: 8 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.activaNombre} numberOfLines={1}>{sg.grupoNombre ?? 'Grupo'}</Text>
+                    <Text style={s.activaMeta} numberOfLines={1}>
+                      {sg.carrera ?? ''}{sg.alumnos?.length ? ` · ${sg.alumnos.length} estudiante(s)` : ''}
+                    </Text>
+                  </View>
+                  <Text style={[s.activaNombre, { color }]}>{pct}%</Text>
+                </View>
+                <View style={{ height: 6, backgroundColor: colors.backgroundSurface, borderRadius: 3, overflow: 'hidden' }}>
+                  <View style={{ height: '100%', width: `${pct}%` as any, backgroundColor: color, borderRadius: 3 }} />
+                </View>
+                <Text style={s.activaMeta}>
+                  {progreso.visible
+                    ? progreso.label
+                    : progF.estado === 'por_iniciar'
+                      ? `Inicia ${sg.fechaInicio}`
+                      : `Día ${progF.diasTranscurridos} de ${progF.diasTotales} · ${sg.fechaInicio} → ${sg.fechaFin}`}
+                </Text>
+                <Text style={[s.activaMeta, conPago && { color: colors.success }]}>
+                  {conPago ? `Pago: $${Number(sg.pago?.monto ?? 0).toFixed(2)} / estudiante` : 'Sin pago'}
+                </Text>
+              </GlassCard>
+            );
+          })}
+        </>
+      )}
 
-    {/* Reportar a un pasante (llegadas tarde, ausencias, tareas sin cumplir…).
-        Escribe en `incidencias` con origen 'empresa'; lo revisa la universidad
-        del estudiante. */}
-    <ReportarIncidenciaEmpresaModal
-      visible={reportarOpen}
-      onClose={() => setReportarOpen(false)}
-      empresaId={empresaId}
-      empresaNombre={empresaNombre}
-      estudiantes={pasantesReportables}
-    />
+      {activos.length > 0 && (
+        <>
+          <Text style={[s.activaNombre, { marginTop: 14, marginBottom: 10 }]}>Pasantes individuales</Text>
+          {activos.map(item => {
+            const necesitaFirma = item.estado === 'finalizado';
+            return (
+              <TouchableOpacity
+                key={item.id}
+                activeOpacity={0.85}
+                disabled={!item.estudiante_id}
+                onPress={() => item.estudiante_id && onVerPerfil(item.estudiante_id)}
+              >
+                <GlassCard style={[{ marginBottom: 8 }, necesitaFirma && s.activaCardPendiente]} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.activaNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
+                    {!!item.acuerdo && (
+                      <Text style={s.activaMeta} numberOfLines={1}>
+                        Horario: {item.acuerdo.dias.join(', ')} · {item.acuerdo.horaInicio} - {item.acuerdo.horaFin}
+                      </Text>
+                    )}
+                    <Text style={s.activaMeta}>Horas: {item.horas_completadas ?? 0}</Text>
+                  </View>
+                  {necesitaFirma && (
+                    <JellyButton style={s.firmarBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 }} onPress={() => onFirmar(item)}>
+                      <Ionicons name="pencil-outline" size={14} color="#fff" />
+                      <Text style={s.firmarText}>Firmar constancia</Text>
+                    </JellyButton>
+                  )}
+                </GlassCard>
+              </TouchableOpacity>
+            );
+          })}
+        </>
+      )}
+
+      {cuposActivos.length === 0 && grupoActivas.length === 0 && activos.length === 0 && (
+        <Text style={s.emptyText}>Sin pasantes activos.</Text>
+      )}
     </>
+  );
+
+  return (
+    <View style={{ flex: 1 }}>
+      {/* Botones-filtro de la parte principal (se entra en "Incidencias"). */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
+        <FiltroChip label="Incidencias" activo={filtro === 'incidencias'} onPress={() => setFiltro('incidencias')} />
+        <FiltroChip label={`Pasantes por cupo (${cuposActivos.length + grupoActivas.length + activos.length})`} activo={filtro === 'porCupo'} onPress={() => setFiltro('porCupo')} />
+        <FiltroChip label="Pasantes por certificar" activo={filtro === 'porCertificar'} onPress={() => setFiltro('porCertificar')} />
+        <FiltroChip label="Historial de Pasantes" activo={filtro === 'historial'} onPress={() => setFiltro('historial')} />
+      </View>
+
+      {filtro === 'incidencias' && (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+          {pasantesReportables.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setReportarOpen(true)}
+              activeOpacity={0.85}
+              style={{ alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.warning, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 12 }}
+            >
+              <Ionicons name="flag-outline" size={14} color={colors.warning} />
+              <Text style={{ fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: colors.warning }}>{t('inc_emp_reportar_btn')}</Text>
+            </TouchableOpacity>
+          )}
+          <BandejaIncidencias rol="empresa" uid={empresaId} nombreUsuario={empresaNombre} />
+        </ScrollView>
+      )}
+
+      {filtro === 'porCupo' && (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+          {cuerpoPorCupo}
+        </ScrollView>
+      )}
+
+      {filtro === 'porCertificar' && (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+          <Text style={[s.activaMeta, { marginBottom: 12 }]}>
+            Pasantes que ya cumplieron su tiempo. Envía su comprobante de finalización para que la universidad lo valide y los certifique.
+          </Text>
+          <ComprobantePasantiaCard rol="empresa" uid={empresaId} />
+        </ScrollView>
+      )}
+
+      {filtro === 'historial' && (
+        <HistorialPasantes empresaId={empresaId} empresaNombre={empresaNombre} />
+      )}
+
+      {/* FechaPresentacionModal: detalle de la pasantía del cupo + fijar/editar
+          Día 1 + chat + ver perfil. `asignaciones_cupo` en vivo refresca la fila. */}
+      <FechaPresentacionModal
+        visible={!!cupoSel}
+        asignacion={cupoSel}
+        empresaId={empresaId}
+        empresaNombre={empresaNombre}
+        onClose={() => setCupoSel(null)}
+        onVerPerfil={onVerPerfil}
+      />
+
+      {/* Detalle de la pasantía, abierto al tocar su nombre en una tarjeta. */}
+      <VacanteDetailModal
+        visible={!!vacDetalle}
+        vacante={vacDetalle}
+        onClose={() => setVacDetalle(null)}
+      />
+
+      {/* Reportar a un pasante (llegadas tarde, ausencias, tareas sin cumplir…). */}
+      <ReportarIncidenciaEmpresaModal
+        visible={reportarOpen}
+        onClose={() => setReportarOpen(false)}
+        empresaId={empresaId}
+        empresaNombre={empresaNombre}
+        estudiantes={pasantesReportables}
+      />
+    </View>
   );
 }
 

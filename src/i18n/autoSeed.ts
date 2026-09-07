@@ -857,6 +857,12 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Sin fecha de inicio": "No start date yet",
   "Primer día por definir": "First day not set yet",
   "Primer día por definir · toca para fijarlo": "First day not set yet · tap to set it",
+  // ── Botones-filtro de la sección "Pasantías" del dashboard de empresa ──
+  "Pasantes por certificar": "Interns pending certification",
+  "Sin fecha de inicio — el contador arranca cuando fijes el Día 1.":
+    "No start date — the counter begins once you set Day 1.",
+  "Pasantes que ya cumplieron su tiempo. Envía su comprobante de finalización para que la universidad lo valide y los certifique.":
+    "Interns who have completed their time. Send their completion certificate so the university can validate it and certify them.",
   // ── Currículum en el vistazo del perfil del estudiante ──
   "Currículum": "Résumé",
   "Ver CV": "View CV",
