@@ -977,6 +977,29 @@ export default function DashboardEmpresa() {
     return unsub;
   }, [user]);
 
+  // Horas de pasantías POR CUPO ya CERTIFICADAS: la universidad validó el
+  // comprobante de finalización (`comprobantes_pasantia.estado === 'validado'`,
+  // el mismo momento en que `validarComprobante` acredita las horas al
+  // expediente del estudiante). Es el tercer camino de "Horas validadas", que
+  // hoy solo suma el flujo individual (`aplicaciones.horas_completadas`) y el
+  // de grupo (`horasPorGrupo`). La empresa lee sus propios comprobantes por
+  // `empresaId` (regla ya existente); no hace falta cambiar reglas.
+  const [horasCupoValidadas, setHorasCupoValidadas] = useState(0);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'comprobantes_pasantia'), where('empresaId', '==', user.uid)),
+      snap => setHorasCupoValidadas(
+        snap.docs.reduce((acc, d) => {
+          const c = d.data() as any;
+          return c.estado === 'validado' ? acc + (Number(c.horasCumplidas) || 0) : acc;
+        }, 0),
+      ),
+      error => console.warn('Error en listener (comprobantes validados empresa):', error),
+    );
+    return unsub;
+  }, [user?.uid]);
+
   // ── Autoreporta el promedio de calificaciones y el top 5 de mejores
   // estudiantes con los que ha trabajado — cubre los 3 caminos de admisión
   // (grupo completo, reparto de cupos, vacante individual) porque un
@@ -1106,12 +1129,14 @@ export default function DashboardEmpresa() {
       solicitudesGrupo
         .filter(sg => sg.estado === 'aprobado')
         .reduce((acc, sg) => acc + (sg.alumnos?.length ?? 0), 0),
-    // "Horas validadas": horas del flujo individual (`aplicaciones.horas_completadas`)
-    // + horas certificadas de los estudiantes de grupo (ver `horasPorGrupo` arriba).
+    // "Horas validadas": horas certificadas por los TRES caminos de pasantía —
+    // flujo individual (`aplicaciones.horas_completadas`), grupo (`horasPorGrupo`)
+    // y cupo con comprobante validado por la universidad (`horasCupoValidadas`).
     horasValidadas:
       apps.reduce((acc, a) => acc + (a.horas_completadas ?? 0), 0) +
-      Object.values(horasPorGrupo).reduce((acc, h) => acc + h, 0),
-  }), [vacantes, apps, solicitudesGrupo, horasPorGrupo]);
+      Object.values(horasPorGrupo).reduce((acc, h) => acc + h, 0) +
+      horasCupoValidadas,
+  }), [vacantes, apps, solicitudesGrupo, horasPorGrupo, horasCupoValidadas]);
 
   // ── Límite de vacantes según el plan ─────────────────────────────
   const limiteVacantes   = perfil?.limiteVacantes ?? 2;
