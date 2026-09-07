@@ -52,7 +52,7 @@ export function makeChartConfig(colors: GradlyColors, isDark: boolean) {
 }
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-const MEDALLAS = ['🥇', '🥈', '🥉', '4°', '5°'];
+const MEDALLAS = ['🥇', '🥈', '🥉'];
 
 // ═════════════════════════════════════════════
 // BANNER: ESTADÍSTICAS DE LA RED GRADLY
@@ -140,7 +140,7 @@ export function RedGradlyBanner() {
             })
             .filter(e => e.alianzas > 0)
             .sort((a, b) => b.score - a.score)
-            .slice(0, 5)
+            .slice(0, 3)
             .map(({ id, nombre, alianzas, calificacion }) => ({ id, nombre, alianzas, calificacion }));
 
         setTopEmpresas(construirRanking(empSnap.docs, 'nombre_empresa', 'aliados_universidades_ids'));
