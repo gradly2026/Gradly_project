@@ -16,7 +16,7 @@
  *   "Certificado" (100% de horas de pasantía completadas).
  */
 import { Ionicons } from '@expo/vector-icons';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -42,6 +42,8 @@ import TrabajaParaCard from './TrabajaParaCard';
 import ReportarUsuarioModal from './ReportarUsuarioModal';
 import UbicacionCardSV from './UbicacionCardSV';
 import UbicacionPrecisaModal from './UbicacionPrecisaModal';
+import TopEstudiantesCard from './TopEstudiantesCard';
+import type { TopEstudianteEntry } from '../services/topEstudiantesService';
 
 export type ProfileTipo = 'estudiante' | 'empresa' | 'universidad';
 
@@ -78,8 +80,17 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
 
   const [showReportar, setShowReportar] = useState(false);
   const [verUbicPrecisa, setVerUbicPrecisa] = useState(false);
+  // Estudiante destacado abierto desde el cuadro "Estudiantes destacados".
+  const [verEstudianteId, setVerEstudianteId] = useState<string | null>(null);
+  // "En qué empresa hizo su pasantía" (solo si el que mira puede leerlo).
+  const [empresaPasantia, setEmpresaPasantia] = useState<{ id: string; nombre: string } | null>(null);
 
   const puedeVerUbicacion = rol === 'empresa' || rol === 'universidad';
+  // Los cuadros de "estudiantes destacados" (auto-reportados en el perfil) solo
+  // se muestran a quien ya puede leer datos de estudiantes: empresa / universidad
+  // / admin. Ver topEstudiantesService.
+  const puedeVerTopEst = rol === 'empresa' || rol === 'universidad' || rol === 'admin';
+  const topEstudiantes: TopEstudianteEntry[] = Array.isArray(data?.top_estudiantes) ? data.top_estudiantes : [];
 
   // Paleta suelta para <TrabajaParaCard> (trae su propio StyleSheet y espera
   // tokens individuales, no el objeto `colors` completo del tema).
@@ -138,6 +149,25 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
       }
     })();
 
+    return () => { cancel = true; };
+  }, [visible, profileId, tipo]);
+
+  // ── "Empresa de su pasantía" (solo estudiante) ──
+  // Best-effort: las reglas de `asignaciones_cupo` solo dejan leer al propio
+  // estudiante / su universidad / la empresa del cupo / admin. Si la lectura
+  // falla o no hay pasantía, la fila simplemente no se muestra.
+  useEffect(() => {
+    if (!visible || !profileId || tipo !== 'estudiante') { setEmpresaPasantia(null); return; }
+    let cancel = false;
+    getDocs(query(collection(db, 'asignaciones_cupo'), where('estudianteId', '==', profileId)))
+      .then(snap => {
+        if (cancel) return;
+        const a = snap.docs
+          .map(d => d.data() as any)
+          .find(x => x.estado !== 'cancelado' && (x.empresaNombre || x.empresaId));
+        setEmpresaPasantia(a ? { id: a.empresaId ?? '', nombre: a.empresaNombre ?? 'Empresa' } : null);
+      })
+      .catch(() => { if (!cancel) setEmpresaPasantia(null); });
     return () => { cancel = true; };
   }, [visible, profileId, tipo]);
 
@@ -378,6 +408,9 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                     <InfoRow icon="globe-outline" label="Web" value={String(data.web)} colors={colors} styles={styles} noTranslate />
                   )}
                   <InfoRow icon="school-outline" label="Universidad vinculada" value={uniNombre || 'No disponible'} colors={colors} styles={styles} noTranslate={!!uniNombre} />
+                  {empresaPasantia && (
+                    <InfoRow icon="briefcase-outline" label="Empresa de su pasantía" value={empresaPasantia.nombre} colors={colors} styles={styles} noTranslate />
+                  )}
                   <InfoRow icon="people-outline" label="Grupo" value={grupoNombre || 'Sin grupo'} colors={colors} styles={styles} noTranslate={!!grupoNombre} />
                   {(() => {
                     const ubic = [data.distrito ?? data.ciudad, data.departamento].filter(Boolean).join(', ');
@@ -490,6 +523,19 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
               </View>
             )}
 
+            {/* Estudiantes destacados — solo para empresa / universidad / admin
+                (ver puedeVerTopEst). Los datos vienen auto-reportados en el
+                propio perfil (topEstudiantesService). */}
+            {(tipo === 'empresa' || tipo === 'universidad') && puedeVerTopEst && topEstudiantes.length > 0 && (
+              <View style={styles.section}>
+                <TopEstudiantesCard
+                  titulo={tipo === 'empresa' ? 'Estudiantes destacados en sus puestos' : 'Estudiantes más destacados'}
+                  entries={topEstudiantes}
+                  onVerEstudiante={setVerEstudianteId}
+                />
+              </View>
+            )}
+
             {(data.departamento || data.distrito || data.ciudad) && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Ubicación</Text>
@@ -530,6 +576,16 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
         distrito={data.distrito ?? data.ciudad}
         puntoGuardado={data.ubicacion_precisa ?? null}
         soloLectura
+      />
+    )}
+
+    {/* Perfil de un estudiante destacado, abierto desde el cuadro de arriba. */}
+    {verEstudianteId && (
+      <ProfileViewerModal
+        visible
+        tipo="estudiante"
+        profileId={verEstudianteId}
+        onClose={() => setVerEstudianteId(null)}
       />
     )}
     </>

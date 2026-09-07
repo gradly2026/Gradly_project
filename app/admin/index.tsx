@@ -15,6 +15,7 @@ import {
 import { BarChart } from "react-native-chart-kit";
 import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
 import ProfileViewerModal, { type ProfileTipo } from "../../src/components/ProfileViewerModal";
+import { RedGradlyBanner } from "../../src/components/NetworkStats";
 import SalirSesionModal from "../../src/components/SalirSesionModal";
 import { signOut } from "firebase/auth";
 import {
@@ -2665,6 +2666,10 @@ export default function AdminPreview() {
             </View>
           </View>
         </View>
+
+        {/* Estadísticas de la Red Gradly (Top Empresas / Universidades /
+            Estudiantes) — mismas tarjetas que ven empresa y universidad. */}
+        <RedGradlyBanner />
 
         {usersLoading || platformLoading ? (
           <View style={{ paddingVertical: 28, alignItems: "center" }}>

@@ -61,7 +61,6 @@ interface Props {
 interface GrupoInfo {
   nombre: string;
   carrera: string;
-  docente: string;
   horas: number | null;
   fechaCreacion: any;
 }
@@ -137,7 +136,6 @@ export default function GrupoEstudiantesModal({
         setGrupo({
           nombre: g.nombre ?? 'Grupo',
           carrera: g.carrera ?? '',
-          docente: g.docente ?? '',
           horas: g.total_horas ?? g.horasRequeridas ?? null,
           fechaCreacion: g.fecha_creacion ?? null,
         });
@@ -316,9 +314,6 @@ export default function GrupoEstudiantesModal({
                 <InfoRow icon="book-outline" label="Carrera o especialidad" value={grupo.carrera || 'No especificada'} s={s} colors={colors} />
                 <InfoRow icon="calendar-outline" label="Fecha de creación" value={fechaCorta(grupo.fechaCreacion)} s={s} colors={colors} />
                 <InfoRow icon="time-outline" label="Horas a cumplir" value={grupo.horas ? `${grupo.horas} horas` : 'No especificado'} s={s} colors={colors} />
-                {!!grupo.docente && (
-                  <InfoRow icon="person-outline" label="Docente" value={grupo.docente} s={s} colors={colors} />
-                )}
                 <TouchableOpacity style={s.chatGrupoBtn} onPress={abrirChatGrupo} disabled={chatCargando} activeOpacity={0.85}>
                   {chatCargando
                     ? <ActivityIndicator size="small" color="#fff" />

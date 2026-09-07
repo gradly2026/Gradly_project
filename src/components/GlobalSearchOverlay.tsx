@@ -35,6 +35,7 @@ import { calcularRango, type RangoTier } from '../services/feedbackService';
 import ProfileViewerModal, { type ProfileTipo } from './ProfileViewerModal';
 import SelloEmpresa from './SelloEmpresa';
 import StorageAvatar from './StorageAvatar';
+import VacanteDetailModal, { type VacanteDetalle } from './VacanteDetailModal';
 
 interface Props {
   visible: boolean;
@@ -55,6 +56,9 @@ interface SearchItem {
   verificado?: boolean;
   /** Tier de prestigio de la empresa (para el sello en resultados). */
   empresaTier?: RangoTier;
+  /** Solo en `tipo: 'vacante'`: 'vacante' | 'pasantia' (ausente = pasantía legada).
+   *  Define el rótulo real ("Vacante" vs "Pasantía"). */
+  categoria?: string;
 }
 
 /** Tier de prestigio de una empresa a partir de su XP. */
@@ -112,6 +116,8 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
   const [raw, setRaw] = useState<SearchItem[]>([]);
   const [cargando, setCargando] = useState(false);
   const [perfil, setPerfil] = useState<{ tipo: ProfileTipo; id: string } | null>(null);
+  // Pasantía/vacante cuyo detalle se abre sobre el buscador.
+  const [vacDetalle, setVacDetalle] = useState<VacanteDetalle | null>(null);
 
   // ── Datos para ordenar por afinidad (carrera ↔ área de vacante) ──
   // Empresa buscando estudiantes: áreas de MIS vacantes activas.
@@ -123,7 +129,7 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
   // ── Cargar datos según rol al abrir ──────────────────────────────
   useEffect(() => {
     if (!visible) {
-      setTexto(''); setRaw([]);
+      setTexto(''); setRaw([]); setVacDetalle(null);
       setMisAreasEmpresa(new Set()); setMiCarreraEstudiante(null); setEmpresaAreasMap(new Map());
       return;
     }
@@ -143,7 +149,14 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
               ? getDocs(query(collection(db, 'perfiles_estudiantes'), where('universidad_id', '==', user.uid), limit(100)))
               : Promise.resolve({ docs: [] as any[] }),
           ]);
-          vac.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'vacante', titulo: x.titulo ?? 'Vacante', subtitulo: x.nombre_empresa ?? '', carrera: x.area }); });
+          // La universidad SOLO gestiona pasantías: se descartan las
+          // publicaciones `categoria: 'vacante'` (empleo para graduados) y el
+          // rótulo del resto es "Pasantía", no "Vacante".
+          vac.docs.forEach((d: any) => {
+            const x = d.data();
+            if (x.categoria === 'vacante') return;
+            items.push({ id: d.id, tipo: 'vacante', titulo: x.titulo ?? 'Pasantía', subtitulo: x.nombre_empresa ?? '', carrera: x.area, categoria: x.categoria ?? 'pasantia' });
+          });
           emp.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'empresa', titulo: x.nombre_empresa ?? 'Empresa', subtitulo: x.industria ?? '', foto: x.logo_url, verificado: x.verificado ?? false, empresaTier: tierEmpresa(x) }); });
           est.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'estudiante', titulo: x.nombre_completo ?? 'Estudiante', subtitulo: x.carrera ?? '', carrera: x.carrera, foto: x.foto_url }); });
         } else if (rol === 'empresa') {
@@ -245,15 +258,30 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
     return [...lista].sort((a, b) => puntuarAfinidad(b) - puntuarAfinidad(a));
   }, [raw, texto, rol, misAreasEmpresa, misAreasEstudianteSet, empresaAreasMap]);
 
-  const handlePress = (item: SearchItem) => {
+  const handlePress = async (item: SearchItem) => {
     if (PERFIL_TIPOS.includes(item.tipo)) {
       const tipo = item.tipo as ProfileTipo;
       onResultPress?.(tipo, item.id);
       setPerfil({ tipo, id: item.id }); // abre el perfil sobre el buscador
-    } else {
-      // Vacantes / grupos: por ahora solo cierran el buscador
-      onClose();
+      return;
     }
+    if (item.tipo === 'vacante') {
+      // Abre el detalle de la pasantía/vacante SOBRE el buscador (mismo
+      // patrón que el perfil). Se lee el documento completo para el modal.
+      try {
+        const snap = await getDoc(doc(db, 'vacantes', item.id));
+        setVacDetalle(
+          snap.exists()
+            ? ({ id: snap.id, ...(snap.data() as any) } as VacanteDetalle)
+            : ({ id: item.id, titulo: item.titulo, nombre_empresa: item.subtitulo, categoria: item.categoria } as VacanteDetalle),
+        );
+      } catch {
+        setVacDetalle({ id: item.id, titulo: item.titulo, nombre_empresa: item.subtitulo, categoria: item.categoria } as VacanteDetalle);
+      }
+      return;
+    }
+    // Grupos: por ahora solo cierran el buscador.
+    onClose();
   };
 
   // Inicia (o reutiliza) el chat directo con el perfil seleccionado. El doc id
@@ -322,6 +350,10 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
                 }
                 renderItem={({ item }) => {
                   const meta = TIPO_META[item.tipo];
+                  // El rótulo de una publicación depende de su categoría real.
+                  const rotulo = item.tipo === 'vacante'
+                    ? (item.categoria === 'vacante' ? 'Vacante' : 'Pasantía')
+                    : meta.label;
                   const esPerfil = PERFIL_TIPOS.includes(item.tipo);
                   const esAfin = puntuarAfinidad(item) === 1;
                   return (
@@ -341,7 +373,7 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
                           )}
                         </View>
                         <Text style={styles.resultSub} numberOfLines={1}>
-                          {meta.label}{item.subtitulo ? ` · ${item.subtitulo}` : ''}
+                          {rotulo}{item.subtitulo ? ` · ${item.subtitulo}` : ''}
                         </Text>
                         {esAfin && (
                           <View style={styles.afinBadge}>
@@ -385,6 +417,15 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
           onClose={() => { setPerfil(null); onClose(); }}
         />
       )}
+
+      {/* Detalle de pasantía/vacante sobre el buscador. Para la universidad
+          incluye el cuadro de sus estudiantes ya inscritos. */}
+      <VacanteDetailModal
+        visible={!!vacDetalle}
+        vacante={vacDetalle}
+        onClose={() => { setVacDetalle(null); onClose(); }}
+        inscritosUniversidadId={rol === 'universidad' ? user?.uid : undefined}
+      />
     </>
   );
 }

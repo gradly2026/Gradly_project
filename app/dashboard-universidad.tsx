@@ -155,6 +155,7 @@ import { showConfirm, showAlert } from '../src/components/AppAlert';
 import ProfileViewerModal from '../src/components/ProfileViewerModal';
 import CertificarPasanteModal from '../src/components/CertificarPasanteModal';
 import GrupoEstudiantesModal from '../src/components/GrupoEstudiantesModal';
+import { recomputarTopEstudiantesUniversidad } from '../src/services/topEstudiantesService';
 import { suscribirComprobantesDeRol, type Comprobante } from '../src/services/comprobanteService';
 import { getFeedbackPendiente, type FeedbackPendiente } from '../src/services/feedbackService';
 import { eliminarEstudiante as eliminarEstudianteCF, eliminarGrupo as eliminarGrupoCF } from '../src/services/universidadService';
@@ -496,6 +497,12 @@ export default function DashboardUniversidad() {
   const { user, userProfile } = useAuth();
   const router = useRouter();
   const { styles, colors, isDark } = useThemedStyles();
+
+  // Auto-reporte del top de estudiantes destacados a su propio perfil, para
+  // que empresas/estudiantes lo puedan leer (ver topEstudiantesService).
+  useEffect(() => {
+    if (user?.uid) void recomputarTopEstudiantesUniversidad(user.uid);
+  }, [user?.uid]);
 
   // Deep link desde la campanita: una notificación de fin de pasantía por cupo
   // ("Estudiante culminó su pasantía" / "Comprobante de pasantía recibido" /

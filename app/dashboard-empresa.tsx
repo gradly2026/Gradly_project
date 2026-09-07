@@ -96,6 +96,7 @@ import { OnboardingBubble, useOnboarding } from '../src/components/OnboardingTou
 import { useAuth } from '../src/context/AuthContext';
 import { subscribeUnreadTotal } from '../src/services/chatService';
 import { enviarNotificacion } from '../src/services/notificationService';
+import { recomputarTopEstudiantesEmpresa } from '../src/services/topEstudiantesService';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
@@ -503,6 +504,12 @@ export default function DashboardEmpresa() {
   const { styles, colors, s, isDark } = useThemedStyles();
   const mapStyles = useMemo(() => makeMapStyles(colors), [colors]);
   const [showPerfil, setShowPerfil] = useState(false);
+
+  // Auto-reporte del top de estudiantes contratados a su propio perfil, para
+  // que universidades/estudiantes lo puedan leer (ver topEstudiantesService).
+  useEffect(() => {
+    if (user?.uid) void recomputarTopEstudiantesEmpresa(user.uid);
+  }, [user?.uid]);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
 

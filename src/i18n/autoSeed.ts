@@ -1839,3 +1839,14 @@ export const GRUPO_DETALLE_SEED_EN: Record<string, string> = {
     "No student from your university has enrolled in this internship yet.",
   "Sin cupos por liberar": "No spots to release",
 };
+
+// ── Cuadros de "estudiantes destacados" (TopEstudiantesCard) — en la vista de
+// perfil de empresa/universidad, en la Red Gradly y en el panel admin — y el
+// dato "empresa de su pasantía" en el perfil del estudiante. Los nombres,
+// puestos y universidades van con `noTranslate` (datos propios). ──
+export const TOP_ESTUDIANTES_SEED_EN: Record<string, string> = {
+  "Estudiantes destacados en sus puestos": "Standout students in their roles",
+  "Estudiantes más destacados": "Top standout students",
+  "Top Estudiantes": "Top Students",
+  "Empresa de su pasantía": "Internship company",
+};

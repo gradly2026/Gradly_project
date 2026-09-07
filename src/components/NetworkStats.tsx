@@ -16,7 +16,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text, useAutoText } from "./AutoText";
 import { BarChart } from 'react-native-chart-kit';
-import PerfilPublicoModal from '../../components/PerfilPublicoModal';
+import PerfilPublicoModal, { type PerfilRol } from '../../components/PerfilPublicoModal';
+import TopEstudiantesCard from './TopEstudiantesCard';
+import type { TopEstudianteEntry } from '../services/topEstudiantesService';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
@@ -58,6 +60,8 @@ const MEDALLAS = ['🥇', '🥈', '🥉', '4°', '5°'];
 /** Fila del ranking: alianzas (contrapartes únicas con pasantía real) +
  * calificación promedio de los estudiantes vinculados a esas pasantías. */
 interface RankEntry {
+  /** id del perfil (empresa/universidad) — para abrir su vista al tocarlo. */
+  id: string;
   nombre: string;
   alianzas: number;
   /** null = ningún estudiante vinculado tiene calificaciones aún (no se penaliza). */
@@ -72,15 +76,22 @@ const CALIFICACION_NEUTRA = 2.5;
 
 export function RedGradlyBanner() {
   const { colors, isDark } = useTheme();
-  const { user } = useAuth();
+  const { user, rol } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [topEmpresas, setTopEmpresas] = useState<RankEntry[]>([]);
   const [topUnis, setTopUnis] = useState<RankEntry[]>([]);
+  // Top 5 de estudiantes certificados destacados — agregado de los
+  // `top_estudiantes` auto-reportados en cada perfil de empresa/universidad
+  // (topEstudiantesService). Solo se muestra a quien puede leer datos de
+  // estudiantes: NO se arma ni se pinta para el rol 'estudiante'.
+  const [topEst, setTopEst] = useState<TopEstudianteEntry[]>([]);
+  // Perfil (empresa / universidad / estudiante) abierto desde un ranking.
+  const [verPerfil, setVerPerfil] = useState<{ rol: PerfilRol; id: string } | null>(null);
 
   useEffect(() => {
     // No ejecutar consultas a Firestore sin sesión activa.
-    if (!user?.uid) { setTopEmpresas([]); setTopUnis([]); return; }
+    if (!user?.uid) { setTopEmpresas([]); setTopUnis([]); setTopEst([]); return; }
     let cancel = false;
     (async () => {
       try {
@@ -119,6 +130,7 @@ export function RedGradlyBanner() {
                   ? data.calificacion_estudiantes_promedio
                   : null;
               return {
+                id: d.id,
                 nombre: (data[campoNombre] as string) ?? '—',
                 alianzas: aliados.length,
                 calificacion,
@@ -128,10 +140,33 @@ export function RedGradlyBanner() {
             .filter(e => e.alianzas > 0)
             .sort((a, b) => b.score - a.score)
             .slice(0, 5)
-            .map(({ nombre, alianzas, calificacion }) => ({ nombre, alianzas, calificacion }));
+            .map(({ id, nombre, alianzas, calificacion }) => ({ id, nombre, alianzas, calificacion }));
 
         setTopEmpresas(construirRanking(empSnap.docs, 'nombre_empresa', 'aliados_universidades_ids'));
         setTopUnis(construirRanking(uniSnap.docs, 'nombre_universidad', 'aliados_empresas_ids'));
+
+        // ── Top 5 estudiantes: agrega los `top_estudiantes` de todos los
+        // perfiles leídos, dedup por id (se prefiere la entrada con datos de
+        // empleo — la de la empresa), y ordena por estrellas. ──
+        if (rol !== 'estudiante') {
+          const porId = new Map<string, TopEstudianteEntry>();
+          const absorber = (arr: any) => {
+            (Array.isArray(arr) ? arr : []).forEach((e: any) => {
+              if (!e?.id) return;
+              const prev = porId.get(e.id);
+              if (!prev || (e.contratado && !prev.contratado)) porId.set(e.id, e as TopEstudianteEntry);
+            });
+          };
+          empSnap.docs.forEach(d => absorber((d.data() as any).top_estudiantes));
+          uniSnap.docs.forEach(d => absorber((d.data() as any).top_estudiantes));
+          setTopEst(
+            Array.from(porId.values())
+              .sort((a, b) => (Number(b.stars) || 0) - (Number(a.stars) || 0))
+              .slice(0, 5),
+          );
+        } else {
+          setTopEst([]);
+        }
       } catch (e) {
         // No crítico (banner informativo) — se registra pero no debe verse
         // como un crash en el LogBox del usuario.
@@ -139,13 +174,13 @@ export function RedGradlyBanner() {
       }
     })();
     return () => { cancel = true; };
-  }, [user?.uid]);
+  }, [user?.uid, rol]);
 
   const cardWidth = SCREEN_W - 64;
 
-  const RankCard = ({ titulo, icon, color, data }: {
+  const RankCard = ({ titulo, icon, color, data, perfilRol }: {
     titulo: string; icon: keyof typeof Ionicons.glyphMap; color: string;
-    data: RankEntry[];
+    data: RankEntry[]; perfilRol: PerfilRol;
   }) => (
     <BlurView
       intensity={isDark ? 30 : 55}
@@ -160,9 +195,16 @@ export function RedGradlyBanner() {
         <Text style={styles.rankEmpty}>Aún sin datos suficientes.</Text>
       ) : (
         data.map((e, i) => (
-          <View key={`${e.nombre}-${i}`} style={styles.rankRow}>
+          <View key={`${e.id}-${i}`} style={styles.rankRow}>
             <Text style={styles.rankMedal}>{MEDALLAS[i]}</Text>
-            <Text style={styles.rankName} numberOfLines={1}>{e.nombre}</Text>
+            <TouchableOpacity
+              style={{ flex: 1 }}
+              activeOpacity={e.id ? 0.7 : 1}
+              disabled={!e.id}
+              onPress={() => e.id && setVerPerfil({ rol: perfilRol, id: e.id })}
+            >
+              <Text style={styles.rankName} numberOfLines={1}>{e.nombre}</Text>
+            </TouchableOpacity>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={[styles.rankValue, { color }]}>{e.alianzas} alianza{e.alianzas === 1 ? '' : 's'}</Text>
               <Text style={styles.rankStars}>
@@ -185,9 +227,32 @@ export function RedGradlyBanner() {
         decelerationRate="fast"
         contentContainerStyle={{ gap: 12, paddingRight: 16 }}
       >
-        <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} />
-        <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} />
+        <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} perfilRol="empresa" />
+        <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} perfilRol="universidad" />
+        {/* Top 5 estudiantes certificados destacados — solo visible para
+            empresa / universidad / admin (no se arma para 'estudiante'). */}
+        {rol !== 'estudiante' && topEst.length > 0 && (
+          <View style={{ width: cardWidth }}>
+            <TopEstudiantesCard
+              titulo="Top Estudiantes"
+              entries={topEst}
+              detallado
+              onVerEstudiante={(id) => setVerPerfil({ rol: 'talento', id })}
+            />
+          </View>
+        )}
       </ScrollView>
+
+      {verPerfil && (
+        <PerfilPublicoModal
+          visible
+          rol={verPerfil.rol}
+          userId={verPerfil.id}
+          viewerUserId={user?.uid ?? ''}
+          theme={isDark ? 'dark' : 'light'}
+          onClose={() => setVerPerfil(null)}
+        />
+      )}
     </View>
   );
 }

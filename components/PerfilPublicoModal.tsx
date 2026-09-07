@@ -21,6 +21,8 @@ import SelloEmpresa from "../src/components/SelloEmpresa";
 import TrabajaParaCard from "../src/components/TrabajaParaCard";
 import UbicacionCardSV from "../src/components/UbicacionCardSV";
 import UbicacionPrecisaModal from "../src/components/UbicacionPrecisaModal";
+import TopEstudiantesCard from "../src/components/TopEstudiantesCard";
+import type { TopEstudianteEntry } from "../src/services/topEstudiantesService";
 import { calcularRango } from "../src/services/feedbackService";
 import ReportarModal from "./ReportarModal";
 
@@ -145,10 +147,29 @@ export default function PerfilPublicoModal({
   const [universidadNombre, setUniversidadNombre] = useState<string | null>(null);
   const [grupoNombre, setGrupoNombre] = useState<string | null>(null);
   const [aliados, setAliados] = useState<string[]>([]);
+  // Estudiante destacado abierto desde el cuadro (este modal solo lo abren
+  // empresas/universidades, así que no hay problema de permisos).
+  const [verEstId, setVerEstId] = useState<string | null>(null);
+  const [empresaPasantia, setEmpresaPasantia] = useState<string | null>(null);
+  const topEstudiantes: TopEstudianteEntry[] = Array.isArray(perfil?.top_estudiantes) ? perfil!.top_estudiantes : [];
 
   useEffect(() => {
     if (visible && userId) loadPerfil();
   }, [visible, userId]);
+
+  // "En qué empresa hizo su pasantía" — best-effort (reglas de asignaciones_cupo).
+  useEffect(() => {
+    if (!visible || !userId || (rol !== "talento" && rol !== "alumno")) { setEmpresaPasantia(null); return; }
+    let vivo = true;
+    getDocs(query(collection(db, "asignaciones_cupo"), where("estudianteId", "==", userId)))
+      .then((snap) => {
+        if (!vivo) return;
+        const a = snap.docs.map((d) => d.data() as any).find((x) => x.estado !== "cancelado" && x.empresaNombre);
+        setEmpresaPasantia(a?.empresaNombre ?? null);
+      })
+      .catch(() => { if (vivo) setEmpresaPasantia(null); });
+    return () => { vivo = false; };
+  }, [visible, userId, rol]);
 
   const loadPerfil = async () => {
     setLoading(true);
@@ -426,6 +447,7 @@ export default function PerfilPublicoModal({
                   ...((rol === "alumno" || rol === "talento")
                     ? [
                         { icon: "school-outline", label: "Universidad", val: universidadNombre },
+                        { icon: "briefcase-outline", label: "Empresa de su pasantía", val: empresaPasantia },
                         { icon: "people-outline", label: "Grupo", val: grupoNombre },
                       ]
                     : []),
@@ -440,13 +462,25 @@ export default function PerfilPublicoModal({
                       <Text style={{ color: C.muted, fontSize: 11 }}>{f.label}</Text>
                       <Text
                         style={{ color: C.text, fontSize: 13 }}
-                        noTranslate={["Universidad", "Grupo", "Web", "Instagram", "Facebook", "Email"].includes(f.label)}
+                        noTranslate={["Universidad", "Grupo", "Web", "Instagram", "Facebook", "Email", "Empresa de su pasantía"].includes(f.label)}
                       >
                         {f.val}
                       </Text>
                     </View>
                   </View>
                 ))}
+
+                {/* Estudiantes destacados — solo en perfiles de empresa/universidad.
+                    Este modal únicamente lo abren empresas/universidades. */}
+                {(rol === "empresa" || rol === "universidad") && topEstudiantes.length > 0 && (
+                  <View style={{ marginTop: 4 }}>
+                    <TopEstudiantesCard
+                      titulo={rol === "empresa" ? "Estudiantes destacados en sus puestos" : "Estudiantes más destacados"}
+                      entries={topEstudiantes}
+                      onVerEstudiante={setVerEstId}
+                    />
+                  </View>
+                )}
 
                 {(perfil.departamento || perfil.distrito || perfil.ciudad) && (
                   <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
@@ -624,6 +658,18 @@ export default function PerfilPublicoModal({
           distrito={perfil.distrito ?? perfil.ciudad}
           puntoGuardado={perfil.ubicacion_precisa ?? null}
           soloLectura
+        />
+      )}
+
+      {/* Perfil de un estudiante destacado, abierto desde el cuadro de arriba. */}
+      {verEstId && (
+        <PerfilPublicoModal
+          visible
+          rol="talento"
+          userId={verEstId}
+          viewerUserId={viewerUserId}
+          theme={theme}
+          onClose={() => setVerEstId(null)}
         />
       )}
     </>
