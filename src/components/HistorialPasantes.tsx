@@ -51,6 +51,17 @@ const normaliza = (s: string) =>
     .trim()
     .toLowerCase();
 
+/** Timestamp de Firestore (o ISO / epoch) → "YYYY-MM-DD"; "" si no se puede. */
+const tsToISO = (ts: any): string => {
+  try {
+    const d = ts?.toDate?.() ?? (typeof ts?.seconds === "number" ? new Date(ts.seconds * 1000) : ts ? new Date(ts) : null);
+    if (!d || Number.isNaN(d.getTime())) return "";
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  } catch {
+    return "";
+  }
+};
+
 /** Un pasante finalizado (un alumno dentro de una solicitud finalizada). */
 interface PasanteItem {
   key: string;
@@ -212,7 +223,9 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
           nombre: c.estudianteNombre || pf.nombre_completo || "Estudiante",
           carrera: c.carrera || pf.carrera || "Sin carrera",
           fechaInicio: c.fechaPresentacion ?? "",
-          fechaFin: "",
+          // Fecha en que el sistema marcó la pasantía como culminada
+          // (`asignaciones_cupo.finalizadaAt`, puesto por finalizarInscripcionPorHoras).
+          fechaFin: tsToISO(c.finalizadaAt),
           estudianteUid: c.estudianteId ?? null,
           foto: pf.foto_url ?? null,
           nivel: calcularNivelEstudiante(horas, horas || 1),

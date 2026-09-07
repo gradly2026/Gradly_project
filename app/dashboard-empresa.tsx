@@ -1837,7 +1837,7 @@ export default function DashboardEmpresa() {
           onChatCandidato={handleChatConCandidato}
         />
       );
-      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onFirmar={setShowFirmaModal} onVerPerfil={setPerfilCandidatoId} empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
+      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onVerPerfil={setPerfilCandidatoId} empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
       case 'perfil':   return renderPerfilSeccion();
       case 'mensajes': return (
         <SeccionMensajes
@@ -3445,15 +3445,16 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
 // SECCIÓN: PASANTÍAS — la parte principal se filtra con cuatro botones-chip:
 //   · Incidencias           — BandejaIncidencias + "Reportar a un pasante".
 //   · Pasantes por cupo     — en curso: cupos (`asignaciones_cupo` tomado y NO
-//     finalizado) + pasantías de grupo + pasantes individuales legacy, juntos.
+//     finalizado) + pasantías de grupo. (El bloque "Pasantes individuales" del
+//     flujo legado por `aplicaciones` se quitó a pedido del usuario, v112.)
 //   · Pasantes por certificar — ya cumplieron su tiempo; la empresa envía el
 //     comprobante (ComprobantePasantiaCard) para que la universidad valide.
 //   · Historial de pasantes — quienes ya culminaron contigo (HistorialPasantes),
 //     así ya no hace falta una sección aparte para el historial.
 // Se entra SIEMPRE en "Incidencias".
 // ─────────────────────────────────────────────
-function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresaId, empresaNombre }: {
-  apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[]; onFirmar: (a: Aplicacion) => void;
+function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empresaNombre }: {
+  apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[];
   onVerPerfil: (estudianteId: string) => void;
   empresaId: string; empresaNombre: string;
 }) {
@@ -3462,7 +3463,6 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
 
   const [filtro, setFiltro] = useState<'incidencias' | 'porCupo' | 'porCertificar' | 'historial'>('incidencias');
 
-  const activos = apps.filter(a => a.estado === 'contratado' || a.estado === 'finalizado');
   const grupoActivas = solicitudesGrupo.filter(sg => sg.estado === 'aprobado' && sg.fechaInicio);
 
   // Pasantes por CUPO en curso (`asignaciones_cupo` tomado y NO finalizado).
@@ -3537,7 +3537,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
   );
 
   // ── Contenido del filtro "Pasantes por cupo": cupos en curso + pasantías de
-  //    grupo + pasantes individuales legacy, todo junto (decisión del usuario). ──
+  //    grupo. ──
   const cuerpoPorCupo = (
     <>
       {cuposActivos.map(c => {
@@ -3627,42 +3627,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
         </>
       )}
 
-      {activos.length > 0 && (
-        <>
-          <Text style={[s.activaNombre, { marginTop: 14, marginBottom: 10 }]}>Pasantes individuales</Text>
-          {activos.map(item => {
-            const necesitaFirma = item.estado === 'finalizado';
-            return (
-              <TouchableOpacity
-                key={item.id}
-                activeOpacity={0.85}
-                disabled={!item.estudiante_id}
-                onPress={() => item.estudiante_id && onVerPerfil(item.estudiante_id)}
-              >
-                <GlassCard style={[{ marginBottom: 8 }, necesitaFirma && s.activaCardPendiente]} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.activaNombre} numberOfLines={1}>{item.estudiante_nombre}</Text>
-                    {!!item.acuerdo && (
-                      <Text style={s.activaMeta} numberOfLines={1}>
-                        Horario: {item.acuerdo.dias.join(', ')} · {item.acuerdo.horaInicio} - {item.acuerdo.horaFin}
-                      </Text>
-                    )}
-                    <Text style={s.activaMeta}>Horas: {item.horas_completadas ?? 0}</Text>
-                  </View>
-                  {necesitaFirma && (
-                    <JellyButton style={s.firmarBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 }} onPress={() => onFirmar(item)}>
-                      <Ionicons name="pencil-outline" size={14} color="#fff" />
-                      <Text style={s.firmarText}>Firmar constancia</Text>
-                    </JellyButton>
-                  )}
-                </GlassCard>
-              </TouchableOpacity>
-            );
-          })}
-        </>
-      )}
-
-      {cuposActivos.length === 0 && grupoActivas.length === 0 && activos.length === 0 && (
+      {cuposActivos.length === 0 && grupoActivas.length === 0 && (
         <Text style={s.emptyText}>Sin pasantes activos.</Text>
       )}
     </>
@@ -3673,7 +3638,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onFirmar, onVerPerfil, empresa
       {/* Botones-filtro de la parte principal (se entra en "Incidencias"). */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
         <FiltroChip label="Incidencias" activo={filtro === 'incidencias'} onPress={() => setFiltro('incidencias')} />
-        <FiltroChip label={`Pasantes por cupo (${cuposActivos.length + grupoActivas.length + activos.length})`} activo={filtro === 'porCupo'} onPress={() => setFiltro('porCupo')} />
+        <FiltroChip label={`Pasantes por cupo (${cuposActivos.length + grupoActivas.length})`} activo={filtro === 'porCupo'} onPress={() => setFiltro('porCupo')} />
         <FiltroChip label="Pasantes por certificar" activo={filtro === 'porCertificar'} onPress={() => setFiltro('porCertificar')} />
         <FiltroChip label="Historial de Pasantes" activo={filtro === 'historial'} onPress={() => setFiltro('historial')} />
       </View>
