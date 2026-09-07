@@ -516,11 +516,60 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
             )}
 
             {tipo === 'universidad' && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Información</Text>
-                <InfoRow icon="mail-outline" label="Dominio" value={data.dominio_correo || '—'} colors={colors} styles={styles} />
-                <InfoRow icon="location-outline" label="Dirección" value={data.direccion || '—'} colors={colors} styles={styles} />
-              </View>
+              <>
+                {/* Acerca de (descripción de la universidad) */}
+                {!!data.descripcion && (
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Acerca de</Text>
+                    <View style={styles.aboutCard}>
+                      <Text style={styles.aboutText}>{data.descripcion}</Text>
+                    </View>
+                  </View>
+                )}
+
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Información</Text>
+                  {[data.contacto_nombre, data.contacto_cargo].filter(Boolean).length > 0 && (
+                    <InfoRow
+                      icon="person-outline"
+                      label="Representante"
+                      value={[data.contacto_nombre, data.contacto_cargo].filter(Boolean).join(' · ')}
+                      colors={colors}
+                      styles={styles}
+                      noTranslate
+                    />
+                  )}
+                  <InfoRow icon="mail-outline" label="Dominio" value={data.dominio_correo || '—'} colors={colors} styles={styles} noTranslate={!!data.dominio_correo} />
+                  {(() => {
+                    const ubic = [data.distrito ?? data.ciudad, data.departamento].filter(Boolean).join(', ');
+                    return ubic
+                      ? <InfoRow icon="location-outline" label="Ubicación" value={ubic} colors={colors} styles={styles} noTranslate />
+                      : null;
+                  })()}
+                  {!!data.direccion && (
+                    <InfoRow icon="home-outline" label="Dirección" value={String(data.direccion)} colors={colors} styles={styles} noTranslate />
+                  )}
+                </View>
+
+                {/* Datos de contacto — al final */}
+                {(data.telefono || data.contacto_telefono || data.contacto_correo || data.web || data.sitio_web || data.instagram) && (
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Información de contacto</Text>
+                    {!!(data.telefono || data.contacto_telefono) && (
+                      <InfoRow icon="call-outline" label="Teléfono" value={String(data.telefono || data.contacto_telefono)} colors={colors} styles={styles} noTranslate />
+                    )}
+                    {!!data.contacto_correo && (
+                      <InfoRow icon="mail-outline" label="Correo" value={String(data.contacto_correo)} colors={colors} styles={styles} noTranslate />
+                    )}
+                    {!!(data.web || data.sitio_web) && (
+                      <InfoRow icon="globe-outline" label="Web" value={String(data.web || data.sitio_web)} colors={colors} styles={styles} noTranslate />
+                    )}
+                    {!!data.instagram && (
+                      <InfoRow icon="logo-instagram" label="Instagram" value={`@${String(data.instagram).replace(/^@/, '')}`} colors={colors} styles={styles} noTranslate />
+                    )}
+                  </View>
+                )}
+              </>
             )}
 
             {/* Estudiantes destacados — solo para empresa / universidad / admin

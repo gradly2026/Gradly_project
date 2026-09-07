@@ -428,11 +428,13 @@ export default function PerfilPublicoModal({
                   </View>
                 )}
 
-                {/* Info de contacto pública */}
+                {/* Info pública. Orden: primero identidad / vínculos / ubicación;
+                    los datos de CONTACTO (teléfono, correo, web, redes) van al
+                    final. El "Representante" solo se muestra en universidades. */}
                 {[
-                  { icon: "mail-outline", label: "Email", val: perfil.email ?? perfil.email_corporativo ?? perfil.email_institucional ?? perfil.correo },
-                  { icon: "call-outline", label: "Teléfono", val: perfil.telefono },
-                  { icon: "globe-outline", label: "Web", val: perfil.web },
+                  ...(rol === "universidad"
+                    ? [{ icon: "person-outline", label: "Representante", val: [perfil.contacto_nombre, perfil.contacto_cargo].filter(Boolean).join(" · ") || null }]
+                    : []),
                   ...((rol === "alumno" || rol === "talento")
                     ? [
                         { icon: "school-outline", label: "Universidad", val: universidadNombre },
@@ -442,6 +444,9 @@ export default function PerfilPublicoModal({
                     : []),
                   { icon: "location-outline", label: "Ubicación", val: [perfil.distrito ?? perfil.ciudad, perfil.departamento].filter(Boolean).join(", ") || null },
                   { icon: "home-outline", label: "Dirección", val: perfil.direccion },
+                  { icon: "call-outline", label: "Teléfono", val: perfil.telefono ?? perfil.contacto_telefono },
+                  { icon: "mail-outline", label: "Email", val: perfil.email ?? perfil.email_corporativo ?? perfil.email_institucional ?? perfil.correo ?? perfil.contacto_correo },
+                  { icon: "globe-outline", label: "Web", val: perfil.web ?? perfil.sitio_web },
                   { icon: "logo-instagram", label: "Instagram", val: perfil.instagram ? `@${String(perfil.instagram).replace(/^@/, "")}` : null },
                   { icon: "logo-facebook", label: "Facebook", val: perfil.facebook },
                 ].filter((f) => f.val).map((f) => (
@@ -451,7 +456,7 @@ export default function PerfilPublicoModal({
                       <Text style={{ color: C.muted, fontSize: 11 }}>{f.label}</Text>
                       <Text
                         style={{ color: C.text, fontSize: 13 }}
-                        noTranslate={["Universidad", "Grupo", "Web", "Instagram", "Facebook", "Email", "Empresa de su pasantía"].includes(f.label)}
+                        noTranslate={["Representante", "Universidad", "Grupo", "Teléfono", "Web", "Instagram", "Facebook", "Email", "Empresa de su pasantía"].includes(f.label)}
                       >
                         {f.val}
                       </Text>
