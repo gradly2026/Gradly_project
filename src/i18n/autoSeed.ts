@@ -1773,6 +1773,9 @@ export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
   // Insignia / nivel tope de horas de pasantía (100%). "Certificado", no
   // "Graduado": culminar la pasantía no es egresar de la universidad.
   "Certificado": "Certified",
+  // Tarjeta "Certificados" del "Resumen general" del dashboard de universidad
+  // (nº de estudiantes con comprobante de pasantía validado). Antes "Egresados".
+  "Certificados": "Certified",
 };
 
 // ── "Calificar más tarde" (FeedbackExperienciaModal / FeedbackGate /
@@ -1849,6 +1852,10 @@ export const TOP_ESTUDIANTES_SEED_EN: Record<string, string> = {
   "Estudiantes más destacados": "Top standout students",
   "Top Estudiantes": "Top Students",
   "Empresa de su pasantía": "Internship company",
+  // Vista del cuadro DENTRO del perfil de una empresa: primera línea de cada
+  // estudiante, según si tiene contrato de empleo o pasantía por cupo.
+  "Trabaja aquí": "Works here",
+  "Hizo su pasantía aquí": "Did their internship here",
   // Lupa del estudiante → botón del modal de detalle + avisos.
   "Inscribirme": "Enroll",
   "Postularme": "Apply",

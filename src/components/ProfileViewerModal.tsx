@@ -532,6 +532,8 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                   titulo={tipo === 'empresa' ? 'Estudiantes destacados en sus puestos' : 'Estudiantes más destacados'}
                   entries={topEstudiantes}
                   onVerEstudiante={setVerEstudianteId}
+                  detallado
+                  relacionEmpresa={tipo === 'empresa'}
                 />
               </View>
             )}

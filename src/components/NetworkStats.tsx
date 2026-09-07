@@ -229,19 +229,21 @@ export function RedGradlyBanner() {
       >
         <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} perfilRol="empresa" />
         <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} perfilRol="universidad" />
-        {/* Top 5 estudiantes certificados destacados — solo visible para
-            empresa / universidad / admin (no se arma para 'estudiante'). */}
-        {rol !== 'estudiante' && topEst.length > 0 && (
-          <View style={{ width: cardWidth }}>
-            <TopEstudiantesCard
-              titulo="Top Estudiantes"
-              entries={topEst}
-              detallado
-              onVerEstudiante={(id) => setVerPerfil({ rol: 'talento', id })}
-            />
-          </View>
-        )}
       </ScrollView>
+
+      {/* Top 5 estudiantes certificados destacados — BAJO el carrusel, a lo
+          ancho (no dentro del scroll horizontal). Solo empresa / universidad /
+          admin (no se arma para 'estudiante'). */}
+      {rol !== 'estudiante' && topEst.length > 0 && (
+        <View style={{ marginTop: 12, paddingRight: 16 }}>
+          <TopEstudiantesCard
+            titulo="Top Estudiantes"
+            entries={topEst}
+            detallado
+            onVerEstudiante={(id) => setVerPerfil({ rol: 'talento', id })}
+          />
+        </View>
+      )}
 
       {verPerfil && (
         <PerfilPublicoModal

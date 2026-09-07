@@ -3,7 +3,7 @@
  * universidad. Agrupa en DOS tarjetas deslizables (swipe + puntos + flechas):
  *
  *   1. "Resumen"  → métricas numéricas clave calculadas de Firestore:
- *        Estudiantes Activos · Egresados · Instituciones Afiliadas ·
+ *        Estudiantes Activos · Certificados · Instituciones Afiliadas ·
  *        Grupos · En pasantía · Horas aprobadas.
  *   2. "Análisis" → gráficos con datos reales:
  *        · Estado de las pasantías de grupo (pastel)
@@ -12,9 +12,10 @@
  *
  * Sustituye a la vieja sección "Estadísticas": todo su contenido vive aquí.
  *
- * Nota: "Egresados" se lee del campo `graduado` del estudiante (marca que la
- * universidad pondrá con la futura acción "Egresar grupo"); mientras no exista
- * esa marca, el valor es 0 y los estudiantes cuentan como activos.
+ * Nota: "Certificados" = estudiantes cuya pasantía culminó y cuyo comprobante
+ * validó la universidad (`comprobantes_pasantia` en estado 'validado'), el
+ * mismo criterio que la lista "Estudiantes certificados" de la sección
+ * Pasantías. (Antes esta tarjeta mostraba "Egresados" con el campo `graduado`.)
  */
 import { Ionicons } from '@expo/vector-icons';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
@@ -94,13 +95,23 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
     return unsub;
   }, [uid]);
 
+  // ── Nº de estudiantes CERTIFICADOS (comprobante de pasantía validado por la
+  //    universidad). Mismo criterio que "Estudiantes certificados" de la
+  //    sección Pasantías: `comprobantes_pasantia` en estado 'validado'. ──
+  const [certificadosCount, setCertificadosCount] = useState(0);
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'comprobantes_pasantia'), where('universidadId', '==', uid)),
+      snap => setCertificadosCount(snap.docs.filter(d => (d.data() as any).estado === 'validado').length),
+      error => console.warn('Error en listener (comprobantes certificados):', error),
+    );
+    return unsub;
+  }, [uid]);
+
   // ── Métricas derivadas ──
   const estudiantesActivos = useMemo(
     () => estudiantes.filter(e => e.activo !== false && !e.graduado).length,
-    [estudiantes],
-  );
-  const egresados = useMemo(
-    () => estudiantes.filter(e => e.graduado === true).length,
     [estudiantes],
   );
 
@@ -194,7 +205,7 @@ export default function UniversidadHomeCards({ uid, estudiantes, apps, solicitud
 
   const stats: { icon: keyof typeof Ionicons.glyphMap; label: string; value: number; color: string }[] = [
     { icon: 'people-outline',            label: 'Estudiantes activos',  value: estudiantesActivos,      color: colors.primaryLight },
-    { icon: 'school-outline',            label: 'Egresados',            value: egresados,               color: colors.gold },
+    { icon: 'ribbon-outline',            label: 'Certificados',         value: certificadosCount,       color: colors.gold },
     { icon: 'business-outline',          label: 'Instituciones afiliadas', value: institucionesAfiliadas, color: colors.accent },
     { icon: 'albums-outline',            label: 'Grupos',               value: gruposCount,             color: colors.primaryLight },
     { icon: 'briefcase-outline',         label: 'En pasantía',          value: enPasantiaTotal,         color: colors.success },

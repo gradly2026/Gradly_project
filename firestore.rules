@@ -81,11 +81,16 @@ service cloud.firestore {
 
     // 🎓 PERFILES_ESTUDIANTES
     match /perfiles_estudiantes/{studentId} {
-      // 🔒 'universidad' solo lee a SU alumno; 'empresa' abierto (firmarAcuerdo lee
-      //    alumnos del grupo). Cierre pendiente: denormalizar `empresas_autorizadas`.
+      // 🔒 Lectura: el dueño, su universidad, cualquier EMPRESA (firmarAcuerdo lee
+      //    alumnos del grupo) y — 🆕 pedido del usuario — cualquier UNIVERSIDAD,
+      //    para poder abrir la ficha de un estudiante destacado de otra
+      //    institución desde los cuadros "Top Estudiantes" (simétrico con la
+      //    empresa, que ya tenía este acceso). Las vistas públicas del perfil de
+      //    estudiante no muestran doc_numero/doc_tipo.
       allow read: if request.auth.uid == studentId
                      || resource.data.universidad_id == request.auth.uid
                      || esRol('empresa')
+                     || esRol('universidad')
                      || esAdmin();
       allow create: if esRol('universidad') || esAdmin();
       // 🆕 CAMBIO: además del dueño / universidad dueña / admin, una EMPRESA o

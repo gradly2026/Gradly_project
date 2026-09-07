@@ -478,6 +478,8 @@ export default function PerfilPublicoModal({
                       titulo={rol === "empresa" ? "Estudiantes destacados en sus puestos" : "Estudiantes más destacados"}
                       entries={topEstudiantes}
                       onVerEstudiante={setVerEstId}
+                      detallado
+                      relacionEmpresa={rol === "empresa"}
                     />
                   </View>
                 )}

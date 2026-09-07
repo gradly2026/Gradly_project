@@ -24,6 +24,12 @@ interface Props {
   onVerEstudiante: (id: string) => void;
   /** Muestra empresa · puesto · salario y universidad bajo cada nombre. */
   detallado?: boolean;
+  /**
+   * El cuadro se ve DENTRO del perfil de una empresa: en vez del nombre de la
+   * empresa (que sería "esta misma"), la primera línea dice si el estudiante
+   * "Trabaja aquí" (contrato) o "Hizo su pasantía aquí" (cupo).
+   */
+  relacionEmpresa?: boolean;
   /** Estilo extra del contenedor. */
   style?: any;
 }
@@ -31,7 +37,7 @@ interface Props {
 const MEDALLAS = ['🥇', '🥈', '🥉', '4°', '5°'];
 
 export default function TopEstudiantesCard({
-  titulo, entries, onVerEstudiante, detallado, style,
+  titulo, entries, onVerEstudiante, detallado, relacionEmpresa, style,
 }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -56,7 +62,21 @@ export default function TopEstudiantesCard({
           <StorageAvatar url={e.foto} size={34} fallbackIcon="person" />
           <View style={{ flex: 1 }}>
             <Text style={s.nombre} numberOfLines={1} noTranslate>{e.nombre}</Text>
-            {detallado ? (
+            {relacionEmpresa ? (
+              <>
+                <Text style={s.subRelacion} numberOfLines={1}>
+                  {e.contratado ? 'Trabaja aquí' : 'Hizo su pasantía aquí'}
+                </Text>
+                {!!(e.puesto || e.salarioTxt) && (
+                  <Text style={s.sub} numberOfLines={1} noTranslate>
+                    {[e.puesto, e.salarioTxt].filter(Boolean).join(' · ')}
+                  </Text>
+                )}
+                {!!e.universidadNombre && (
+                  <Text style={s.sub} numberOfLines={1} noTranslate>{e.universidadNombre}</Text>
+                )}
+              </>
+            ) : detallado ? (
               <>
                 {!!(e.empresaNombre || e.puesto) && (
                   <Text style={s.sub} numberOfLines={1} noTranslate>
@@ -98,5 +118,6 @@ const makeStyles = (COLORS: GradlyColors) =>
     medal: { fontSize: 13, width: 22, textAlign: 'center' },
     nombre: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
     sub: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 1 },
+    subRelacion: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, marginTop: 1 },
     stars: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.gold },
   });

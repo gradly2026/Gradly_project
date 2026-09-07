@@ -51,8 +51,9 @@ export interface TopEstudianteEntry {
   contratado: boolean;
 }
 
-/** Umbral de "calificación alta": aporta el bono de prioridad, y es el piso
- *  para entrar al cuadro (por debajo no se considera "destacado"). */
+/** Umbral de "calificación alta" (de la institución vinculada): aporta el
+ *  bono de prioridad en el score. NO filtra estudiantes — el cuadro siempre
+ *  muestra los mejores N, con su calificación real (aunque sea 0.0). */
 export const UMBRAL_DESTACADO = 3.5;
 
 const MAX_EMPRESA = 3;
@@ -116,52 +117,85 @@ async function infoEmp(
 export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promise<void> {
   if (!empresaId) return;
   try {
-    const snap = await getDocs(
-      query(collection(db, 'contratos_laborales'), where('empresaId', '==', empresaId)),
-    );
-    const activos = snap.docs
-      .map(d => ({ id: d.id, ...(d.data() as any) }))
-      .filter(c => c.estado === 'activo');
+    // Dos vías por las que un estudiante "está" en una empresa: un contrato de
+    // empleo activo (`contratos_laborales`) o una pasantía por cupo
+    // (`asignaciones_cupo`). La empresa puede leer ambas colecciones por su
+    // propio id. Se combinan y se deduplican por estudiante (gana el contrato).
+    const [contrSnap, cupoSnap] = await Promise.all([
+      getDocs(query(collection(db, 'contratos_laborales'), where('empresaId', '==', empresaId))),
+      getDocs(query(collection(db, 'asignaciones_cupo'), where('empresaId', '==', empresaId))),
+    ]);
 
-    if (activos.length === 0) {
+    const porEst = new Map<string, { estudianteId: string; nombre: string; foto: string; puesto: string; salarioTxt: string | null; contratado: boolean }>();
+    contrSnap.docs.forEach(d => {
+      const c: any = d.data();
+      if (c.estado !== 'activo' || !c.estudianteId) return;
+      porEst.set(c.estudianteId, {
+        estudianteId: c.estudianteId,
+        nombre: c.estudianteNombre || 'Estudiante',
+        foto: c.estudianteFoto || '',
+        puesto: c.vacanteTitulo || 'Puesto',
+        salarioTxt: textoSalario(c.salario_min, c.salario_max),
+        contratado: true,
+      });
+    });
+    cupoSnap.docs.forEach(d => {
+      const a: any = d.data();
+      if (a.estado === 'cancelado' || !a.estudianteId) return;
+      if (porEst.has(a.estudianteId)) return; // ya cuenta como contratado
+      porEst.set(a.estudianteId, {
+        estudianteId: a.estudianteId,
+        nombre: a.estudianteNombre || 'Estudiante',
+        foto: '',
+        puesto: a.vacanteTitulo || 'Pasantía',
+        salarioTxt: null,
+        contratado: false,
+      });
+    });
+
+    const base = Array.from(porEst.values());
+    if (base.length === 0) {
       await updateDoc(doc(db, 'perfiles_empresas', empresaId), { top_estudiantes: [] });
       return;
     }
 
     const uniCache = new Map<string, { nombre: string; alta: boolean }>();
     const filas = await Promise.all(
-      activos.map(async c => {
+      base.map(async b => {
         let stars = 0;
         let rango = '';
         let uniId = '';
+        let foto = b.foto || null;
         try {
-          const e = await getDoc(doc(db, 'perfiles_estudiantes', c.estudianteId));
+          const e = await getDoc(doc(db, 'perfiles_estudiantes', b.estudianteId));
           if (e.exists()) {
             const x: any = e.data();
             stars = numOr0(x.calificacion_promedio);
             rango = x.rango_nivel ?? '';
             uniId = x.universidad_id ?? '';
+            if (!foto) foto = x.foto_url ?? null;
           }
         } catch { /* best-effort */ }
         const uni = await infoUni(uniId, uniCache);
         const entry: TopEstudianteEntry = {
-          id: c.estudianteId,
-          nombre: c.estudianteNombre || 'Estudiante',
-          foto: c.estudianteFoto || null,
+          id: b.estudianteId,
+          nombre: b.nombre,
+          foto,
           stars,
           rango,
           universidadNombre: uni.nombre,
-          empresaNombre: c.empresaNombre || '',
-          puesto: c.vacanteTitulo || 'Puesto',
-          salarioTxt: textoSalario(c.salario_min, c.salario_max),
-          contratado: true,
+          empresaNombre: '',
+          puesto: b.puesto,
+          salarioTxt: b.salarioTxt,
+          contratado: b.contratado,
         };
         return { entry, score: stars + (uni.alta ? 1 : 0) };
       }),
     );
 
+    // Se muestran los mejores por score aunque aún no tengan calificación (0.0);
+    // el bono de "institución bien calificada" ya usa UMBRAL_DESTACADO.
     const top = filas
-      .filter(f => f.entry.stars >= UMBRAL_DESTACADO)
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_EMPRESA)
       .map(f => f.entry);
@@ -226,8 +260,9 @@ export async function recomputarTopEstudiantesUniversidad(universidadId: string)
       }),
     );
 
+    // Los mejores por score aunque aún no tengan calificación (0.0); el bono de
+    // "empresa bien calificada" ya usa UMBRAL_DESTACADO.
     const top = filas
-      .filter(f => f.entry.stars >= UMBRAL_DESTACADO)
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_UNI)
       .map(f => f.entry);
