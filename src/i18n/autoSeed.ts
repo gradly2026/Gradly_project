@@ -1849,4 +1849,15 @@ export const TOP_ESTUDIANTES_SEED_EN: Record<string, string> = {
   "Estudiantes más destacados": "Top standout students",
   "Top Estudiantes": "Top Students",
   "Empresa de su pasantía": "Internship company",
+  // Lupa del estudiante → botón del modal de detalle + avisos.
+  "Inscribirme": "Enroll",
+  "Postularme": "Apply",
+  "¡Listo!": "Done!",
+  "No se pudo inscribir": "Couldn't enroll",
+  "Vuelve a abrir la pasantía e inténtalo de nuevo.": "Reopen the internship and try again.",
+  "Vuelve a abrir la vacante e inténtalo de nuevo.": "Reopen the job post and try again.",
+  "Te inscribiste a esta pasantía. Coordina tu primer día desde \"Mi Progreso\".":
+    "You enrolled in this internship. Coordinate your first day from \"My Progress\".",
+  "La empresa revisará tu perfil. Te avisaremos por notificación.":
+    "The company will review your profile. We'll notify you.",
 };

@@ -28,10 +28,17 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
-import { areasDeCarrera } from '../data/areas';
+import { areasDeCarrera, afinidadCarreraVacante } from '../data/areas';
+import { hayCupos } from '../utils/cupos';
 import { useIniciarChat } from '../hooks/useIniciarChat';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { calcularRango, type RangoTier } from '../services/feedbackService';
+import {
+  aplicarAVacante,
+  estudianteHabilitadoParaVacantes,
+  inscribirseAPasantiaIndependiente,
+} from '../services/pasantiaService';
+import { showAlert } from './AppAlert';
 import ProfileViewerModal, { type ProfileTipo } from './ProfileViewerModal';
 import SelloEmpresa from './SelloEmpresa';
 import StorageAvatar from './StorageAvatar';
@@ -118,6 +125,14 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
   const [perfil, setPerfil] = useState<{ tipo: ProfileTipo; id: string } | null>(null);
   // Pasantía/vacante cuyo detalle se abre sobre el buscador.
   const [vacDetalle, setVacDetalle] = useState<VacanteDetalle | null>(null);
+  const [accionCargando, setAccionCargando] = useState(false);
+  // Estado del estudiante (solo rol 'estudiante'): decide qué publicaciones ve
+  // en la lupa y qué botón lleva su modal.
+  //   'sin'       → aún no empieza pasantía: ve pasantías inscribibles ("Inscribirme")
+  //   'proceso'   → pasantía en curso: NO ve publicaciones
+  //   'culminado' → ya culminó: ve vacantes de empleo ("Postularme")
+  const [estadoEst, setEstadoEst] = useState<'sin' | 'proceso' | 'culminado' | null>(null);
+  const [miPerfilData, setMiPerfilData] = useState<any>(null);
 
   // ── Datos para ordenar por afinidad (carrera ↔ área de vacante) ──
   // Empresa buscando estudiantes: áreas de MIS vacantes activas.
@@ -129,7 +144,8 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
   // ── Cargar datos según rol al abrir ──────────────────────────────
   useEffect(() => {
     if (!visible) {
-      setTexto(''); setRaw([]); setVacDetalle(null);
+      setTexto(''); setRaw([]); setVacDetalle(null); setAccionCargando(false);
+      setEstadoEst(null); setMiPerfilData(null);
       setMisAreasEmpresa(new Set()); setMiCarreraEstudiante(null); setEmpresaAreasMap(new Map());
       return;
     }
@@ -177,16 +193,53 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
           if (!cancel) setMisAreasEmpresa(areas);
         } else {
           // Estudiante (y otros roles): empresas · universidades · grupos
-          const [emp, uni, gru, miPerfil, vacActivas] = await Promise.all([
+          const [emp, uni, gru, miPerfil, vacActivas, misCupos] = await Promise.all([
             getDocs(query(collection(db, 'perfiles_empresas'), limit(50))),
             getDocs(query(collection(db, 'perfiles_universidades'), limit(50))),
             getDocs(query(collection(db, 'grupos'), limit(80))),
             getDoc(doc(db, 'perfiles_estudiantes', user.uid)),
             getDocs(query(collection(db, 'vacantes'), where('activa', '==', true), limit(300))),
+            rol === 'estudiante'
+              ? getDocs(query(collection(db, 'asignaciones_cupo'), where('estudianteId', '==', user.uid)))
+              : Promise.resolve({ docs: [] as any[] }),
           ]);
           emp.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'empresa', titulo: x.nombre_empresa ?? 'Empresa', subtitulo: x.industria ?? '', foto: x.logo_url, verificado: x.verificado ?? false, empresaTier: tierEmpresa(x) }); });
           uni.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'universidad', titulo: x.nombre_universidad ?? 'Universidad', subtitulo: x.dominio_correo ?? '', foto: x.logo_url }); });
           gru.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'grupo', titulo: x.nombre ?? 'Grupo', subtitulo: x.carrera ?? '', carrera: x.carrera }); });
+
+          // ── Publicaciones para el estudiante, según su estado de pasantía ──
+          if (rol === 'estudiante') {
+            const pd = miPerfil.exists() ? (miPerfil.data() as any) : null;
+            const cupos = misCupos.docs.map((d: any) => d.data());
+            // Habilitado para VACANTES = ya culminó (graduado / 100% de horas
+            // acreditadas). Mismo criterio que el feed. Un cupo sin certificar
+            // todavía NO habilita — cae en 'proceso'.
+            const habilitado = estudianteHabilitadoParaVacantes(pd);
+            const tieneCupo = cupos.some((c: any) => c.estado !== 'cancelado');
+            const estado: 'sin' | 'proceso' | 'culminado' =
+              habilitado ? 'culminado' : tieneCupo ? 'proceso' : 'sin';
+            if (!cancel) { setEstadoEst(estado); setMiPerfilData(pd); }
+            const miCarr = String(pd?.carrera ?? '');
+            if (estado === 'sin') {
+              // Pasantías de autoservicio: activas, con cupos, y afines a mi carrera.
+              vacActivas.docs.forEach((d: any) => {
+                const x = d.data();
+                if (x.categoria === 'vacante') return;
+                if (!hayCupos(x)) return;
+                if (afinidadCarreraVacante(miCarr, x) === 'ninguna') return;
+                items.push({ id: d.id, tipo: 'vacante', titulo: x.titulo ?? 'Pasantía', subtitulo: x.nombre_empresa ?? '', carrera: x.area, categoria: x.categoria ?? 'pasantia' });
+              });
+            } else if (estado === 'culminado') {
+              // Vacantes de empleo (graduados).
+              vacActivas.docs.forEach((d: any) => {
+                const x = d.data();
+                if (x.categoria !== 'vacante') return;
+                items.push({ id: d.id, tipo: 'vacante', titulo: x.titulo ?? 'Vacante', subtitulo: x.nombre_empresa ?? '', carrera: x.area, categoria: 'vacante' });
+              });
+            }
+            // 'proceso' → no se agrega ninguna publicación.
+          }
+
           // Mi carrera + el área de las vacantes activas de cada empresa: sirve
           // para priorizar, en la lista de empresas, a las que tienen una
           // vacante afín a mi propia carrera.
@@ -283,6 +336,63 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
     // Grupos: por ahora solo cierran el buscador.
     onClose();
   };
+
+  // ── Acciones del estudiante desde el modal de detalle (lupa) ──
+  const perfilParaAplicar = () => ({
+    nombre_completo: miPerfilData?.nombre_completo ?? '',
+    foto_url: miPerfilData?.foto_url,
+    universidad_id: miPerfilData?.universidad_id,
+    carrera: miPerfilData?.carrera,
+    grupo_id: miPerfilData?.grupo_id ?? null,
+  });
+
+  const inscribirse = async () => {
+    if (!vacDetalle?.id || !vacDetalle.empresa_id || !user?.uid || !miPerfilData || accionCargando) {
+      void showAlert('No se pudo inscribir', 'Vuelve a abrir la pasantía e inténtalo de nuevo.');
+      return;
+    }
+    setAccionCargando(true);
+    try {
+      await inscribirseAPasantiaIndependiente(user.uid, vacDetalle.id, vacDetalle.empresa_id, perfilParaAplicar());
+      void showAlert('¡Listo!', 'Te inscribiste a esta pasantía. Coordina tu primer día desde "Mi Progreso".');
+      setVacDetalle(null);
+      onClose();
+    } catch (e: any) {
+      void showAlert('No se pudo inscribir', e?.message ?? 'Inténtalo de nuevo.');
+    } finally {
+      setAccionCargando(false);
+    }
+  };
+
+  const postularse = async () => {
+    if (!vacDetalle?.id || !vacDetalle.empresa_id || !user?.uid || !miPerfilData || accionCargando) {
+      void showAlert('No se pudo postular', 'Vuelve a abrir la vacante e inténtalo de nuevo.');
+      return;
+    }
+    setAccionCargando(true);
+    try {
+      await aplicarAVacante(user.uid, vacDetalle.id, vacDetalle.empresa_id, {
+        nombre_completo: miPerfilData.nombre_completo ?? '',
+        foto_url: miPerfilData.foto_url,
+        universidad_id: miPerfilData.universidad_id,
+      });
+      void showAlert('¡Postulación enviada!', 'La empresa revisará tu perfil. Te avisaremos por notificación.');
+      setVacDetalle(null);
+      onClose();
+    } catch (e: any) {
+      void showAlert('No se pudo postular', e?.message ?? 'Inténtalo de nuevo.');
+    } finally {
+      setAccionCargando(false);
+    }
+  };
+
+  // Botón del modal según el estado del estudiante y el tipo de publicación.
+  const accionModal = (() => {
+    if (rol !== 'estudiante' || !vacDetalle) return { label: undefined as string | undefined, fn: undefined as (() => void) | undefined };
+    if (estadoEst === 'sin' && vacDetalle.categoria !== 'vacante') return { label: 'Inscribirme', fn: inscribirse };
+    if (estadoEst === 'culminado' && vacDetalle.categoria === 'vacante') return { label: 'Postularme', fn: postularse };
+    return { label: undefined, fn: undefined };
+  })();
 
   // Inicia (o reutiliza) el chat directo con el perfil seleccionado. El doc id
   // de los perfiles coincide con el uid de Auth, por lo que sirve como `uid`.
@@ -418,13 +528,17 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
         />
       )}
 
-      {/* Detalle de pasantía/vacante sobre el buscador. Para la universidad
-          incluye el cuadro de sus estudiantes ya inscritos. */}
+      {/* Detalle de pasantía/vacante sobre el buscador. Universidad: cuadro de
+          inscritos. Estudiante: botón "Inscribirme" / "Postularme" según estado. */}
       <VacanteDetailModal
         visible={!!vacDetalle}
         vacante={vacDetalle}
         onClose={() => { setVacDetalle(null); onClose(); }}
         inscritosUniversidadId={rol === 'universidad' ? user?.uid : undefined}
+        carreraEstudiante={rol === 'estudiante' ? miCarreraEstudiante : undefined}
+        accionLabel={accionModal.label}
+        onAccion={accionModal.fn}
+        accionCargando={accionCargando}
       />
     </>
   );

@@ -91,6 +91,14 @@ interface Props {
    * nombre abre su perfil. Solo lo pasa el dashboard de universidad.
    */
   inscritosUniversidadId?: string;
+  /**
+   * Acción principal opcional (botón sólido bajo el encabezado): la usa la lupa
+   * del estudiante para "Inscribirme" (pasantía) o "Postularme" (vacante). Sin
+   * `onAccion` no se dibuja el botón.
+   */
+  accionLabel?: string;
+  onAccion?: () => void;
+  accionCargando?: boolean;
 }
 
 const C = {
@@ -131,7 +139,7 @@ function normalizarUrl(v: string): string {
 
 export default function VacanteDetailModal({
   visible, vacante, onClose, onContactarEmpresa, carreraEstudiante, carrerasAfinidad,
-  inscritosUniversidadId,
+  inscritosUniversidadId, accionLabel, onAccion, accionCargando,
 }: Props) {
   const { t } = useTranslation();
   const [empresa, setEmpresa] = useState<Record<string, any> | null>(null);
@@ -261,6 +269,25 @@ export default function VacanteDetailModal({
             {/* Título */}
             <AutoText style={styles.titulo}>{vacante.titulo ?? tipoNombre}</AutoText>
             <Text style={styles.fecha}>{fechaLegible(vacante.fecha_publicacion)}</Text>
+
+            {/* Acción principal (lupa del estudiante: "Inscribirme" / "Postularme") */}
+            {onAccion && !!accionLabel && (
+              <TouchableOpacity
+                style={[styles.accionBtn, accionCargando && { opacity: 0.6 }]}
+                activeOpacity={0.85}
+                onPress={onAccion}
+                disabled={accionCargando}
+              >
+                {accionCargando
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : (
+                    <>
+                      <Ionicons name="paper-plane-outline" size={17} color="#fff" />
+                      <Text style={styles.accionBtnText}>{accionLabel}</Text>
+                    </>
+                  )}
+              </TouchableOpacity>
+            )}
 
             {/* Chips */}
             <View style={styles.chipsRow}>
@@ -684,6 +711,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   contactarBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  accionBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    marginTop: 14, backgroundColor: C.purple, borderRadius: 14, paddingVertical: 13,
+  },
+  accionBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
   contactRow: {
     flexDirection: "row",
     alignItems: "center",
