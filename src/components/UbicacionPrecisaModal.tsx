@@ -10,6 +10,7 @@
 //    SOLO LECTURA, mostrando el marcador guardado.
 // ════════════════════════════════════════════════════════════════════════
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from './AutoText';
@@ -43,19 +44,50 @@ export default function UbicacionPrecisaModal({
 
   const [marker, setMarker] = useState<{ latitude: number; longitude: number } | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [capturando, setCapturando] = useState(false);
   const [err, setErr] = useState('');
+  // Encuadre del mapa: por defecto el del distrito; tras una captura GPS se
+  // acerca al punto capturado para que se vea claramente.
+  const [vista, setVista] = useState<typeof REGION_SV | null>(null);
 
   useEffect(() => {
     if (visible) {
       setMarker(puntoGuardado ? { latitude: puntoGuardado.lat, longitude: puntoGuardado.lng } : null);
       setGuardando(false);
+      setCapturando(false);
       setErr('');
+      setVista(null);
     }
   }, [visible, puntoGuardado]);
 
   const editable = !soloLectura && !!onGuardar;
   const dentro = marker ? puntoEnDistrito(marker.longitude, marker.latitude, geo) : false;
-  const puedeGuardar = editable && !!marker && dentro && !guardando;
+  const puedeGuardar = editable && !!marker && dentro && !guardando && !capturando;
+
+  // Captura instantánea del punto actual (GPS en nativo, geolocalización del
+  // navegador en web). Coloca el marcador y acerca el mapa; la validación de
+  // "dentro del distrito" es la misma de siempre (si cae fuera, Guardar queda
+  // deshabilitado y el usuario arrastra el pin al lugar correcto).
+  const capturarUbicacion = async () => {
+    if (!editable || capturando || guardando) return;
+    setCapturando(true);
+    setErr('');
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setErr('Necesitamos permiso de ubicación para usar tu punto actual. Actívalo o marca el punto en el mapa.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const p = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      setMarker(p);
+      setVista({ latitude: p.latitude, longitude: p.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 });
+    } catch {
+      setErr('No pudimos obtener tu ubicación. Revisa el GPS y los permisos, o marca el punto en el mapa.');
+    } finally {
+      setCapturando(false);
+    }
+  };
 
   const guardar = async () => {
     if (!puedeGuardar || !marker || !onGuardar) return;
@@ -95,7 +127,7 @@ export default function UbicacionPrecisaModal({
               </Text>
               <View style={s.mapWrap}>
                 <MapViewer
-                  mapRegion={region}
+                  mapRegion={vista ?? region}
                   markerPos={marker}
                   onMapPress={editable ? setMarker : undefined}
                 />
@@ -106,8 +138,25 @@ export default function UbicacionPrecisaModal({
               ) : (
                 <>
                   <Text style={s.hint}>
-                    Toca el mapa para marcar tu punto exacto. Debe quedar dentro de tu distrito.
+                    Toca el mapa para marcar tu punto exacto, o usa tu ubicación actual. Debe quedar dentro de tu distrito.
                   </Text>
+
+                  <TouchableOpacity
+                    style={[s.btnCaptura, capturando && { opacity: 0.6 }]}
+                    onPress={capturarUbicacion}
+                    disabled={capturando || guardando}
+                    activeOpacity={0.75}
+                  >
+                    {capturando ? (
+                      <ActivityIndicator size="small" color={colors.primaryLight} />
+                    ) : (
+                      <Ionicons name="locate" size={16} color={colors.primaryLight} />
+                    )}
+                    <Text style={s.btnCapturaTxt}>
+                      {capturando ? 'Ubicándote…' : 'Usar mi ubicación actual'}
+                    </Text>
+                  </TouchableOpacity>
+
                   <View style={s.estadoRow}>
                     <Ionicons
                       name={!marker ? 'ellipse-outline' : dentro ? 'checkmark-circle' : 'close-circle'}
@@ -168,6 +217,12 @@ const makeStyles = (c: GradlyColors) =>
     sub: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: c.primaryLight },
     mapWrap: { height: 300, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: c.border, backgroundColor: c.backgroundSurface },
     hint: { fontSize: 12, fontFamily: FONTS.interRegular, color: c.textMuted, lineHeight: 17 },
+    btnCaptura: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+      paddingVertical: 10, borderRadius: 12,
+      borderWidth: 1, borderColor: c.primaryLight, backgroundColor: c.primaryLight + '14',
+    },
+    btnCapturaTxt: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: c.primaryLight },
     estadoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     estadoTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, flex: 1 },
     err: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: c.error },

@@ -1338,6 +1338,15 @@ export const UBICACION_SEED_EN: Record<string, string> = {
   "Tu ubicación registrada": "Your registered location",
   "Toca el mapa para marcar tu punto exacto. Debe quedar dentro de tu distrito.":
     "Tap the map to mark your exact spot. It must be within your district.",
+  "Toca el mapa para marcar tu punto exacto, o usa tu ubicación actual. Debe quedar dentro de tu distrito.":
+    "Tap the map to mark your exact spot, or use your current location. It must be within your district.",
+  // Botón de captura instantánea del punto actual (GPS / geolocalización web).
+  "Usar mi ubicación actual": "Use my current location",
+  "Ubicándote…": "Locating you…",
+  "Necesitamos permiso de ubicación para usar tu punto actual. Actívalo o marca el punto en el mapa.":
+    "We need location permission to use your current spot. Enable it or mark the point on the map.",
+  "No pudimos obtener tu ubicación. Revisa el GPS y los permisos, o marca el punto en el mapa.":
+    "We couldn't get your location. Check GPS and permissions, or mark the point on the map.",
   "Este es el punto exacto que registraste dentro de tu distrito.":
     "This is the exact spot you registered within your district.",
   "Aún no marcas un punto.": "You haven't marked a spot yet.",
