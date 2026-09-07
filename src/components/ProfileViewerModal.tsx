@@ -250,7 +250,9 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     ? progresoLibro!.pct
     : Math.min(100, Math.round((horasAprobadas / Math.max(horasObjetivo, 1)) * 100));
 
-  const esGraduado  = pct >= 100;
+  // La insignia "Certificado" NO sale solo por el libro de horas en vivo: con
+  // una pasantía por cupo en curso (`progVal`) aún no está certificado.
+  const esGraduado  = !progVal && pct >= 100;
   // Insignia "Alto Nivel": promedio OFICIAL del perfil (feedback_pasantias, vía
   // feedbackService) — antes se derivaba de la subcolección paralela.
   const esAltoNivel =

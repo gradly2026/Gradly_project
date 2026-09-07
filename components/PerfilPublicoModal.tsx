@@ -21,6 +21,7 @@ import UbicacionCardSV from "../src/components/UbicacionCardSV";
 import UbicacionPrecisaModal from "../src/components/UbicacionPrecisaModal";
 import TopEstudiantesCard from "../src/components/TopEstudiantesCard";
 import type { TopEstudianteEntry } from "../src/services/topEstudiantesService";
+import { progresoPorMeta, type ProgresoMeta } from "../src/utils/horasPasantia";
 import ReportarModal from "./ReportarModal";
 
 export type PerfilRol = "empresa" | "talento" | "alumno" | "universidad";
@@ -151,6 +152,10 @@ export default function PerfilPublicoModal({
   // aliadas". El rol del aliado es el opuesto al del perfil que se está viendo.
   const [verAliado, setVerAliado] = useState<{ rol: PerfilRol; id: string } | null>(null);
   const [empresaPasantia, setEmpresaPasantia] = useState<string | null>(null);
+  // Progreso REAL del libro de horas de la pasantía por cupo EN CURSO. Durante
+  // la pasantía las horas viven aquí, no en `horas_aprobadas` (que solo se
+  // acredita al certificar).
+  const [progresoLibro, setProgresoLibro] = useState<ProgresoMeta | null>(null);
   const topEstudiantes: TopEstudianteEntry[] = Array.isArray(perfil?.top_estudiantes) ? perfil!.top_estudiantes : [];
 
   useEffect(() => {
@@ -170,6 +175,43 @@ export default function PerfilPublicoModal({
       .catch(() => { if (vivo) setEmpresaPasantia(null); });
     return () => { vivo = false; };
   }, [visible, userId, rol]);
+
+  // ── Progreso del libro de horas (pasantía por cupo en curso) ──────
+  // Best-effort. Sin el rol del que mira, se lanzan las tres consultas posibles
+  // con un solo `where` de igualdad (sin índice compuesto): por 'universidadId'
+  // y 'empresaId' del que mira (siempre permitidas: prueban su rama de la regla)
+  // y por 'estudianteId' del perfil (permitida solo para admin o el propio
+  // estudiante; para el resto se rechaza y `allSettled` la descarta). El filtro
+  // por estudiante/estado se hace en memoria.
+  useEffect(() => {
+    if (!visible || !userId || !viewerUserId || (rol !== "talento" && rol !== "alumno")) { setProgresoLibro(null); return; }
+    let vivo = true;
+    (async () => {
+      try {
+        const settled = await Promise.allSettled([
+          getDocs(query(collection(db, "asignaciones_cupo"), where("universidadId", "==", viewerUserId))),
+          getDocs(query(collection(db, "asignaciones_cupo"), where("empresaId", "==", viewerUserId))),
+          getDocs(query(collection(db, "asignaciones_cupo"), where("estudianteId", "==", userId))),
+        ]);
+        if (!vivo) return;
+        const docs: any[] = [];
+        settled.forEach((r) => { if (r.status === "fulfilled") r.value.docs.forEach((d) => docs.push(d.data())); });
+        const activa = docs.find(
+          (x) => x.estudianteId === userId && x.estado !== "cancelado" && x.finalizada !== true && x.fechaPresentacion && x.grupoId,
+        );
+        if (!activa) { setProgresoLibro(null); return; }
+        const g = await getDoc(doc(db, "grupos", activa.grupoId));
+        if (!vivo) return;
+        const gd = g.exists() ? (g.data() as any) : {};
+        const meta = Number(gd.horasRequeridas ?? gd.total_horas ?? 0);
+        const p = progresoPorMeta(activa.horario, activa.fechaPresentacion, meta);
+        if (vivo) setProgresoLibro(p.valido ? p : null);
+      } catch {
+        if (vivo) setProgresoLibro(null);
+      }
+    })();
+    return () => { vivo = false; };
+  }, [visible, userId, rol, viewerUserId]);
 
   const loadPerfil = async () => {
     setLoading(true);
@@ -245,10 +287,18 @@ export default function PerfilPublicoModal({
   const foto = getFoto();
 
   const esEstudiante = rol === "talento" || rol === "alumno";
-  const horasAprob = Number(perfil?.horas_aprobadas ?? 0);
-  const horasObj = Number(perfil?.horas_objetivo ?? 500) || 500;
-  const horasPct = Math.min(100, Math.round((horasAprob / Math.max(horasObj, 1)) * 100));
-  const esGraduado = esEstudiante && horasPct >= 100;
+  // Con una pasantía por cupo EN CURSO, las horas reales salen del libro de
+  // horas (`progresoLibro`); si no, del expediente (`horas_aprobadas`).
+  const progVal = !!progresoLibro?.valido;
+  const horasAprob = progVal ? Math.round(progresoLibro!.cumplidas) : Number(perfil?.horas_aprobadas ?? 0);
+  const horasObj = progVal ? progresoLibro!.meta : (Number(perfil?.horas_objetivo ?? 500) || 500);
+  const horasPct = progVal
+    ? progresoLibro!.pct
+    : Math.min(100, Math.round((horasAprob / Math.max(horasObj, 1)) * 100));
+  // La insignia "Certificado" NO depende del libro de horas en vivo: con una
+  // pasantía por cupo en curso (`progVal`) el estudiante, por definición, aún
+  // no está certificado.
+  const esGraduado = esEstudiante && !progVal && horasPct >= 100;
   const esAltoNivel =
     esEstudiante &&
     Number(perfil?.calificaciones_recibidas ?? 0) > 0 &&
