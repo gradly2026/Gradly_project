@@ -139,7 +139,10 @@ export function RedGradlyBanner() {
               };
             })
             .filter(e => e.alianzas > 0)
-            .sort((a, b) => b.score - a.score)
+            // Desempate DETERMINISTA: con el mismo dato en Firestore el top 3
+            // sale siempre igual (mismo orden en toda sesión / entorno), aunque
+            // varias instituciones empaten en `score`.
+            .sort((a, b) => b.score - a.score || a.nombre.localeCompare(b.nombre) || a.id.localeCompare(b.id))
             .slice(0, 3)
             .map(({ id, nombre, alianzas, calificacion }) => ({ id, nombre, alianzas, calificacion }));
 
@@ -154,9 +157,19 @@ export function RedGradlyBanner() {
           const porId = new Map<string, TopEstudianteEntry>();
           const absorber = (arr: any) => {
             (Array.isArray(arr) ? arr : []).forEach((e: any) => {
-              if (!e?.id) return;
-              const prev = porId.get(e.id);
-              if (!prev || (e.contratado && !prev.contratado)) porId.set(e.id, e as TopEstudianteEntry);
+              // `top_estudiantes` lo auto-reportan DOS bloques con formas
+              // distintas (id/stars nuevo · uid/calificacion_promedio legado);
+              // se toleran las dos para que la lista NO cambie según cuál
+              // auto-reporte corrió de último en cada perfil.
+              const id: string | undefined = e?.id ?? e?.uid;
+              if (!id) return;
+              const norm = {
+                ...e,
+                id,
+                stars: Number(e?.stars ?? e?.calificacion_promedio) || 0,
+              } as TopEstudianteEntry;
+              const prev = porId.get(id);
+              if (!prev || (norm.contratado && !prev.contratado)) porId.set(id, norm);
             });
           };
           empSnap.docs.forEach(d => absorber((d.data() as any).top_estudiantes));
@@ -164,7 +177,13 @@ export function RedGradlyBanner() {
           setTopEst(
             Array.from(porId.values())
               .filter(e => (Number(e.stars) || 0) > 0)
-              .sort((a, b) => (Number(b.stars) || 0) - (Number(a.stars) || 0))
+              // Desempate DETERMINISTA (muchos empatan en ★5.0): mismo dato →
+              // mismo top 3 en toda sesión / entorno.
+              .sort((a, b) =>
+                (Number(b.stars) || 0) - (Number(a.stars) || 0) ||
+                String(a.nombre || '').localeCompare(String(b.nombre || '')) ||
+                String(a.id).localeCompare(String(b.id)),
+              )
               .slice(0, 3),
           );
         } else {
