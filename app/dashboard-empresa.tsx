@@ -98,6 +98,7 @@ import { useAuth } from '../src/context/AuthContext';
 import { subscribeUnreadTotal } from '../src/services/chatService';
 import { enviarNotificacion } from '../src/services/notificationService';
 import { recomputarTopEstudiantesEmpresa } from '../src/services/topEstudiantesService';
+import { finalizarInscripcionPorHoras } from '../src/services/reclamoCuposService';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
@@ -3489,6 +3490,41 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
   const progresoDeCupo = (asignacionId: string) =>
     inscripcionesCupo.find(i => i.asignacion.id === asignacionId)?.progreso ?? null;
 
+  // Cierre automático al 100 % desde el lado de la EMPRESA: cuando el libro de
+  // horas de un cupo llega al 100 %, la empresa también marca la asignación
+  // `finalizada` (misma llamada idempotente que ya hace el cliente del
+  // estudiante). Así el pase a "Por certificar" es instantáneo para los 3
+  // roles sin esperar a que el estudiante abra su app ni al barrido horario.
+  // Requiere la rama de `asignaciones_cupo` en firestore.rules que permite a la
+  // empresa fijar SOLO `finalizada`/`finalizadaAt`/`horasCumplidas`. Si no está
+  // desplegada, el intento falla en silencio (una vez por sesión y cupo) y el
+  // cierre real lo hace el cliente del estudiante o el barrido del servidor.
+  const cerradosRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    cuposActivos.forEach(c => {
+      if (c.finalizada === true || cerradosRef.current.has(c.id)) return;
+      const prog = inscripcionesCupo.find(i => i.asignacion.id === c.id)?.progreso ?? null;
+      if (!prog?.completado) return;
+      cerradosRef.current.add(c.id);
+      void finalizarInscripcionPorHoras(c.id, {
+        estudianteNombre: c.estudianteNombre,
+        estudianteId: c.estudianteId,
+        universidadId: c.universidadId,
+        empresaId: c.empresaId,
+        empresaNombre: c.empresaNombre,
+        vacanteTitulo: c.vacanteTitulo,
+        horasCumplidas: prog.meta,
+      }).catch(() => { /* rules sin desplegar / red: reintenta el estudiante/servidor */ });
+    });
+  }, [cuposActivos, inscripcionesCupo]);
+
+  // Cupos que se muestran en "Pasantes por cupo": los que aún NO llegaron al
+  // 100 %. Los completados ya pasaron (o están pasando) a "Por certificar".
+  const cuposEnCurso = useMemo(
+    () => cuposActivos.filter(c => !(inscripcionesCupo.find(i => i.asignacion.id === c.id)?.progreso?.completado)),
+    [cuposActivos, inscripcionesCupo],
+  );
+
   // Abre el modal de detalle de la pasantía (mismo patrón que GrupoEstudiantesModal).
   const abrirDetallePasantia = async (c: any) => {
     if (!c.vacanteId) return;
@@ -3537,7 +3573,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
   //    grupo. ──
   const cuerpoPorCupo = (
     <>
-      {cuposActivos.map(c => {
+      {cuposEnCurso.map(c => {
         const prog = progresoDeCupo(c.id);
         return (
           <TouchableOpacity key={c.id} activeOpacity={0.85} onPress={() => setCupoSel(c)}>
@@ -3624,7 +3660,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
         </>
       )}
 
-      {cuposActivos.length === 0 && grupoActivas.length === 0 && (
+      {cuposEnCurso.length === 0 && grupoActivas.length === 0 && (
         <Text style={s.emptyText}>Sin pasantes activos.</Text>
       )}
     </>
@@ -3635,7 +3671,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
       {/* Botones-filtro de la parte principal (se entra en "Incidencias"). */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
         <FiltroChip label="Incidencias" activo={filtro === 'incidencias'} onPress={() => setFiltro('incidencias')} />
-        <FiltroChip label={`Pasantes por cupo (${cuposActivos.length + grupoActivas.length})`} activo={filtro === 'porCupo'} onPress={() => setFiltro('porCupo')} />
+        <FiltroChip label={`Pasantes por cupo (${cuposEnCurso.length + grupoActivas.length})`} activo={filtro === 'porCupo'} onPress={() => setFiltro('porCupo')} />
         <FiltroChip label="Pasantes por certificar" activo={filtro === 'porCertificar'} onPress={() => setFiltro('porCertificar')} />
         <FiltroChip label="Historial de Pasantes" activo={filtro === 'historial'} onPress={() => setFiltro('historial')} />
       </View>

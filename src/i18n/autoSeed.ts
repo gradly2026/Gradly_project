@@ -893,6 +893,10 @@ export const CUPOS_SEED_EN: Record<string, string> = {
 
   // ── Evaluación a 3 bandas al culminar (estudiante ↔ empresa ↔ universidad) ──
   "Calificar ahora": "Rate now",
+  "Calificar desempeño": "Rate performance",
+  "Calificar pasantía": "Rate internship",
+  "Continuar": "Continue",
+  "Ya enviaste tus calificaciones de esta pasantía.": "You already submitted your ratings for this internship.",
   "¡Gracias por compartir tu evaluación!": "Thanks for sharing your review!",
   "Incidencias de esta práctica": "Incidents from this placement",
   "Cumpliste todas tus horas de práctica. Califica a la empresa donde trabajaste y a tu universidad.":
@@ -901,6 +905,12 @@ export const CUPOS_SEED_EN: Record<string, string> = {
     "These students completed all their practice hours. Rate them, review their university, and send the completion certificate.",
   "Estos estudiantes cumplieron todas sus horas de práctica. Califícalos y evalúa también a la empresa.":
     "These students completed all their practice hours. Rate them and the company too.",
+  "Estos estudiantes cumplieron todas sus horas de práctica. Genera y envía su comprobante de finalización. Podrás calificarlos desde “Pasantías → Por certificar”.":
+    "These students completed all their practice hours. Generate and send their completion certificate. You can rate them from “Internships → To certify”.",
+  "Estos estudiantes cumplieron todas sus horas de práctica. Revísalos en “Pasantías” para certificarlos y calificarlos.":
+    "These students completed all their practice hours. Review them in “Internships” to certify and rate them.",
+  "Cumpliste todas tus horas de práctica. Desde “Mi progreso” puedes calificar a la empresa y a tu universidad cuando quieras.":
+    "You completed all your practice hours. From “My progress” you can rate the company and your university whenever you want.",
 
   // ── Cierre del comprobante de finalización (constancia por cupo) ──
   "Tu comprobante está en camino": "Your certificate is on its way",

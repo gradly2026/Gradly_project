@@ -14,6 +14,7 @@ import { COLECCION_ASIGNACIONES, type AsignacionCupo } from '../services/reclamo
 import { abrirConstancia, constanciaHtml } from '../utils/constanciaHtml';
 import { showAlert, showConfirm } from './AppAlert';
 import { AutoText as Text } from './AutoText';
+import CalificarPasantiaModal from './CalificarPasantiaModal';
 import ComprobanteEmpresaModal from './ComprobanteEmpresaModal';
 
 type Rol = 'estudiante' | 'universidad' | 'empresa';
@@ -40,6 +41,8 @@ export default function ComprobantePasantiaCard({ rol, uid }: { rol: Rol; uid: s
   const [comprobantes, setComprobantes] = useState<Comprobante[]>([]);
   const [validando, setValidando] = useState<string | null>(null);
   const [enviarPara, setEnviarPara] = useState<AsignacionCupo | null>(null);
+  // Fila cuya calificación de desempeño (no intrusiva) se está abriendo.
+  const [calificarPara, setCalificarPara] = useState<Fila | null>(null);
 
   const campo =
     rol === 'estudiante' ? 'estudianteId'
@@ -167,20 +170,30 @@ export default function ComprobantePasantiaCard({ rol, uid }: { rol: Rol; uid: s
 
                 {/* Acciones por rol */}
                 {rol === 'empresa' && f.asignacion ? (
-                  <TouchableOpacity
-                    style={s.btnLine}
-                    onPress={() => setEnviarPara(f.asignacion)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={enviado ? 'create-outline' : 'send-outline'}
-                      size={14}
-                      color={colors.primaryLight}
-                    />
-                    <Text style={s.btnLineText}>
-                      {enviado ? 'Corregir y reenviar' : 'Enviar comprobante'}
-                    </Text>
-                  </TouchableOpacity>
+                  <View style={s.uniBtns}>
+                    <TouchableOpacity
+                      style={s.btnLine}
+                      onPress={() => setEnviarPara(f.asignacion)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={enviado ? 'create-outline' : 'send-outline'}
+                        size={14}
+                        color={colors.primaryLight}
+                      />
+                      <Text style={s.btnLineText}>
+                        {enviado ? 'Corregir y reenviar' : 'Enviar comprobante'}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={s.btnLine}
+                      onPress={() => setCalificarPara(f)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="star-outline" size={14} color={colors.gold} />
+                      <Text style={[s.btnLineText, { color: colors.gold }]}>Calificar desempeño</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : null}
 
                 {rol === 'universidad' && enviado && f.comp ? (
@@ -222,6 +235,23 @@ export default function ComprobantePasantiaCard({ rol, uid }: { rol: Rol; uid: s
           onListo={() => setEnviarPara(null)}
         />
       ) : null}
+
+      {/* Calificación de desempeño NO intrusiva — solo desde este botón. */}
+      <CalificarPasantiaModal
+        visible={!!calificarPara}
+        uid={uid}
+        rol={rol}
+        asignacionId={calificarPara?.id ?? null}
+        titulo={calificarPara ? nombreEstudiante(calificarPara) : undefined}
+        horas={(() => {
+          if (!calificarPara) return null;
+          const h = Number(
+            calificarPara.comp?.horasCumplidas ?? calificarPara.asignacion?.horasCumplidas ?? 0,
+          );
+          return h > 0 ? { cumplidas: h, objetivo: h } : null;
+        })()}
+        onClose={() => setCalificarPara(null)}
+      />
     </>
   );
 }

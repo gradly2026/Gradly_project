@@ -36,6 +36,8 @@ import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, webScrollStyle, type GradlyColors } from '../../src/context/ThemeContext';
 import { estudianteFinalizaProyecto } from '../../src/services/pasantiaService';
 import { abrirChatDirectoEmpresaEstudiante } from '../../src/services/chatService';
+import { getFeedbackPendiente, type FeedbackPendiente } from '../../src/services/feedbackService';
+import CalificarPasantiaModal from '../../src/components/CalificarPasantiaModal';
 import { progresoPorFechas } from '../../src/utils/progresoPasantia';
 // Función utilitaria: dado un rango de fechas (inicio/fin de una
 // pasantía), calcula en qué punto del tiempo estamos AHORA — devuelve
@@ -620,6 +622,23 @@ export default function ProgresoTab() {
   // culminó; la culminada vive en Historial.
   const inscripcionActiva = inscripcion && !inscripcion.finalizada ? inscripcion : null;
 
+  // ── Calificaciones pendientes (NO intrusivas) ──
+  // El estudiante ya no ve el formulario forzado al iniciar sesión: lo abre él
+  // mismo con el botón "Calificar mi experiencia" (arriba de "Mi institución"),
+  // vía CalificarPasantiaModal. Se recarga la lista al culminar una pasantía
+  // (cambia `historialCupos`) y tras enviar una calificación.
+  const [pendCalif, setPendCalif] = useState<FeedbackPendiente[]>([]);
+  const [showCalif, setShowCalif] = useState(false);
+  const [recargaCalif, setRecargaCalif] = useState(0);
+  useEffect(() => {
+    if (!user?.uid) { setPendCalif([]); return; }
+    let vivo = true;
+    getFeedbackPendiente(user.uid, 'estudiante')
+      .then(l => { if (vivo) setPendCalif(l); })
+      .catch(() => { if (vivo) setPendCalif([]); });
+    return () => { vivo = false; };
+  }, [user?.uid, historialCupos.length, recargaCalif]);
+
   // ── Firestore: perfil ────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
@@ -803,6 +822,23 @@ export default function ProgresoTab() {
         ) : null
       ) : (
        <>
+        {/* ── Calificar mi experiencia (NO intrusivo) ──
+            Arriba de "Mi institución". Solo si hay pasantías culminadas sin
+            calificar. Abre CalificarPasantiaModal, con "Calificar más tarde". */}
+        {pendCalif.length > 0 && (
+          <TouchableOpacity
+            style={styles.califBtn}
+            activeOpacity={0.85}
+            onPress={() => setShowCalif(true)}
+          >
+            <Ionicons name="star" size={16} color={COLORS.gold} />
+            <Text style={styles.califBtnTxt} noTranslate>
+              {`Calificar mi experiencia (${pendCalif.length})`}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.gold} />
+          </TouchableOpacity>
+        )}
+
         {/* ── Mi institución: universidad y grupo al que pertenece ──
             Va ARRIBA del termómetro a propósito: las horas objetivo, el
             calendario y el período que se ven más abajo salen todos del
@@ -952,6 +988,18 @@ export default function ProgresoTab() {
       )}
 
       </ScrollView>
+
+      {/* Calificaciones NO intrusivas: solo desde el botón de arriba. */}
+      {user?.uid && (
+        <CalificarPasantiaModal
+          visible={showCalif}
+          uid={user.uid}
+          rol="estudiante"
+          permitirPosponer
+          onClose={() => setShowCalif(false)}
+          onEnviado={() => setRecargaCalif(n => n + 1)}
+        />
+      )}
     </View>
     </LiquidBackground>
   );
@@ -1064,6 +1112,16 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     fontSize: 15, fontFamily: FONTS.soraSemiBold,
     color: COLORS.textPrimary, marginBottom: 10, marginTop: 4,
   },
+
+  // Botón "Calificar mi experiencia" (arriba de "Mi institución")
+  califBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.gold + '15',
+    borderWidth: 1, borderColor: COLORS.gold + '40',
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    marginBottom: 16,
+  },
+  califBtnTxt: { flex: 1, fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.gold },
 
   // Pasantía activa
   activaCard: {

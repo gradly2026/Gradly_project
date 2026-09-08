@@ -2,13 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { textoHorario } from '../data/disponibilidad';
 import { cuposLibresEnReclamo } from '../utils/cupos';
-import {
-  getFeedbackPendiente,
-  posponerFeedback,
-  type EntidadRol,
-  type FeedbackPendiente,
-} from '../services/feedbackService';
-import { enviarNotificacion } from '../services/notificationService';
+import { type EntidadRol } from '../services/feedbackService';
 import {
   getAvisoFinalizacionEstudiante,
   getAvisosCuposEstudiante,
@@ -30,7 +24,6 @@ import { showAlert } from './AppAlert';
 import AvisoListaModal, { type AvisoItem } from './AvisoListaModal';
 import ComprobanteEmpresaModal from './ComprobanteEmpresaModal';
 import ComprobanteFinalInfoModal from './ComprobanteFinalInfoModal';
-import FeedbackExperienciaModal from './FeedbackExperienciaModal';
 import ReclamoDetailModal from './ReclamoDetailModal';
 
 /**
@@ -74,25 +67,21 @@ function inscripcionAItem(a: AsignacionCupo, audiencia: 'universidad' | 'empresa
 }
 
 /**
- * Modal "culminó su pasantía" + cola de evaluación a 3 bandas + cierre del
- * comprobante.
+ * Modal "culminó su pasantía" (solo informativo) + cierre del comprobante.
  *
- * - `aviso`   → `AvisoListaModal` con la lista de pasantías culminadas y el
- *               botón "Calificar ahora" ("Entendido" = salir sin calificar).
- * - `evaluar` → una a una, las `FeedbackExperienciaModal` pendientes de ESTE
- *               lote (`getFeedbackPendiente` filtrado a `solicitudId` ∈ ids del
- *               lote; el orden ya viene bien del servicio).
+ * - `aviso`   → `AvisoListaModal` con la lista de pasantías culminadas. El
+ *               botón "Continuar" pasa al cierre; la X sale sin más.
  * - `final`   → cierre según rol: estudiante/universidad ven un informativo;
  *               la empresa recorre `ComprobanteEmpresaModal` por cada estudiante
  *               para generar y enviar la constancia.
  *
- * `onFin` (marca el flag "visto" del rol y cierra) corre al terminar el cierre
- * o si el usuario sale con "Entendido". La red de seguridad global
- * (`FeedbackGate`) recoge lo pendiente en el próximo arranque; el comprobante
- * sin enviar queda visible en la tarjeta del inicio.
+ * Las CALIFICACIONES ya NO se fuerzan aquí (pedido del equipo): se abren desde
+ * los botones "Calificar desempeño" / "Calificar mi experiencia" / "Calificar
+ * ahora" vía `CalificarPasantiaModal` (empresa/estudiante) o
+ * `CertificarPasanteModal` (universidad). `onFin` marca el flag "visto" del rol
+ * y cierra.
  */
 function CulminacionFlow({
-  uid,
   rol,
   asignaciones,
   titulo,
@@ -100,7 +89,6 @@ function CulminacionFlow({
   items,
   onFin,
 }: {
-  uid: string;
   rol: EntidadRol;
   asignaciones: AsignacionCupo[];
   titulo: string;
@@ -108,35 +96,11 @@ function CulminacionFlow({
   items: AvisoItem[];
   onFin: () => void;
 }) {
-  const [fase, setFase] = useState<'aviso' | 'evaluar' | 'final'>('aviso');
-  // Estudiantes (asignacionId) ya calificados en esta sesión del modal.
-  const [hechas, setHechas] = useState<string[]>([]);
-  // Estudiante que se está calificando ahora (asignacionId), o null.
-  const [activo, setActivo] = useState<string | null>(null);
-  const [subCola, setSubCola] = useState<FeedbackPendiente[] | null>(null);
-  const [subIdx, setSubIdx] = useState(0);
+  const [fase, setFase] = useState<'aviso' | 'final'>('aviso');
   const [finIdx, setFinIdx] = useState(0);
 
-  const multi = asignaciones.length > 1;
-  const restantes = asignaciones.filter(a => !hechas.includes(a.id));
-  const itemsRestantes = items.filter(it => restantes.some(a => a.id === it.id));
-
-  // Carga las evaluaciones pendientes SOLO de un estudiante y arranca su cola.
-  const empezarEvaluacion = async (asignacionId: string) => {
-    setActivo(asignacionId);
-    setSubCola(null);
-    setSubIdx(0);
-    setFase('evaluar');
-    try {
-      const todos = await getFeedbackPendiente(uid, rol);
-      setSubCola(todos.filter(p => p.solicitudId === asignacionId));
-    } catch {
-      setSubCola([]);
-    }
-  };
-
   if (fase === 'aviso') {
-    if (restantes.length === 0) {
+    if (asignaciones.length === 0) {
       setTimeout(() => setFase('final'), 0);
       return null;
     }
@@ -144,57 +108,11 @@ function CulminacionFlow({
       <AvisoListaModal
         icon="checkmark-done-circle-outline"
         titulo={titulo}
-        subtitulo={
-          multi
-            ? 'Toca un estudiante para calificarlo. Al terminar con uno, elige el siguiente.'
-            : subtitulo
-        }
-        items={itemsRestantes}
-        {...(multi
-          ? { onItemPress: (id: string) => void empezarEvaluacion(id) }
-          : { accionLabel: 'Calificar ahora', onAccion: () => void empezarEvaluacion(asignaciones[0].id) })}
+        subtitulo={subtitulo}
+        items={items}
+        accionLabel="Continuar"
+        onAccion={() => setFase('final')}
         onCerrar={onFin}
-      />
-    );
-  }
-
-  if (fase === 'evaluar') {
-    if (subCola === null) return null; // cargando
-    const actual = subCola[subIdx];
-    if (!actual) {
-      // Este estudiante terminó → volver a la lista (o al cierre si no quedan).
-      setTimeout(() => {
-        setHechas(h => (activo && !h.includes(activo) ? [...h, activo] : h));
-        setActivo(null);
-        setFase('aviso');
-      }, 0);
-      return null;
-    }
-    return (
-      <FeedbackExperienciaModal
-        key={actual.feedbackId}
-        pendiente={actual}
-        onSubmitted={() => setTimeout(() => setSubIdx(i => i + 1), 0)}
-        onPosponer={() => {
-          const fb = actual;
-          // Posponer = dejar de forzarla + recordatorio/notificación; seguimos
-          // con la siguiente evaluación de este mismo estudiante (o su cierre).
-          void (async () => {
-            try {
-              await posponerFeedback(uid, rol, fb.feedbackId);
-              await enviarNotificacion(
-                uid,
-                'Calificación pendiente',
-                `Guardaste tu evaluación de "${fb.evaluadoNombre}" para más tarde. Ábrela cuando quieras desde aquí o desde tu inicio.`,
-                'info',
-                `feedbackPendiente:${fb.feedbackId}`,
-              );
-            } catch (e) {
-              console.warn('No se pudo posponer la evaluación:', e);
-            }
-          })();
-          setTimeout(() => setSubIdx(i => i + 1), 0);
-        }}
       />
     );
   }
@@ -327,11 +245,10 @@ function AvisosEmpresa() {
   if (!finCerrado && finalizadas.length > 0 && user?.uid) {
     return (
       <CulminacionFlow
-        uid={user.uid}
         rol="empresa"
         asignaciones={finalizadas}
         titulo="Estudiantes que culminaron su pasantía"
-        subtitulo="Estos estudiantes cumplieron todas sus horas de práctica. Califícalos, evalúa a su universidad y envía el comprobante de finalización."
+        subtitulo="Estos estudiantes cumplieron todas sus horas de práctica. Genera y envía su comprobante de finalización. Podrás calificarlos desde “Pasantías → Por certificar”."
         items={finalizadas.map(a => inscripcionAItem(a, 'empresa'))}
         onFin={() => {
           void marcarInscripcionesAvisadas(user.uid, 'perfiles_empresas', finalizadas.map(a => a.id), 'finalizado').catch(() => {});
@@ -395,11 +312,10 @@ function AvisosUniversidad() {
   if (!finCerrado && finalizadas.length > 0 && user?.uid) {
     return (
       <CulminacionFlow
-        uid={user.uid}
         rol="universidad"
         asignaciones={finalizadas}
         titulo="Estudiantes que culminaron su pasantía"
-        subtitulo="Estos estudiantes cumplieron todas sus horas de práctica. Califícalos y evalúa también a la empresa."
+        subtitulo="Estos estudiantes cumplieron todas sus horas de práctica. Revísalos en “Pasantías” para certificarlos y calificarlos."
         items={finalizadas.map(a => inscripcionAItem(a, 'universidad'))}
         onFin={() => {
           void marcarInscripcionesAvisadas(user.uid, 'perfiles_universidades', finalizadas.map(a => a.id), 'finalizado').catch(() => {});
@@ -446,11 +362,10 @@ function AvisosEstudiante() {
   if (!finCerrado && finalizada && user?.uid) {
     return (
       <CulminacionFlow
-        uid={user.uid}
         rol="estudiante"
         asignaciones={[finalizada]}
         titulo="¡Culminaste tu pasantía!"
-        subtitulo="Cumpliste todas tus horas de práctica. Califica a la empresa donde trabajaste y a tu universidad."
+        subtitulo="Cumpliste todas tus horas de práctica. Desde “Mi progreso” puedes calificar a la empresa y a tu universidad cuando quieras."
         items={[{
           id: finalizada.id,
           primary: finalizada.empresaNombre || 'Empresa',

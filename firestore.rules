@@ -307,6 +307,18 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['fechaPresentacion', 'fechaPresentacionAt'])
           )
+          // 🆕 La EMPRESA dueña puede CERRAR la inscripción al cumplirse la meta
+          //    de horas (mismo cierre idempotente que ya hace el estudiante).
+          //    Solo el paso false→true de `finalizada` + su timestamp + las
+          //    horas cumplidas; nada más (ni estado, ni estudiante, ni horario).
+          || (
+            request.auth.uid == resource.data.empresaId
+            && resource.data.estado == 'tomado'
+            && resource.data.finalizada != true
+            && request.resource.data.finalizada == true
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['finalizada', 'finalizadaAt', 'horasCumplidas'])
+          )
         );
       allow delete: if esAdmin();
     }
