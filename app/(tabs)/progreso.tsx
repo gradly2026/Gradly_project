@@ -622,6 +622,17 @@ export default function ProgresoTab() {
   // culminó; la culminada vive en Historial.
   const inscripcionActiva = inscripcion && !inscripcion.finalizada ? inscripcion : null;
 
+  // "Tu pasantía activa" se OCULTA por completo una vez que el estudiante
+  // culminó su pasantía (pedido del usuario: tras culminar, después del
+  // calendario va directo a "Historial"). Sigue visible si tiene una
+  // inscripción de cupo EN CURSO, o si aún no ha culminado ninguna pasantía
+  // (para conservar el estado vacío del alumno que recién empieza).
+  const yaCulminoPasantia =
+    historialCupos.length > 0 ||
+    (perfil as any)?.estado_pasantia === 'finalizada' ||
+    (ledger?.completado ?? false);
+  const mostrarPasantiaActiva = !!inscripcionActiva || !yaCulminoPasantia;
+
   // ── Calificaciones pendientes (NO intrusivas) ──
   // El estudiante ya no ve el formulario forzado al iniciar sesión: lo abre él
   // mismo con el botón "Calificar mi experiencia" (arriba de "Mi institución"),
@@ -911,19 +922,24 @@ export default function ProgresoTab() {
         )}
 
         {/* ── Tu pasantía activa ── (un solo bloque: inscripción de cupo,
-             aplicación individual o acuerdo de grupo; el que aplique) */}
-        <Text style={styles.sectionTitle}>Tu pasantía activa</Text>
-        {inscripcionActiva ? (
-          <MiInscripcionCard asignacion={inscripcionActiva} ledger={ledger} />
-        ) : activa ? (
-          <PasantiaActivaCard app={activa} onFinalizar={() => handleFinalizar(activa.id)} />
-        ) : acuerdo ? (
-          <MiPasantiaCard acuerdo={acuerdo} estadoServidor={pasantiaEstado} />
-        ) : (
-          <View style={styles.emptySection}>
-            <Ionicons name="briefcase-outline" size={40} color={COLORS.border} />
-            <Text style={styles.emptyText}>Sin pasantía activa en este momento.</Text>
-          </View>
+             aplicación individual o acuerdo de grupo; el que aplique).
+             Se oculta entera tras culminar — ver `mostrarPasantiaActiva`. */}
+        {mostrarPasantiaActiva && (
+          <>
+            <Text style={styles.sectionTitle}>Tu pasantía activa</Text>
+            {inscripcionActiva ? (
+              <MiInscripcionCard asignacion={inscripcionActiva} ledger={ledger} />
+            ) : activa ? (
+              <PasantiaActivaCard app={activa} onFinalizar={() => handleFinalizar(activa.id)} />
+            ) : acuerdo ? (
+              <MiPasantiaCard acuerdo={acuerdo} estadoServidor={pasantiaEstado} />
+            ) : (
+              <View style={styles.emptySection}>
+                <Ionicons name="briefcase-outline" size={40} color={COLORS.border} />
+                <Text style={styles.emptyText}>Sin pasantía activa en este momento.</Text>
+              </View>
+            )}
+          </>
         )}
 
         {/* ── Historial ── */}

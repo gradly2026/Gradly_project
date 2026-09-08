@@ -25,10 +25,13 @@ import {
   type CategoriaIncidencia,
 } from '../services/incidenciaService';
 
+// "La app" (`plataforma`) se quitó de esta lista a pedido del usuario: el
+// estudiante ya no reporta problemas de la app desde aquí (queda "Otro"). El
+// tipo `CategoriaIncidencia` y el servicio siguen soportando 'plataforma' para
+// no romper incidencias antiguas ni la vista de universidad/empresa.
 const CATEGORIAS: { key: CategoriaIncidencia; icon: keyof typeof Ionicons.glyphMap; clave: string }[] = [
   { key: 'empresa',     icon: 'business-outline', clave: 'inc_cat_empresa' },
   { key: 'universidad', icon: 'school-outline',   clave: 'inc_cat_universidad' },
-  { key: 'plataforma',  icon: 'phone-portrait-outline', clave: 'inc_cat_plataforma' },
   { key: 'otro',        icon: 'ellipsis-horizontal', clave: 'inc_cat_otro' },
 ];
 
