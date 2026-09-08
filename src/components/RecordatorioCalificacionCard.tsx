@@ -73,7 +73,7 @@ export default function RecordatorioCalificacionCard({
           <View style={[s.iconWrap, { backgroundColor: colors.warning + '22', borderColor: colors.warning + '55' }]}>
             <Ionicons name="star-outline" size={17} color={colors.warning} />
           </View>
-          <View style={{ flex: 1 }}>
+          <View>
             <Text style={s.titulo}>
               {n === 1 ? 'Tienes 1 calificación pendiente' : 'Tienes calificaciones pendientes'}
             </Text>
@@ -107,13 +107,13 @@ export default function RecordatorioCalificacionCard({
 
 const makeStyles = (COLORS: GradlyColors) =>
   StyleSheet.create({
-    row: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    row: { alignItems: 'center', gap: 8 },
     iconWrap: {
       width: 34, height: 34, borderRadius: 10, borderWidth: 1,
       alignItems: 'center', justifyContent: 'center',
     },
-    titulo: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
-    sub: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 17, marginTop: 2 },
+    titulo: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary, textAlign: 'center' },
+    sub: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 17, marginTop: 2, textAlign: 'center' },
     btn: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
       borderRadius: 11, paddingVertical: 10, alignSelf: 'stretch',

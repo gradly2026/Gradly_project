@@ -43,7 +43,7 @@ import { textoHorario } from '../data/disponibilidad';
 // Función utilitaria que convierte un objeto de horario estructurado (día,
 // hora de entrada, hora de salida...) en un texto legible, ej.
 // "Lunes a Viernes, 8:00 - 17:00".
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import type { EstadoReclamo, ReclamoCupos } from '../services/reclamoCuposService';
 // Se importan SOLO los tipos (con la palabra `type`) del servicio de
 // reclamos de cupos — este componente necesita conocer la FORMA de esos
@@ -232,7 +232,7 @@ export default function ReclamoDetailModal({ visible, reclamoId, onClose, onResp
             </View>
           ) : (
             // Tercer estado ("camino feliz"): ya hay datos para mostrar.
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={webScrollStyle(colors)} contentContainerStyle={{ paddingBottom: 40 }}>
               <View style={styles.hero}>
                 <Text style={styles.vacanteTitulo} noTranslate>{r.vacanteTitulo || 'Vacante'}</Text>
                 {/* noTranslate: el título de la vacante es contenido

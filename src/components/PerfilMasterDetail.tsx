@@ -19,17 +19,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   ScrollView,
   StyleSheet,
-
-
   TouchableOpacity,
   View,
 } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import StorageAvatar from './StorageAvatar';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { useAppLanguage } from '../../hooks/useAppLanguage';
 
 export type PerfilTone = 'blue' | 'green' | 'orange' | 'red' | 'purple';
@@ -132,9 +129,7 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
   const { colors, isDark, setTheme } = useTheme();
   const { language, setLanguage } = useAppLanguage();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const webScrollStyle = Platform.OS === 'web'
-    ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
-    : undefined;
+  const scrollStyle = webScrollStyle(colors);
   const labels = { ...LABELS_ES, ...(props.labels ?? {}) };
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -223,7 +218,7 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
         </View>
 
         <ScrollView
-          style={webScrollStyle}
+          style={scrollStyle}
           showsVerticalScrollIndicator
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
@@ -379,7 +374,7 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
   return (
     <View style={styles.container}>
       <ScrollView
-        style={webScrollStyle}
+        style={scrollStyle}
         showsVerticalScrollIndicator
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"

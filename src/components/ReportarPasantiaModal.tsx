@@ -24,7 +24,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useTheme, type GradlyColors } from "../context/ThemeContext";
+import { useTheme, webScrollStyle, type GradlyColors } from "../context/ThemeContext";
 import { MOTIVOS_REPORTE_PASANTIA, reportarPasantia } from "../services/reporteService";
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 
@@ -132,7 +132,7 @@ export default function ReportarPasantiaModal({
               </TouchableOpacity>
             </View>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={webScrollStyle(colors)}>
               <Text style={s.label}>Motivo</Text>
               <View style={s.motivos}>
                 {MOTIVOS_REPORTE_PASANTIA.map((m) => {

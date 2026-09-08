@@ -14,6 +14,7 @@ import {
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import { auth } from "../config/firebaseConfig";
 import OfrecerEmpresaModal from "./OfrecerEmpresaModal";
+import { useTheme, webScrollStyle } from "../context/ThemeContext";
 
 export interface GroupStudent {
   id: string;
@@ -84,6 +85,7 @@ export default function GroupDetailModal({
   onSave,
   saving,
 }: Props) {
+  const { colors } = useTheme();
   const [draft, setDraft] = useState<GrupoData | null>(null);
   const [showOfrecer, setShowOfrecer] = useState(false);
 
@@ -144,7 +146,7 @@ export default function GroupDetailModal({
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView style={webScrollStyle(colors)} contentContainerStyle={styles.content}>
           <View style={styles.card}>
             <View style={styles.labelRow}>
               <Text style={styles.label}>Especialidad</Text>

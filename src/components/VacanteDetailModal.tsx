@@ -20,6 +20,7 @@ import ProfileViewerModal from "./ProfileViewerModal";
 import { cuposDisponibles, hayCupos, textoCupos, textoSalario } from "../utils/cupos";
 import { afinidadCarreraVacante } from "../data/areas";
 import { useTranslation } from "../context/TranslationContext";
+import { useTheme, webScrollStyle } from "../context/ThemeContext";
 import { textoHorario, type HorarioPasantia } from "../data/disponibilidad";
 
 // Forma flexible de vacante para reutilizar el modal en varios dashboards.
@@ -142,6 +143,7 @@ export default function VacanteDetailModal({
   inscritosUniversidadId, accionLabel, onAccion, accionCargando,
 }: Props) {
   const { t } = useTranslation();
+  const { colors } = useTheme();
   const [empresa, setEmpresa] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -257,7 +259,7 @@ export default function VacanteDetailModal({
             <Ionicons name="close" size={20} color={C.text} />
           </TouchableOpacity>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingTop: 26 }}>
+          <ScrollView style={webScrollStyle(colors)} showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingTop: 26 }}>
             {/* Estado */}
             <View style={[styles.estadoBadge, { backgroundColor: activa ? C.greenBg : C.redBg }]}>
               <View style={[styles.dot, { backgroundColor: activa ? C.green : C.red }]} />

@@ -17,7 +17,7 @@ import { AutoText as Text, AutoTextInput as TextInput } from './AutoText';
 import { showAlert } from './AppAlert';
 import { db } from '../config/firebaseConfig';
 import { useTranslation } from '../context/TranslationContext';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { crearIncidenciaEmpresa, MOTIVOS_INCIDENCIA_EMPRESA } from '../services/incidenciaService';
 
 /** Un pasante reportable — se arma en dashboard-empresa a partir de cupos,
@@ -122,7 +122,7 @@ export default function ReportarIncidenciaEmpresaModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+          <ScrollView style={webScrollStyle(colors)} contentContainerStyle={{ padding: 16, gap: 16 }}>
             <Text style={s.ayuda}>{t('inc_emp_ayuda')}</Text>
 
             {/* 1) Estudiante */}

@@ -50,7 +50,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AutoText as Text } from './AutoText';
 import { db } from '../config/firebaseConfig';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import type { AplicacionGrupo, EstadoAplicacionGrupo } from '../services/pasantiaService';
 // Tipos importados desde pasantiaService.ts (no desde reclamoCuposService.ts
 // como en el modal gemelo) — esta pantalla muestra postulaciones de
@@ -165,7 +165,7 @@ export default function AplicacionGrupoDetailModal({ visible, aplicacionId, onCl
               <Text style={styles.emptyText}>No se encontró esta postulación.</Text>
             </View>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={webScrollStyle(colors)} contentContainerStyle={{ paddingBottom: 40 }}>
               <View style={styles.hero}>
                 <Text style={styles.vacanteTitulo} noTranslate>{ap.vacanteTitulo || 'Vacante'}</Text>
                 {!!estadoMeta && (

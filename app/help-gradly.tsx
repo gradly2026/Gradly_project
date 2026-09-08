@@ -13,7 +13,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from '../src/components/AutoText';
 import { db } from '../src/config/firebaseConfig';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
@@ -22,7 +22,7 @@ import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 // mismo efecto visual de vidrio esmerilado (glassmorphism) que el resto
 // de la app — se usa como contenedor genérico en vez de un <View> simple
 // cada vez que se necesita ese estilo de tarjeta.
-import { useTheme, FONTS, type GradlyColors } from '../src/context/ThemeContext';
+import { useTheme, FONTS, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
 import { useTranslation } from '../src/context/TranslationContext';
 
 function useThemedStyles() {
@@ -91,15 +91,9 @@ export default function HelpGradlyScreen() {
   const { styles, colors } = useThemedStyles();
   const { t } = useTranslation();
   const soporte = useSoporte();
-  const webScrollStyle = Platform.OS === 'web'
-    ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
-    : undefined;
-  // Estilo EXTRA que solo aplica en la versión web: personaliza el color
-  // y grosor de la barra de scroll del navegador para que combine con el
-  // tema (esta propiedad no existe en React Native "puro", solo tiene
-  // efecto cuando el proyecto corre como página web — de ahí el
-  // "as any" para que TypeScript no se queje de una propiedad que no
-  // reconoce en su tipo estándar de estilos).
+  // Scroll delgado morado: mismo helper compartido que usa "Mi Perfil"
+  // (ver `webScrollStyle` en ThemeContext.tsx), no una copia propia.
+  const scrollStyle = webScrollStyle(colors);
 
   return (
     <LiquidBackground>
@@ -136,7 +130,7 @@ export default function HelpGradlyScreen() {
           // Ajuste específico de iOS: deja que el sistema operativo
           // acomode automáticamente el contenido respecto a barras de
           // navegación/estado, sin que se superponga.
-          style={[styles.scrollView, webScrollStyle]}
+          style={[styles.scrollView, scrollStyle]}
           showsVerticalScrollIndicator
           nestedScrollEnabled
           // Permite que este ScrollView funcione bien incluso si hay otro

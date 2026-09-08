@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from './AutoText';
 import { db } from '../config/firebaseConfig';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { normalizarSkill } from '../utils/skills';
 import { crearOfertaEmpleo } from '../services/contratoService';
 
@@ -124,7 +124,7 @@ export default function OfertarEmpleoModal({ visible, empresaId, empresaNombre, 
           ) : (
             <>
               <Text style={s.label}>Elige la vacante a ofrecer</Text>
-              <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
+              <ScrollView style={[{ maxHeight: 280 }, webScrollStyle(colors)]} showsVerticalScrollIndicator={false}>
                 <View style={{ gap: 8 }}>
                   {vacantes.map((v) => {
                     const activo = sel === v.id;

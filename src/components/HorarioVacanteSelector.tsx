@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { AutoText as Text } from "./AutoText";
-import { useTheme, type GradlyColors } from "../context/ThemeContext";
+import { useTheme, webScrollStyle, type GradlyColors } from "../context/ThemeContext";
 import { DIAS_LABORALES, type DiaLaboral } from "../types/chat";
 import { HORAS_JORNADA, type HorarioPasantia } from "../data/disponibilidad";
 
@@ -95,7 +95,7 @@ export default function HorarioVacanteSelector({
             <Text style={s.sheetTitle}>
               {picker === "inicio" ? "Hora de entrada" : "Hora de salida"}
             </Text>
-            <ScrollView style={{ maxHeight: 320 }}>
+            <ScrollView style={[{ maxHeight: 320 }, webScrollStyle(colors)]}>
               {HORAS_JORNADA.map((h) => {
                 const sel = (picker === "inicio" ? value.horaInicio : value.horaFin) === h;
                 return (

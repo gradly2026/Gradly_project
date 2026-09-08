@@ -130,7 +130,7 @@ import { ThemeToggleIcon } from './ThemeToggleButton';
 // de tema (compartido entre esta barra y otras pantallas, para que el
 // ícono se vea siempre igual).
 
-import { FONTS, useTheme } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslationContext } from '../context/TranslationContext';
 // Los 3 hooks de Context ya explicados en sus archivos respectivos:
@@ -643,7 +643,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
             )}
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          <ScrollView showsVerticalScrollIndicator={false} style={webScrollStyle(colors)} contentContainerStyle={{ paddingBottom: 40 }}>
             {notifs.length === 0 ? (
               <View style={styles.empty}>
                 <Ionicons name="notifications-off-outline" size={48} color={colors.textMuted} />

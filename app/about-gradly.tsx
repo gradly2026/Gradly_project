@@ -14,11 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useMemo } from 'react';
-import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from '../src/components/AutoText';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
-import { useTheme, FONTS, type GradlyColors } from '../src/context/ThemeContext';
+import { useTheme, FONTS, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
 import { useTranslation } from '../src/context/TranslationContext';
 
 function useThemedStyles() {
@@ -60,11 +60,9 @@ export default function AboutGradlyScreen() {
   const router = useRouter();
   const { styles, colors } = useThemedStyles();
   const { t } = useTranslation();
-  const webScrollStyle = Platform.OS === 'web'
-    ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
-    : undefined;
-  // Ver la explicación completa de este estilo en help-gradly.tsx: solo
-  // aplica en la versión web, para personalizar la barra de scroll.
+  // Scroll delgado morado: mismo helper compartido que usa "Mi Perfil"
+  // (ver `webScrollStyle` en ThemeContext.tsx), no una copia propia.
+  const scrollStyle = webScrollStyle(colors);
 
   return (
     <LiquidBackground>
@@ -87,7 +85,7 @@ export default function AboutGradlyScreen() {
 
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
-          style={[styles.scrollView, webScrollStyle]}
+          style={[styles.scrollView, scrollStyle]}
           showsVerticalScrollIndicator
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"

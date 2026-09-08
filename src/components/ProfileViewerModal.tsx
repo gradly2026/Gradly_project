@@ -33,7 +33,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { shadow } from '../utils/shadow';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { useIniciarChat } from '../hooks/useIniciarChat';
 import { subscribeUserChats, type ChatListItem } from '../services/chatService';
 import StorageAvatar from './StorageAvatar';
@@ -236,6 +236,17 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
   const progVal = !!progresoLibro?.valido;
   const horasAprobadas = progVal ? Math.round(progresoLibro!.cumplidas) : (data?.horas_aprobadas ?? 0);
   const horasObjetivo  = progVal ? progresoLibro!.meta : (data?.horas_objetivo ?? 500);
+  // El expediente ya certificó suficientes horas (flujo de GRUPO,
+  // `certificarPasantia` en solicitudPracticaService, que acredita
+  // `horas_aprobadas` sin tocar la asignación de cupo). Esto puede pasar
+  // aunque además quede una `asignaciones_cupo` sin cerrar formalmente (nadie
+  // marcó `finalizada`, p.ej. porque el estudiante nunca reabrió su pantalla
+  // de progreso tras terminar) — antes, en ese caso, el libro en vivo de ESE
+  // cupo (con su propia meta y horario, `progVal`) tapaba por completo las
+  // horas ya certificadas al expediente y la barra se veía incompleta pese a
+  // que el estudiante sí había terminado.
+  const horasCertificadasCompletas =
+    (data?.horas_aprobadas ?? 0) >= (data?.horas_objetivo ?? 500);
   // El estudiante ya cumplió sus horas cuando alcanza (o supera) la meta, o
   // cuando el sistema marcó su pasantía como 'finalizada' — eso lo pone
   // `finalizarInscripcionPorHoras` al cumplir la meta de horas del cupo, aunque
@@ -243,6 +254,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
   // En ese caso la barra va llena al 100%.
   const horasCompletas =
     (data as any)?.estado_pasantia === 'finalizada' ||
+    horasCertificadasCompletas ||
     (progVal ? progresoLibro!.completado : horasAprobadas >= horasObjetivo);
   const pct = horasCompletas
     ? 100
@@ -251,8 +263,12 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     : Math.min(100, Math.round((horasAprobadas / Math.max(horasObjetivo, 1)) * 100));
 
   // La insignia "Certificado" NO sale solo por el libro de horas en vivo: con
-  // una pasantía por cupo en curso (`progVal`) aún no está certificado.
-  const esGraduado  = !progVal && pct >= 100;
+  // una pasantía por cupo en curso (`progVal`) aún no está certificado — salvo
+  // que el expediente ya certificó las horas por otra vía (ver arriba).
+  const esGraduado =
+    (data as any)?.estado_pasantia === 'finalizada' ||
+    horasCertificadasCompletas ||
+    (!progVal && pct >= 100);
   // Insignia "Alto Nivel": promedio OFICIAL del perfil (feedback_pasantias, vía
   // feedbackService) — antes se derivaba de la subcolección paralela.
   const esAltoNivel =
@@ -294,7 +310,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
             <Text style={styles.empty}>No se encontró este perfil.</Text>
           </View>
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false} style={styles.pageMax} contentContainerStyle={{ paddingBottom: 40 }}>
+          <ScrollView showsVerticalScrollIndicator={false} style={[styles.pageMax, webScrollStyle(colors)]} contentContainerStyle={{ paddingBottom: 40 }}>
             {/* Hero */}
             <View style={styles.hero}>
               <StorageAvatar url={fotoUrl} size={96} fallbackIcon={fallbackIcon} />

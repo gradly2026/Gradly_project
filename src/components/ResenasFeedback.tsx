@@ -24,6 +24,7 @@ import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from "react-nat
 import { AutoText as Text } from "./AutoText";
 import { db } from "../config/firebaseConfig";
 import { useTranslation } from "../context/TranslationContext";
+import { DARK, LIGHT, webScrollStyle } from "../context/ThemeContext";
 
 type EntidadRol = "estudiante" | "empresa" | "universidad";
 
@@ -329,7 +330,10 @@ export function ResenasResumen({
             </View>
             <PromedioHeader promedio={promedio} total={total} T={T} />
             <View style={[styles.linea, { backgroundColor: T.line, marginVertical: 12 }]} />
-            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={[{ maxHeight: 380 }, webScrollStyle(theme === "light" ? LIGHT : DARK)]}
+              showsVerticalScrollIndicator={false}
+            >
               <ResenasFeedback entidadId={entidadId} theme={theme} limite={50} sinCabecera />
             </ScrollView>
           </View>

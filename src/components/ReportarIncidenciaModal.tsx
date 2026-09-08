@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput } from './AutoText';
 import { useTranslation } from '../context/TranslationContext';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import {
   crearIncidencia,
   MOTIVOS_INCIDENCIA,
@@ -121,7 +121,7 @@ export default function ReportarIncidenciaModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+          <ScrollView style={webScrollStyle(colors)} contentContainerStyle={{ padding: 16, gap: 16 }}>
             <Text style={s.ayuda}>{t('inc_reportar_ayuda')}</Text>
 
             {/* 1) Categoría — decide a quién le llega */}

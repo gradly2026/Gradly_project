@@ -22,7 +22,7 @@ import {
 } from "react-native";
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import { db } from "../config/firebaseConfig";
-import { useTheme, type GradlyColors } from "../context/ThemeContext";
+import { useTheme, webScrollStyle, type GradlyColors } from "../context/ThemeContext";
 import { useAuth, type UserRole } from "../context/AuthContext";
 import { useIniciarChat } from "../hooks/useIniciarChat";
 import { crearChatGrupoAdHoc } from "../services/chatService";
@@ -324,6 +324,7 @@ export default function SearchUsersModal({
                   data={estudiantes}
                   keyExtractor={(it) => it.id}
                   keyboardShouldPersistTaps="handled"
+                  style={webScrollStyle(colors)}
                   contentContainerStyle={{
                     paddingVertical: 8,
                     gap: 8,
@@ -443,6 +444,7 @@ export default function SearchUsersModal({
                   data={resultados}
                   keyExtractor={(item) => item.id}
                   keyboardShouldPersistTaps="handled"
+                  style={webScrollStyle(colors)}
                   contentContainerStyle={{ paddingVertical: 8, gap: 8 }}
                   renderItem={({ item }) => {
                     return (

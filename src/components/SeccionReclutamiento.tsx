@@ -55,7 +55,7 @@ import {
 } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput } from './AutoText';
 import { db } from '../config/firebaseConfig';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import MapViewer from './MapViewer';
 import { cuposDisponibles, cuposTotales, textoCupos, textoSalario } from '../utils/cupos';
@@ -439,7 +439,7 @@ export default function SeccionReclutamiento({
 
       {/* ── Contenido ── */}
       {tab === 'reclutamiento' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
+        <ScrollView style={[{ flex: 1 }, webScrollStyle(colors)]} contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
           {vacantesReclutamiento.length === 0 ? (
             <Text style={s.vacio}>No hay vacantes de empleo abiertas. Publica una desde "Mis Vacantes".</Text>
           ) : (
@@ -462,7 +462,7 @@ export default function SeccionReclutamiento({
       )}
 
       {tab === 'contratado' && filtroContratado === 'puestos' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
+        <ScrollView style={[{ flex: 1 }, webScrollStyle(colors)]} contentContainerStyle={s.grid} showsVerticalScrollIndicator={false}>
           {puestos.length === 0 ? (
             <Text style={s.vacio}>Aún no has contratado a nadie. Cuando lo hagas, el puesto cubierto aparecerá aquí.</Text>
           ) : (
@@ -489,7 +489,7 @@ export default function SeccionReclutamiento({
         <FlatList
           data={contratadosPlano}
           keyExtractor={(item) => item.id}
-          style={{ flex: 1 }}
+          style={[{ flex: 1 }, webScrollStyle(colors)]}
           contentContainerStyle={s.listaPlana}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={<Text style={s.vacio}>Todavía no hay contratados.</Text>}
@@ -761,7 +761,7 @@ function VacanteMicroseccion({
   );
 
   return (
-    <ScrollView contentContainerStyle={s.microWrap} showsVerticalScrollIndicator={false}>
+    <ScrollView style={webScrollStyle(colors)} contentContainerStyle={s.microWrap} showsVerticalScrollIndicator={false}>
       <TouchableOpacity style={s.volver} onPress={onVolver} activeOpacity={0.7}>
         <Ionicons name="chevron-back" size={18} color={colors.primaryLight} />
         <Text style={s.volverTxt}>Volver</Text>
@@ -1299,7 +1299,7 @@ function PuestoMicroseccion({
   const [sugerirDespido, setSugerirDespido] = useState<ContratoLaboral | null>(null);
 
   return (
-    <ScrollView contentContainerStyle={s.microWrap} showsVerticalScrollIndicator={false}>
+    <ScrollView style={webScrollStyle(colors)} contentContainerStyle={s.microWrap} showsVerticalScrollIndicator={false}>
       <TouchableOpacity style={s.volver} onPress={onVolver} activeOpacity={0.7}>
         <Ionicons name="chevron-back" size={18} color={colors.primaryLight} />
         <Text style={s.volverTxt}>Volver</Text>
@@ -1789,7 +1789,7 @@ function RecontratarPasantes({
   }
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+    <ScrollView style={[{ flex: 1 }, webScrollStyle(colors)]} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
       <Text style={s.recontratarIntro}>
         Estudiantes que ya culminaron su pasantía contigo, ordenados por calificación. Contrátalos directo a una vacante afín a su carrera.
       </Text>
@@ -1973,7 +1973,7 @@ function ContratarExPasanteModal({
           ) : vacantes.length === 0 ? (
             <Text style={s.vacio}>No tienes vacantes de empleo abiertas.</Text>
           ) : (
-            <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={[{ maxHeight: 240 }, webScrollStyle(colors)]} showsVerticalScrollIndicator={false}>
               <View style={{ gap: 8 }}>
                 {vacantes.map((v) => {
                   const activo = sel === v.id;

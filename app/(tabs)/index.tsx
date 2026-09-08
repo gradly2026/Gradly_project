@@ -61,20 +61,16 @@ import { cargarOverridesCarreras, mensajeZonaRoja, zonaDeCarrera } from '../../s
 import {
   ActivityIndicator,
   Animated,
-  FlatList,
-  // FlatList: el componente de React Native OPTIMIZADO para listas
-  // largas — a diferencia de dibujar un .map() dentro de un ScrollView
-  // normal (que renderiza TODOS los elementos de una vez, aunque no se
-  // vean en pantalla), FlatList solo dibuja los elementos que están
-  // (o están por entrar) en el área visible, reciclando las filas que
-  // salen de vista — fundamental para que un feed con cientos de
-  // vacantes siga siendo fluido.
+  // NOTA: este feed usaba `FlatList` (virtualizada) — se cambió a un simple
+  // `.map()` porque ahora toda la pantalla (header + lista) comparte UN SOLO
+  // ScrollView de página, y anidar un FlatList dentro de un ScrollView es un
+  // anti-patrón de React Native (cada uno pelea por el scroll). Con el
+  // volumen de vacantes de esta app, el costo de no virtualizar es
+  // aceptable.
   Image,
   Platform,
   ScrollView,
   StyleSheet,
-
-
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -86,7 +82,7 @@ import { useTranslation } from '../../src/context/TranslationContext';
 // Se usa para todo el texto FIJO de esta pantalla; AutoText se queda solo
 // para el texto que escribieron las empresas (títulos de vacante, etc.).
 import { db } from '../../src/config/firebaseConfig';
-import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
+import { COLORS, FONTS, useTheme, webScrollStyle, type GradlyColors } from '../../src/context/ThemeContext';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import MiInstitucionCard from '../../src/components/MiInstitucionCard';
 import ComprobantePasantiaCard from '../../src/components/ComprobantePasantiaCard';
@@ -439,9 +435,6 @@ export default function FeedVacantes() {
   const { t, language } = useTranslation();
   const { styles, colors } = useThemedStyles();
   const router = useRouter();
-  const webScrollStyle = Platform.OS === 'web'
-    ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
-    : undefined;
 
   const [vacantes,       setVacantes]       = useState<Vacante[]>([]);
   const [aplicaciones,   setAplicaciones]   = useState<Record<string, string>>({});
@@ -509,6 +502,16 @@ export default function FeedVacantes() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const phraseOpacity = useRef(new Animated.Value(1)).current;
   const toastOpacity  = useRef(new Animated.Value(0)).current;
+
+  // ── Scroll de la lista de vacantes ──
+  // Sin scroll interno propio: la lista fluye como el resto del contenido de
+  // la página y se usa el scroll general (mismo patrón que "Mi institución"
+  // y "Progreso" — su ScrollView tampoco lleva `flex:1`, así que crece con su
+  // contenido en vez de quedar encerrado en una caja de altura fija). El
+  // `overflowY:'auto'` es el mismo truco que ya usan esas 2 pantallas: en
+  // web, avisa al navegador que este contenedor (y no uno de más arriba) es
+  // el que atiende la rueda del mouse, sin imponerle una altura propia.
+  const feedOverflowFix = Platform.OS === 'web' ? ({ overflowY: 'auto' } as any) : undefined;
 
   // ── Flechas de navegación de la fila de filtros (útil en web/escritorio,
   // donde no hay swipe táctil) ──
@@ -1058,6 +1061,21 @@ export default function FeedVacantes() {
     <View style={[styles.root, { backgroundColor: 'transparent' }]}>
       <StatusBar style="light" />
 
+      {/* ── Página completa en un solo ScrollView (header incluido) ──
+          Mismo patrón que "Mi institución"/"Progreso": nada de lista
+          virtualizada con su propio contenedor de scroll (un FlatList metido
+          dentro de un ScrollView es además un anti-patrón de React Native:
+          "VirtualizedLists should never be nested inside plain ScrollViews").
+          Todo el contenido (header + tarjetas de vacantes) fluye junto y
+          usa el scroll general de la página, igual que el resto de
+          secciones sin scroll interno propio. */}
+      <ScrollView
+        style={[feedOverflowFix, webScrollStyle(colors)]}
+        showsVerticalScrollIndicator
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ flexGrow: 1 }}
+      >
       {/* ── HEADER ── */}
       <View style={styles.header}>
         {/* Contenedor responsive: centra y limita el ancho en web/tablet. */}
@@ -1201,128 +1219,88 @@ export default function FeedVacantes() {
       ) : (habilitadoParaVacantes || (tieneCupoFinalizado && !tienePasantiaActiva)) ? (
         // ── Graduado, o culminó su pasantía por cupo: feed completo de vacantes
         //    de trabajo (aplicar habilitado si además está graduado) ──
-        <FlatList
-          data={filteredVacantes}
-          renderItem={({ item }) => (
-            // "renderItem" es la función que FlatList llama por cada
-            // elemento visible de `data`, para dibujar su fila — recibe
-            // un objeto con `item` (el dato de esa posición).
-            <VacanteCard
-              vacante={item}
-              yaAplico={item.id in aplicaciones}
-              // "item.id in aplicaciones" comprueba si esa clave existe
-              // en el diccionario (sin importar su valor).
-              estadoAplicacion={aplicaciones[item.id] ?? ''}
-              // Culminó su pasantía por cupo pero aún no está graduado (su
-              // universidad no ha validado el comprobante): ve el feed en modo
-              // lectura hasta que se le acrediten las horas.
-              onAplicar={habilitadoParaVacantes ? handleAplicar : undefined}
-              readOnly={!habilitadoParaVacantes}
-              onVerDetalle={setVacanteDetalle}
-              applying={applying === item.id}
-              empresaTier={empresaTiers[item.empresa_id]}
-              cuposTexto={cuposTextoFeed(item)}
-              contratadoAqui={aplicaciones[item.id] === 'contratado'}
-            />
+        // Antes era un <FlatList> (virtualizado, con su propio contenedor de
+        // scroll); ahora es un simple `.map()` porque toda la página comparte
+        // el ScrollView de arriba — así no hay una lista "flotando" con
+        // altura/scroll propios.
+        <View style={styles.feedContent}>
+          <EstadoBanner
+            texto={
+              habilitadoParaVacantes
+                ? t('feed_banner_graduado')
+                : 'Culminaste tu pasantía. Ya puedes explorar las vacantes de trabajo; podrás postularte cuando tu universidad valide tu comprobante.'
+            }
+          />
+          {filteredVacantes.length === 0 ? (
+            <EmptyState />
+          ) : (
+            filteredVacantes.map(item => (
+              <VacanteCard
+                key={item.id}
+                vacante={item}
+                yaAplico={item.id in aplicaciones}
+                // "item.id in aplicaciones" comprueba si esa clave existe
+                // en el diccionario (sin importar su valor).
+                estadoAplicacion={aplicaciones[item.id] ?? ''}
+                // Culminó su pasantía por cupo pero aún no está graduado (su
+                // universidad no ha validado el comprobante): ve el feed en modo
+                // lectura hasta que se le acrediten las horas.
+                onAplicar={habilitadoParaVacantes ? handleAplicar : undefined}
+                readOnly={!habilitadoParaVacantes}
+                onVerDetalle={setVacanteDetalle}
+                applying={applying === item.id}
+                empresaTier={empresaTiers[item.empresa_id]}
+                cuposTexto={cuposTextoFeed(item)}
+                contratadoAqui={aplicaciones[item.id] === 'contratado'}
+              />
+            ))
           )}
-          showsVerticalScrollIndicator
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-          style={[{ flex: 1 }, webScrollStyle]}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100, maxWidth: 640, alignSelf: 'center', width: '100%', flexGrow: 1 }}
-          ListHeaderComponent={
-            // Un componente que se dibuja UNA vez, arriba de toda la
-            // lista (no se repite por cada elemento) — aquí, el banner
-            // explicativo.
-            <EstadoBanner
-              texto={
-                habilitadoParaVacantes
-                  ? t('feed_banner_graduado')
-                  : 'Culminaste tu pasantía. Ya puedes explorar las vacantes de trabajo; podrás postularte cuando tu universidad valide tu comprobante.'
-              }
-            />
-          }
-          ListEmptyComponent={<EmptyState />}
-          // Se dibuja SOLO si `data` está vacío, en vez de ListHeaderComponent.
-          keyExtractor={item => item.id}
-          // keyExtractor: le dice a FlatList cómo obtener una `key` única
-          // por cada elemento (equivalente al `key` que se pone a mano en
-          // un .map() normal).
-        />
+        </View>
       ) : tienePasantiaActiva ? (
         // ── En pasantía activa: mercado en modo lectura + pulso del mercado ──
-        <FlatList
-          data={filteredVacantes}
-          renderItem={({ item }) => (
-            <VacanteCard
-              vacante={item}
-              yaAplico={item.id in aplicaciones}
-              estadoAplicacion={aplicaciones[item.id] ?? ''}
-              onVerDetalle={setVacanteDetalle}
-              applying={false}
-              empresaTier={empresaTiers[item.empresa_id]}
-              cuposTexto={cuposTextoFeed(item)}
-              contratadoAqui={aplicaciones[item.id] === 'contratado'}
-              readOnly
-              // No se pasa onAplicar en absoluto — VacanteCard ya sabe
-              // manejar esa ausencia (ver "onAplicar?.(vacante)" arriba).
-            />
+        <View style={styles.feedContent}>
+          <EstadoBanner texto={t('feed_banner_pasantia_activa')} />
+          <MercadoLaboralStats vacantes={vacantes} />
+          {filteredVacantes.length === 0 ? (
+            <EmptyState />
+          ) : (
+            filteredVacantes.map(item => (
+              <VacanteCard
+                key={item.id}
+                vacante={item}
+                yaAplico={item.id in aplicaciones}
+                estadoAplicacion={aplicaciones[item.id] ?? ''}
+                onVerDetalle={setVacanteDetalle}
+                applying={false}
+                empresaTier={empresaTiers[item.empresa_id]}
+                cuposTexto={cuposTextoFeed(item)}
+                contratadoAqui={aplicaciones[item.id] === 'contratado'}
+                readOnly
+                // No se pasa onAplicar en absoluto — VacanteCard ya sabe
+                // manejar esa ausencia (ver "onAplicar?.(vacante)" arriba).
+              />
+            ))
           )}
-          showsVerticalScrollIndicator
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-          style={[{ flex: 1 }, webScrollStyle]}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100, maxWidth: 640, alignSelf: 'center', width: '100%', flexGrow: 1 }}
-          ListHeaderComponent={
-            <>
-              <EstadoBanner texto={t('feed_banner_pasantia_activa')} />
-              <MercadoLaboralStats vacantes={vacantes} />
-            </>
-          }
-          ListEmptyComponent={<EmptyState />}
-          keyExtractor={item => item.id}
-        />
+        </View>
       ) : (
         // ── Sin pasantía todavía: cupos asegurados por su universidad +
         // autoservicio a pasantías afines a su carrera ──
-        <FlatList
-          data={pasantiasDisponibles}
-          renderItem={({ item }) => (
-            <VacanteCard
-              vacante={item}
-              yaAplico={item.id in aplicaciones}
-              estadoAplicacion={aplicaciones[item.id] ?? ''}
-              onAplicar={handleInscribirPasantia}
-              accionLabel={t('feed_btn_inscribir')}
-              onVerDetalle={setVacanteDetalle}
-              applying={applying === item.id}
-              empresaTier={empresaTiers[item.empresa_id]}
+        <View style={styles.feedContent}>
+          {!zonaRoja && (
+            <EstadoBanner texto={t('feed_banner_sin_pasantia')} />
+          )}
+          {user?.uid && (
+            <TableroCupos
+              estudianteId={user.uid}
+              universidadId={perfilEstudiante?.universidad_id ?? (userProfile as any)?.universidad_id}
+              grupoId={perfilEstudiante?.grupo_id}
+              estudianteNombre={(userProfile as any)?.nombre_completo ?? ''}
             />
           )}
-          showsVerticalScrollIndicator
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-          style={[{ flex: 1 }, webScrollStyle]}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100, maxWidth: 640, alignSelf: 'center', width: '100%', flexGrow: 1 }}
-          ListHeaderComponent={
-            <>
-              {!zonaRoja && (
-                <EstadoBanner texto={t('feed_banner_sin_pasantia')} />
-              )}
-              {user?.uid && (
-                <TableroCupos
-                  estudianteId={user.uid}
-                  universidadId={perfilEstudiante?.universidad_id ?? (userProfile as any)?.universidad_id}
-                  grupoId={perfilEstudiante?.grupo_id}
-                  estudianteNombre={(userProfile as any)?.nombre_completo ?? ''}
-                />
-              )}
-              {!zonaRoja && (
-                <Text style={styles.pasantiasSectionLabel}>{t('feed_otras_pasantias')}</Text>
-              )}
-            </>
-          }
-          ListEmptyComponent={
+          {!zonaRoja && (
+            <Text style={styles.pasantiasSectionLabel}>{t('feed_otras_pasantias')}</Text>
+          )}
+          {pasantiasDisponibles.length === 0 ? (
             zonaRoja ? (
               <EmptyState
                 icon="shield-checkmark-outline"
@@ -1341,11 +1319,25 @@ export default function FeedVacantes() {
                 desc={t('feed_empty_pasantias_desc')}
               />
             )
-          }
-          ListFooterComponent={vacantesTrabajoPreview}
-          keyExtractor={item => item.id}
-        />
+          ) : (
+            pasantiasDisponibles.map(item => (
+              <VacanteCard
+                key={item.id}
+                vacante={item}
+                yaAplico={item.id in aplicaciones}
+                estadoAplicacion={aplicaciones[item.id] ?? ''}
+                onAplicar={handleInscribirPasantia}
+                accionLabel={t('feed_btn_inscribir')}
+                onVerDetalle={setVacanteDetalle}
+                applying={applying === item.id}
+                empresaTier={empresaTiers[item.empresa_id]}
+              />
+            ))
+          )}
+          {vacantesTrabajoPreview}
+        </View>
       )}
+      </ScrollView>
 
       {/* ── TOAST ── */}
       <Animated.View style={[styles.toast, { opacity: toastOpacity, transform: [{ translateY: toastY }] }]}>
@@ -1554,6 +1546,14 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     backgroundColor: COLORS.success + '18', borderWidth: 1, borderColor: COLORS.success + '44',
   },
   contratadoPillText: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: COLORS.success },
+
+  // Contenedor de la lista de vacantes (antes era el `contentContainerStyle`
+  // del FlatList) — ahora es un simple <View> dentro del ScrollView de toda
+  // la página, así que solo aporta el padding y el ancho de columna.
+  feedContent: {
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100,
+    maxWidth: 640, alignSelf: 'center', width: '100%',
+  },
 
   // ── States
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },

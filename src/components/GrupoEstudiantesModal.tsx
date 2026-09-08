@@ -36,7 +36,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '../config/firebaseConfig';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { progresoPorMeta } from '../utils/horasPasantia';
 import {
   abrirChatDirectoUsuarios,
@@ -301,7 +301,7 @@ export default function GrupoEstudiantesModal({
               <Text style={s.emptyText}>No se encontró este grupo.</Text>
             </View>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 48 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={webScrollStyle(colors)} contentContainerStyle={{ paddingBottom: 48 }}>
               {/* ── Datos del grupo ── */}
               <View style={s.hero}>
                 <View style={s.groupIcon}>

@@ -15,7 +15,7 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, Vie
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AutoText as Text } from './AutoText';
 import { auth, db } from '../config/firebaseConfig';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import type { AvisoContrato } from '../services/contratoService';
 
 interface Props {
@@ -101,7 +101,7 @@ export default function ContratoAvisoModal({ visible, contratoId, onClose }: Pro
             <Text style={s.emptyText}>No hay un aviso para mostrar.</Text>
           </View>
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          <ScrollView showsVerticalScrollIndicator={false} style={webScrollStyle(colors)} contentContainerStyle={{ paddingBottom: 40 }}>
             <View style={s.hero}>
               <View style={[s.iconWrap, { backgroundColor: `${meta.color(colors)}18`, borderColor: `${meta.color(colors)}55` }]}>
                 <Ionicons name={meta.icono} size={28} color={meta.color(colors)} />

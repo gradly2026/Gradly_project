@@ -23,6 +23,7 @@ import TopEstudiantesCard from "../src/components/TopEstudiantesCard";
 import type { TopEstudianteEntry } from "../src/services/topEstudiantesService";
 import { progresoPorMeta, type ProgresoMeta } from "../src/utils/horasPasantia";
 import ReportarModal from "./ReportarModal";
+import { DARK as TEMA_DARK, LIGHT as TEMA_LIGHT, webScrollStyle } from "../src/context/ThemeContext";
 
 export type PerfilRol = "empresa" | "talento" | "alumno" | "universidad";
 
@@ -137,6 +138,7 @@ export default function PerfilPublicoModal({
   theme = "dark",
 }: Props) {
   const C = theme === "light" ? LIGHT : DARK;
+  const scrollStyle = webScrollStyle(theme === "light" ? TEMA_LIGHT : TEMA_DARK);
 
   const [perfil, setPerfil] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -290,15 +292,23 @@ export default function PerfilPublicoModal({
   // Con una pasantía por cupo EN CURSO, las horas reales salen del libro de
   // horas (`progresoLibro`); si no, del expediente (`horas_aprobadas`).
   const progVal = !!progresoLibro?.valido;
+  // El expediente ya certificó suficientes horas (flujo de grupo,
+  // `certificarPasantia`) aunque quede una `asignaciones_cupo` sin cerrar
+  // formalmente — ver el mismo bloque en ProfileViewerModal para el detalle.
+  // Sin esto, el libro en vivo de ESE cupo tapaba las horas ya certificadas.
+  const horasCertificadasCompletas =
+    Number(perfil?.horas_aprobadas ?? 0) >= (Number(perfil?.horas_objetivo ?? 500) || 500);
   const horasAprob = progVal ? Math.round(progresoLibro!.cumplidas) : Number(perfil?.horas_aprobadas ?? 0);
   const horasObj = progVal ? progresoLibro!.meta : (Number(perfil?.horas_objetivo ?? 500) || 500);
-  const horasPct = progVal
+  const horasPct = horasCertificadasCompletas
+    ? 100
+    : progVal
     ? progresoLibro!.pct
     : Math.min(100, Math.round((horasAprob / Math.max(horasObj, 1)) * 100));
   // La insignia "Certificado" NO depende del libro de horas en vivo: con una
   // pasantía por cupo en curso (`progVal`) el estudiante, por definición, aún
-  // no está certificado.
-  const esGraduado = esEstudiante && !progVal && horasPct >= 100;
+  // no está certificado — salvo que el expediente ya certificó por otra vía.
+  const esGraduado = esEstudiante && (horasCertificadasCompletas || (!progVal && horasPct >= 100));
   const esAltoNivel =
     esEstudiante &&
     Number(perfil?.calificaciones_recibidas ?? 0) > 0 &&
@@ -337,7 +347,7 @@ export default function PerfilPublicoModal({
                 <Text style={{ color: C.muted, marginTop: 8 }}>Perfil no disponible</Text>
               </View>
             ) : (
-              <ScrollView contentContainerStyle={styles.scrollContent}>
+              <ScrollView contentContainerStyle={styles.scrollContent} style={scrollStyle}>
                 {/* Avatar + nombre */}
                 <View style={styles.profileTop}>
                   <View style={[styles.avatar, { backgroundColor: C.avatarBg, borderColor: C.border }]}>

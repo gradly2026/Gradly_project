@@ -99,7 +99,7 @@ import { subscribeUnreadTotal } from '../src/services/chatService';
 import { enviarNotificacion } from '../src/services/notificationService';
 import { recomputarTopEstudiantesEmpresa } from '../src/services/topEstudiantesService';
 import { auth, db, storage } from '../src/config/firebaseConfig';
-import { COLORS, FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
+import { COLORS, FONTS, useTheme, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
 import { useAuthBackGuard } from '../src/hooks/useSessionBackGuard';
 import { useInscripcionesActivas } from '../src/hooks/useInscripcionesActivas';
@@ -1009,7 +1009,12 @@ export default function DashboardEmpresa() {
   // `aplicaciones` de otras empresas (las reglas de Firestore solo dejan a
   // cada dueño leer lo suyo). Solo escribe si el valor cambió.
   const calificacionEmpresaReportadaRef = useRef<number | null | undefined>(undefined);
-  const topEstudiantesEmpresaReportadoRef = useRef<string | undefined>(undefined);
+  // (El top 5/3 de mejores estudiantes del perfil público NO se calcula aquí:
+  // había una segunda versión inline, con otro criterio de orden y otra forma
+  // de dato, que competía por escribir el mismo campo `top_estudiantes` que
+  // `recomputarTopEstudiantesEmpresa` — de ahí que el ranking se viera
+  // distinto según desde dónde se consultara. Esa función del service es
+  // ahora la ÚNICA fuente; ver topEstudiantesService.ts.)
   useEffect(() => {
     if (!user?.uid) return;
     const ids = new Set<string>();
@@ -1037,37 +1042,16 @@ export default function DashboardEmpresa() {
         );
         if (cancel) return;
         const vals: number[] = [];
-        const candidatos: { uid: string; nombre: string; carrera: string; calificacion_promedio: number }[] = [];
         snaps.forEach(snap => snap.docs.forEach(d => {
           const data: any = d.data();
           const califs = Number(data.calificaciones_recibidas) || 0;
-          if (califs > 0) {
-            const prom = Number(data.calificacion_promedio) || 0;
-            vals.push(prom);
-            candidatos.push({
-              uid: d.id,
-              nombre: data.nombre_completo ?? 'Estudiante',
-              carrera: data.carrera ?? '',
-              calificacion_promedio: prom,
-            });
-          }
+          if (califs > 0) vals.push(Number(data.calificacion_promedio) || 0);
         }));
         const promedio = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
         if (calificacionEmpresaReportadaRef.current !== promedio) {
           calificacionEmpresaReportadaRef.current = promedio;
           await updateDoc(doc(db, 'perfiles_empresas', user.uid), {
             calificacion_estudiantes_promedio: promedio,
-          });
-        }
-
-        const top5 = candidatos
-          .sort((a, b) => b.calificacion_promedio - a.calificacion_promedio)
-          .slice(0, 5);
-        const top5Key = JSON.stringify(top5);
-        if (topEstudiantesEmpresaReportadoRef.current !== top5Key) {
-          topEstudiantesEmpresaReportadoRef.current = top5Key;
-          await updateDoc(doc(db, 'perfiles_empresas', user.uid), {
-            top_estudiantes: top5,
           });
         }
       } catch {
@@ -2304,7 +2288,7 @@ export default function DashboardEmpresa() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+            <ScrollView style={webScrollStyle(colors)} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
               <AutoText style={{ color: colors.textPrimary, fontFamily: FONTS.soraBold, fontSize: 18 }}>{vacanteSeleccionada?.titulo}</AutoText>
 
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -2449,7 +2433,7 @@ export default function DashboardEmpresa() {
                 </Text>
               </View>
             )}
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView style={webScrollStyle(colors)} showsVerticalScrollIndicator={false}>
               <FieldInput
                 label="Título*" value={nvTitulo} onChange={onChangeTitulo}
                 placeholder="Pasantía de Desarrollo Web"
@@ -2957,7 +2941,7 @@ export default function DashboardEmpresa() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={webScrollStyle(colors)} contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
               {obtenerPlanesVisibles().map((p) => {
                 // Un plan contratado lo define el par (plan + ciclo de
                 // facturación): "Básico mensual" y "Básico anual" son
@@ -3224,7 +3208,7 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
   }, [empresaId]);
 
   return (
-    <ScrollView contentContainerStyle={s.scroll}>
+    <ScrollView style={webScrollStyle(colors)} contentContainerStyle={s.scroll}>
       {/* ── Estadísticas de la Red Gradly ── */}
       <RedGradlyBanner />
 
@@ -3244,11 +3228,15 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
       {/* ── Calendario de hitos de la cuenta (registro, vacantes, pasantías) ── */}
       <CalendarioEventos uid={empresaId} rol="empresa" />
 
-      {/* ── Comprobantes de finalización por generar/enviar (pasantías por cupo) ── */}
-      <ComprobantePasantiaCard rol="empresa" uid={empresaId} />
+      {/* ── Comprobantes de finalización por generar/enviar (pasantías por cupo) ──
+          Ancho intermedio y centrado: sin esto, en el Inicio (sin maxWidth propio)
+          estas tarjetas de aviso se estiraban al ancho completo de la pantalla. */}
+      <View style={{ maxWidth: 680, alignSelf: 'center', width: '100%' }}>
+        <ComprobantePasantiaCard rol="empresa" uid={empresaId} />
 
-      {/* ── Calificaciones pospuestas con "Calificar más tarde" (se auto-oculta) ── */}
-      <RecordatorioCalificacionCard rol="empresa" uid={empresaId} />
+        {/* ── Calificaciones pospuestas con "Calificar más tarde" (se auto-oculta) ── */}
+        <RecordatorioCalificacionCard rol="empresa" uid={empresaId} />
+      </View>
 
       {/* ── Tarjetas resumen agrupadas (Resumen / Análisis) ── */}
       <EmpresaHomeCards
@@ -3370,6 +3358,7 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
       <FlatList
         data={listaFiltrada}
         keyExtractor={item => item.id}
+        style={webScrollStyle(colors)}
         contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
         renderItem={({ item }) => {
           // Deshabilitada por un admin (no una pausa propia vía `onToggle`):
@@ -3652,7 +3641,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
       </View>
 
       {filtro === 'incidencias' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+        <ScrollView style={[{ flex: 1 }, webScrollStyle(colors)]} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
           {pasantesReportables.length > 0 && (
             <TouchableOpacity
               onPress={() => setReportarOpen(true)}
@@ -3668,13 +3657,13 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
       )}
 
       {filtro === 'porCupo' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+        <ScrollView style={[{ flex: 1 }, webScrollStyle(colors)]} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
           {cuerpoPorCupo}
         </ScrollView>
       )}
 
       {filtro === 'porCertificar' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+        <ScrollView style={[{ flex: 1 }, webScrollStyle(colors)]} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
           <Text style={[s.activaMeta, { marginBottom: 12 }]}>
             Pasantes que ya cumplieron su tiempo. Envía su comprobante de finalización para que la universidad lo valide y los certifique.
           </Text>

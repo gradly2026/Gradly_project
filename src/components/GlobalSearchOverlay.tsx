@@ -32,7 +32,7 @@ import { useAuth } from '../context/AuthContext';
 import { areasDeCarrera, afinidadCarreraVacante } from '../data/areas';
 import { hayCupos } from '../utils/cupos';
 import { useIniciarChat } from '../hooks/useIniciarChat';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { calcularRango, type RangoTier } from '../services/feedbackService';
 import {
   aplicarAVacante,
@@ -444,6 +444,7 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
                 data={resultados}
                 keyExtractor={it => `${it.tipo}-${it.id}`}
                 keyboardShouldPersistTaps="handled"
+                style={webScrollStyle(colors)}
                 contentContainerStyle={{ padding: 16, paddingBottom: 60, gap: 8 }}
                 ListEmptyComponent={
                   <View style={styles.center}>

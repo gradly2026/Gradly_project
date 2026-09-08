@@ -14,7 +14,7 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, Vie
 import { AutoText as Text } from './AutoText';
 import { db } from '../config/firebaseConfig';
 import { useTranslation } from '../context/TranslationContext';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import type { Incidencia } from '../services/incidenciaService';
 
 interface Props {
@@ -76,7 +76,7 @@ export default function IncidenciaAvisoModal({ visible, incidenciaId, onClose }:
               <Text style={s.vacio}>{t('inc_aviso_est_vacio')}</Text>
             </View>
           ) : (
-            <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
+            <ScrollView style={webScrollStyle(colors)} contentContainerStyle={{ padding: 16, gap: 14 }}>
               <View style={[s.mensajeBox, { borderColor: color }]}>
                 <Text style={s.mensajeTxt}>
                   {escalada ? t('inc_aviso_est_escalado') : t('inc_aviso_est_notificado')}

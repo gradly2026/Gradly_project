@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMemo } from 'react';
 import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from './AutoText';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 
 export interface AvisoItem {
   id: string;
@@ -64,7 +64,7 @@ export default function AvisoListaModal({ icon, titulo, subtitulo, items, onCerr
           <Text style={s.titulo}>{titulo}</Text>
           <Text style={s.subtitulo}>{subtitulo}</Text>
 
-          <ScrollView style={s.lista} contentContainerStyle={{ gap: 10 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={[s.lista, webScrollStyle(colors)]} contentContainerStyle={{ gap: 10 }} showsVerticalScrollIndicator={false}>
             {items.map(it =>
               onItemPress ? (
                 <TouchableOpacity key={it.id} style={[s.item, s.itemTappable]} onPress={() => onItemPress(it.id)} activeOpacity={0.7}>

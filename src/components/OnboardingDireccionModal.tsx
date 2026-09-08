@@ -11,7 +11,7 @@ import DatosPersonalesFields, {
   type DatosPersonalesValue,
 } from "./DatosPersonalesFields";
 import { db } from "../config/firebaseConfig";
-import { useTheme, type GradlyColors } from "../context/ThemeContext";
+import { useTheme, webScrollStyle, type GradlyColors } from "../context/ThemeContext";
 import type { UbicacionEstudiante } from "../data/ubicacionElSalvador";
 
 interface Props {
@@ -93,7 +93,7 @@ export default function OnboardingDireccionModal({ uid, onGuardado }: Props) {
             <Text style={s.headerBadgeText}>¡Bienvenido/a a Gradly!</Text>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={webScrollStyle(colors)}>
             <Text style={s.titulo}>Completa tu perfil</Text>
             <Text style={s.subtitulo}>
               Como sos usuario nuevo, antes de llevarte a tu perfil necesitamos

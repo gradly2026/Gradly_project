@@ -17,7 +17,7 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, Vie
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AutoText as Text } from './AutoText';
 import { db } from '../config/firebaseConfig';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 
 interface Props {
   visible: boolean;
@@ -91,7 +91,7 @@ export default function PostulacionRechazadaModal({ visible, aplicacionId, onClo
             <Text style={s.emptyText}>No se encontró esta postulación.</Text>
           </View>
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          <ScrollView showsVerticalScrollIndicator={false} style={webScrollStyle(colors)} contentContainerStyle={{ paddingBottom: 40 }}>
             <View style={s.hero}>
               <View style={s.iconWrap}>
                 <Ionicons name="close-circle-outline" size={30} color={colors.error} />

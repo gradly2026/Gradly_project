@@ -25,7 +25,7 @@ import {
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import { showAlert } from "./AppAlert";
 import { db } from '../config/firebaseConfig';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import type { AcuerdoData } from '../types/chat';
 import ProponerHorarioModal from './ProponerHorarioModal';
 import VacanteDetailModal, { type VacanteDetalle } from './VacanteDetailModal';
@@ -594,7 +594,7 @@ export function VacantesDisponibles({ universidadId }: { universidadId: string }
             />
 
             <Text style={styles.campoLabel}>Grupo destino</Text>
-            <ScrollView style={{ maxHeight: 150 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={[{ maxHeight: 150 }, webScrollStyle(colors)]} showsVerticalScrollIndicator={false}>
               {grupos.length === 0 ? (
                 <Text style={styles.empty}>No tienes grupos creados.</Text>
               ) : (
@@ -1136,7 +1136,7 @@ export function SolicitudesEmpresa({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={[{ maxHeight: 300 }, webScrollStyle(colors)]} showsVerticalScrollIndicator={false}>
               {modo === 'aceptar' ? (
                 <Text style={[styles.note, { marginTop: 10 }]}>
                   Al pulsar Aceptar se abrirá el formulario para definir el horario

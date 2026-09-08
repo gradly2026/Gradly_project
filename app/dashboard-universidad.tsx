@@ -133,7 +133,7 @@ import { useAuth } from '../src/context/AuthContext';
 import { crearChatGrupoOficial, subscribeUnreadTotal } from '../src/services/chatService';
 import { enviarNotificacion } from '../src/services/notificationService';
 import { auth, db, storage } from '../src/config/firebaseConfig';
-import { FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
 import { useInscripcionesActivas } from '../src/hooks/useInscripcionesActivas';
 // Hook que verifica que el usuario logueado SÍ tenga el rol esperado
@@ -702,12 +702,12 @@ export default function DashboardUniversidad() {
   // perfil (escritura de dueño, sin cambio de reglas) cuando visita su panel.
   // Solo escribe si el valor cambió, para no generar escrituras de más.
   const calificacionReportadaRef = useRef<number | null | undefined>(undefined);
-  // Mismo autoreporte para el top 5 de mejores estudiantes (perfil público) —
-  // se calcula aquí porque `estudiantes` ya trae calificacion_promedio de
-  // TODOS sus alumnos, sin necesitar cruzar solicitudes_practicas/
-  // asignaciones_cupo (esos solo dirían CON QUIÉN hicieron la pasantía, no
-  // hace falta para "estudiantes de esta universidad con mejor calificación").
-  const topEstudiantesReportadoRef = useRef<string | undefined>(undefined);
+  // (El top 5 de mejores estudiantes del perfil público NO se calcula aquí:
+  // había una segunda versión inline, con otro criterio de orden y otra forma
+  // de dato, que competía por escribir el mismo campo `top_estudiantes` que
+  // `recomputarTopEstudiantesUniversidad` — de ahí que el ranking se viera
+  // distinto según desde dónde se consultara. Esa función del service es
+  // ahora la ÚNICA fuente; ver topEstudiantesService.ts.)
   // GUÍA IMPORTANTE (patrón de "auto-reporte"): este es un patrón de
   // diseño particular del proyecto (ver memoria "Ranking alianzas +
   // candado de grupo"): las reglas de seguridad de Firestore NO permiten
@@ -736,26 +736,6 @@ export default function DashboardUniversidad() {
         calificacion_estudiantes_promedio: promedio,
       }).catch(() => { /* no crítico: se reintenta solo si el promedio vuelve a cambiar */ });
     }
-
-    const top5 = [...conCalificacion]
-      .sort((a, b) => (b.calificacion_promedio ?? 0) - (a.calificacion_promedio ?? 0))
-      .slice(0, 5)
-      .map(e => ({
-        uid: e.id,
-        nombre: e.nombre_completo,
-        carrera: e.carrera ?? '',
-        calificacion_promedio: e.calificacion_promedio ?? 0,
-      }));
-    const top5Key = JSON.stringify(top5);
-    // Convierte el top5 a texto JSON para poder COMPARARLO fácilmente
-    // contra el último reportado (comparar 2 arrays de objetos
-    // directamente con "===" no funcionaría, porque compararía
-    // referencias en memoria, no contenido).
-    if (topEstudiantesReportadoRef.current === top5Key) return;
-    topEstudiantesReportadoRef.current = top5Key;
-    updateDoc(doc(db, 'perfiles_universidades', user.uid), {
-      top_estudiantes: top5,
-    }).catch(() => { /* no crítico: se reintenta solo si el top5 vuelve a cambiar */ });
   }, [user?.uid, estudiantes]);
 
   useEffect(() => {
@@ -1270,7 +1250,7 @@ function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, so
   const { s, colors } = useThemedStyles();
   const inscripcionesActivas = useInscripcionesActivas('universidadId', uid);
   return (
-    <ScrollView contentContainerStyle={s.scroll}>
+    <ScrollView style={webScrollStyle(colors)} contentContainerStyle={s.scroll}>
       {/* ── Estadísticas de la Red Gradly ── */}
       <RedGradlyBanner />
 
@@ -1289,11 +1269,15 @@ function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, so
       {/* ── Calendario de hitos de la cuenta (registro, grupos, pasantías, egresos) ── */}
       <CalendarioEventos uid={uid} />
 
-      {/* ── Comprobantes de finalización pendientes de validar (pasantías por cupo) ── */}
-      <ComprobantePasantiaCard rol="universidad" uid={uid} />
+      {/* ── Comprobantes de finalización pendientes de validar (pasantías por cupo) ──
+          Ancho intermedio y centrado: sin esto, en el Inicio (sin maxWidth propio)
+          estas tarjetas de aviso se estiraban al ancho completo de la pantalla. */}
+      <View style={{ maxWidth: 680, alignSelf: 'center', width: '100%' }}>
+        <ComprobantePasantiaCard rol="universidad" uid={uid} />
 
-      {/* ── Calificaciones pospuestas con "Calificar más tarde" (se auto-oculta) ── */}
-      <RecordatorioCalificacionCard rol="universidad" uid={uid} />
+        {/* ── Calificaciones pospuestas con "Calificar más tarde" (se auto-oculta) ── */}
+        <RecordatorioCalificacionCard rol="universidad" uid={uid} />
+      </View>
 
       {/* ── Tarjetas resumen agrupadas (Resumen / Análisis) — sustituyen a la
              grilla de métricas y a la vieja sección "Estadísticas" ── */}
@@ -2033,6 +2017,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
         <FlatList
           data={gruposFiltrados}
           keyExtractor={item => item.id}
+          style={webScrollStyle(colors)}
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 110, gap: 8 }}
           renderItem={({ item }) => {
             const progreso = progresoPorGrupo[item.id];
@@ -2108,6 +2093,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
         <FlatList
           data={estudiantesFiltrados}
           keyExtractor={item => item.id}
+          style={webScrollStyle(colors)}
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 110, gap: 8 }}
           renderItem={({ item }) => {
             // Si el estudiante tiene una inscripción de cupo con fecha de
@@ -2212,7 +2198,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
                 contenido empuja la tarjeta en vez de hacer scroll). El
                 encabezado y los botones de acción quedan FUERA de este
                 ScrollView, siempre visibles. */}
-            <ScrollView style={{ flex: 1, minHeight: 0 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 4, paddingVertical: 6 }}>
+            <ScrollView style={[{ flex: 1, minHeight: 0 }, webScrollStyle(colors)]} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 4, paddingVertical: 6 }}>
               {(() => {
                 // "(() => {...})()" — función autoejecutada dentro del
                 // JSX: se usa aquí porque hace falta calcular 2 variables
@@ -2264,14 +2250,14 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
                       // 200) que aparece/desaparece con showCarreraPicker.
                       <ScrollView
                         nestedScrollEnabled
-                        style={{
+                        style={[{
                           maxHeight: 200,
                           marginTop: 6,
                           borderWidth: 1,
                           borderColor: colors.border,
                           borderRadius: 10,
                           backgroundColor: colors.white4,
-                        }}
+                        }, webScrollStyle(colors)]}
                       >
                         {carrerasUni.length === 0 ? (
                           <Text style={{ color: colors.textMuted, fontSize: 13, padding: 14 }}>
@@ -2396,7 +2382,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
             <FlatList
               data={credenciales}
               keyExtractor={(item, i) => item.correo + i}
-              style={{ flex: 1 }}
+              style={[{ flex: 1 }, webScrollStyle(colors)]}
               contentContainerStyle={{ gap: 6, paddingVertical: 6 }}
               showsVerticalScrollIndicator
               renderItem={({ item }) => (
@@ -2663,7 +2649,7 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
   );
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
+    <ScrollView style={webScrollStyle(colors)} contentContainerStyle={{ padding: 16, paddingBottom: 110, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
       {/* ── Botones-filtro: la sección arranca en "Incidencias" ── */}
       <ScrollView
         horizontal
@@ -2829,7 +2815,7 @@ function SeccionEstadisticas({ estudiantes, apps, solicitudesGrupo }: { estudian
     apps.filter(a => a.estado === 'aprobado').length;
 
   return (
-    <ScrollView contentContainerStyle={s.scroll}>
+    <ScrollView style={webScrollStyle(colors)} contentContainerStyle={s.scroll}>
       {/* GUÍA: el "gráfico de barras" de esta sección NO usa ninguna
           librería de gráficos — cada barra es simplemente un <View> cuyo
           `width` es un PORCENTAJE calculado a mano (count / maxVal * 100),

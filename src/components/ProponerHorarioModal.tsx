@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
+import { COLORS, webScrollStyle } from "../context/ThemeContext";
 import {
   DIAS_LABORALES,
   type AcuerdoData,
@@ -222,7 +223,7 @@ export default function ProponerHorarioModal({
             </View>
           )}
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} style={webScrollStyle(COLORS)}>
             <Text style={styles.label}>Días (Lunes a Viernes)</Text>
             <View style={styles.diasRow}>
               {DIAS_LABORALES.map((dia) => {

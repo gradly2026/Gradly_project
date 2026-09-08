@@ -15,6 +15,7 @@ import { progresoPorMeta } from '../utils/horasPasantia';
 import { abrirConstancia, constanciaHtml, fmtFechaLarga } from '../utils/constanciaHtml';
 import { showAlert } from './AppAlert';
 import { AutoText as Text, AutoTextInput as TextInput } from './AutoText';
+import { COLORS, webScrollStyle } from '../context/ThemeContext';
 
 const C = {
   overlay: 'rgba(7,5,15,0.92)',
@@ -184,7 +185,7 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
             <Text style={styles.headerBadgeText}>Comprobante de finalización</Text>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={webScrollStyle(COLORS)}>
             {/* ── El "papel": constancia con formato de documento formal ── */}
             <View style={styles.paper}>
               <Text style={styles.pTitulo}>Constancia de finalización de pasantía</Text>

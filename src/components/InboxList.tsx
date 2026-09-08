@@ -3,9 +3,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
-  Platform,
   StyleSheet,
-
   TouchableOpacity,
   View,
 } from "react-native";
@@ -15,6 +13,7 @@ import { AutoText, AutoText as Text } from "./AutoText";
 import {
   FONTS,
   useTheme,
+  webScrollStyle,
   type GradlyColors,
 } from "../context/ThemeContext";
 import { useTranslation } from "../context/TranslationContext";
@@ -69,9 +68,7 @@ export default function InboxList({
   const { colors } = useTheme();
   const { locale } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const webScrollStyle = Platform.OS === 'web'
-    ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
-    : undefined;
+  const scrollStyle = webScrollStyle(colors);
 
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -198,7 +195,7 @@ export default function InboxList({
         renderItem={renderItem}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
-        style={[{ flex: 1 }, webScrollStyle]}
+        style={[{ flex: 1 }, scrollStyle]}
         contentContainerStyle={{
           paddingHorizontal: 8,
           paddingBottom: insets.bottom + 100,

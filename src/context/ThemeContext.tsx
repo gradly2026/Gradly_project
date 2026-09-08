@@ -243,6 +243,23 @@ export const FONTS = {
 } as const;
 
 // ═══════════════════════════════════════════
+// SCROLL DELGADO MORADO (web) — usado por "Mi Perfil" (PerfilMasterDetail)
+// ═══════════════════════════════════════════
+/**
+ * Estilo del scrollbar fino y morado que ya usa "Mi Perfil" en los 3
+ * dashboards. En nativo (iOS/Android) el scrollbar del sistema no se puede
+ * personalizar así, por eso solo aplica en web (`scrollbarWidth`/
+ * `scrollbarColor` son propiedades CSS, no de React Native). Se pasa como
+ * `style` de cualquier `ScrollView`/`FlatList` con scroll propio para que
+ * TODOS los scrolls internos de empresa/universidad/estudiante se vean
+ * iguales, en vez de cada uno con el scrollbar por defecto del navegador.
+ */
+export const webScrollStyle = (colors: GradlyColors): any =>
+  Platform.OS === 'web'
+    ? { scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' }
+    : undefined;
+
+// ═══════════════════════════════════════════
 // ESTILOS BASE REUTILIZABLES
 // ═══════════════════════════════════════════
 export const BASE = StyleSheet.create({

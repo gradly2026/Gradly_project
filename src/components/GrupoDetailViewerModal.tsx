@@ -49,7 +49,7 @@ import { areasDeCarrera } from '../data/areas';
 // de "áreas"/categorías asociadas (por ejemplo, "Ingeniería en Sistemas"
 // podría mapear a ["Tecnología", "Desarrollo de software"]) — se usa para
 // mostrar los "chips" de categoría del grupo.
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import ProfileViewerModal, { type ProfileTipo } from './ProfileViewerModal';
 
 interface Props {
@@ -274,7 +274,7 @@ export default function GrupoDetailViewerModal({ visible, grupoId, onClose }: Pr
               <Text style={styles.emptyText}>No se encontró este grupo.</Text>
             </View>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={webScrollStyle(colors)} contentContainerStyle={{ paddingBottom: 40 }}>
               <View style={styles.hero}>
                 <View style={styles.groupIcon}>
                   <Ionicons name="people" size={32} color={colors.primaryLight} />

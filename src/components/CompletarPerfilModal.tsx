@@ -20,7 +20,7 @@ import DatosPersonalesFields, {
 } from './DatosPersonalesFields';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 
 interface Props {
   visible: boolean;
@@ -96,7 +96,7 @@ export default function CompletarPerfilModal({ visible, onClose }: Props) {
           {cargando ? (
             <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>
           ) : (
-            <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
+            <ScrollView style={webScrollStyle(colors)} contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
               <Text style={s.ayuda}>
                 Agrega tu teléfono y tu documento de identidad. Tu documento es
                 privado: no aparece en ningún perfil. Facebook e Instagram son

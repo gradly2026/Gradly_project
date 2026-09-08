@@ -23,7 +23,7 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, Vie
 import { AutoText as Text, AutoTextInput as TextInput } from './AutoText';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { useTranslation } from '../context/TranslationContext';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import {
   cambiarEstadoIncidencia,
   escalarIncidencia,
@@ -239,7 +239,7 @@ function DetalleIncidencia({
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
+          <ScrollView style={webScrollStyle(colors)} contentContainerStyle={{ padding: 16, gap: 14 }}>
             <View style={[s.pill, { borderColor: m.color, alignSelf: 'flex-start' }]}>
               <Text style={[s.pillTxt, { color: m.color }]}>{t(m.clave)}</Text>
             </View>

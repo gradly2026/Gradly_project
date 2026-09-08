@@ -28,7 +28,7 @@ import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackgro
 import { db } from '../../src/config/firebaseConfig';
 import { useAuth } from '../../src/context/AuthContext';
 import { useTranslation } from '../../src/context/TranslationContext';
-import { FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle as webScrollbarStyle, type GradlyColors } from '../../src/context/ThemeContext';
 import {
   CARRERAS_EL_SALVADOR,
   cargarOverridesCarreras,
@@ -192,7 +192,7 @@ export default function InstitucionTab() {
         </View>
 
         <ScrollView
-          style={webScrollStyle}
+          style={[webScrollStyle, webScrollbarStyle(colors)]}
           showsVerticalScrollIndicator
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"

@@ -21,6 +21,7 @@ import {
   getIncidenciasDeEstudiante,
   type Incidencia,
 } from "../services/incidenciaService";
+import { useTheme, webScrollStyle } from "../context/ThemeContext";
 
 const C = {
   overlay: "rgba(7,5,15,0.92)",
@@ -98,6 +99,7 @@ export default function FeedbackExperienciaModal({
   onSubmitted,
   onPosponer,
 }: Props) {
+  const { colors } = useTheme();
   const criterios = useMemo(
     () => criteriosPara(pendiente.evaluadorRol, pendiente.evaluadoRol),
     [pendiente.evaluadorRol, pendiente.evaluadoRol],
@@ -229,7 +231,7 @@ export default function FeedbackExperienciaModal({
                 ¡Gracias por compartir tu evaluación!
               </Text>
               <TouchableOpacity
-                style={styles.submitBtn}
+                style={[styles.submitBtn, { alignSelf: "stretch" }]}
                 onPress={onSubmitted}
                 activeOpacity={0.9}
               >
@@ -238,6 +240,7 @@ export default function FeedbackExperienciaModal({
             </View>
           ) : (
             <ScrollView
+              style={webScrollStyle(colors)}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
@@ -465,6 +468,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.accent,
     borderRadius: 14,
     paddingVertical: 15,
+    paddingHorizontal: 28,
     marginTop: 20,
   },
   submitBtnDisabled: {

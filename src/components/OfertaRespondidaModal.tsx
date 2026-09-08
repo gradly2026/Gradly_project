@@ -12,7 +12,7 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, Vie
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AutoText as Text } from './AutoText';
 import { db } from '../config/firebaseConfig';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import type { OfertaEmpleo } from '../services/contratoService';
 
 interface Props {
@@ -71,7 +71,7 @@ export default function OfertaRespondidaModal({ visible, ofertaId, onClose }: Pr
             <Text style={s.emptyText}>No se encontró esta oferta.</Text>
           </View>
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          <ScrollView showsVerticalScrollIndicator={false} style={webScrollStyle(colors)} contentContainerStyle={{ paddingBottom: 40 }}>
             <View style={s.hero}>
               <View style={[s.iconWrap, aceptada ? { backgroundColor: colors.success + '1E', borderColor: colors.success + '55' } : { backgroundColor: colors.error + '18', borderColor: colors.error + '55' }]}>
                 <Ionicons name={aceptada ? 'checkmark-circle' : 'close-circle'} size={28} color={aceptada ? colors.success : colors.error} />

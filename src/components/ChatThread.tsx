@@ -58,7 +58,7 @@ type ReplyMessage = { _id: string | number; text: string; user: IMessage["user"]
 import { SafeAreaView } from "react-native-safe-area-context";
 import { db } from "../config/firebaseConfig";
 import { useAuth } from "../context/AuthContext";
-import { useTheme, type GradlyColors } from "../context/ThemeContext";
+import { useTheme, webScrollStyle, type GradlyColors } from "../context/ThemeContext";
 import { useTranslation } from "../context/TranslationContext";
 import { traducir } from "../services/translationService";
 import {
@@ -2200,7 +2200,7 @@ export default function ChatThread({
               <FlatList
                 data={gruposUni}
                 keyExtractor={(g) => g.grupoId}
-                style={{ maxHeight: 340 }}
+                style={[{ maxHeight: 340 }, webScrollStyle(themeColors)]}
                 contentContainerStyle={{ paddingBottom: 8 }}
                 renderItem={({ item }) => (
                   <TouchableOpacity
@@ -2338,6 +2338,7 @@ export default function ChatThread({
             <FlatList
               data={misChats.filter((c) => c.id !== chatId)}
               keyExtractor={(item) => item.id}
+              style={webScrollStyle(themeColors)}
               contentContainerStyle={{ paddingVertical: 8, gap: 8 }}
               renderItem={({ item }) => {
                 const titulo = chatTitle(item, user?.uid);
@@ -2457,6 +2458,7 @@ export default function ChatThread({
             <FlatList
               data={participantes}
               keyExtractor={(item) => item.uid}
+              style={webScrollStyle(themeColors)}
               contentContainerStyle={{ paddingVertical: 8, gap: 6 }}
               renderItem={({ item }) => {
                 const esAdminP = (group?.admins ?? []).includes(item.uid);
@@ -2591,6 +2593,7 @@ export default function ChatThread({
                 <FlatList
                   data={candidatos}
                   keyExtractor={(item) => item.uid}
+                  style={webScrollStyle(themeColors)}
                   contentContainerStyle={{ paddingVertical: 8, gap: 8 }}
                   renderItem={({ item }) => (
                     <View style={styles.partItem}>

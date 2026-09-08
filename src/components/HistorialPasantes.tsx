@@ -29,6 +29,7 @@ import {
   calcularNivelEstudiante,
   type NivelEstudiante,
 } from "../services/pasantiaService";
+import { COLORS, webScrollStyle } from "../context/ThemeContext";
 
 const C = {
   surface: "#0d0b1e",
@@ -391,6 +392,7 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
         data={items}
         keyExtractor={(item) => item.key}
         renderItem={renderItem}
+        style={webScrollStyle(COLORS)}
         contentContainerStyle={{
           paddingHorizontal: 12,
           paddingBottom: 120,

@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
-import { useTheme, type GradlyColors } from "../context/ThemeContext";
+import { useTheme, webScrollStyle, type GradlyColors } from "../context/ThemeContext";
 import {
   CARRERAS_EL_SALVADOR,
   avisosZonaRoja,
@@ -150,7 +150,7 @@ export default function CarrerasEditorModal({
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
             keyboardShouldPersistTaps="handled"
-            style={s.list}
+            style={[s.list, webScrollStyle(colors)]}
             ListEmptyComponent={<Text style={s.empty}>No se encontraron carreras.</Text>}
           />
 
@@ -179,7 +179,7 @@ export default function CarrerasEditorModal({
               <View style={s.avisoIcon}>
                 <Ionicons name="shield-checkmark-outline" size={30} color={colors.primary} />
               </View>
-              <ScrollView style={{ width: "100%" }}>
+              <ScrollView style={[{ width: "100%" }, webScrollStyle(colors)]}>
                 {(avisos ?? []).map((a, i) => (
                   <View key={a.motivo} style={{ marginBottom: i < (avisos?.length ?? 0) - 1 ? 16 : 0 }}>
                     <Text style={s.avisoTitle}>{a.titulo}</Text>

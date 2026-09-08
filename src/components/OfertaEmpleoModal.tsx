@@ -13,7 +13,7 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, TouchableOpacity, Vie
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AutoText as Text, AutoTextInput as TextInput } from './AutoText';
 import { auth, db } from '../config/firebaseConfig';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { useIniciarChat } from '../hooks/useIniciarChat';
 import { textoHorario } from '../data/disponibilidad';
 import { textoSalario } from '../utils/cupos';
@@ -109,7 +109,7 @@ export default function OfertaEmpleoModal({ visible, ofertaId, onClose }: Props)
             <Text style={s.emptyText}>No se encontró esta oferta.</Text>
           </View>
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          <ScrollView showsVerticalScrollIndicator={false} style={webScrollStyle(colors)} contentContainerStyle={{ paddingBottom: 40 }}>
             <View style={s.hero}>
               <View style={s.iconWrap}><Ionicons name="briefcase" size={26} color={colors.primaryLight} /></View>
               <Text style={s.heroTitulo} noTranslate>{oferta.vacanteTitulo}</Text>

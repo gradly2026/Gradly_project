@@ -12,6 +12,7 @@ import {
 // Drop-in de traducción automática (texto y placeholders).
 import { AutoText as Text, AutoTextInput as TextInput } from "../src/components/AutoText";
 import { crearReporte } from "../src/services/reporteService";
+import { DARK as TEMA_DARK, LIGHT as TEMA_LIGHT, webScrollStyle } from "../src/context/ThemeContext";
 
 const RAZONES = [
   "Información falsa o engañosa",
@@ -78,6 +79,7 @@ export default function ReportarModal({
   theme = "dark",
 }: Props) {
   const C = theme === "light" ? LIGHT : DARK;
+  const scrollStyle = webScrollStyle(theme === "light" ? TEMA_LIGHT : TEMA_DARK);
 
   const [razon, setRazon] = useState("");
   const [detalle, setDetalle] = useState("");
@@ -142,7 +144,7 @@ export default function ReportarModal({
 
           <Text style={[styles.label, { color: C.label }]}>Razón del reporte</Text>
           <ScrollView
-            style={{ maxHeight: 200, marginBottom: 14 }}
+            style={[{ maxHeight: 200, marginBottom: 14 }, scrollStyle]}
             showsVerticalScrollIndicator={false}
           >
             {RAZONES.map((r) => (

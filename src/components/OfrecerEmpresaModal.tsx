@@ -18,6 +18,7 @@ import {
   type EmpresaResult,
 } from "../services/solicitudPracticaService";
 import { type GrupoData } from "./GroupDetailModal";
+import { COLORS, webScrollStyle } from "../context/ThemeContext";
 
 const C = {
   bg: "#07050f",
@@ -179,6 +180,7 @@ export default function OfrecerEmpresaModal({
           data={resultados}
           keyExtractor={(item) => item.id}
           renderItem={renderEmpresa}
+          style={webScrollStyle(COLORS)}
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={

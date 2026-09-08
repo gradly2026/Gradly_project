@@ -19,7 +19,7 @@ import Svg, { Circle } from 'react-native-svg';
 import { AutoText as Text } from './AutoText';
 import { showAlert, showConfirm } from './AppAlert';
 import FeedbackExperienciaModal from './FeedbackExperienciaModal';
-import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { textoHorario } from '../data/disponibilidad';
 import { abrirConstancia, constanciaHtml } from '../utils/constanciaHtml';
 import type { FeedbackPendiente } from '../services/feedbackService';
@@ -149,7 +149,7 @@ export default function CertificarPasanteModal({
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+            <ScrollView style={webScrollStyle(colors)} contentContainerStyle={{ padding: 16, gap: 16 }}>
               {/* Datos de la pasantía */}
               <View style={s.bloque}>
                 {!!asignacion.vacanteTitulo && (

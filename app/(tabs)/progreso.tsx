@@ -33,7 +33,7 @@ import { showAlert, showConfirm } from "../../src/components/AppAlert";
 import { useAuth } from '../../src/context/AuthContext';
 import { useTranslation } from '../../src/context/TranslationContext';
 import { db } from '../../src/config/firebaseConfig';
-import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
+import { COLORS, FONTS, useTheme, webScrollStyle, type GradlyColors } from '../../src/context/ThemeContext';
 import { estudianteFinalizaProyecto } from '../../src/services/pasantiaService';
 import { abrirChatDirectoEmpresaEstudiante } from '../../src/services/chatService';
 import { progresoPorFechas } from '../../src/utils/progresoPasantia';
@@ -542,9 +542,6 @@ export default function ProgresoTab() {
   const { user, userProfile } = useAuth();
   const { t } = useTranslation();
   const { styles, colors } = useThemedStyles();
-  const webScrollStyle = Platform.OS === 'web'
-    ? ({ scrollbarColor: `${colors.primary35} ${colors.backgroundSurface}`, scrollbarWidth: 'thin' } as any)
-    : undefined;
 
   const [perfil,        setPerfil]        = useState<EstudiantePerfil | null>(null);
   const [apps,          setApps]          = useState<Aplicacion[]>([]);
@@ -790,7 +787,7 @@ export default function ProgresoTab() {
       )}
 
       <ScrollView
-        style={webScrollStyle}
+        style={webScrollStyle(colors)}
         showsVerticalScrollIndicator
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"

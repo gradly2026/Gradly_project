@@ -85,8 +85,6 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
     });
     return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   }, [vacantes]);
-  // Escala de las barras: el área con más vacantes llena la barra completa.
-  const maxArea = useMemo(() => Math.max(...areas.map(([, n]) => n), 1), [areas]);
 
   const goTo = (idx: number) => {
     setPage(Math.max(0, Math.min(1, idx)));
@@ -140,9 +138,6 @@ export default function EmpresaHomeCards({ metricas, vacantes, apps, solicitudes
               areas.map(([area, count]) => (
                 <View key={area} style={styles.barRow}>
                   <Text style={styles.barLabel} numberOfLines={1}>{area}</Text>
-                  <View style={styles.barTrack}>
-                    <View style={[styles.barFill, { width: `${(count / maxArea) * 100}%` as any }]} />
-                  </View>
                   <Text style={styles.barValue}>{count}</Text>
                 </View>
               ))
