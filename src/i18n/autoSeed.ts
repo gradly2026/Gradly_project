@@ -1497,6 +1497,11 @@ export const RESUMEN_HOME_SEED_EN: Record<string, string> = {
 // postulación de grupo, reclamo de cupos) — FloatingTopBar.tsx +
 // GrupoDetailViewerModal/AplicacionGrupoDetailModal/ReclamoDetailModal. ──
 export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
+  // ComunicadosGate / MantenimientoGate (avisos globales del admin)
+  "Comunicado de Gradly": "Announcement from Gradly",
+  "Plataforma en mantenimiento": "Platform under maintenance",
+  "Estamos haciendo trabajos en Gradly. Vuelve a intentarlo en un rato.":
+    "We're doing maintenance on Gradly. Please try again shortly.",
   // GrupoDetailViewerModal
   "No se encontró este grupo.": "This group was not found.",
   "🎓 Egresado": "🎓 Graduated",

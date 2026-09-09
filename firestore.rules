@@ -195,10 +195,22 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
-    // 📚 CATÁLOGO / CONFIG GLOBAL (carreras con estado_soporte, etc.)
+    // 📚 CATÁLOGO / CONFIG GLOBAL (carreras con estado_soporte, contacto de
+    //    soporte, y `config/mantenimiento` = {activo, motivo} del modo
+    //    mantenimiento — el gate del cliente lo lee de aquí).
     match /config/{docId} {
       allow read: if request.auth != null;
       allow write: if esAdmin();
+    }
+
+    // 📣 COMUNICADOS del admin (modal intrusivo en el dashboard del usuario).
+    //    Cualquier usuario autenticado los lee (el gate del cliente filtra por
+    //    destino: rol o uid); solo el admin los crea/edita/borra. El "visto"
+    //    por usuario NO vive aquí: es un arrayUnion `comunicados_vistos` en el
+    //    propio perfil (el dueño ya puede escribir su perfil).
+    match /comunicados/{comunicadoId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if esAdmin();
     }
 
     // 💼 VACANTES

@@ -82,6 +82,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import NotificationBanner from '../src/components/NotificationBanner';
 import { AppAlertHost } from '../src/components/AppAlert';
+import ComunicadosGate from '../src/components/ComunicadosGate';
+import MantenimientoGate from '../src/components/MantenimientoGate';
 // Avisos/confirmaciones propios (Modal) que SÍ funcionan en web, a diferencia
 // de Alert.alert. Ver src/components/AppAlert.tsx.
 // Un componente distinto a la campanita de FloatingTopBar: dibuja un
@@ -229,6 +231,11 @@ export default function RootLayout() {
                 {/* Host de avisos/confirmaciones propios (reemplaza Alert.alert
                     en los flujos que corren en web). Una sola instancia global. */}
                 <AppAlertHost />
+                {/* Comunicados del admin (modal intrusivo, se cierra con la X) y
+                    modo mantenimiento (overlay que cubre todo para los no-admin).
+                    Ambos cross-rol y cross-ruta → van aquí, no en cada dashboard. */}
+                <ComunicadosGate />
+                <MantenimientoGate />
                 {/* Al estar aquí, FUERA del <Stack> pero DENTRO de todos
                     los Providers, este banner puede aparecer flotando
                     sobre CUALQUIER pantalla de la app sin importar en cuál

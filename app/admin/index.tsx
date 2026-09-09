@@ -265,6 +265,7 @@ type DataIssueKey =
   | "pasantias"
   | "carreras"
   | "alianzas"
+  | "comunicados"
   | "logs"
   | "notificaciones"
   | "permisos"
@@ -1577,6 +1578,155 @@ export default function AdminPreview() {
     }
   }, [setDataIssue]);
 
+  // ── Comunicados del admin (colección `comunicados`) ───────────────
+  type AdminComunicado = {
+    id: string;
+    titulo?: string;
+    mensaje: string;
+    destino: "todos" | "estudiantes" | "empresas" | "universidades" | "usuario";
+    destinoUid?: string | null;
+    destinoNombre?: string | null;
+    activo: boolean;
+    creadoAt?: any;
+  };
+  const [comunicados, setComunicados] = useState<AdminComunicado[]>([]);
+  const [comunicadosCargado, setComunicadosCargado] = useState(false);
+  const [comComposerOpen, setComComposerOpen] = useState(false);
+  const [comTitulo, setComTitulo] = useState("");
+  const [comMensaje, setComMensaje] = useState("");
+  const [comDestino, setComDestino] = useState<AdminComunicado["destino"]>("todos");
+  const [comUsuario, setComUsuario] = useState<{ id: string; nombre: string; email: string } | null>(null);
+  const [comUsuarioBusca, setComUsuarioBusca] = useState("");
+  const [comGuardando, setComGuardando] = useState(false);
+
+  const fetchComunicados = useCallback(async () => {
+    try {
+      const snap = await getDocs(query(collection(db, "comunicados"), limit(80)));
+      setComunicados(
+        snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) } as AdminComunicado))
+          .sort((a, b) => (b.creadoAt?.toMillis?.() ?? 0) - (a.creadoAt?.toMillis?.() ?? 0)),
+      );
+      setDataIssue("comunicados", null);
+    } catch (error) {
+      setComunicados([]);
+      setDataIssue("comunicados", adminDataErrorMessage(error, "los comunicados"));
+    } finally {
+      setComunicadosCargado(true);
+    }
+  }, [setDataIssue]);
+
+  const abrirComposer = () => {
+    setComTitulo("");
+    setComMensaje("");
+    setComDestino("todos");
+    setComUsuario(null);
+    setComUsuarioBusca("");
+    setComComposerOpen(true);
+  };
+
+  const crearComunicado = async () => {
+    if (comGuardando) return;
+    if (comMensaje.trim().length < 5) {
+      mostrarAviso("error", "Falta el mensaje", "Escribe el contenido del comunicado.");
+      return;
+    }
+    if (comDestino === "usuario" && !comUsuario) {
+      mostrarAviso("error", "Elige un usuario", "Busca y selecciona a quién va dirigido.");
+      return;
+    }
+    setComGuardando(true);
+    try {
+      await addDoc(collection(db, "comunicados"), {
+        titulo: comTitulo.trim() || null,
+        mensaje: comMensaje.trim(),
+        destino: comDestino,
+        destinoUid: comDestino === "usuario" ? comUsuario!.id : null,
+        destinoNombre: comDestino === "usuario" ? comUsuario!.nombre : null,
+        activo: true,
+        creadoPor: auth.currentUser?.uid ?? null,
+        creadoAt: serverTimestamp(),
+      });
+      setComComposerOpen(false);
+      mostrarAviso("exito", "Comunicado enviado", "Aparecerá como un aviso en el panel de los usuarios elegidos.");
+      void fetchComunicados();
+    } catch (error) {
+      mostrarAviso("error", "No se pudo enviar", "Vuelve a intentarlo.", translateSync(adminDataErrorMessage(error, "el comunicado")));
+    } finally {
+      setComGuardando(false);
+    }
+  };
+
+  const toggleComunicado = async (c: AdminComunicado) => {
+    try {
+      await updateDoc(doc(db, "comunicados", c.id), { activo: !c.activo });
+      setComunicados((prev) => prev.map((x) => (x.id === c.id ? { ...x, activo: !x.activo } : x)));
+    } catch (error) {
+      mostrarAviso("error", "No se pudo cambiar", "Vuelve a intentarlo.", translateSync(adminDataErrorMessage(error, "el comunicado")));
+    }
+  };
+
+  const eliminarComunicado = (c: AdminComunicado) => {
+    setConfirmDialog({
+      title: "Eliminar comunicado",
+      message: "Se borrará definitivamente. Los usuarios que aún no lo vieron ya no lo verán.",
+      confirmLabel: "Eliminar",
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, "comunicados", c.id));
+          setComunicados((prev) => prev.filter((x) => x.id !== c.id));
+        } catch (error) {
+          mostrarAviso("error", "No se pudo eliminar", "Vuelve a intentarlo.", translateSync(adminDataErrorMessage(error, "el comunicado")));
+        }
+      },
+    });
+  };
+
+  // ── Modo mantenimiento (doc `config/mantenimiento`) ───────────────
+  const [mantActivo, setMantActivo] = useState(false);
+  const [mantMotivo, setMantMotivo] = useState("");
+  const [mantCargado, setMantCargado] = useState(false);
+  const [mantGuardando, setMantGuardando] = useState(false);
+  const fetchMantenimiento = useCallback(async () => {
+    try {
+      const snap = await getDoc(doc(db, "config", "mantenimiento"));
+      const d = (snap.exists() ? snap.data() : {}) as any;
+      setMantActivo(d.activo === true);
+      setMantMotivo(String(d.motivo ?? ""));
+    } catch {
+      /* fail-open */
+    } finally {
+      setMantCargado(true);
+    }
+  }, []);
+  const guardarMantenimiento = (activar: boolean) => {
+    setConfirmDialog({
+      title: activar ? "Activar modo mantenimiento" : "Desactivar modo mantenimiento",
+      message: activar
+        ? "Ningún usuario (salvo admin) podrá usar la plataforma hasta que lo desactives. Verán el motivo que escribiste."
+        : "Los usuarios volverán a tener acceso de inmediato.",
+      confirmLabel: activar ? "Activar" : "Desactivar",
+      destructive: activar,
+      onConfirm: async () => {
+        setMantGuardando(true);
+        try {
+          await setDoc(
+            doc(db, "config", "mantenimiento"),
+            { activo: activar, motivo: mantMotivo.trim(), actualizadoPor: auth.currentUser?.uid ?? null, actualizadoAt: serverTimestamp() },
+            { merge: true },
+          );
+          setMantActivo(activar);
+          mostrarAviso("exito", activar ? "Mantenimiento activado" : "Mantenimiento desactivado", activar ? "La plataforma quedó suspendida para los no-admin." : "La plataforma volvió a estar disponible.");
+        } catch (error) {
+          mostrarAviso("error", "No se pudo guardar", "Vuelve a intentarlo.", translateSync(adminDataErrorMessage(error, "el modo mantenimiento")));
+        } finally {
+          setMantGuardando(false);
+        }
+      },
+    });
+  };
+
   const fetchPermissionsOverview = useCallback(async () => {
     setPermissionsLoading(true);
     try {
@@ -2399,6 +2549,8 @@ export default function AdminPreview() {
     if (page === "pasantias" && !pasantiasAttempted && !pasantiasLoading) fetchPasantias();
     if (page === "carreras" && !carrerasAttempted && !carrerasLoading) fetchCarreras();
     if (page === "alianzas" && !alianzasAttempted && !alianzasLoading) fetchAlianzas();
+    if (page === "config" && !comunicadosCargado) { void fetchComunicados(); }
+    if (page === "config" && !mantCargado) { void fetchMantenimiento(); }
     if (page === "suscripciones" && !suscripcionesAttempted && !suscripcionesLoading) fetchSuscripciones();
     if (page === "roles" && !permissionsLoaded && !permissionsLoading) {
       fetchPermissionsOverview();
@@ -2409,6 +2561,10 @@ export default function AdminPreview() {
     fetchPasantias,
     fetchCarreras,
     fetchAlianzas,
+    fetchComunicados,
+    fetchMantenimiento,
+    comunicadosCargado,
+    mantCargado,
     fetchPermissionsOverview,
     fetchSuscripciones,
     logsAttempted,
@@ -5233,6 +5389,92 @@ export default function AdminPreview() {
         </TouchableOpacity>
       </Card>
 
+      {/* ── Comunicados ── */}
+      <Card style={{ marginBottom: 14 }}>
+        <View style={[s.row, { justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }]}>
+          <Text style={s.cardTitle}>Comunicados</Text>
+          <TouchableOpacity style={[s.btnPrimary, s.btnSm]} onPress={abrirComposer} activeOpacity={0.85}>
+            <Text style={[s.btnPrimaryText, s.btnSmText]}>Nuevo comunicado</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          Un aviso que aparece —de forma intrusiva, con su X— en el panel de los usuarios elegidos
+          (todos, un rol, o una persona). Se cierra una vez y no vuelve a salir.
+        </Text>
+
+        {!comunicadosCargado ? (
+          <View style={{ paddingVertical: 20, alignItems: "center" }}>
+            <ActivityIndicator color={C.accent70} />
+          </View>
+        ) : comunicados.length === 0 ? (
+          <Text style={[s.textMuted, { marginTop: 12 }]}>Todavía no has enviado ningún comunicado.</Text>
+        ) : (
+          <View style={{ gap: 10, marginTop: 12 }}>
+            {comunicados.map((c) => (
+              <View key={c.id} style={[s.card, { padding: 12 }]}>
+                <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 8 }]}>
+                  <View style={{ flex: 1 }}>
+                    {!!c.titulo && <Text style={s.itemTitle} numberOfLines={1}>{c.titulo}</Text>}
+                    <Text style={[s.itemSub, { marginTop: c.titulo ? 4 : 0 }]} numberOfLines={2}>{c.mensaje}</Text>
+                    <Text style={[s.itemSub, { marginTop: 6 }]}>
+                      {c.destino === "usuario"
+                        ? `Para: ${c.destinoNombre ?? c.destinoUid ?? "un usuario"}`
+                        : `Para: ${c.destino === "todos" ? "todos" : c.destino}`}
+                      {c.activo ? " · activo" : " · inactivo"}
+                    </Text>
+                  </View>
+                </View>
+                <View style={[s.row, { gap: 8, marginTop: 10, flexWrap: "wrap" }]}>
+                  <TouchableOpacity style={[s.btnOutline, s.btnSm]} onPress={() => void toggleComunicado(c)} activeOpacity={0.8}>
+                    <Text style={[s.btnOutlineText, s.btnSmText]}>{c.activo ? "Desactivar" : "Activar"}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.btnOutline, s.btnSm]} onPress={() => eliminarComunicado(c)} activeOpacity={0.8}>
+                    <Text style={[s.btnOutlineText, s.btnSmText, { color: C.red }]}>Eliminar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+      </Card>
+
+      {/* ── Modo mantenimiento ── */}
+      <Card style={{ marginBottom: 14 }}>
+        <Text style={s.cardTitle}>Modo mantenimiento</Text>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          Suspende la plataforma para TODOS los usuarios salvo el admin: verán una pantalla con el
+          motivo y no podrán usar la app hasta que lo desactives desde aquí.
+        </Text>
+        <Text style={[s.inputLabel, { marginTop: 14 }]}>Motivo (lo verán los usuarios)</Text>
+        <TextInput
+          style={[s.input, { minHeight: 70, textAlignVertical: "top" }]}
+          value={mantMotivo}
+          onChangeText={setMantMotivo}
+          placeholder="Estamos actualizando el sistema. Volvemos en ~2 horas."
+          placeholderTextColor={C.textMuted}
+          multiline
+          editable={mantCargado && !mantGuardando}
+        />
+        <View style={[s.row, { marginTop: 10 }]}>
+          <View style={[s.avatar, { backgroundColor: (mantActivo ? C.red : C.green) + "22" }]}>
+            <Ionicons name={mantActivo ? "warning-outline" : "checkmark-circle-outline"} size={16} color={mantActivo ? C.red : C.green} />
+          </View>
+          <Text style={[s.itemSub, { marginLeft: 10 }]}>
+            {mantActivo ? "La plataforma está SUSPENDIDA para los no-admin." : "La plataforma está disponible."}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[s.btnPrimary, { marginTop: 14, backgroundColor: mantActivo ? C.green : C.red, opacity: mantCargado && !mantGuardando ? 1 : 0.6 }]}
+          disabled={!mantCargado || mantGuardando}
+          onPress={() => guardarMantenimiento(!mantActivo)}
+          activeOpacity={0.85}
+        >
+          <Text style={s.btnPrimaryText}>
+            {mantGuardando ? "Guardando…" : mantActivo ? "Desactivar mantenimiento" : "Activar mantenimiento"}
+          </Text>
+        </TouchableOpacity>
+      </Card>
+
       <Card style={{ marginBottom: 14 }}>
         <Text style={s.cardTitle}>Mantenimiento</Text>
         <Text style={[s.textMuted, { marginTop: 6 }]}>
@@ -5491,6 +5733,110 @@ export default function AdminPreview() {
         }}
       />
     ) : null}
+
+    {/* Composer de comunicados (Config → "Nuevo comunicado"). */}
+    <Modal visible={comComposerOpen} transparent animationType="none" onRequestClose={() => setComComposerOpen(false)}>
+      <View style={s.modalOverlay}>
+        <View style={[s.modal, isPhone && s.modalCompact]}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>Nuevo comunicado</Text>
+            <TouchableOpacity style={[s.iconBtn, { width: 38, height: 38 }]} onPress={() => setComComposerOpen(false)} activeOpacity={0.8}>
+              <Ionicons name="close" size={20} color={C.textMuted} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView {...pageScrollProps} style={{ maxHeight: 460 }}>
+            <Text style={s.inputLabel}>Título (opcional)</Text>
+            <TextInput
+              style={s.input}
+              value={comTitulo}
+              onChangeText={setComTitulo}
+              placeholder="Aviso importante"
+              placeholderTextColor={C.textMuted}
+            />
+            <Text style={[s.inputLabel, { marginTop: 12 }]}>Mensaje</Text>
+            <TextInput
+              style={[s.input, { minHeight: 100, textAlignVertical: "top" }]}
+              value={comMensaje}
+              onChangeText={setComMensaje}
+              placeholder="Escribe aquí el comunicado…"
+              placeholderTextColor={C.textMuted}
+              multiline
+            />
+            <Text style={[s.inputLabel, { marginTop: 12 }]}>Dirigido a</Text>
+            <View style={s.chipRow}>
+              {([
+                ["todos", "Todos"],
+                ["estudiantes", "Estudiantes"],
+                ["empresas", "Empresas"],
+                ["universidades", "Universidades"],
+                ["usuario", "Un usuario"],
+              ] as const).map(([k, label]) => (
+                <Chip key={k} label={label} active={comDestino === k} onPress={() => setComDestino(k)} />
+              ))}
+            </View>
+
+            {comDestino === "usuario" ? (
+              <View style={{ marginTop: 12 }}>
+                {comUsuario ? (
+                  <View style={[s.row, { justifyContent: "space-between", alignItems: "center" }]}>
+                    <Text style={s.itemSub} numberOfLines={1}>{comUsuario.nombre} · {comUsuario.email}</Text>
+                    <TouchableOpacity onPress={() => setComUsuario(null)} activeOpacity={0.8}>
+                      <Text style={[s.btnOutlineText, s.btnSmText]}>Cambiar</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <>
+                    <View style={s.searchWrap}>
+                      <Ionicons name="search-outline" size={18} color={C.textMuted} />
+                      <TextInput
+                        style={s.searchInput}
+                        placeholder="Buscar por nombre o correo…"
+                        placeholderTextColor={C.textMuted}
+                        value={comUsuarioBusca}
+                        onChangeText={setComUsuarioBusca}
+                        autoCapitalize="none"
+                      />
+                    </View>
+                    {comUsuarioBusca.trim().length >= 2 ? (
+                      <View style={{ gap: 6, marginTop: 8 }}>
+                        {users
+                          .filter((u) => {
+                            const q = comUsuarioBusca.trim().toLowerCase();
+                            return u.nombre.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+                          })
+                          .slice(0, 6)
+                          .map((u) => (
+                            <TouchableOpacity
+                              key={u.id}
+                              style={[s.listItem, { padding: 10 }]}
+                              activeOpacity={0.85}
+                              onPress={() => { setComUsuario({ id: u.id, nombre: u.nombre, email: u.email }); setComUsuarioBusca(""); }}
+                            >
+                              <View style={{ flex: 1 }}>
+                                <Text style={s.itemTitle} numberOfLines={1}>{u.nombre}</Text>
+                                <Text style={[s.itemSub, { marginTop: 2 }]} numberOfLines={1}>{u.email} · {labelRole(u.role)}</Text>
+                              </View>
+                            </TouchableOpacity>
+                          ))}
+                      </View>
+                    ) : null}
+                  </>
+                )}
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={[s.btnPrimary, { marginTop: 16, opacity: comGuardando ? 0.6 : 1 }]}
+              disabled={comGuardando}
+              onPress={() => void crearComunicado()}
+              activeOpacity={0.85}
+            >
+              <Text style={s.btnPrimaryText}>{comGuardando ? "Enviando…" : "Enviar comunicado"}</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
     </>
   );
 
