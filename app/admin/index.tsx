@@ -89,6 +89,7 @@ type AdminPage =
   | "incidencias"
   | "pasantias"
   | "carreras"
+  | "alianzas"
   | "vacantes"
   | "suscripciones"
   | "notificaciones"
@@ -263,6 +264,7 @@ type DataIssueKey =
   | "metricas"
   | "pasantias"
   | "carreras"
+  | "alianzas"
   | "logs"
   | "notificaciones"
   | "permisos"
@@ -734,6 +736,18 @@ export default function AdminPreview() {
   const [carrerasEstudiantes, setCarrerasEstudiantes] = useState<AdminCarreraEstudiante[]>([]);
   const [carrerasFiltro, setCarrerasFiltro] = useState<"todos" | CarreraEstadoAlumno>("todos");
   const [carreraAbierta, setCarreraAbierta] = useState<string | null>(null);
+
+  // ── Alianzas empresa ↔ universidad ────────────────────────────────
+  // Una alianza = el par (empresaId, universidadId) que trabajó junto en ≥1
+  // pasantía. Fuente: `perfiles_empresas.aliados_universidades_ids` y
+  // `perfiles_universidades.aliados_empresas_ids` (arrayUnion, no se retira).
+  type AdminAlianza = { empresaId: string; empresaNombre: string; universidadId: string; universidadNombre: string };
+  const [alianzasLoading, setAlianzasLoading] = useState(false);
+  const [alianzasAttempted, setAlianzasAttempted] = useState(false);
+  const [alianzas, setAlianzas] = useState<AdminAlianza[]>([]);
+  const [alianzasAgruparPor, setAlianzasAgruparPor] = useState<"empresa" | "universidad">("empresa");
+  const [alianzasSearch, setAlianzasSearch] = useState("");
+  const [alianzaAbierta, setAlianzaAbierta] = useState<string | null>(null);
 
   // Mapas de nombres para que el admin vea etiquetas humanas (no solo IDs).
   const [empresaNames, setEmpresaNames] = useState<Record<string, string>>({});
@@ -1505,6 +1519,61 @@ export default function AdminPreview() {
       setDataIssue("carreras", adminDataErrorMessage(error, "las carreras y sus estudiantes"));
     } finally {
       setCarrerasLoading(false);
+    }
+  }, [setDataIssue]);
+
+  // Lee los perfiles de empresa y universidad (limit 300 c/u; el admin lee
+  // ambos por `esAdmin()`) y arma los pares de alianza a partir de los arrays
+  // `aliados_*_ids` de AMBOS lados (unión + dedupe). Sin cambio de reglas.
+  const fetchAlianzas = useCallback(async () => {
+    setAlianzasLoading(true);
+    setAlianzasAttempted(true);
+    try {
+      const [empSnap, uniSnap] = await Promise.all([
+        getDocs(query(collection(db, "perfiles_empresas"), limit(300))),
+        getDocs(query(collection(db, "perfiles_universidades"), limit(300))),
+      ]);
+      const empNom: Record<string, string> = {};
+      empSnap.docs.forEach((d) => {
+        empNom[d.id] = String((d.data() as any)?.nombre_empresa ?? (d.data() as any)?.nombre ?? "").trim() || d.id;
+      });
+      const uniNom: Record<string, string> = {};
+      uniSnap.docs.forEach((d) => {
+        uniNom[d.id] = String((d.data() as any)?.nombre_universidad ?? (d.data() as any)?.nombre ?? "").trim() || d.id;
+      });
+
+      const pares = new Map<string, AdminAlianza>();
+      const addPar = (empresaId: string, universidadId: string) => {
+        if (!empresaId || !universidadId) return;
+        const k = `${empresaId}__${universidadId}`;
+        if (pares.has(k)) return;
+        pares.set(k, {
+          empresaId,
+          universidadId,
+          empresaNombre: empNom[empresaId] ?? empresaId,
+          universidadNombre: uniNom[universidadId] ?? universidadId,
+        });
+      };
+      empSnap.docs.forEach((d) => {
+        const ids: string[] = Array.isArray((d.data() as any)?.aliados_universidades_ids)
+          ? (d.data() as any).aliados_universidades_ids
+          : [];
+        ids.forEach((uid2) => addPar(d.id, String(uid2)));
+      });
+      uniSnap.docs.forEach((d) => {
+        const ids: string[] = Array.isArray((d.data() as any)?.aliados_empresas_ids)
+          ? (d.data() as any).aliados_empresas_ids
+          : [];
+        ids.forEach((eid) => addPar(String(eid), d.id));
+      });
+
+      setAlianzas(Array.from(pares.values()));
+      setDataIssue("alianzas", null);
+    } catch (error) {
+      setAlianzas([]);
+      setDataIssue("alianzas", adminDataErrorMessage(error, "las alianzas de la plataforma"));
+    } finally {
+      setAlianzasLoading(false);
     }
   }, [setDataIssue]);
 
@@ -2329,6 +2398,7 @@ export default function AdminPreview() {
     if (page === "notificaciones" && !notificationsAttempted && !notificationsLoading) fetchNotifications();
     if (page === "pasantias" && !pasantiasAttempted && !pasantiasLoading) fetchPasantias();
     if (page === "carreras" && !carrerasAttempted && !carrerasLoading) fetchCarreras();
+    if (page === "alianzas" && !alianzasAttempted && !alianzasLoading) fetchAlianzas();
     if (page === "suscripciones" && !suscripcionesAttempted && !suscripcionesLoading) fetchSuscripciones();
     if (page === "roles" && !permissionsLoaded && !permissionsLoading) {
       fetchPermissionsOverview();
@@ -2338,6 +2408,7 @@ export default function AdminPreview() {
     fetchNotifications,
     fetchPasantias,
     fetchCarreras,
+    fetchAlianzas,
     fetchPermissionsOverview,
     fetchSuscripciones,
     logsAttempted,
@@ -2348,6 +2419,8 @@ export default function AdminPreview() {
     pasantiasLoading,
     carrerasAttempted,
     carrerasLoading,
+    alianzasAttempted,
+    alianzasLoading,
     page,
     permissionsLoaded,
     permissionsLoading,
@@ -2567,6 +2640,7 @@ export default function AdminPreview() {
     { key: "reportes", label: "Reportes", icon: "bar-chart-outline" },
     { key: "pasantias", label: "Pasantías", icon: "school-outline" },
     { key: "carreras", label: "Carreras", icon: "book-outline" },
+    { key: "alianzas", label: "Alianzas", icon: "git-network-outline" },
     { key: "notificaciones", label: "Inbox", icon: "notifications-outline" },
     { key: "roles", label: "Permisos", icon: "key-outline" },
     { key: "config", label: "Config", icon: "settings-outline" },
@@ -4456,6 +4530,180 @@ export default function AdminPreview() {
                             </TouchableOpacity>
                           );
                         })}
+                      </View>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </Card>
+      </ScrollView>
+    );
+  };
+
+  // renderAlianzas: pares empresa ↔ universidad que ya trabajaron juntos.
+  // Toggle "Agrupar por": Empresas (cada empresa lista sus universidades
+  // aliadas) o Universidades (al revés). Buscador por nombre. Tarjetas
+  // colapsables; tocar una contraparte abre su perfil (abrirPerfilPublico).
+  const renderAlianzas = () => {
+    const q = alianzasSearch.trim().toLowerCase();
+    const porEmpresa = alianzasAgruparPor === "empresa";
+
+    // Agrupa por el lado elegido; la "contraparte" es el otro.
+    const grupos = (() => {
+      const map = new Map<
+        string,
+        { id: string; nombre: string; rolContraparte: Role; contrapartes: { id: string; nombre: string }[] }
+      >();
+      alianzas.forEach((a) => {
+        const claveId = porEmpresa ? a.empresaId : a.universidadId;
+        const claveNom = porEmpresa ? a.empresaNombre : a.universidadNombre;
+        const cpId = porEmpresa ? a.universidadId : a.empresaId;
+        const cpNom = porEmpresa ? a.universidadNombre : a.empresaNombre;
+        let g = map.get(claveId);
+        if (!g) {
+          g = { id: claveId, nombre: claveNom, rolContraparte: porEmpresa ? "universidad" : "empresa", contrapartes: [] };
+          map.set(claveId, g);
+        }
+        if (!g.contrapartes.some((c) => c.id === cpId)) g.contrapartes.push({ id: cpId, nombre: cpNom });
+      });
+      return Array.from(map.values())
+        .map((g) => ({
+          ...g,
+          contrapartes: g.contrapartes.sort((x, y) => x.nombre.localeCompare(y.nombre, "es", { sensitivity: "base" })),
+        }))
+        .sort((a, b) => b.contrapartes.length - a.contrapartes.length || a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }));
+    })();
+
+    const gruposVisibles = q
+      ? grupos.filter(
+          (g) => g.nombre.toLowerCase().includes(q) || g.contrapartes.some((c) => c.nombre.toLowerCase().includes(q)),
+        )
+      : grupos;
+
+    const empresasConAlianza = new Set(alianzas.map((a) => a.empresaId)).size;
+    const unisConAlianza = new Set(alianzas.map((a) => a.universidadId)).size;
+
+    return (
+      <ScrollView
+        {...pageScrollProps}
+        showsVerticalScrollIndicator
+        refreshControl={<RefreshControl refreshing={alianzasLoading} onRefresh={fetchAlianzas} tintColor={C.accent70} />}
+      >
+        <View style={s.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.kicker}>Operación</Text>
+            <Text style={s.pageTitle}>Alianzas</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>
+              Empresas y universidades que ya trabajaron juntas en al menos una pasantía. Toca una contraparte para ver su perfil.
+            </Text>
+          </View>
+          <TouchableOpacity style={s.btnOutline} onPress={fetchAlianzas} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Card style={{ marginBottom: 14 }}>
+          <View style={s.searchWrap}>
+            <Ionicons name="search-outline" size={18} color={C.textMuted} />
+            <TextInput
+              style={s.searchInput}
+              placeholder="Buscar por nombre de empresa o universidad…"
+              placeholderTextColor={C.textMuted}
+              value={alianzasSearch}
+              onChangeText={setAlianzasSearch}
+              autoCapitalize="none"
+            />
+          </View>
+          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8, marginTop: 14 }]}>AGRUPAR POR</Text>
+          <View style={s.chipRow}>
+            <Chip label="Empresas" active={alianzasAgruparPor === "empresa"} onPress={() => setAlianzasAgruparPor("empresa")} />
+            <Chip label="Universidades" active={alianzasAgruparPor === "universidad"} onPress={() => setAlianzasAgruparPor("universidad")} />
+          </View>
+        </Card>
+
+        <View style={[s.grid2, { marginBottom: 14 }]}>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Alianzas</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Pares empresa ↔ universidad distintos.</Text>
+            <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{alianzas.length}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Empresas</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Con al menos una alianza.</Text>
+            <Text style={[s.heroMetricValue, { color: C.green, marginTop: 12 }]}>{empresasConAlianza}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Universidades</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Con al menos una alianza.</Text>
+            <Text style={[s.heroMetricValue, { color: C.yellow, marginTop: 12 }]}>{unisConAlianza}</Text>
+          </View>
+        </View>
+
+        <Card style={{ marginBottom: 24 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>{porEmpresa ? "Por empresa" : "Por universidad"}</Text>
+            <Text style={s.textMuted}>{gruposVisibles.length}</Text>
+          </View>
+
+          {alianzasLoading && alianzas.length === 0 ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : gruposVisibles.length === 0 ? (
+            <EmptyResultsState
+              icon="git-network-outline"
+              title="Sin alianzas para mostrar"
+              message={q ? "No hay coincidencias con la búsqueda." : "Todavía no hay alianzas registradas entre empresas y universidades."}
+            />
+          ) : (
+            <View style={{ gap: 10 }}>
+              {gruposVisibles.map((g) => {
+                const abierta = alianzaAbierta === g.id;
+                return (
+                  <View key={g.id} style={s.card}>
+                    <TouchableOpacity
+                      style={[s.row, { justifyContent: "space-between", alignItems: "center", gap: 10 }]}
+                      activeOpacity={0.8}
+                      onPress={() => setAlianzaAbierta(abierta ? null : g.id)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.itemTitle} numberOfLines={2}>{g.nombre}</Text>
+                        <Text style={[s.itemSub, { marginTop: 4 }]}>
+                          {g.contrapartes.length} {porEmpresa ? "universidad" : "empresa"}{g.contrapartes.length === 1 ? "" : porEmpresa ? "es" : "s"} aliada{g.contrapartes.length === 1 ? "" : "s"}
+                        </Text>
+                      </View>
+                      <View style={s.row}>
+                        <TouchableOpacity
+                          style={[s.btnOutline, s.btnSm, { marginRight: 8 }]}
+                          onPress={() => abrirPerfilPublico(porEmpresa ? "empresa" : "universidad", g.id)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[s.btnOutlineText, s.btnSmText]}>Ver perfil</Text>
+                        </TouchableOpacity>
+                        <Ionicons name={abierta ? "chevron-up" : "chevron-down"} size={18} color={C.textMuted} />
+                      </View>
+                    </TouchableOpacity>
+
+                    {abierta ? (
+                      <View style={{ gap: 8, marginTop: 12 }}>
+                        {g.contrapartes.map((c) => (
+                          <TouchableOpacity
+                            key={c.id}
+                            style={[s.listItem, isPhone && s.listItemStack]}
+                            activeOpacity={0.85}
+                            onPress={() => abrirPerfilPublico(g.rolContraparte, c.id)}
+                          >
+                            <View style={s.avatar}>
+                              <Ionicons name={porEmpresa ? "school-outline" : "business-outline"} size={16} color={C.accent70} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={s.itemTitle} numberOfLines={1}>{c.nombre}</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+                          </TouchableOpacity>
+                        ))}
                       </View>
                     ) : null}
                   </View>
@@ -6503,6 +6751,8 @@ export default function AdminPreview() {
         return renderPasantias();
       case "carreras":
         return renderCarreras();
+      case "alianzas":
+        return renderAlianzas();
       case "vacantes":
         return renderVacantes();
       case "suscripciones":

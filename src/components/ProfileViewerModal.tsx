@@ -127,6 +127,10 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId, 
   };
   const [estEmpresa, setEstEmpresa] = useState<EstEmpresaFila[] | null>(null);
   const [verEstEmpresa, setVerEstEmpresa] = useState(false);
+  // Empresa/universidad: sus contrapartes de alianza (nombre resuelto).
+  const [aliadosAdmin, setAliadosAdmin] = useState<{ id: string; nombre: string }[] | null>(null);
+  // Perfil de una contraparte de alianza abierto desde la sección de arriba.
+  const [verAliado, setVerAliado] = useState<{ tipo: ProfileTipo; id: string } | null>(null);
 
   const puedeVerUbicacion = rol === 'empresa' || rol === 'universidad';
   // Los cuadros de "estudiantes destacados" (auto-reportados en el perfil) solo
@@ -372,6 +376,44 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId, 
     })();
     return () => { cancel = true; };
   }, [visible, profileId, tipo, rol]);
+
+  // ── ADMIN · contrapartes de alianza de una EMPRESA / UNIVERSIDAD ──
+  // Empresa → universidades aliadas (`aliados_universidades_ids`); universidad
+  // → empresas aliadas (`aliados_empresas_ids`). Se resuelve el nombre de cada
+  // una. El admin lee ambos perfiles por `esAdmin()`.
+  useEffect(() => {
+    if (!visible || !profileId || rol !== 'admin' || (tipo !== 'empresa' && tipo !== 'universidad') || !data) {
+      setAliadosAdmin(null);
+      return;
+    }
+    const ids: string[] = Array.isArray(
+      tipo === 'empresa' ? data.aliados_universidades_ids : data.aliados_empresas_ids,
+    )
+      ? (tipo === 'empresa' ? data.aliados_universidades_ids : data.aliados_empresas_ids)
+      : [];
+    if (ids.length === 0) { setAliadosAdmin([]); return; }
+    const col = tipo === 'empresa' ? 'perfiles_universidades' : 'perfiles_empresas';
+    const campoNom = tipo === 'empresa' ? 'nombre_universidad' : 'nombre_empresa';
+    let cancel = false;
+    (async () => {
+      try {
+        const res = await Promise.all(
+          Array.from(new Set(ids.map(String))).map(async id => {
+            try {
+              const s = await getDoc(doc(db, col, id));
+              return { id, nombre: s.exists() ? String((s.data() as any)?.[campoNom] ?? id) : id };
+            } catch {
+              return { id, nombre: id };
+            }
+          }),
+        );
+        if (!cancel) setAliadosAdmin(res.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })));
+      } catch {
+        if (!cancel) setAliadosAdmin([]);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [visible, profileId, tipo, rol, data]);
 
   // ── Grupos en común con este perfil ──────────────────────────────
   useEffect(() => {
@@ -875,6 +917,33 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId, 
               </>
             )}
 
+            {/* ADMIN · alianzas de esta empresa/universidad (con quién trabajó). */}
+            {rol === 'admin' && (tipo === 'empresa' || tipo === 'universidad') && aliadosAdmin && aliadosAdmin.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>
+                  {tipo === 'empresa' ? 'Universidades aliadas' : 'Empresas aliadas'} ({aliadosAdmin.length})
+                </Text>
+                {aliadosAdmin.map(al => (
+                  <TouchableOpacity
+                    key={al.id}
+                    style={styles.infoRow}
+                    activeOpacity={0.75}
+                    onPress={() => setVerAliado({ tipo: tipo === 'empresa' ? 'universidad' : 'empresa', id: al.id })}
+                  >
+                    <Ionicons
+                      name={tipo === 'empresa' ? 'school-outline' : 'business-outline'}
+                      size={18}
+                      color={colors.primaryLight}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.infoValue} numberOfLines={1} noTranslate>{al.nombre}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
             {/* Estudiantes destacados — solo para empresa / universidad / admin
                 (ver puedeVerTopEst). Los datos vienen auto-reportados en el
                 propio perfil (topEstudiantesService). */}
@@ -1004,6 +1073,16 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId, 
         tipo="estudiante"
         profileId={verEstudianteId}
         onClose={() => setVerEstudianteId(null)}
+      />
+    )}
+
+    {/* Perfil de una contraparte de alianza (admin), abierto desde arriba. */}
+    {verAliado && (
+      <ProfileViewerModal
+        visible
+        tipo={verAliado.tipo}
+        profileId={verAliado.id}
+        onClose={() => setVerAliado(null)}
       />
     )}
     </>
