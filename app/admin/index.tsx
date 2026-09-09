@@ -56,6 +56,7 @@ import {
 } from "../../src/services/incidenciaService";
 import { translateSync } from "../../src/services/translationService";
 import { useAdminTheme } from "../../src/styles/adminStyles";
+import { cargarOverridesCarreras, zonaDeCarrera } from "../../src/data/carreras";
 import { textoHorario } from "../../src/data/disponibilidad";
 import { textoCupos, textoSalario } from "../../src/utils/cupos";
 import { certificarPasantia } from "../../src/services/solicitudPracticaService";
@@ -87,6 +88,7 @@ type AdminPage =
   | "reportes"
   | "incidencias"
   | "pasantias"
+  | "carreras"
   | "vacantes"
   | "suscripciones"
   | "notificaciones"
@@ -260,6 +262,7 @@ type DataIssueKey =
   | "usuarios"
   | "metricas"
   | "pasantias"
+  | "carreras"
   | "logs"
   | "notificaciones"
   | "permisos"
@@ -713,6 +716,24 @@ export default function AdminPreview() {
   const [pasantiasSearch, setPasantiasSearch] = useState("");
   const [estudianteSnapshots, setEstudianteSnapshots] = useState<Record<string, AdminStudentSnapshot>>({});
   const [pasantiaActionSaving, setPasantiaActionSaving] = useState(false);
+
+  // ── Carreras (zona verde) + estudiantes por estado ─────────────────
+  // Sección propia: agrupa a los estudiantes por carrera (solo las de zona
+  // verde, sin rotularlas así) y los clasifica por dónde van en su pasantía.
+  type CarreraEstadoAlumno = "nuevo" | "en_pasantia" | "por_certificar" | "certificado";
+  type AdminCarreraEstudiante = {
+    id: string;
+    nombre: string;
+    carrera: string;
+    universidadId: string | null;
+    grupoId: string | null;
+    estado: CarreraEstadoAlumno;
+  };
+  const [carrerasLoading, setCarrerasLoading] = useState(false);
+  const [carrerasAttempted, setCarrerasAttempted] = useState(false);
+  const [carrerasEstudiantes, setCarrerasEstudiantes] = useState<AdminCarreraEstudiante[]>([]);
+  const [carrerasFiltro, setCarrerasFiltro] = useState<"todos" | CarreraEstadoAlumno>("todos");
+  const [carreraAbierta, setCarreraAbierta] = useState<string | null>(null);
 
   // Mapas de nombres para que el admin vea etiquetas humanas (no solo IDs).
   const [empresaNames, setEmpresaNames] = useState<Record<string, string>>({});
@@ -1401,6 +1422,89 @@ export default function AdminPreview() {
       setDataIssue("pasantias", adminDataErrorMessage(error, "las pasantías de la plataforma"));
     } finally {
       setPasantiasLoading(false);
+    }
+  }, [setDataIssue]);
+
+  // Carga TODOS los `perfiles_estudiantes` (no solo los que ya tienen pasantía)
+  // y los cruza con `asignaciones_cupo` + `comprobantes_pasantia` + `aplicaciones`
+  // para decidir el estado de cada uno. Tope de 600 por colección — cota simple
+  // de MVP, igual que fetchPasantias. Solo se conserva a los de carrera de zona
+  // verde (sin rotularla). El admin lee todas esas colecciones por `esAdmin()`.
+  const fetchCarreras = useCallback(async () => {
+    setCarrerasLoading(true);
+    setCarrerasAttempted(true);
+    try {
+      await cargarOverridesCarreras().catch(() => {});
+      const [estSnap, cupoSnap, compSnap, appSnap] = await Promise.all([
+        getDocs(query(collection(db, "perfiles_estudiantes"), limit(600))),
+        getDocs(query(collection(db, "asignaciones_cupo"), limit(600))),
+        getDocs(query(collection(db, "comprobantes_pasantia"), limit(600))),
+        getDocs(query(collection(db, "aplicaciones"), limit(600))),
+      ]);
+
+      const cupos = cupoSnap.docs.map((d) => d.data() as any);
+      const comps = compSnap.docs.map((d) => d.data() as any);
+      const apps = appSnap.docs.map((d) => d.data() as any);
+
+      const certificadoIds = new Set(
+        comps.filter((c) => c.estado === "validado").map((c) => String(c.estudianteId ?? "")).filter(Boolean),
+      );
+      const cupoFinalizadoIds = new Set(
+        cupos.filter((c) => c.finalizada === true && c.estado !== "cancelado").map((c) => String(c.estudianteId ?? "")).filter(Boolean),
+      );
+      const cupoActivoIds = new Set(
+        cupos.filter((c) => c.estado === "tomado" && c.finalizada !== true).map((c) => String(c.estudianteId ?? "")).filter(Boolean),
+      );
+      const appActivoIds = new Set(
+        apps.filter((a) => a.estado === "contratado").map((a) => String(a.estudiante_id ?? "")).filter(Boolean),
+      );
+      const appFinalizadoIds = new Set(
+        apps.filter((a) => a.estado === "finalizado" || a.estado === "finalizado_pendiente_firma")
+          .map((a) => String(a.estudiante_id ?? "")).filter(Boolean),
+      );
+
+      const filas: AdminCarreraEstudiante[] = estSnap.docs
+        .map((d) => {
+          const data = d.data() as any;
+          const uid = d.id;
+          const carrera = String(data?.carrera ?? "").trim();
+          const graduado = data?.graduado === true;
+          const ha = Number(data?.horas_aprobadas ?? 0) || 0;
+          const ho = Number(data?.horas_objetivo ?? 0) || 0;
+          const ep = String(data?.estado_pasantia ?? "").trim();
+
+          const esCert =
+            graduado || certificadoIds.has(uid) || ep === "certificada" || (ho > 0 && ha >= ho);
+          const esPorCert =
+            !esCert && (cupoFinalizadoIds.has(uid) || appFinalizadoIds.has(uid) || ep === "finalizada");
+          const esEnPas =
+            !esCert && !esPorCert && (cupoActivoIds.has(uid) || appActivoIds.has(uid));
+          const estado: CarreraEstadoAlumno = esCert
+            ? "certificado"
+            : esPorCert
+            ? "por_certificar"
+            : esEnPas
+            ? "en_pasantia"
+            : "nuevo";
+
+          return {
+            id: uid,
+            nombre: String(data?.nombre_completo ?? data?.nombre ?? "Estudiante").trim() || "Estudiante",
+            carrera,
+            universidadId: data?.universidad_id ? String(data.universidad_id) : null,
+            grupoId: data?.grupo_id ? String(data.grupo_id) : null,
+            estado,
+          } satisfies AdminCarreraEstudiante;
+        })
+        .filter((f) => f.carrera && zonaDeCarrera(f.carrera) === "verde");
+
+      setCarrerasEstudiantes(filas);
+      setDataIssue("carreras", null);
+    } catch (error) {
+      setCarrerasEstudiantes([]);
+      setDataIssue("carreras", adminDataErrorMessage(error, "las carreras y sus estudiantes"));
+    } finally {
+      setCarrerasLoading(false);
     }
   }, [setDataIssue]);
 
@@ -2224,6 +2328,7 @@ export default function AdminPreview() {
     if (page === "logs" && !logsAttempted && !logsLoading) fetchLogs();
     if (page === "notificaciones" && !notificationsAttempted && !notificationsLoading) fetchNotifications();
     if (page === "pasantias" && !pasantiasAttempted && !pasantiasLoading) fetchPasantias();
+    if (page === "carreras" && !carrerasAttempted && !carrerasLoading) fetchCarreras();
     if (page === "suscripciones" && !suscripcionesAttempted && !suscripcionesLoading) fetchSuscripciones();
     if (page === "roles" && !permissionsLoaded && !permissionsLoading) {
       fetchPermissionsOverview();
@@ -2232,6 +2337,7 @@ export default function AdminPreview() {
     fetchLogs,
     fetchNotifications,
     fetchPasantias,
+    fetchCarreras,
     fetchPermissionsOverview,
     fetchSuscripciones,
     logsAttempted,
@@ -2240,6 +2346,8 @@ export default function AdminPreview() {
     notificationsLoading,
     pasantiasAttempted,
     pasantiasLoading,
+    carrerasAttempted,
+    carrerasLoading,
     page,
     permissionsLoaded,
     permissionsLoading,
@@ -2458,6 +2566,7 @@ export default function AdminPreview() {
     { key: "usuarios", label: "Usuarios", icon: "people-outline" },
     { key: "reportes", label: "Reportes", icon: "bar-chart-outline" },
     { key: "pasantias", label: "Pasantías", icon: "school-outline" },
+    { key: "carreras", label: "Carreras", icon: "book-outline" },
     { key: "notificaciones", label: "Inbox", icon: "notifications-outline" },
     { key: "roles", label: "Permisos", icon: "key-outline" },
     { key: "config", label: "Config", icon: "settings-outline" },
@@ -4158,6 +4267,198 @@ export default function AdminPreview() {
                       </View>
                     </View>
                   </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </Card>
+      </ScrollView>
+    );
+  };
+
+  // renderCarreras: estudiantes de carreras de zona verde (sin rotularla),
+  // agrupados por carrera con su conteo, y filtrables por estado de pasantía
+  // (Todos / Nuevos / En pasantía / Por certificar / Certificados). Tocar un
+  // estudiante abre su perfil en el visor de admin (abrirPerfilPublico).
+  const renderCarreras = () => {
+    const FILTROS: { key: "todos" | CarreraEstadoAlumno; label: string }[] = [
+      { key: "todos", label: "Todos" },
+      { key: "nuevo", label: "Nuevos" },
+      { key: "en_pasantia", label: "En pasantía" },
+      { key: "por_certificar", label: "Por certificar" },
+      { key: "certificado", label: "Certificados" },
+    ];
+    const estadoMeta: Record<CarreraEstadoAlumno, { label: string; color: string }> = {
+      nuevo: { label: "Nuevo", color: C.textMuted },
+      en_pasantia: { label: "En pasantía", color: C.accent },
+      por_certificar: { label: "Por certificar", color: C.yellow },
+      certificado: { label: "Certificado", color: C.green },
+    };
+
+    const coincide = (f: AdminCarreraEstudiante) =>
+      carrerasFiltro === "todos" || f.estado === carrerasFiltro;
+
+    const grupos = (() => {
+      const map = new Map<
+        string,
+        { carrera: string; total: number; counts: Record<CarreraEstadoAlumno, number>; alumnos: AdminCarreraEstudiante[] }
+      >();
+      carrerasEstudiantes.forEach((f) => {
+        let g = map.get(f.carrera);
+        if (!g) {
+          g = {
+            carrera: f.carrera,
+            total: 0,
+            counts: { nuevo: 0, en_pasantia: 0, por_certificar: 0, certificado: 0 },
+            alumnos: [],
+          };
+          map.set(f.carrera, g);
+        }
+        g.total += 1;
+        g.counts[f.estado] += 1;
+        g.alumnos.push(f);
+      });
+      return Array.from(map.values())
+        .map((g) => ({
+          ...g,
+          alumnos: g.alumnos
+            .slice()
+            .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" })),
+        }))
+        .sort((a, b) => b.total - a.total || a.carrera.localeCompare(b.carrera, "es", { sensitivity: "base" }));
+    })();
+
+    const gruposVisibles = grupos.filter((g) =>
+      carrerasFiltro === "todos" ? g.total > 0 : g.counts[carrerasFiltro] > 0,
+    );
+
+    const totalAlumnos = carrerasEstudiantes.length;
+    const totalFiltro =
+      carrerasFiltro === "todos"
+        ? totalAlumnos
+        : carrerasEstudiantes.filter((f) => f.estado === carrerasFiltro).length;
+
+    return (
+      <ScrollView
+        {...pageScrollProps}
+        showsVerticalScrollIndicator
+        refreshControl={<RefreshControl refreshing={carrerasLoading} onRefresh={fetchCarreras} tintColor={C.accent70} />}
+      >
+        <View style={s.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.kicker}>Operación</Text>
+            <Text style={s.pageTitle}>Carreras</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>
+              Estudiantes agrupados por carrera y por dónde van en su pasantía. Toca un estudiante para ver su perfil.
+            </Text>
+          </View>
+          <TouchableOpacity style={s.btnOutline} onPress={fetchCarreras} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Card style={{ marginBottom: 14 }}>
+          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginBottom: 8 }]}>ESTADO</Text>
+          <View style={s.chipRow}>
+            {FILTROS.map((ft) => (
+              <Chip
+                key={ft.key}
+                label={ft.label}
+                active={carrerasFiltro === ft.key}
+                onPress={() => setCarrerasFiltro(ft.key)}
+              />
+            ))}
+          </View>
+        </Card>
+
+        <View style={[s.grid2, { marginBottom: 14 }]}>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Carreras con estudiantes</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Carreras que tienen al menos un estudiante registrado.</Text>
+            <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{grupos.length}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>
+              {carrerasFiltro === "todos" ? "Estudiantes" : FILTROS.find((f) => f.key === carrerasFiltro)?.label}
+            </Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>
+              {carrerasFiltro === "todos"
+                ? "Total de estudiantes en estas carreras."
+                : "Estudiantes que coinciden con el filtro activo."}
+            </Text>
+            <Text style={[s.heroMetricValue, { color: C.green, marginTop: 12 }]}>{totalFiltro}</Text>
+          </View>
+        </View>
+
+        <Card style={{ marginBottom: 24 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>Por carrera</Text>
+            <Text style={s.textMuted}>{gruposVisibles.length}</Text>
+          </View>
+
+          {carrerasLoading && carrerasEstudiantes.length === 0 ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : gruposVisibles.length === 0 ? (
+            <EmptyResultsState
+              icon="book-outline"
+              title="Sin estudiantes para este filtro"
+              message="No hay estudiantes que coincidan. Prueba con otro estado o actualiza los datos."
+            />
+          ) : (
+            <View style={{ gap: 10 }}>
+              {gruposVisibles.map((g) => {
+                const abierta = carreraAbierta === g.carrera;
+                const alumnosFiltrados = g.alumnos.filter(coincide);
+                const conteo = carrerasFiltro === "todos" ? g.total : g.counts[carrerasFiltro];
+                return (
+                  <View key={g.carrera} style={s.card}>
+                    <TouchableOpacity
+                      style={[s.row, { justifyContent: "space-between", alignItems: "center", gap: 10 }]}
+                      activeOpacity={0.8}
+                      onPress={() => setCarreraAbierta(abierta ? null : g.carrera)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.itemTitle} numberOfLines={2}>{g.carrera}</Text>
+                        <Text style={[s.itemSub, { marginTop: 4 }]}>
+                          {conteo} estudiante{conteo === 1 ? "" : "s"}
+                          {carrerasFiltro === "todos"
+                            ? ` · ${g.counts.en_pasantia} en pasantía · ${g.counts.por_certificar} por certificar · ${g.counts.certificado} certificados`
+                            : ` de ${g.total} en la carrera`}
+                        </Text>
+                      </View>
+                      <Ionicons name={abierta ? "chevron-up" : "chevron-down"} size={18} color={C.textMuted} />
+                    </TouchableOpacity>
+
+                    {abierta ? (
+                      <View style={{ gap: 8, marginTop: 12 }}>
+                        {alumnosFiltrados.map((al) => {
+                          const m = estadoMeta[al.estado];
+                          return (
+                            <TouchableOpacity
+                              key={al.id}
+                              style={[s.listItem, isPhone && s.listItemStack]}
+                              activeOpacity={0.85}
+                              onPress={() => abrirPerfilPublico("estudiante", al.id)}
+                            >
+                              <View style={s.avatar}>
+                                <Ionicons name="person-outline" size={16} color={C.accent70} />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={s.itemTitle} numberOfLines={1}>{al.nombre}</Text>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+                                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: m.color }} />
+                                  <Text style={s.itemSub}>{m.label}</Text>
+                                </View>
+                              </View>
+                              <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                  </View>
                 );
               })}
             </View>
@@ -6188,6 +6489,8 @@ export default function AdminPreview() {
         return renderResumen();
       case "pasantias":
         return renderPasantias();
+      case "carreras":
+        return renderCarreras();
       case "vacantes":
         return renderVacantes();
       case "suscripciones":
