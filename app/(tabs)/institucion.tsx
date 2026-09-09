@@ -38,6 +38,7 @@ import {
 import { progresoPorFechas } from '../../src/utils/progresoPasantia';
 import { textoHorario } from '../../src/data/disponibilidad';
 import { useProgresoInscripcion } from '../../src/hooks/useProgresoInscripcion';
+import { estudianteHabilitadoParaVacantes } from '../../src/services/pasantiaService';
 import BandejaIncidencias from '../../src/components/BandejaIncidencias';
 import ReportarIncidenciaModal from '../../src/components/ReportarIncidenciaModal';
 
@@ -157,6 +158,12 @@ export default function InstitucionTab() {
   // Libro mayor de horas del estudiante si está inscrito a una pasantía de cupo
   // (Fase D). Mismo hook y mismo número que la pestaña Progreso.
   const { asignacion: inscripcion, progreso: ledger } = useProgresoInscripcion(user?.uid);
+
+  // Estudiante ya "Certificado" (culminó su práctica o está graduado): el botón
+  // "Reportar un problema" queda opaco e inaccesible. Las incidencias que ya
+  // existían siguen visibles (BandejaIncidencias); si nunca hubo ninguna, la
+  // bandeja muestra un mensaje de felicitación (`felicitar`).
+  const esCertificado = estudianteHabilitadoParaVacantes(perfil as any);
 
   // Vías de contacto reales de la universidad, ya filtradas: solo se dibujan
   // las que la institución llenó al registrarse.
@@ -331,17 +338,25 @@ export default function InstitucionTab() {
               {/* ── Incidencias: reportar un problema y seguirlo ── */}
               <View style={styles.incHeader}>
                 <Text style={styles.sectionTitle}>{t('inc_titulo')}</Text>
-                <TouchableOpacity style={styles.incBtn} onPress={() => setReportando(true)} activeOpacity={0.85}>
+                <TouchableOpacity
+                  style={[styles.incBtn, esCertificado && styles.incBtnOff]}
+                  onPress={esCertificado ? undefined : () => setReportando(true)}
+                  disabled={esCertificado}
+                  activeOpacity={esCertificado ? 1 : 0.85}
+                >
                   <Ionicons name="flag-outline" size={14} color={colors.primaryLight} />
                   <Text style={styles.incBtnTxt}>{t('inc_reportar_btn')}</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={styles.incSub}>{t('inc_subtitulo_estudiante')}</Text>
+              <Text style={styles.incSub}>
+                {esCertificado ? t('inc_subtitulo_certificado') : t('inc_subtitulo_estudiante')}
+              </Text>
               <View style={{ marginBottom: 16 }}>
                 <BandejaIncidencias
                   rol="estudiante"
                   uid={user?.uid ?? ''}
                   nombreUsuario={(userProfile as any)?.nombre_completo ?? ''}
+                  felicitar={esCertificado}
                 />
               </View>
 
@@ -485,6 +500,7 @@ const makeStyles = (COLORS: GradlyColors) =>
       paddingHorizontal: 11, paddingVertical: 7, marginBottom: 10, marginTop: 4,
     },
     incBtnTxt: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+    incBtnOff: { opacity: 0.4 },
     incSub: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 17, marginBottom: 10 },
 
     // Vacío

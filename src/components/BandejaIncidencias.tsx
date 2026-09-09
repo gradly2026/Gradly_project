@@ -65,11 +65,15 @@ export default function BandejaIncidencias({
   rol,
   uid,
   nombreUsuario,
+  felicitar = false,
 }: {
   rol: RolBandeja;
   uid: string;
   /** Nombre con el que firmará sus respuestas en el hilo. */
   nombreUsuario: string;
+  /** Estudiante ya certificado y sin incidencias → estado vacío de felicitación
+   *  en vez del genérico "no has reportado nada". */
+  felicitar?: boolean;
 }) {
   const { colors } = useTheme();
   const { t, language } = useTranslation();
@@ -111,6 +115,14 @@ export default function BandejaIncidencias({
   }
 
   if (lista.length === 0) {
+    if (felicitar && rol === 'estudiante') {
+      return (
+        <View style={s.vacio}>
+          <Ionicons name="ribbon" size={40} color={colors.gold} />
+          <Text style={[s.vacioTxt, { color: colors.gold }]}>{t('inc_vacio_certificado')}</Text>
+        </View>
+      );
+    }
     return (
       <View style={s.vacio}>
         <Ionicons name="shield-checkmark-outline" size={38} color={colors.border} />

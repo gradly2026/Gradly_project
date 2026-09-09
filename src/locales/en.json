@@ -497,6 +497,7 @@
 
   "inc_titulo": "Issues",
   "inc_subtitulo_estudiante": "Report a problem with your internship. Your university will see it, and the company too if it is about them.",
+  "inc_subtitulo_certificado": "You have completed your placement. Your incident history stays here; reporting new problems is disabled.",
   "inc_reportar_btn": "Report a problem",
   "inc_reportar_titulo": "Report a problem",
   "inc_reportar_ayuda": "This is not for reporting a person (use the report button in the chat for that). It is for a problem with your internship that someone needs to solve.",
@@ -517,6 +518,7 @@
   "inc_estado_escalada": "Escalated to Gradly",
   "inc_estado_resuelta": "Resolved",
   "inc_vacio_estudiante": "You have not reported any problems. Long may it last.",
+  "inc_vacio_certificado": "Congratulations! You completed your placement with zero incidents. 🎉",
   "inc_vacio_receptor": "No issues reported.",
   "inc_reportada_por": "Reported by",
   "inc_empresa": "Company",

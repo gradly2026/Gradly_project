@@ -497,6 +497,7 @@
 
   "inc_titulo": "Incidencias",
   "inc_subtitulo_estudiante": "Reporta un problema de tu práctica. Lo verá tu universidad y, si es sobre la empresa, también ella.",
+  "inc_subtitulo_certificado": "Ya culminaste tu práctica. Aquí queda el historial de tus incidencias; reportar nuevos problemas está deshabilitado.",
   "inc_reportar_btn": "Reportar un problema",
   "inc_reportar_titulo": "Reportar un problema",
   "inc_reportar_ayuda": "Esto no es para denunciar a una persona (para eso usa el botón de reportar en el chat). Es para un problema de tu práctica que alguien deba resolver.",
@@ -517,6 +518,7 @@
   "inc_estado_escalada": "Escalada a Gradly",
   "inc_estado_resuelta": "Resuelta",
   "inc_vacio_estudiante": "No has reportado ningún problema. Ojalá siga así.",
+  "inc_vacio_certificado": "¡Felicidades! Culminaste tu práctica sin ninguna incidencia. 🎉",
   "inc_vacio_receptor": "No hay incidencias reportadas.",
   "inc_reportada_por": "Reportada por",
   "inc_empresa": "Empresa",
