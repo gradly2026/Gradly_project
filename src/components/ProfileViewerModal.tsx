@@ -43,6 +43,7 @@ import ReportarUsuarioModal from './ReportarUsuarioModal';
 import UbicacionCardSV from './UbicacionCardSV';
 import UbicacionPrecisaModal from './UbicacionPrecisaModal';
 import TopEstudiantesCard from './TopEstudiantesCard';
+import CalendarioEventos from './CalendarioEventos';
 import type { TopEstudianteEntry } from '../services/topEstudiantesService';
 import { progresoPorMeta, type ProgresoMeta } from '../utils/horasPasantia';
 
@@ -53,6 +54,10 @@ interface Props {
   onClose: () => void;
   tipo: ProfileTipo;
   profileId: string;
+  /** Solo lo pasa el panel de admin: al tocar el nombre de una pasantía en la
+   *  lista de estudiantes de una empresa, lleva al admin a esa pasantía y abre
+   *  su modal de detalle. Recibe el doc crudo de `asignaciones_cupo` (con `id`). */
+  onVerPasantiaCupo?: (asignacion: any) => void;
 }
 
 const COLECCION_POR_TIPO: Record<ProfileTipo, string> = {
@@ -61,7 +66,7 @@ const COLECCION_POR_TIPO: Record<ProfileTipo, string> = {
   universidad: 'perfiles_universidades',
 };
 
-export default function ProfileViewerModal({ visible, onClose, tipo, profileId }: Props) {
+export default function ProfileViewerModal({ visible, onClose, tipo, profileId, onVerPasantiaCupo }: Props) {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { user, rol } = useAuth();
@@ -89,6 +94,39 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
   // estudiante (`progresoPorMeta`). Durante la pasantía las horas viven aquí,
   // no en `horas_aprobadas` (que solo se acredita al certificar).
   const [progresoLibro, setProgresoLibro] = useState<ProgresoMeta | null>(null);
+
+  // ── Extras SOLO para el admin ──
+  // Estudiante: datos de su pasantía por cupo (barra + universidad + empresa +
+  // calendario). Se llena solo si tiene/tuvo una asignación de cupo → así el
+  // cuadro no sale para los "nuevos".
+  const [asigAdmin, setAsigAdmin] = useState<{
+    horario: any;
+    fechaPresentacion: string | null;
+    fechaFin: Date | null;
+    empresaNombre: string;
+    universidadNombre: string;
+    vacanteTitulo: string;
+    cumplidas: number;
+    meta: number;
+    pct: number;
+  } | null>(null);
+  // Empresa: estudiantes que hacen / hicieron su pasantía por cupo con ella.
+  type EstEmpresaFila = {
+    id: string;
+    estudianteId: string;
+    nombre: string;
+    carrera: string;
+    universidadNombre: string;
+    vacanteTitulo: string;
+    fechaPresentacion: string | null;
+    cumplidas: number;
+    meta: number;
+    pct: number;
+    fechaFin: Date | null;
+    raw: any;
+  };
+  const [estEmpresa, setEstEmpresa] = useState<EstEmpresaFila[] | null>(null);
+  const [verEstEmpresa, setVerEstEmpresa] = useState(false);
 
   const puedeVerUbicacion = rol === 'empresa' || rol === 'universidad';
   // Los cuadros de "estudiantes destacados" (auto-reportados en el perfil) solo
@@ -212,6 +250,128 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
     })();
     return () => { cancel = true; };
   }, [visible, profileId, tipo, rol, user?.uid]);
+
+  // ── ADMIN · datos de la pasantía por cupo del ESTUDIANTE ──────────
+  // Toma su asignación (activa si la hay, si no la más reciente no cancelada),
+  // lee la meta del grupo y calcula el progreso. Si no tiene ninguna, queda en
+  // null y el cuadro extra no se muestra (así no sale para los "nuevos").
+  useEffect(() => {
+    if (!visible || !profileId || tipo !== 'estudiante' || rol !== 'admin') { setAsigAdmin(null); return; }
+    let cancel = false;
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'asignaciones_cupo'), where('estudianteId', '==', profileId)));
+        if (cancel) return;
+        const docs = snap.docs.map(d => d.data() as any).filter(x => x.estado !== 'cancelado');
+        if (docs.length === 0) { setAsigAdmin(null); return; }
+        const activa = docs.find(x => x.finalizada !== true);
+        const a =
+          activa ??
+          docs.slice().sort((x, y) => {
+            const ty = y.finalizadaAt?.toMillis?.() ?? y.fechaTomado?.toMillis?.() ?? 0;
+            const tx = x.finalizadaAt?.toMillis?.() ?? x.fechaTomado?.toMillis?.() ?? 0;
+            return ty - tx;
+          })[0];
+        let meta = 0;
+        if (a.grupoId) {
+          const g = await getDoc(doc(db, 'grupos', a.grupoId));
+          if (cancel) return;
+          const gd = g.exists() ? (g.data() as any) : {};
+          meta = Number(gd.horasRequeridas ?? gd.total_horas ?? 0);
+        }
+        const p = a.fechaPresentacion && meta > 0 ? progresoPorMeta(a.horario, a.fechaPresentacion, meta) : null;
+        let uniNom = '';
+        if (a.universidadId) {
+          const u = await getDoc(doc(db, 'perfiles_universidades', a.universidadId));
+          if (cancel) return;
+          uniNom = u.exists() ? String((u.data() as any).nombre_universidad ?? '') : '';
+        }
+        const completa = a.finalizada === true;
+        const metaFinal = completa ? Number(a.horasCumplidas ?? meta) || meta : p?.valido ? p.meta : meta;
+        setAsigAdmin({
+          horario: a.horario ?? null,
+          fechaPresentacion: a.fechaPresentacion ?? null,
+          fechaFin: p?.valido ? p.fechaFin : null,
+          empresaNombre: a.empresaNombre ?? '',
+          universidadNombre: uniNom,
+          vacanteTitulo: a.vacanteTitulo ?? '',
+          cumplidas: completa ? metaFinal : Math.round(p?.valido ? p.cumplidas : 0),
+          meta: metaFinal,
+          pct: completa ? 100 : p?.valido ? p.pct : 0,
+        });
+      } catch {
+        if (!cancel) setAsigAdmin(null);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [visible, profileId, tipo, rol]);
+
+  // ── ADMIN · estudiantes en pasantía por cupo con esta EMPRESA ─────
+  useEffect(() => {
+    if (!visible || !profileId || tipo !== 'empresa' || rol !== 'admin') { setEstEmpresa(null); return; }
+    let cancel = false;
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'asignaciones_cupo'), where('empresaId', '==', profileId)));
+        if (cancel) return;
+        const docs = snap.docs
+          .map(d => ({ id: d.id, ...(d.data() as any) }))
+          .filter(x => x.estado !== 'cancelado');
+        const grupoIds = Array.from(new Set(docs.map(x => x.grupoId).filter(Boolean))) as string[];
+        const metaPorGrupo: Record<string, number> = {};
+        await Promise.all(
+          grupoIds.map(async gid => {
+            try {
+              const g = await getDoc(doc(db, 'grupos', gid));
+              const gd = g.exists() ? (g.data() as any) : {};
+              metaPorGrupo[gid] = Number(gd.horasRequeridas ?? gd.total_horas ?? 0);
+            } catch {
+              metaPorGrupo[gid] = 0;
+            }
+          }),
+        );
+        const uniIds = Array.from(new Set(docs.map(x => x.universidadId).filter(Boolean))) as string[];
+        const uniNom: Record<string, string> = {};
+        await Promise.all(
+          uniIds.map(async id2 => {
+            try {
+              const u = await getDoc(doc(db, 'perfiles_universidades', id2));
+              uniNom[id2] = u.exists() ? String((u.data() as any).nombre_universidad ?? '') : '';
+            } catch {
+              uniNom[id2] = '';
+            }
+          }),
+        );
+        if (cancel) return;
+        const filas: EstEmpresaFila[] = docs
+          .map(x => {
+            const meta = x.grupoId ? metaPorGrupo[x.grupoId] ?? 0 : 0;
+            const p = x.fechaPresentacion && meta > 0 ? progresoPorMeta(x.horario, x.fechaPresentacion, meta) : null;
+            const completa = x.finalizada === true;
+            const metaFinal = completa ? Number(x.horasCumplidas ?? meta) || meta : p?.valido ? p.meta : meta;
+            return {
+              id: x.id,
+              estudianteId: x.estudianteId ?? '',
+              nombre: x.estudianteNombre ?? 'Estudiante',
+              carrera: x.carrera ?? '',
+              universidadNombre: x.universidadId ? uniNom[x.universidadId] ?? '' : '',
+              vacanteTitulo: x.vacanteTitulo ?? '',
+              fechaPresentacion: x.fechaPresentacion ?? null,
+              cumplidas: completa ? metaFinal : Math.round(p?.valido ? p.cumplidas : 0),
+              meta: metaFinal,
+              pct: completa ? 100 : p?.valido ? p.pct : 0,
+              fechaFin: p?.valido ? p.fechaFin : null,
+              raw: x,
+            };
+          })
+          .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+        setEstEmpresa(filas);
+      } catch {
+        if (!cancel) setEstEmpresa(null);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [visible, profileId, tipo, rol]);
 
   // ── Grupos en común con este perfil ──────────────────────────────
   useEffect(() => {
@@ -448,6 +608,68 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                   </Text>
                 </View>
 
+                {/* ── Cuadro EXTRA solo para el admin: barra + universidad +
+                    empresa + calendario de la pasantía. Sale solo para quien
+                    está en pasantía / por certificar / certificado (para los
+                    "nuevos" `asigAdmin` y `estado_pasantia` están vacíos). ── */}
+                {rol === 'admin' &&
+                  (asigAdmin ||
+                    esGraduado ||
+                    ['en_proceso', 'finalizada'].includes(String((data as any)?.estado_pasantia))) && (
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Pasantía · vista admin</Text>
+                      <View style={styles.progressTrack}>
+                        <View style={[styles.progressFill, { width: `${asigAdmin ? asigAdmin.pct : pct}%` }]} />
+                      </View>
+                      <Text style={styles.progressLabel} noTranslate>
+                        {asigAdmin
+                          ? `${asigAdmin.cumplidas} / ${asigAdmin.meta} h · ${asigAdmin.pct}%`
+                          : `${horasAprobadas} / ${horasObjetivo} h · ${pct}%`}
+                      </Text>
+                      <InfoRow
+                        icon="school-outline"
+                        label="Universidad"
+                        value={asigAdmin?.universidadNombre || uniNombre || 'No disponible'}
+                        colors={colors}
+                        styles={styles}
+                        noTranslate={!!(asigAdmin?.universidadNombre || uniNombre)}
+                      />
+                      <InfoRow
+                        icon="business-outline"
+                        label="Empresa"
+                        value={asigAdmin?.empresaNombre || empresaPasantia?.nombre || 'No disponible'}
+                        colors={colors}
+                        styles={styles}
+                        noTranslate={!!(asigAdmin?.empresaNombre || empresaPasantia?.nombre)}
+                      />
+                      {!!asigAdmin?.vacanteTitulo && (
+                        <InfoRow
+                          icon="briefcase-outline"
+                          label="Pasantía"
+                          value={asigAdmin.vacanteTitulo}
+                          colors={colors}
+                          styles={styles}
+                          noTranslate
+                        />
+                      )}
+                      <View style={{ marginTop: 12 }}>
+                        <CalendarioEventos
+                          uid={profileId}
+                          rol="estudiante"
+                          inscripcion={
+                            asigAdmin
+                              ? {
+                                  horario: asigAdmin.horario,
+                                  fechaPresentacion: asigAdmin.fechaPresentacion,
+                                  fechaFin: asigAdmin.fechaFin,
+                                }
+                              : null
+                          }
+                        />
+                      </View>
+                    </View>
+                  )}
+
                 {/* Disponibilidad — la deriva el sistema (perfil.tsx la
                     denormaliza en `disponibilidad_auto`); si no está, se estima
                     del estado de pasantía. */}
@@ -578,6 +800,21 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
                 <InfoRow icon="business-outline" label="Industria" value={data.industria || '—'} colors={colors} styles={styles} />
                 <InfoRow icon="star-outline" label="Plan" value={(data.plan === 'premium' || data.premium) ? 'Premium' : data.plan === 'mensual' ? 'Básico' : 'Gratuito'} colors={colors} styles={styles} />
                 <InfoRow icon="shield-checkmark-outline" label="Verificación" value={data.verificado ? 'Empresa verificada' : 'No verificada'} colors={colors} styles={styles} />
+
+                {/* Admin: lista de estudiantes en pasantía por cupo con esta empresa. */}
+                {rol === 'admin' && (
+                  <TouchableOpacity
+                    style={styles.adminBtn}
+                    activeOpacity={0.85}
+                    onPress={() => setVerEstEmpresa(true)}
+                  >
+                    <Ionicons name="people-outline" size={16} color={colors.primaryLight} />
+                    <Text style={styles.adminBtnTxt} noTranslate>
+                      {`Estudiantes en pasantía${estEmpresa ? ` (${estEmpresa.length})` : ''}`}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.primaryLight} />
+                  </TouchableOpacity>
+                )}
               </View>
             )}
 
@@ -694,6 +931,70 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId }
         puntoGuardado={data.ubicacion_precisa ?? null}
         soloLectura
       />
+    )}
+
+    {/* ADMIN · modal con los estudiantes en pasantía por cupo con esta empresa. */}
+    {rol === 'admin' && tipo === 'empresa' && (
+      <Modal visible={verEstEmpresa} transparent animationType="none" onRequestClose={() => setVerEstEmpresa(false)}>
+        <View style={styles.estOverlay}>
+          <View style={styles.estSheet}>
+            <View style={styles.estHeader}>
+              <Ionicons name="people-outline" size={18} color={colors.primaryLight} />
+              <Text style={styles.estTitulo}>Estudiantes en pasantía</Text>
+              <TouchableOpacity onPress={() => setVerEstEmpresa(false)} hitSlop={10}>
+                <Ionicons name="close" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={webScrollStyle(colors)} contentContainerStyle={{ padding: 16, gap: 12 }}>
+              {estEmpresa === null ? (
+                <ActivityIndicator color={colors.primary} style={{ marginVertical: 24 }} />
+              ) : estEmpresa.length === 0 ? (
+                <Text style={styles.progressLabel}>Esta empresa no tiene estudiantes en pasantía por cupo.</Text>
+              ) : (
+                estEmpresa.map(f => {
+                  const finISO = f.fechaFin
+                    ? `${f.fechaFin.getFullYear()}-${String(f.fechaFin.getMonth() + 1).padStart(2, '0')}-${String(f.fechaFin.getDate()).padStart(2, '0')}`
+                    : '';
+                  return (
+                    <View key={f.id} style={styles.estFila}>
+                      <Text style={styles.estFilaNombre} numberOfLines={1} noTranslate>{f.nombre}</Text>
+                      {!!f.carrera && <Text style={styles.estFilaMeta} noTranslate>{f.carrera}</Text>}
+                      {!!f.universidadNombre && <Text style={styles.estFilaMeta} noTranslate>{f.universidadNombre}</Text>}
+                      {!!f.vacanteTitulo && (
+                        <TouchableOpacity
+                          activeOpacity={onVerPasantiaCupo ? 0.7 : 1}
+                          disabled={!onVerPasantiaCupo}
+                          onPress={() => { onVerPasantiaCupo?.(f.raw); setVerEstEmpresa(false); }}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}
+                        >
+                          <Ionicons name="briefcase-outline" size={13} color={colors.primaryLight} />
+                          <Text style={styles.estPasantiaLink} numberOfLines={1} noTranslate>{f.vacanteTitulo}</Text>
+                        </TouchableOpacity>
+                      )}
+                      <Text style={[styles.estFilaMeta, { color: f.fechaPresentacion ? colors.success : colors.warning }]} noTranslate>
+                        {f.fechaPresentacion ? `Día 1: ${f.fechaPresentacion}` : 'Primer día sin fijar'}
+                      </Text>
+                      {f.meta > 0 && (
+                        <>
+                          <View style={[styles.progressTrack, { marginTop: 6 }]}>
+                            <View style={[styles.progressFill, { width: `${Math.min(100, f.pct)}%` }]} />
+                          </View>
+                          <Text style={styles.estFilaMeta} noTranslate>{`${f.cumplidas} / ${f.meta} h · ${f.pct}%`}</Text>
+                        </>
+                      )}
+                      {(f.fechaPresentacion || finISO) && (
+                        <Text style={styles.estFilaMeta} noTranslate>
+                          {`Inicio: ${f.fechaPresentacion ?? '—'}${finISO ? `  ·  Fin est.: ${finISO}` : ''}`}
+                        </Text>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     )}
 
     {/* Perfil de un estudiante destacado, abierto desde el cuadro de arriba. */}
@@ -826,4 +1127,32 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.primary35,
   },
   redText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+
+  // Admin: botón "Estudiantes en pasantía" (perfil de empresa) + su modal.
+  adminBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.primary12, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 11, marginTop: 4,
+    borderWidth: 1, borderColor: COLORS.primary35,
+  },
+  adminBtnTxt: { flex: 1, fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+  estOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 18 },
+  estSheet: {
+    maxHeight: '86%', maxWidth: 560, width: '100%', alignSelf: 'center',
+    backgroundColor: COLORS.backgroundCard,
+    borderRadius: 18, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
+  },
+  estHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  estTitulo: { flex: 1, fontSize: 15, fontFamily: FONTS.soraSemiBold, color: COLORS.textPrimary },
+  estFila: {
+    backgroundColor: COLORS.backgroundSurface, borderRadius: 12, padding: 14, gap: 3,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  estFilaNombre: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+  estFilaMeta: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 17 },
+  estPasantiaLink: { flex: 1, fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
 });

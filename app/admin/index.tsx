@@ -5229,6 +5229,18 @@ export default function AdminPreview() {
         tipo={verPerfilPublico.tipo}
         profileId={verPerfilPublico.id}
         onClose={() => setVerPerfilPublico(null)}
+        onVerPasantiaCupo={(asig) => {
+          // Cierra el visor de perfil y lleva al admin a la pasantía por cupo
+          // en la sección "Pasantías" (abre su modal de detalle). El cambio de
+          // página dispara `fetchPasantias()` si aún no se cargó (comprobantes/
+          // vacantes que completan el modal).
+          setVerPerfilPublico(null);
+          setTimeout(() => {
+            setPage("pasantias");
+            setPasantiaDetail({ kind: "cupo", item: { id: String(asig?.id ?? ""), ...(asig as any) } });
+            setPasantiaDetailOpen(true);
+          }, Platform.OS === "ios" ? 350 : 0);
+        }}
       />
     ) : null}
     </>
