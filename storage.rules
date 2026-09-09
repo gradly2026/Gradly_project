@@ -73,5 +73,16 @@ service firebase.storage {
         && (firestore.get(/databases/(default)/documents/asignaciones_cupo/$(asignacionId)).data.estudianteId == request.auth.uid
             || firestore.get(/databases/(default)/documents/asignaciones_cupo/$(asignacionId)).data.empresaId == request.auth.uid);
     }
+
+    // 🆘 Imágenes adjuntas a un ticket de soporte (las sube el dueño o el
+    //    admin). El path va namespaced por el id del ticket (no adivinable);
+    //    se acota tamaño y se exige image/*. Lee cualquier autenticado —el hilo
+    //    en sí ya está protegido por las reglas de Firestore de `tickets_soporte`.
+    match /soporte/{ticketId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
   }
 }

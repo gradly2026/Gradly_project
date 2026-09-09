@@ -213,6 +213,26 @@ service cloud.firestore {
       allow create, update, delete: if esAdmin();
     }
 
+    // 🆘 TICKETS DE SOPORTE — un usuario abre un hilo de ayuda 1-a-1 con el
+    //    equipo de Gradly (admin). Lo ven SOLO su dueño y el admin. El dueño lo
+    //    crea (siempre 'abierto', a su propio nombre) y puede seguir escribiendo
+    //    en el hilo; el admin puede todo (responder y marcar 'resuelto'). El
+    //    hilo (`mensajes`) es un array en el doc — sin subcolección, sin regla
+    //    aparte. El dueño no se puede reasignar el ticket (candado en update).
+    match /tickets_soporte/{ticketId} {
+      allow read: if request.auth != null
+        && (resource.data.usuarioId == request.auth.uid || esAdmin());
+      allow create: if request.auth != null
+        && request.resource.data.usuarioId == request.auth.uid
+        && request.resource.data.estado == 'abierto';
+      allow update: if request.auth != null && (
+        esAdmin()
+        || (resource.data.usuarioId == request.auth.uid
+            && request.resource.data.usuarioId == resource.data.usuarioId)
+      );
+      allow delete: if esAdmin();
+    }
+
     // 💼 VACANTES
     match /vacantes/{vacanteId} {
       allow read: if request.auth != null;

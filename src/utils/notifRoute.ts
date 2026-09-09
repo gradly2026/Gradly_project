@@ -36,6 +36,7 @@ export type NotifRefKind =
   | 'ofertaEmpleo'
   | 'ofertaRespondida'
   | 'incidencia'
+  | 'ticketSoporte'
   | 'completarPerfil';
 // Tipo de TypeScript que limita `kind` a exactamente estos valores de
 // texto posibles. Cada uno corresponde a un modal de detalle distinto:
@@ -78,7 +79,7 @@ export interface NotifRef {
   id: string;
 }
 
-const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'certificarPasante', 'feedbackPendiente', 'postulacionRechazada', 'contratoAviso', 'ofertaEmpleo', 'ofertaRespondida', 'incidencia', 'completarPerfil'];
+const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'certificarPasante', 'feedbackPendiente', 'postulacionRechazada', 'contratoAviso', 'ofertaEmpleo', 'ofertaRespondida', 'incidencia', 'ticketSoporte', 'completarPerfil'];
 // La MISMA lista de valores que el tipo NotifRefKind de arriba, pero como
 // un ARRAY real (no solo un tipo). Se necesita en tiempo de ejecución
 // (los tipos de TypeScript desaparecen al compilar, no existen dentro del

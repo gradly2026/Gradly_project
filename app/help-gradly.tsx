@@ -18,6 +18,13 @@ import { AutoText as Text } from '../src/components/AutoText';
 import { db } from '../src/config/firebaseConfig';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
+import { useAuth } from '../src/context/AuthContext';
+import SoporteTicketModal from '../src/components/SoporteTicketModal';
+import {
+  labelCategoriaSoporte,
+  suscribirMisTickets,
+  type TicketSoporte,
+} from '../src/services/soporteService';
 // GlassCard: componente reutilizable que dibuja una "tarjeta" con el
 // mismo efecto visual de vidrio esmerilado (glassmorphism) que el resto
 // de la app — se usa como contenedor genérico en vez de un <View> simple
@@ -91,6 +98,23 @@ export default function HelpGradlyScreen() {
   const { styles, colors } = useThemedStyles();
   const { t } = useTranslation();
   const soporte = useSoporte();
+  const { user, rol } = useAuth();
+
+  // ── Mensajes de soporte (tickets 1-a-1 con el equipo de Gradly) ──────
+  const puedeSoporte =
+    !!user?.uid && (rol === 'estudiante' || rol === 'empresa' || rol === 'universidad');
+  const [misTickets, setMisTickets] = useState<TicketSoporte[]>([]);
+  const [crearOpen, setCrearOpen] = useState(false);
+  const [verTicketId, setVerTicketId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!puedeSoporte || !user?.uid) {
+      setMisTickets([]);
+      return;
+    }
+    const unsub = suscribirMisTickets(user.uid, setMisTickets, () => setMisTickets([]));
+    return () => unsub();
+  }, [puedeSoporte, user?.uid]);
   // Scroll delgado morado: mismo helper compartido que usa "Mi Perfil"
   // (ver `webScrollStyle` en ThemeContext.tsx), no una copia propia.
   const scrollStyle = webScrollStyle(colors);
@@ -175,7 +199,96 @@ export default function HelpGradlyScreen() {
               value={soporte.horario?.trim() || t('help_screen_hours_value')}
             />
           </View>
+
+          {/* ── Mensajes de soporte 1-a-1 con el equipo de Gradly ── */}
+          {puedeSoporte && (
+            <GlassCard contentStyle={styles.soporteCard}>
+              <View style={styles.soporteHeadRow}>
+                <Ionicons name="chatbubbles-outline" size={18} color={colors.primaryLight} />
+                <Text style={styles.soporteTitle}>Enviar un mensaje al equipo</Text>
+              </View>
+              <Text style={styles.paragraph}>
+                ¿Tienes un problema con tu cuenta, una pasantía o algo que no funciona? Escríbenos
+                y te respondemos por aquí mismo.
+              </Text>
+              <TouchableOpacity
+                style={[styles.soporteBtn, { backgroundColor: colors.primary }]}
+                onPress={() => setCrearOpen(true)}
+                activeOpacity={0.9}
+              >
+                <Ionicons name="add-circle-outline" size={18} color="#fff" />
+                <Text style={styles.soporteBtnText}>Nuevo mensaje de soporte</Text>
+              </TouchableOpacity>
+
+              {misTickets.length > 0 && (
+                <View style={styles.ticketList}>
+                  <Text style={styles.ticketListLabel}>Mis mensajes</Text>
+                  {misTickets.map((tk) => {
+                    const ultimo = tk.mensajes?.[tk.mensajes.length - 1];
+                    const cerrado = tk.estado === 'resuelto';
+                    return (
+                      <TouchableOpacity
+                        key={tk.id}
+                        style={[styles.ticketRow, { borderColor: colors.border }]}
+                        activeOpacity={0.85}
+                        onPress={() => setVerTicketId(tk.id)}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.ticketCat} noTranslate>
+                            {labelCategoriaSoporte(tk.categoria)}
+                          </Text>
+                          {!!ultimo?.texto && (
+                            <Text style={styles.ticketSnippet} numberOfLines={1} noTranslate>
+                              {ultimo.autor === 'admin' ? 'Gradly: ' : ''}
+                              {ultimo.texto}
+                            </Text>
+                          )}
+                        </View>
+                        {tk.noLeidoUsuario && !cerrado ? (
+                          <View style={[styles.ticketDot, { backgroundColor: colors.primary }]} />
+                        ) : null}
+                        <View
+                          style={[
+                            styles.ticketPill,
+                            {
+                              backgroundColor:
+                                (cerrado ? colors.success : colors.warning) + '22',
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.ticketPillText,
+                              { color: cerrado ? colors.success : colors.warning },
+                            ]}
+                            noTranslate
+                          >
+                            {cerrado ? 'Resuelto' : 'Abierto'}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </GlassCard>
+          )}
         </ScrollView>
+
+        <SoporteTicketModal
+          visible={crearOpen}
+          onClose={() => setCrearOpen(false)}
+          onCreado={(id) => {
+            setCrearOpen(false);
+            setVerTicketId(id);
+          }}
+        />
+        <SoporteTicketModal
+          visible={!!verTicketId}
+          ticketId={verTicketId}
+          marcarLeidoAlAbrir
+          onClose={() => setVerTicketId(null)}
+        />
       </View>
     </LiquidBackground>
   );
@@ -281,5 +394,76 @@ const makeStyles = (COLORS: GradlyColors) =>
       fontSize: 15,
       fontFamily: FONTS.interSemiBold,
       color: COLORS.textPrimary,
+    },
+    soporteCard: {
+      padding: 18,
+      gap: 12,
+    },
+    soporteHeadRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    soporteTitle: {
+      flex: 1,
+      fontSize: 16,
+      fontFamily: FONTS.soraSemiBold,
+      color: COLORS.textPrimary,
+    },
+    soporteBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      borderRadius: 14,
+      paddingVertical: 13,
+    },
+    soporteBtnText: {
+      fontSize: 14,
+      fontFamily: FONTS.interSemiBold,
+      color: '#fff',
+    },
+    ticketList: {
+      gap: 8,
+      marginTop: 4,
+    },
+    ticketListLabel: {
+      fontSize: 12,
+      fontFamily: FONTS.interSemiBold,
+      color: COLORS.textSecondary,
+    },
+    ticketRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      borderWidth: 1,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
+    },
+    ticketCat: {
+      fontSize: 13,
+      fontFamily: FONTS.interSemiBold,
+      color: COLORS.textPrimary,
+    },
+    ticketSnippet: {
+      fontSize: 12,
+      fontFamily: FONTS.interRegular,
+      color: COLORS.textMuted,
+      marginTop: 2,
+    },
+    ticketDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    ticketPill: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+    },
+    ticketPillText: {
+      fontSize: 10,
+      fontFamily: FONTS.interSemiBold,
     },
   });

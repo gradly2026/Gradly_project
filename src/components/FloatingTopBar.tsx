@@ -154,6 +154,7 @@ import OfertaRespondidaModal from './OfertaRespondidaModal';
 import IncidenciaAvisoModal from './IncidenciaAvisoModal';
 import CompletarPerfilModal from './CompletarPerfilModal';
 import FeedbackPendienteByIdModal from './FeedbackPendienteByIdModal';
+import SoporteTicketModal from './SoporteTicketModal';
 // Los modales de detalle que se pueden abrir al tocar una notificación
 // con referencia estructurada "kind:id" (ver notifRoute.ts). Cada uno es
 // un componente separado, definido en su propio archivo.
@@ -244,6 +245,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const [incidenciaAvisoId, setIncidenciaAvisoId] = useState<string | null>(null);
   const [completarPerfilOpen, setCompletarPerfilOpen] = useState(false);
   const [feedbackPendienteId, setFeedbackPendienteId] = useState<string | null>(null);
+  const [soporteTicketId, setSoporteTicketId] = useState<string | null>(null);
   // 4 estados, uno por cada tipo de modal de detalle posible. Cada uno
   // guarda `null` (modal cerrado) o el ID del documento a mostrar (modal
   // abierto, mostrando ese documento específico). Ver más abajo cómo
@@ -428,6 +430,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         case 'ofertaEmpleo': setOfertaEmpleoId(ref.id); break;
         case 'ofertaRespondida': setOfertaRespondidaId(ref.id); break;
         case 'incidencia': setIncidenciaAvisoId(ref.id); break;
+        case 'ticketSoporte': setSoporteTicketId(ref.id); break;
         case 'completarPerfil': setCompletarPerfilOpen(true); break;
         case 'feedbackPendiente': setFeedbackPendienteId(ref.id); break;
       }
@@ -758,6 +761,12 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         visible={!!incidenciaAvisoId}
         incidenciaId={incidenciaAvisoId}
         onClose={() => setIncidenciaAvisoId(null)}
+      />
+      <SoporteTicketModal
+        visible={!!soporteTicketId}
+        ticketId={soporteTicketId}
+        marcarLeidoAlAbrir
+        onClose={() => setSoporteTicketId(null)}
       />
       <CompletarPerfilModal
         visible={completarPerfilOpen}

@@ -1551,6 +1551,39 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   "Cupos reclamados": "Requested spots",
   "Cantidad vigente": "Current amount",
   "Ya elegidos por estudiantes": "Already picked by students",
+
+  // SoporteTicketModal / SoporteGate / help-gradly (mensajes de soporte 1-a-1)
+  "Enviar un mensaje": "Send a message",
+  "Enviar un mensaje al equipo": "Send a message to the team",
+  "Nuevo mensaje de soporte": "New support message",
+  "Mis mensajes": "My messages",
+  "¿Tienes un problema con tu cuenta, una pasantía o algo que no funciona? Escríbenos y te respondemos por aquí mismo.":
+    "Having a problem with your account, an internship, or something that isn't working? Write to us and we'll reply right here.",
+  "Cuéntale al equipo de Gradly qué está pasando. Te responderán aquí mismo y te avisaremos cuando lo hagan.":
+    "Tell the Gradly team what's going on. They'll reply right here and we'll let you know when they do.",
+  "¿Sobre qué es?": "What's it about?",
+  "Cuéntanos qué pasó": "Tell us what happened",
+  "Adjuntar imagen (opcional)": "Attach an image (optional)",
+  "Adjuntar imágenes (opcional)": "Attach images (optional)",
+  "Enviar mensaje": "Send message",
+  "Enviar respuesta": "Send reply",
+  "No pudimos cargar esta conversación.": "We couldn't load this conversation.",
+  "El equipo marcó esta conversación como resuelta.":
+    "The team marked this conversation as resolved.",
+  "Necesitamos permiso para acceder a tus fotos.":
+    "We need permission to access your photos.",
+  "No se pudo abrir la galería.": "Couldn't open the gallery.",
+  "Inicia sesión para enviar un mensaje al equipo.":
+    "Sign in to send a message to the team.",
+  "Cuéntanos un poco más: al menos 10 caracteres.":
+    "Tell us a bit more: at least 10 characters.",
+  "Escribe un mensaje o adjunta una imagen.": "Write a message or attach an image.",
+  "No se pudo enviar. Vuelve a intentarlo.": "Couldn't send. Please try again.",
+  "Mi cuenta o acceso": "My account or sign-in",
+  "Una pasantía o postulación": "An internship or application",
+  "Pagos o suscripción": "Payments or subscription",
+  "Un error o fallo técnico": "A bug or technical issue",
+  "Una sugerencia": "A suggestion",
 };
 
 export default AUTO_SEED_EN;
