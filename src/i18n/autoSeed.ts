@@ -490,6 +490,11 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "La burbuja del asistente está oculta.": "The assistant bubble is hidden.",
   "Mostrar el asistente": "Show the assistant",
   "Ocultar el asistente": "Hide the assistant",
+  "Preguntas frecuentes del asistente": "Assistant FAQ",
+  "Pares pregunta/respuesta que el asistente usa como fuente prioritaria. Sirve para enseñarle respuestas nuevas sin volver a desplegar nada. Máximo 40.":
+    "Question/answer pairs the assistant uses as a priority source. Useful for teaching it new answers without redeploying anything. Max 40.",
+  "+ Agregar pregunta": "+ Add question",
+  "Guardar preguntas frecuentes": "Save FAQ",
   // ── Backfill de alianzas/calificaciones (Configuración → Mantenimiento) ──
   "Recalcular alianzas y calificaciones": "Recalculate partnerships and ratings",
   "Recalculando…": "Recalculating…",

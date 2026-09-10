@@ -1777,6 +1777,46 @@ export default function AdminPreview() {
     });
   };
 
+  // ── FAQ del asistente (doc `config/faq`, campo `entradas: {p,r}[]`) ──
+  const [faqEntradas, setFaqEntradas] = useState<{ p: string; r: string }[]>([]);
+  const [faqCargado, setFaqCargado] = useState(false);
+  const [faqGuardando, setFaqGuardando] = useState(false);
+  const fetchFaq = useCallback(async () => {
+    try {
+      const snap = await getDoc(doc(db, "config", "faq"));
+      const arr = (snap.exists() ? (snap.data() as any)?.entradas : null) ?? [];
+      setFaqEntradas(
+        Array.isArray(arr)
+          ? arr.map((e: any) => ({ p: String(e?.p ?? ""), r: String(e?.r ?? "") }))
+          : [],
+      );
+    } catch {
+      /* deja la lista vacía */
+    } finally {
+      setFaqCargado(true);
+    }
+  }, []);
+  const guardarFaq = async () => {
+    setFaqGuardando(true);
+    try {
+      const limpio = faqEntradas
+        .map((e) => ({ p: e.p.trim(), r: e.r.trim() }))
+        .filter((e) => e.p && e.r)
+        .slice(0, 40);
+      await setDoc(
+        doc(db, "config", "faq"),
+        { entradas: limpio, actualizadoPor: auth.currentUser?.uid ?? null, actualizadoAt: serverTimestamp() },
+        { merge: true },
+      );
+      setFaqEntradas(limpio);
+      mostrarAviso("exito", "FAQ guardada", `El asistente usará ${limpio.length} pregunta(s) frecuente(s).`);
+    } catch (error) {
+      mostrarAviso("error", "No se pudo guardar", "Vuelve a intentarlo.", translateSync(adminDataErrorMessage(error, "las preguntas frecuentes")));
+    } finally {
+      setFaqGuardando(false);
+    }
+  };
+
   // ── Soporte / tickets de ayuda (colección `tickets_soporte`) ──────
   const [soporteTickets, setSoporteTickets] = useState<TicketSoporte[]>([]);
   const [soporteLoading, setSoporteLoading] = useState(false);
@@ -2633,6 +2673,7 @@ export default function AdminPreview() {
     if (page === "config" && !comunicadosCargado) { void fetchComunicados(); }
     if (page === "config" && !mantCargado) { void fetchMantenimiento(); }
     if (page === "config" && !asisCargado) { void fetchAsistente(); }
+    if (page === "config" && !faqCargado) { void fetchFaq(); }
     if (page === "suscripciones" && !suscripcionesAttempted && !suscripcionesLoading) fetchSuscripciones();
     if (page === "roles" && !permissionsLoaded && !permissionsLoading) {
       fetchPermissionsOverview();
@@ -2649,9 +2690,11 @@ export default function AdminPreview() {
     fetchComunicados,
     fetchMantenimiento,
     fetchAsistente,
+    fetchFaq,
     comunicadosCargado,
     mantCargado,
     asisCargado,
+    faqCargado,
     fetchPermissionsOverview,
     fetchSuscripciones,
     logsAttempted,
@@ -5786,6 +5829,73 @@ export default function AdminPreview() {
             {asisGuardando ? "Guardando…" : asisActivo ? "Ocultar el asistente" : "Mostrar el asistente"}
           </Text>
         </TouchableOpacity>
+      </Card>
+
+      {/* ── FAQ que usa el asistente (config/faq) ── */}
+      <Card style={{ marginBottom: 14 }}>
+        <Text style={s.cardTitle}>Preguntas frecuentes del asistente</Text>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          Pares pregunta/respuesta que el asistente usa como fuente prioritaria. Sirve para
+          enseñarle respuestas nuevas sin volver a desplegar nada. Máximo 40.
+        </Text>
+
+        {!faqCargado ? (
+          <View style={{ paddingVertical: 20, alignItems: "center" }}>
+            <ActivityIndicator color={C.accent70} />
+          </View>
+        ) : (
+          <View style={{ gap: 12, marginTop: 12 }}>
+            {faqEntradas.map((e, i) => (
+              <View key={i} style={[s.card, { padding: 12, gap: 8 }]}>
+                <View style={[s.row, { justifyContent: "space-between", alignItems: "center" }]}>
+                  <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8 }]}>PREGUNTA {i + 1}</Text>
+                  <TouchableOpacity
+                    onPress={() => setFaqEntradas((prev) => prev.filter((_, j) => j !== i))}
+                    hitSlop={8}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={C.red} />
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  style={s.input}
+                  value={e.p}
+                  onChangeText={(t) =>
+                    setFaqEntradas((prev) => prev.map((x, j) => (j === i ? { ...x, p: t } : x)))
+                  }
+                  placeholder="¿Cómo…?"
+                  placeholderTextColor={C.textMuted}
+                />
+                <TextInput
+                  style={[s.input, { minHeight: 70, textAlignVertical: "top" }]}
+                  value={e.r}
+                  onChangeText={(t) =>
+                    setFaqEntradas((prev) => prev.map((x, j) => (j === i ? { ...x, r: t } : x)))
+                  }
+                  placeholder="Respuesta que dará el asistente…"
+                  placeholderTextColor={C.textMuted}
+                  multiline
+                />
+              </View>
+            ))}
+            <TouchableOpacity
+              style={[s.btnOutline, { alignSelf: "flex-start" }]}
+              onPress={() => setFaqEntradas((prev) => [...prev, { p: "", r: "" }])}
+              activeOpacity={0.8}
+              disabled={faqEntradas.length >= 40}
+            >
+              <Text style={s.btnOutlineText}>+ Agregar pregunta</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.btnPrimary, { marginTop: 4, opacity: faqGuardando ? 0.6 : 1 }]}
+              onPress={() => void guardarFaq()}
+              disabled={faqGuardando}
+              activeOpacity={0.85}
+            >
+              <Text style={s.btnPrimaryText}>{faqGuardando ? "Guardando…" : "Guardar preguntas frecuentes"}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </Card>
 
       <Card style={{ marginBottom: 14 }}>
