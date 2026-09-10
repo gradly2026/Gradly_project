@@ -109,7 +109,7 @@ import { shadow } from '../src/utils/shadow';
 import { progresoPorFechas } from '../src/utils/progresoPasantia';
 import { progresoDeGrupo } from '../src/utils/horasPasantia';
 import { cuposOcupados, cuposTotales, hayCupos, textoCupos, textoSalario, valCupos } from '../src/utils/cupos';
-import { AREAS as AREAS_CATALOGO, tagsDeArea } from '../src/data/areas';
+import { AREAS as AREAS_CATALOGO, AREAS_PUBLICABLES, tagsDeArea } from '../src/data/areas';
 import { normalizarHorario, textoHorario, valHorario, type HorarioPasantia } from '../src/data/disponibilidad';
 import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import CandidatosVacante from '../src/components/CandidatosVacante';
@@ -2444,7 +2444,8 @@ export default function DashboardEmpresa() {
                 placeholder="Pasantía de Desarrollo Web"
                 error={nvErrors.titulo} valid={!nvErrors.titulo && !!nvTitulo.trim()}
               />
-              <PickerRow label="Área*" options={AREAS} selected={nvArea} onSelect={onSelectArea} error={nvErrors.area} />
+              {/* Zona roja (Salud/Educación/Legal) fuera del selector: no pueden ofertar prácticas. */}
+              <PickerRow label="Área*" options={AREAS_PUBLICABLES} selected={nvArea} onSelect={onSelectArea} error={nvErrors.area} />
               {nvArea === 'Otra' && (
                 <FieldInput
                   label="Especifica el área*" value={nvAreaOtra} onChange={onChangeAreaOtra}

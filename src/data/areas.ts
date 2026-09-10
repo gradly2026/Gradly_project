@@ -42,6 +42,20 @@ export const AREAS = [
 
 export type Area = (typeof AREAS)[number];
 
+/**
+ * Áreas que corresponden a carreras de "zona roja" (Salud, Educación,
+ * Derecho/Legal): por regulación estatal NO pueden ofertar prácticas
+ * laborales. Se quitan del selector al PUBLICAR una vacante, pero NO del
+ * catálogo `AREAS` — las vacantes ya publicadas con esas áreas deben seguir
+ * mostrándose y filtrándose bien.
+ */
+export const AREAS_ZONA_ROJA: readonly string[] = ["Salud", "Educación", "Legal"];
+
+/** Áreas seleccionables al crear/publicar una vacante (sin las de zona roja). */
+export const AREAS_PUBLICABLES = AREAS.filter(
+  (a) => !AREAS_ZONA_ROJA.includes(a),
+) as Area[];
+
 /** Roles concretos dentro de cada área. Vacío = el área no necesita detalle. */
 export const TAGS_POR_AREA: Record<string, string[]> = {
   Tecnología: [
