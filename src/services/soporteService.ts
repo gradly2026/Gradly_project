@@ -70,6 +70,16 @@ export function labelCategoriaSoporte(c?: string): string {
   return CATEGORIAS_SOPORTE.find((x) => x.clave === c)?.label ?? 'Otro';
 }
 
+export function labelRolSoporte(r?: string): string {
+  return r === 'estudiante'
+    ? 'Estudiante'
+    : r === 'empresa'
+      ? 'Empresa'
+      : r === 'universidad'
+        ? 'Universidad'
+        : '—';
+}
+
 /** Una entrada del hilo. */
 export interface MensajeSoporte {
   /** id local del mensaje (para React keys) — `${fecha}-${aleatorio}`. */

@@ -35,7 +35,9 @@ import {
   CATEGORIAS_SOPORTE,
   crearTicket,
   labelCategoriaSoporte,
+  labelRolSoporte,
   marcarTicketLeido,
+  marcarTicketResuelto,
   responderTicket,
   suscribirTicket,
   type CategoriaSoporte,
@@ -52,8 +54,15 @@ interface Props {
   onClose: () => void;
   /** Modo CREAR: se llama con el id del ticket recién abierto. */
   onCreado?: (id: string) => void;
-  /** Modo HILO: baja `noLeidoUsuario` en cuanto se abre (gate / notificación). */
+  /** Modo HILO: baja la bandera de "no leído" del lado que abre (gate / notificación / panel). */
   marcarLeidoAlAbrir?: boolean;
+  /**
+   * true → lo abre el ADMIN desde el panel: responde `comoAdmin`, sus mensajes
+   * van a la derecha, ve los datos del usuario y puede "Marcar como resuelto".
+   */
+  modoAdmin?: boolean;
+  /** Nombre con el que firma el admin sus respuestas. */
+  adminNombre?: string;
 }
 
 export default function SoporteTicketModal({
@@ -62,6 +71,8 @@ export default function SoporteTicketModal({
   onClose,
   onCreado,
   marcarLeidoAlAbrir,
+  modoAdmin = false,
+  adminNombre = 'Soporte Gradly',
 }: Props) {
   const { colors } = useTheme();
   const s = makeStyles(colors);
@@ -115,12 +126,12 @@ export default function SoporteTicketModal({
     return () => unsub();
   }, [visible, ticketId]);
 
-  // Marca "leído por el usuario" cuando el gate/notificación abre el hilo.
+  // Baja la bandera de "no leído" del lado que abre (usuario o admin).
   useEffect(() => {
     if (visible && ticketId && marcarLeidoAlAbrir) {
-      void marcarTicketLeido(ticketId, 'usuario');
+      void marcarTicketLeido(ticketId, modoAdmin ? 'admin' : 'usuario');
     }
-  }, [visible, ticketId, marcarLeidoAlAbrir]);
+  }, [visible, ticketId, marcarLeidoAlAbrir, modoAdmin]);
 
   const pickImage = useCallback(async () => {
     setErr(null);
@@ -190,12 +201,27 @@ export default function SoporteTicketModal({
         ticketId,
         texto,
         imagenesUri: imgs,
-        autorNombre: nombre,
+        autorNombre: modoAdmin ? adminNombre : nombre,
+        comoAdmin: modoAdmin,
+        notificarA: modoAdmin ? ticket?.usuarioId ?? null : null,
       });
       setTexto('');
       setImgs([]);
     } catch (e: any) {
       setErr(e?.message || 'No se pudo enviar. Vuelve a intentarlo.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const marcarResuelto = async () => {
+    if (enviando || !ticketId) return;
+    setEnviando(true);
+    setErr(null);
+    try {
+      await marcarTicketResuelto(ticketId, ticket?.usuarioId ?? null);
+    } catch (e: any) {
+      setErr(e?.message || 'No se pudo marcar como resuelto.');
     } finally {
       setEnviando(false);
     }
@@ -250,18 +276,30 @@ export default function SoporteTicketModal({
                 <Text style={s.parrafo}>No pudimos cargar esta conversación.</Text>
               ) : (
                 <>
+                  {modoAdmin ? (
+                    <View style={s.adminMeta}>
+                      <Text style={s.adminMetaNombre} noTranslate>{ticket.usuarioNombre}</Text>
+                      <Text style={s.adminMetaLinea} noTranslate>
+                        {labelRolSoporte(ticket.usuarioRol)}
+                        {ticket.usuarioEmail ? ` · ${ticket.usuarioEmail}` : ''}
+                      </Text>
+                    </View>
+                  ) : null}
                   {ticket.mensajes
                     ?.slice()
                     .sort((a, b) => (a.fecha ?? 0) - (b.fecha ?? 0))
                     .map((m) => {
-                      const mio = m.autor === 'usuario';
+                      const mio = modoAdmin ? m.autor === 'admin' : m.autor === 'usuario';
                       return (
                         <View
                           key={m.id}
                           style={[s.burbuja, mio ? s.burbujaMia : s.burbujaAdmin]}
                         >
                           <Text style={s.burbujaAutor} noTranslate>
-                            {mio ? 'Tú' : m.autor_nombre || 'Soporte Gradly'}
+                            {mio
+                              ? 'Tú'
+                              : m.autor_nombre ||
+                                (m.autor === 'admin' ? 'Soporte Gradly' : 'Usuario')}
                           </Text>
                           {!!m.texto && (
                             <Text style={s.burbujaTexto} noTranslate>{m.texto}</Text>
@@ -395,18 +433,33 @@ export default function SoporteTicketModal({
             {/* Acción principal. */}
             {modoHilo ? (
               !cerrado ? (
-                <TouchableOpacity
-                  style={[s.btn, { backgroundColor: colors.primary, opacity: enviando ? 0.6 : 1 }]}
-                  onPress={enviarRespuesta}
-                  activeOpacity={0.9}
-                  disabled={enviando}
-                >
-                  {enviando ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={s.btnTxt}>Enviar respuesta</Text>
-                  )}
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    style={[s.btn, { backgroundColor: colors.primary, opacity: enviando ? 0.6 : 1 }]}
+                    onPress={enviarRespuesta}
+                    activeOpacity={0.9}
+                    disabled={enviando}
+                  >
+                    {enviando ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={s.btnTxt}>Enviar respuesta</Text>
+                    )}
+                  </TouchableOpacity>
+                  {modoAdmin && ticket ? (
+                    <TouchableOpacity
+                      style={[s.btnOutline, { borderColor: colors.success, opacity: enviando ? 0.6 : 1 }]}
+                      onPress={marcarResuelto}
+                      activeOpacity={0.9}
+                      disabled={enviando}
+                    >
+                      <Ionicons name="checkmark-done-outline" size={16} color={colors.success} />
+                      <Text style={[s.btnOutlineTxt, { color: colors.success }]}>
+                        Marcar como resuelto
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </>
               ) : null
             ) : (
               <TouchableOpacity
@@ -573,9 +626,30 @@ const makeStyles = (C: GradlyColors) =>
     },
     cerradoTxt: { flex: 1, fontSize: 12, fontFamily: FONTS.interMedium },
 
+    adminMeta: {
+      padding: 12,
+      borderRadius: 12,
+      backgroundColor: C.white8,
+      borderWidth: 1,
+      borderColor: C.border,
+      gap: 2,
+    },
+    adminMetaNombre: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: C.textPrimary },
+    adminMetaLinea: { fontSize: 12, fontFamily: FONTS.interRegular, color: C.textMuted },
+
     error: { fontSize: 12, fontFamily: FONTS.interMedium },
     btn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
     btnTxt: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: '#fff' },
+    btnOutline: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      borderRadius: 14,
+      paddingVertical: 13,
+      borderWidth: 1,
+    },
+    btnOutlineTxt: { fontSize: 14, fontFamily: FONTS.interSemiBold },
 
     viewerOverlay: {
       flex: 1,

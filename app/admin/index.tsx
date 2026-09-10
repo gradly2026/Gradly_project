@@ -15,6 +15,7 @@ import {
 import { BarChart } from "react-native-chart-kit";
 import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
 import ProfileViewerModal, { type ProfileTipo } from "../../src/components/ProfileViewerModal";
+import SoporteTicketModal from "../../src/components/SoporteTicketModal";
 import { RedGradlyBanner } from "../../src/components/NetworkStats";
 import SalirSesionModal from "../../src/components/SalirSesionModal";
 import { signOut } from "firebase/auth";
@@ -61,6 +62,12 @@ import { textoHorario } from "../../src/data/disponibilidad";
 import { textoCupos, textoSalario } from "../../src/utils/cupos";
 import { certificarPasantia } from "../../src/services/solicitudPracticaService";
 import { validarComprobante } from "../../src/services/comprobanteService";
+import {
+  COLECCION_TICKETS,
+  labelCategoriaSoporte,
+  labelRolSoporte,
+  type TicketSoporte,
+} from "../../src/services/soporteService";
 
 const tsToIso = (v: any): string => {
   if (!v) return "";
@@ -90,6 +97,7 @@ type AdminPage =
   | "pasantias"
   | "carreras"
   | "alianzas"
+  | "soporte"
   | "vacantes"
   | "suscripciones"
   | "notificaciones"
@@ -266,6 +274,7 @@ type DataIssueKey =
   | "carreras"
   | "alianzas"
   | "comunicados"
+  | "soporte"
   | "logs"
   | "notificaciones"
   | "permisos"
@@ -1727,6 +1736,36 @@ export default function AdminPreview() {
     });
   };
 
+  // ── Soporte / tickets de ayuda (colección `tickets_soporte`) ──────
+  const [soporteTickets, setSoporteTickets] = useState<TicketSoporte[]>([]);
+  const [soporteLoading, setSoporteLoading] = useState(false);
+  const [soporteAttempted, setSoporteAttempted] = useState(false);
+  type SoporteFiltro = "todos" | "sin_resolver" | "estudiante" | "empresa" | "universidad" | "resueltos";
+  const [soporteFiltro, setSoporteFiltro] = useState<SoporteFiltro>("todos");
+  const [soporteSearch, setSoporteSearch] = useState("");
+  const [soporteTicketSel, setSoporteTicketSel] = useState<string | null>(null);
+
+  const fetchTicketsSoporte = useCallback(async () => {
+    setSoporteLoading(true);
+    try {
+      const snap = await getDocs(query(collection(db, COLECCION_TICKETS), limit(300)));
+      setSoporteTickets(
+        snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) } as TicketSoporte))
+          .sort(
+            (a, b) => (b.actualizadoAt?.toMillis?.() ?? 0) - (a.actualizadoAt?.toMillis?.() ?? 0),
+          ),
+      );
+      setDataIssue("soporte", null);
+    } catch (error) {
+      setSoporteTickets([]);
+      setDataIssue("soporte", adminDataErrorMessage(error, "los mensajes de soporte"));
+    } finally {
+      setSoporteLoading(false);
+      setSoporteAttempted(true);
+    }
+  }, [setDataIssue]);
+
   const fetchPermissionsOverview = useCallback(async () => {
     setPermissionsLoading(true);
     try {
@@ -2549,6 +2588,7 @@ export default function AdminPreview() {
     if (page === "pasantias" && !pasantiasAttempted && !pasantiasLoading) fetchPasantias();
     if (page === "carreras" && !carrerasAttempted && !carrerasLoading) fetchCarreras();
     if (page === "alianzas" && !alianzasAttempted && !alianzasLoading) fetchAlianzas();
+    if (page === "soporte" && !soporteAttempted && !soporteLoading) fetchTicketsSoporte();
     if (page === "config" && !comunicadosCargado) { void fetchComunicados(); }
     if (page === "config" && !mantCargado) { void fetchMantenimiento(); }
     if (page === "suscripciones" && !suscripcionesAttempted && !suscripcionesLoading) fetchSuscripciones();
@@ -2561,6 +2601,9 @@ export default function AdminPreview() {
     fetchPasantias,
     fetchCarreras,
     fetchAlianzas,
+    fetchTicketsSoporte,
+    soporteAttempted,
+    soporteLoading,
     fetchComunicados,
     fetchMantenimiento,
     comunicadosCargado,
@@ -2797,6 +2840,7 @@ export default function AdminPreview() {
     { key: "pasantias", label: "Pasantías", icon: "school-outline" },
     { key: "carreras", label: "Carreras", icon: "book-outline" },
     { key: "alianzas", label: "Alianzas", icon: "git-network-outline" },
+    { key: "soporte", label: "Soporte", icon: "help-buoy-outline" },
     { key: "notificaciones", label: "Inbox", icon: "notifications-outline" },
     { key: "roles", label: "Permisos", icon: "key-outline" },
     { key: "config", label: "Config", icon: "settings-outline" },
@@ -5318,6 +5362,190 @@ export default function AdminPreview() {
     </ScrollView>
   );
 
+  // renderSoporte: los `tickets_soporte` que abren los usuarios desde "Ayuda".
+  // Filtros Todos / Sin resolver / Estudiantes / Universidades / Empresas /
+  // Resueltos. Tocar un ticket abre el hilo (SoporteTicketModal en modoAdmin:
+  // responder, adjuntar imágenes, "Marcar como resuelto").
+  const renderSoporte = () => {
+    const FILTROS: { key: SoporteFiltro; label: string }[] = [
+      { key: "todos", label: "Todos" },
+      { key: "sin_resolver", label: "Sin resolver" },
+      { key: "estudiante", label: "Estudiantes" },
+      { key: "universidad", label: "Universidades" },
+      { key: "empresa", label: "Empresas" },
+      { key: "resueltos", label: "Resueltos" },
+    ];
+    const necesitaAtencion = (t: TicketSoporte) =>
+      t.estado === "abierto" && (t.noLeidoAdmin === true || t.ultimoAutor === "usuario");
+
+    const q = soporteSearch.trim().toLowerCase();
+    const filtrados = soporteTickets.filter((t) => {
+      if (soporteFiltro === "sin_resolver" && !necesitaAtencion(t)) return false;
+      if (soporteFiltro === "resueltos" && t.estado !== "resuelto") return false;
+      if (
+        (soporteFiltro === "estudiante" ||
+          soporteFiltro === "empresa" ||
+          soporteFiltro === "universidad") &&
+        t.usuarioRol !== soporteFiltro
+      )
+        return false;
+      if (!q) return true;
+      const hay = `${t.usuarioNombre ?? ""} ${t.usuarioEmail ?? ""} ${labelCategoriaSoporte(
+        t.categoria,
+      )} ${(t.mensajes ?? []).map((m) => m.texto).join(" ")}`.toLowerCase();
+      return hay.includes(q);
+    });
+
+    const totalCount = soporteTickets.length;
+    const sinResolverCount = soporteTickets.filter(necesitaAtencion).length;
+    const resueltosCount = soporteTickets.filter((t) => t.estado === "resuelto").length;
+
+    const iconoRol = (r?: string): keyof typeof Ionicons.glyphMap =>
+      r === "estudiante" ? "school-outline" : r === "universidad" ? "business-outline" : "briefcase-outline";
+
+    const badgeDe = (t: TicketSoporte) => {
+      if (t.estado === "resuelto") return { label: "Resuelto", type: "inactive" as const };
+      if (necesitaAtencion(t)) return { label: "Sin resolver", type: "pending" as const };
+      return { label: "Esperando al usuario", type: "active" as const };
+    };
+
+    return (
+      <ScrollView
+        {...pageScrollProps}
+        showsVerticalScrollIndicator
+        refreshControl={
+          <RefreshControl refreshing={soporteLoading} onRefresh={fetchTicketsSoporte} tintColor={C.accent70} />
+        }
+      >
+        <View style={s.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.kicker}>Operación</Text>
+            <Text style={s.pageTitle}>Soporte</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>
+              Mensajes de ayuda que abren los usuarios desde Mi perfil → Ayuda. Ábrelos para
+              responder, adjuntar imágenes y marcarlos como resueltos.
+            </Text>
+          </View>
+          <TouchableOpacity style={s.btnOutline} onPress={fetchTicketsSoporte} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Card style={{ marginBottom: 14 }}>
+          <View style={s.searchWrap}>
+            <Ionicons name="search-outline" size={18} color={C.textMuted} />
+            <TextInput
+              style={s.searchInput}
+              placeholder="Buscar por usuario, correo, categoría o texto…"
+              placeholderTextColor={C.textMuted}
+              value={soporteSearch}
+              onChangeText={setSoporteSearch}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={[s.chipRow, { marginTop: 14 }]}>
+            {FILTROS.map((f) => (
+              <Chip
+                key={f.key}
+                label={f.label}
+                active={soporteFiltro === f.key}
+                onPress={() => setSoporteFiltro(f.key)}
+              />
+            ))}
+          </View>
+        </Card>
+
+        <View style={[s.grid2, { marginBottom: 14 }]}>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Total</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Mensajes de soporte registrados.</Text>
+            <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{totalCount}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Sin resolver</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Esperan una respuesta del equipo.</Text>
+            <Text style={[s.heroMetricValue, { color: C.yellow, marginTop: 12 }]}>{sinResolverCount}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Resueltos</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Conversaciones ya cerradas.</Text>
+            <Text style={[s.heroMetricValue, { color: C.green, marginTop: 12 }]}>{resueltosCount}</Text>
+          </View>
+        </View>
+
+        <Card style={{ marginBottom: 24 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>Mensajes</Text>
+            <Text style={s.textMuted}>{filtrados.length}</Text>
+          </View>
+
+          {soporteLoading && soporteTickets.length === 0 ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : filtrados.length === 0 ? (
+            <EmptyResultsState
+              icon="help-buoy-outline"
+              title="No hay mensajes para mostrar"
+              message="No encontramos tickets con este filtro."
+              actionLabel={soporteFiltro !== "todos" || soporteSearch.trim() ? "Ver todos" : undefined}
+              onAction={
+                soporteFiltro !== "todos" || soporteSearch.trim()
+                  ? () => {
+                      setSoporteFiltro("todos");
+                      setSoporteSearch("");
+                    }
+                  : undefined
+              }
+            />
+          ) : (
+            <View style={{ gap: 10 }}>
+              {filtrados.map((t) => {
+                const ultimo = t.mensajes?.[t.mensajes.length - 1];
+                const fecha = t.actualizadoAt?.toDate?.()
+                  ? t.actualizadoAt.toDate().toLocaleDateString()
+                  : "";
+                const bd = badgeDe(t);
+                return (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[s.listItem, isPhone && s.listItemStack]}
+                    activeOpacity={0.85}
+                    onPress={() => setSoporteTicketSel(t.id)}
+                  >
+                    <View style={s.avatar}>
+                      <Ionicons name={iconoRol(t.usuarioRol)} size={18} color={C.accent70} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.itemTitle} numberOfLines={1}>
+                            {t.usuarioNombre || "Usuario"}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 4 }]} numberOfLines={1}>
+                            {labelRolSoporte(t.usuarioRol)} · {labelCategoriaSoporte(t.categoria)}
+                            {fecha ? ` · ${fecha}` : ""}
+                          </Text>
+                          {!!ultimo?.texto && (
+                            <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
+                              {ultimo.autor === "admin" ? "Gradly: " : ""}
+                              {ultimo.texto}
+                            </Text>
+                          )}
+                        </View>
+                        <Badge label={bd.label} type={bd.type} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </Card>
+      </ScrollView>
+    );
+  };
+
   // renderConfig: accesos rápidos a otras páginas, el botón de
   // "Recalcular alianzas y calificaciones" (runBackfillAlianzas, con su
   // propio modal de confirmación RecalcularConfirmModal) y cerrar sesión.
@@ -5733,6 +5961,19 @@ export default function AdminPreview() {
         }}
       />
     ) : null}
+
+    {/* Hilo de un ticket de soporte (sección "Soporte" → tocar un mensaje). */}
+    <SoporteTicketModal
+      visible={!!soporteTicketSel}
+      ticketId={soporteTicketSel}
+      modoAdmin
+      adminNombre={meName}
+      marcarLeidoAlAbrir
+      onClose={() => {
+        setSoporteTicketSel(null);
+        void fetchTicketsSoporte();
+      }}
+    />
 
     {/* Composer de comunicados (Config → "Nuevo comunicado"). */}
     <Modal visible={comComposerOpen} transparent animationType="none" onRequestClose={() => setComComposerOpen(false)}>
@@ -7099,6 +7340,8 @@ export default function AdminPreview() {
         return renderCarreras();
       case "alianzas":
         return renderAlianzas();
+      case "soporte":
+        return renderSoporte();
       case "vacantes":
         return renderVacantes();
       case "suscripciones":
