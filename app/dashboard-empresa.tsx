@@ -48,6 +48,7 @@ import {
 import { abrirChatDirectoEmpresaEstudiante } from '../src/services/chatService';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
+import AsistenteGradly from '../src/components/AsistenteGradly';
 import FloatingTopBar from '../src/components/FloatingTopBar';
 import SalirSesionModal from '../src/components/SalirSesionModal';
 import { showConfirm, showAlert } from '../src/components/AppAlert';
@@ -2244,6 +2245,9 @@ export default function DashboardEmpresa() {
 
       {/* ── BÚSQUEDA FLOTANTE (oculta en "Mi Perfil" y "Mensajes") ── */}
       {seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar candidatos o vacantes..." />}
+
+      {/* ── ASISTENTE GRADLY (bot de ayuda) — apilado sobre el botón de búsqueda ── */}
+      {seccion !== 'mensajes' && <AsistenteGradly />}
 
       {/* ── FORMULARIO OBLIGATORIO DE EXPERIENCIA (pasantías finalizadas) ── */}
       <FeedbackGate />

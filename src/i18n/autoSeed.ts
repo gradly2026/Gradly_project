@@ -1594,6 +1594,16 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   "Permiso necesario": "Permission needed",
   "No se pudo enviar la imagen. Intenta de nuevo.": "Couldn't send the image. Please try again.",
 
+  // Asistente Gradly (chatbot de ayuda)
+  "Asistente Gradly": "Gradly Assistant",
+  "Te ayudo a moverte por la app": "I help you get around the app",
+  "¡Hola! Soy el asistente de Gradly. Pregúntame cómo hacer algo o qué significa un término y te oriento.":
+    "Hi! I'm the Gradly assistant. Ask me how to do something or what a term means and I'll point you in the right direction.",
+  "El asistente no está disponible ahora. Intenta de nuevo.": "The assistant isn't available right now. Please try again.",
+  "Llegaste al límite de consultas del asistente por hoy. Vuelve mañana.":
+    "You've reached today's assistant limit. Try again tomorrow.",
+  "Inicia sesión para usar el asistente.": "Sign in to use the assistant.",
+
   // Audios en el chat (ChatAudioRecorderModal / ChatThread)
   "Mensaje de voz": "Voice message",
   "Preparando el micrófono…": "Preparing the microphone…",

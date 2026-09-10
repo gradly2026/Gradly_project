@@ -36,6 +36,10 @@
  *  · eliminarEstudiante / eliminarGrupo → una universidad deshace su propia
  *    carga por Excel (estudiante o grupo completo) antes de que quede ligada
  *    a una pasantía real (universidad.ts). Borran también la cuenta de Auth.
+ *  · chatbotGradly → "Asistente Gradly": bot de ayuda (Q&A) que llama a Gemini
+ *    con la API key como secreto (chatbot.ts). Requiere sesión; tope diario por
+ *    usuario en `chatbot_uso/{uid}`. Necesita: firebase functions:secrets:set
+ *    GEMINI_API_KEY  +  firebase deploy --only functions:chatbotGradly.
  *
  * Nota: el antiguo patrón "traducir al escribir" (triggers translate_*) se
  * retiró — se reemplazó por la traducción al vuelo con caché, que cubre también
@@ -62,3 +66,4 @@ export {
   setUserStatus,
 } from "./admin";
 export { eliminarEstudiante, eliminarGrupo } from "./universidad";
+export { chatbotGradly } from "./chatbot";

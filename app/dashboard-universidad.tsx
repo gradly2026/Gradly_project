@@ -74,6 +74,7 @@ import { firebaseConfig } from '../src/config/firebaseConfig';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
+import AsistenteGradly from '../src/components/AsistenteGradly';
 import FloatingTopBar from '../src/components/FloatingTopBar';
 import AvisosGate from '../src/components/AvisosGate';
 import SalirSesionModal from '../src/components/SalirSesionModal';
@@ -1187,6 +1188,9 @@ export default function DashboardUniversidad() {
 
       {/* ── BÚSQUEDA FLOTANTE (oculta en "Mis Estudiantes", "Mi Perfil" y "Mensajes") ── */}
       {seccion !== 'estudiantes' && seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
+
+      {/* ── ASISTENTE GRADLY (bot de ayuda) — apilado sobre el botón de búsqueda ── */}
+      {seccion !== 'mensajes' && <AsistenteGradly />}
 
       {/* ── MENÚ FLOTANTE (Glassmorphism) ──
           Oculto en "Mensajes": la sección de chat debe verse limpia, sin

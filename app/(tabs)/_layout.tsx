@@ -32,6 +32,7 @@ import FloatingNavBar, { type NavItem } from '../../src/components/FloatingNavBa
 // "Liquid Glass" (el mismo estilo visual que FloatingTopBar).
 
 import FloatingSearchButton from '../../src/components/FloatingSearchButton';
+import AsistenteGradly from '../../src/components/AsistenteGradly';
 import FloatingTopBar from '../../src/components/FloatingTopBar';
 import SalirSesionModal from '../../src/components/SalirSesionModal';
 import OnboardingDireccionGate from '../../src/components/OnboardingDireccionGate';
@@ -304,6 +305,9 @@ export default function TabLayout() {
       {/* Botón flotante de búsqueda global — oculto en la pestaña Mensajes,
           que ya tiene su propio buscador dentro de la lista de chats. */}
       {!enMensajes && <FloatingSearchButton />}
+
+      {/* Asistente Gradly (bot de ayuda) — apilado encima del botón de búsqueda. */}
+      {!enMensajes && <AsistenteGradly />}
 
       {/* Formulario obligatorio de experiencia (pasantías finalizadas) */}
       <FeedbackGate />
