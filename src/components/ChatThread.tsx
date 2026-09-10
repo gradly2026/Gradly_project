@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import * as ScreenCapture from "expo-screen-capture";
 // Import de efecto: registra los datos del locale "es" en dayjs (nombres de
@@ -29,6 +30,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -51,6 +53,9 @@ import {
   type IMessage,
   type MessageTextProps,
 } from "react-native-gifted-chat";
+import ChatImagePreviewModal from "./ChatImagePreviewModal";
+import ChatImageViewerModal from "./ChatImageViewerModal";
+import { subirImagenChat } from "../services/chatMediaService";
 
 // gifted-chat v2 no exporta `ReplyMessage` (era de v3). Tipo local mínimo con la
 // forma que construimos al responder (ver startReply).
@@ -322,6 +327,11 @@ export default function ChatThread({
   const [replyTo, setReplyTo] = useState<ReplyMessage | null>(null);
   // Mensaje en edición (si no es null, onSend hace updateDoc).
   const [editing, setEditing] = useState<ChatMessage | null>(null);
+  // Imagen elegida y aún sin enviar (modal de previsualización).
+  const [imgPreviewUri, setImgPreviewUri] = useState<string | null>(null);
+  // Imagen del hilo abierta a pantalla completa.
+  const [imgViewerUri, setImgViewerUri] = useState<string | null>(null);
+  const [enviandoImg, setEnviandoImg] = useState(false);
   // Mensaje con el menú de acciones abierto (long-press).
   const [actionMsg, setActionMsg] = useState<ChatMessage | null>(null);
   // Traducción manual por mensaje (estilo TikTok): a diferencia del resto de
@@ -796,6 +806,9 @@ export default function ChatThread({
             isEdited: data.isEdited ?? false,
             forwarded: data.forwarded ?? false,
             replyMessage: data.replyMessage ?? undefined,
+            image: data.image ?? undefined,
+            audio: data.audio ?? undefined,
+            audioDuration: typeof data.audioDuration === "number" ? data.audioDuration : undefined,
           };
         });
         setMessages(mapped);
@@ -863,6 +876,68 @@ export default function ChatThread({
     },
     [chatId, editing, inputText, replyTo, giftedUser._id, giftedUser.name, chatUsers],
   );
+
+  // ── Adjuntar y enviar una IMAGEN ──
+  // Elegir → recorte del editor nativo (`allowsEditing`) → modal de
+  // previsualización (`imgPreviewUri`) → "Enviar" sube a Storage y crea el
+  // mensaje `type: 'image'`. Una foto no es "texto": no entra en el flujo de
+  // edición ni en `onSend`.
+  const elegirImagen = useCallback(async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (perm.status !== "granted") {
+        Alert.alert("Permiso necesario", "Necesitamos permiso para acceder a tus fotos.");
+        return;
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (res.canceled) return;
+      const uri = res.assets?.[0]?.uri;
+      if (uri) setImgPreviewUri(uri);
+    } catch (error) {
+      console.warn("Error eligiendo imagen:", error);
+      Alert.alert("Error", "No se pudo abrir la galería.");
+    }
+  }, []);
+
+  const enviarImagen = useCallback(async () => {
+    if (!chatId || !imgPreviewUri || enviandoImg) return;
+    setEnviandoImg(true);
+    try {
+      const ref = doc(collection(db, "chats", chatId, "messages"));
+      const url = await subirImagenChat(chatId, ref.id, imgPreviewUri);
+      const payload: Record<string, unknown> = {
+        _id: ref.id,
+        text: "",
+        type: "image",
+        image: url,
+        createdAt: serverTimestamp(),
+        user: { _id: giftedUser._id, name: giftedUser.name },
+      };
+      if (replyTo) {
+        const u = (replyTo as any).user ?? {};
+        const cleanUser: Record<string, unknown> = { _id: u._id ?? "", name: u.name ?? "" };
+        if (u.avatar) cleanUser.avatar = u.avatar;
+        payload.replyMessage = {
+          _id: String((replyTo as any)._id ?? ""),
+          text: (replyTo as any).text ?? "",
+          user: cleanUser,
+        };
+      }
+      await setDoc(ref, payload);
+      void touchChatOnMessage(chatId, "📷 Foto", giftedUser._id, chatUsers);
+      setImgPreviewUri(null);
+      setReplyTo(null);
+    } catch (error) {
+      console.warn("Error enviando imagen:", error);
+      Alert.alert("Error", "No se pudo enviar la imagen. Intenta de nuevo.");
+    } finally {
+      setEnviandoImg(false);
+    }
+  }, [chatId, imgPreviewUri, enviandoImg, giftedUser._id, giftedUser.name, replyTo, chatUsers]);
 
   // ── Acciones del menú long-press ──
   const startReply = useCallback((msg: ChatMessage) => {
@@ -1306,6 +1381,39 @@ export default function ChatThread({
       </Send>
     ),
     [styles, inputText],
+  );
+
+  // ── Botones de adjunto a la izquierda del composer (imagen; el micro llega
+  //    con el audio). Se ocultan si el input está bloqueado (grupo solo-admins). ──
+  const renderActions = useCallback(
+    () =>
+      inputBloqueado ? null : (
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={elegirImagen}
+            hitSlop={6}
+            accessibilityLabel="Enviar una imagen"
+          >
+            <Ionicons name="image-outline" size={22} color={C.textMuted} />
+          </TouchableOpacity>
+        </View>
+      ),
+    [inputBloqueado, styles, elegirImagen, C],
+  );
+
+  // ── Burbuja de imagen: miniatura que abre el visor a pantalla completa. ──
+  const renderMessageImage = useCallback(
+    (props: { currentMessage?: ChatMessage }) => {
+      const uri = props.currentMessage?.image;
+      if (!uri) return null;
+      return (
+        <Pressable onPress={() => setImgViewerUri(uri)} style={styles.msgImgWrap}>
+          <Image source={{ uri }} style={styles.msgImg} resizeMode="cover" />
+        </Pressable>
+      );
+    },
+    [styles],
   );
 
   // ── Botón flotante "bajar al último mensaje" (aparece al hacer scroll hacia
@@ -2074,9 +2182,11 @@ export default function ChatThread({
           keyboardShouldPersistTaps="handled"
           renderBubble={renderBubble}
           renderSend={renderSend}
+          renderActions={renderActions}
           renderAvatar={renderAvatar}
           renderCustomView={renderCustomView}
           renderMessageText={renderMessageText}
+          renderMessageImage={renderMessageImage}
           renderChatFooter={renderChatFooter}
           renderFooter={renderFooterTecleo}
           renderInputToolbar={inputBloqueado ? renderInputBloqueado : renderInputToolbarStyled}
@@ -2089,6 +2199,22 @@ export default function ChatThread({
           }}
         />
       </View>
+
+      {/* Previsualización de la imagen elegida (antes de enviarla) + visor a
+          pantalla completa de las imágenes ya en el hilo. */}
+      <ChatImagePreviewModal
+        visible={!!imgPreviewUri}
+        uri={imgPreviewUri}
+        onRecortar={elegirImagen}
+        onDescartar={() => setImgPreviewUri(null)}
+        onEnviar={enviarImagen}
+        enviando={enviandoImg}
+      />
+      <ChatImageViewerModal
+        visible={!!imgViewerUri}
+        uri={imgViewerUri}
+        onClose={() => setImgViewerUri(null)}
+      />
 
       {opcionesMenu}
 
@@ -2742,6 +2868,33 @@ const makeStyles = (C: ChatColors) => StyleSheet.create({
     alignItems: "center",
     marginRight: 8,
     marginBottom: 4,
+  },
+  // Botones de adjunto (imagen / micro) a la izquierda del composer.
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 6,
+    paddingRight: 2,
+    marginBottom: 4,
+    height: 44,
+  },
+  actionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // Burbuja de imagen dentro del hilo.
+  msgImgWrap: {
+    borderRadius: 14,
+    overflow: "hidden",
+    margin: 3,
+  },
+  msgImg: {
+    width: 210,
+    height: 210,
+    backgroundColor: C.subtleFill,
   },
   sendBtn: {
     width: 40,

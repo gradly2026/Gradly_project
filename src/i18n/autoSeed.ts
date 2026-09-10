@@ -1584,6 +1584,15 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   "Pagos o suscripción": "Payments or subscription",
   "Un error o fallo técnico": "A bug or technical issue",
   "Una sugerencia": "A suggestion",
+
+  // Imágenes en el chat (ChatImagePreviewModal / ChatThread)
+  "Enviar imagen": "Send image",
+  "Pantalla completa": "Full screen",
+  "Recortar": "Crop",
+  "Descartar": "Discard",
+  "Enviar": "Send",
+  "Permiso necesario": "Permission needed",
+  "No se pudo enviar la imagen. Intenta de nuevo.": "Couldn't send the image. Please try again.",
 };
 
 export default AUTO_SEED_EN;

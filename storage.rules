@@ -84,5 +84,17 @@ service firebase.storage {
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }
+
+    // 💬 Adjuntos del chat (imágenes y audios). El path va namespaced por el id
+    //    del chat; la URL de descarga solo llega al que puede leer la
+    //    subcolección `chats/{chatId}/messages` (ya protegida en firestore.rules).
+    //    Se acota tamaño y se exige image/* o audio/*.
+    match /chat_media/{chatId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 12 * 1024 * 1024
+                   && (request.resource.contentType.matches('image/.*')
+                       || request.resource.contentType.matches('audio/.*'));
+    }
   }
 }

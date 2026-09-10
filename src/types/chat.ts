@@ -105,6 +105,8 @@ export interface ChatMessage extends IMessage {
   isEdited?: boolean;
   /** Mensaje reenviado desde otro chat (muestra la etiqueta "Reenviado"). */
   forwarded?: boolean;
+  /** Duración del audio adjunto en ms (`audio` viene de `IMessage`). */
+  audioDuration?: number;
   /** Cita del mensaje al que se responde (se dibuja dentro de la burbuja). */
   replyMessage?: {
     _id: string | number;
