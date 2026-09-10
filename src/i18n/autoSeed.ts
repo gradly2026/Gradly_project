@@ -1593,6 +1593,17 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   "Enviar": "Send",
   "Permiso necesario": "Permission needed",
   "No se pudo enviar la imagen. Intenta de nuevo.": "Couldn't send the image. Please try again.",
+
+  // Audios en el chat (ChatAudioRecorderModal / ChatThread)
+  "Mensaje de voz": "Voice message",
+  "Preparando el micrófono…": "Preparing the microphone…",
+  "Necesitamos permiso para usar el micrófono.": "We need permission to use the microphone.",
+  "No se pudo iniciar la grabación.": "Couldn't start recording.",
+  "No se pudo finalizar la grabación.": "Couldn't finish recording.",
+  "En pausa": "Paused",
+  "Pausar": "Pause",
+  "Reanudar": "Resume",
+  "No se pudo enviar el audio. Intenta de nuevo.": "Couldn't send the audio. Please try again.",
 };
 
 export default AUTO_SEED_EN;

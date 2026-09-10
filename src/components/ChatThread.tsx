@@ -55,7 +55,9 @@ import {
 } from "react-native-gifted-chat";
 import ChatImagePreviewModal from "./ChatImagePreviewModal";
 import ChatImageViewerModal from "./ChatImageViewerModal";
-import { subirImagenChat } from "../services/chatMediaService";
+import ChatAudioRecorderModal from "./ChatAudioRecorderModal";
+import ChatAudioBubble from "./ChatAudioBubble";
+import { subirAudioChat, subirImagenChat } from "../services/chatMediaService";
 
 // gifted-chat v2 no exporta `ReplyMessage` (era de v3). Tipo local mínimo con la
 // forma que construimos al responder (ver startReply).
@@ -332,6 +334,9 @@ export default function ChatThread({
   // Imagen del hilo abierta a pantalla completa.
   const [imgViewerUri, setImgViewerUri] = useState<string | null>(null);
   const [enviandoImg, setEnviandoImg] = useState(false);
+  // Grabador de voz.
+  const [audioRecOpen, setAudioRecOpen] = useState(false);
+  const [enviandoAudio, setEnviandoAudio] = useState(false);
   // Mensaje con el menú de acciones abierto (long-press).
   const [actionMsg, setActionMsg] = useState<ChatMessage | null>(null);
   // Traducción manual por mensaje (estilo TikTok): a diferencia del resto de
@@ -939,6 +944,47 @@ export default function ChatThread({
     }
   }, [chatId, imgPreviewUri, enviandoImg, giftedUser._id, giftedUser.name, replyTo, chatUsers]);
 
+  // ── Enviar un MENSAJE DE VOZ (uri local + duración, del modal grabador) ──
+  const enviarAudio = useCallback(
+    async (uri: string, durationMs: number) => {
+      if (!chatId || !uri || enviandoAudio) return;
+      setEnviandoAudio(true);
+      try {
+        const ref = doc(collection(db, "chats", chatId, "messages"));
+        const url = await subirAudioChat(chatId, ref.id, uri);
+        const payload: Record<string, unknown> = {
+          _id: ref.id,
+          text: "",
+          type: "audio",
+          audio: url,
+          audioDuration: Math.round(durationMs) || 0,
+          createdAt: serverTimestamp(),
+          user: { _id: giftedUser._id, name: giftedUser.name },
+        };
+        if (replyTo) {
+          const u = (replyTo as any).user ?? {};
+          const cleanUser: Record<string, unknown> = { _id: u._id ?? "", name: u.name ?? "" };
+          if (u.avatar) cleanUser.avatar = u.avatar;
+          payload.replyMessage = {
+            _id: String((replyTo as any)._id ?? ""),
+            text: (replyTo as any).text ?? "",
+            user: cleanUser,
+          };
+        }
+        await setDoc(ref, payload);
+        void touchChatOnMessage(chatId, "🎤 Audio", giftedUser._id, chatUsers);
+        setAudioRecOpen(false);
+        setReplyTo(null);
+      } catch (error) {
+        console.warn("Error enviando audio:", error);
+        Alert.alert("Error", "No se pudo enviar el audio. Intenta de nuevo.");
+      } finally {
+        setEnviandoAudio(false);
+      }
+    },
+    [chatId, enviandoAudio, giftedUser._id, giftedUser.name, replyTo, chatUsers],
+  );
+
   // ── Acciones del menú long-press ──
   const startReply = useCallback((msg: ChatMessage) => {
     setActionMsg(null);
@@ -1383,8 +1429,8 @@ export default function ChatThread({
     [styles, inputText],
   );
 
-  // ── Botones de adjunto a la izquierda del composer (imagen; el micro llega
-  //    con el audio). Se ocultan si el input está bloqueado (grupo solo-admins). ──
+  // ── Botones de adjunto a la izquierda del composer (imagen + micro).
+  //    Se ocultan si el input está bloqueado (grupo solo-admins). ──
   const renderActions = useCallback(
     () =>
       inputBloqueado ? null : (
@@ -1392,10 +1438,18 @@ export default function ChatThread({
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={elegirImagen}
-            hitSlop={6}
+            hitSlop={4}
             accessibilityLabel="Enviar una imagen"
           >
-            <Ionicons name="image-outline" size={22} color={C.textMuted} />
+            <Ionicons name="image-outline" size={21} color={C.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => setAudioRecOpen(true)}
+            hitSlop={4}
+            accessibilityLabel="Grabar un mensaje de voz"
+          >
+            <Ionicons name="mic-outline" size={21} color={C.textMuted} />
           </TouchableOpacity>
         </View>
       ),
@@ -1414,6 +1468,22 @@ export default function ChatThread({
       );
     },
     [styles],
+  );
+
+  // ── Burbuja de audio: reproductor compacto (play/pausa + barra + tiempo). ──
+  const renderMessageAudio = useCallback(
+    (props: { currentMessage?: ChatMessage; position?: "left" | "right" }) => {
+      const url = props.currentMessage?.audio;
+      if (!url) return null;
+      return (
+        <ChatAudioBubble
+          url={url}
+          durationMs={props.currentMessage?.audioDuration}
+          mine={props.position === "right"}
+        />
+      );
+    },
+    [],
   );
 
   // ── Botón flotante "bajar al último mensaje" (aparece al hacer scroll hacia
@@ -2187,6 +2257,7 @@ export default function ChatThread({
           renderCustomView={renderCustomView}
           renderMessageText={renderMessageText}
           renderMessageImage={renderMessageImage}
+          renderMessageAudio={renderMessageAudio}
           renderChatFooter={renderChatFooter}
           renderFooter={renderFooterTecleo}
           renderInputToolbar={inputBloqueado ? renderInputBloqueado : renderInputToolbarStyled}
@@ -2215,6 +2286,16 @@ export default function ChatThread({
         uri={imgViewerUri}
         onClose={() => setImgViewerUri(null)}
       />
+      {/* Grabador de voz — se monta solo mientras está abierto para que los
+          hooks de expo-audio arranquen/liberen limpio en cada uso. */}
+      {audioRecOpen ? (
+        <ChatAudioRecorderModal
+          visible
+          onCancel={() => setAudioRecOpen(false)}
+          onEnviar={enviarAudio}
+          enviando={enviandoAudio}
+        />
+      ) : null}
 
       {opcionesMenu}
 
@@ -2873,15 +2954,13 @@ const makeStyles = (C: ChatColors) => StyleSheet.create({
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingLeft: 6,
-    paddingRight: 2,
+    paddingLeft: 4,
     marginBottom: 4,
     height: 44,
   },
   actionBtn: {
-    width: 34,
+    width: 30,
     height: 34,
-    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
   },
