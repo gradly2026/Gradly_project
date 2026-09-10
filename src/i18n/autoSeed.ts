@@ -1615,6 +1615,17 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   "Llegaste al límite de consultas del asistente por hoy. Vuelve mañana.":
     "You've reached today's assistant limit. Try again tomorrow.",
   "Inicia sesión para usar el asistente.": "Sign in to use the assistant.",
+  // Botones "Ir a …" que propone el asistente (fase 2)
+  "Ir a Mensajes": "Go to Messages",
+  "Ir a Ayuda": "Go to Help",
+  "Ir a Mi perfil": "Go to My profile",
+  "Ir a Mi progreso": "Go to My progress",
+  "Ir a Buscar vacantes": "Go to Browse jobs",
+  "Ir a Mi institución": "Go to My institution",
+  "Ir a Mis vacantes": "Go to My job posts",
+  "Ir a Pasantes activos": "Go to Active interns",
+  "Ir a Mis estudiantes": "Go to My students",
+  "Ir a Aprobaciones": "Go to Approvals",
 
   // Audios en el chat (ChatAudioRecorderModal / ChatThread)
   "Mensaje de voz": "Voice message",

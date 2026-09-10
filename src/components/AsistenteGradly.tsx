@@ -1,15 +1,18 @@
 // ════════════════════════════════════════════════════════════════════════
 // AsistenteGradly.tsx — burbuja flotante + hoja de chat del "Asistente Gradly"
-// (bot de AYUDA, fase 1: solo Q&A por texto; ver src/services/chatbotService.ts).
+// (bot de AYUDA). Fase 1: Q&A. Fase 2: puede proponer un botón "Ir a …" que
+// navega (ver src/utils/asistenteDestinos.ts). Fase 3: manda la pantalla actual.
 //
 // Se monta en los dashboards (estudiante `(tabs)`, empresa, universidad). No
-// aparece para admin ni sin sesión. La conversación es efímera: vive en el
-// estado del componente.
+// aparece para admin ni sin sesión, y solo si el admin la habilitó
+// (`config/asistente`). La conversación es efímera: vive en el estado del
+// componente.
 // ════════════════════════════════════════════════════════════════════════
 
 import { Ionicons } from '@expo/vector-icons';
+import { usePathname, useRouter } from 'expo-router';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -26,8 +29,30 @@ import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { useTranslationContext } from '../context/TranslationContext';
-import { preguntarAlAsistente, type MensajeAsistente } from '../services/chatbotService';
+import {
+  preguntarAlAsistente,
+  type AccionAsistente,
+  type MensajeAsistente,
+} from '../services/chatbotService';
+import { irADestino, labelDestino } from '../utils/asistenteDestinos';
 import { shadow } from '../utils/shadow';
+
+/** Un turno del chat (los `model` pueden traer una acción de navegación). */
+type Turno = MensajeAsistente & { accion?: AccionAsistente | null };
+
+/** Etiqueta legible de la pantalla actual, para el contexto del bot. */
+function etiquetaPantalla(path: string | null): string {
+  const p = path ?? '';
+  if (p.includes('/progreso')) return 'Mi progreso';
+  if (p.includes('/institucion')) return 'Mi institución';
+  if (p.includes('/mensajes')) return 'Mensajes';
+  if (p.includes('/perfil')) return 'Mi perfil';
+  if (p.includes('help-gradly')) return 'Ayuda';
+  if (p.includes('dashboard-empresa')) return 'Panel de empresa';
+  if (p.includes('dashboard-universidad')) return 'Panel de universidad';
+  if (p === '/' || p.includes('(tabs)')) return 'Vacantes / inicio';
+  return '';
+}
 
 interface Props {
   /**
@@ -41,10 +66,13 @@ export default function AsistenteGradly({ bottom = 158 }: Props) {
   const { user, rol } = useAuth();
   const { colors } = useTheme();
   const { language } = useTranslationContext();
+  const router = useRouter();
+  const pathname = usePathname();
   const s = makeStyles(colors);
+  const pantalla = useMemo(() => etiquetaPantalla(pathname), [pathname]);
 
   const [open, setOpen] = useState(false);
-  const [mensajes, setMensajes] = useState<MensajeAsistente[]>([]);
+  const [mensajes, setMensajes] = useState<Turno[]>([]);
   const [input, setInput] = useState('');
   const [cargando, setCargando] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -69,21 +97,33 @@ export default function AsistenteGradly({ bottom = 158 }: Props) {
   const enviar = useCallback(async () => {
     const q = input.trim();
     if (!q || cargando) return;
-    const nuevo: MensajeAsistente = { rol: 'user', texto: q };
-    const historial = [...mensajes, nuevo];
+    const historial: Turno[] = [...mensajes, { rol: 'user', texto: q }];
     setMensajes(historial);
     setInput('');
     setErr(null);
     setCargando(true);
     try {
-      const r = await preguntarAlAsistente(historial, language === 'en' ? 'en' : 'es', rol ?? '');
-      setMensajes((prev) => [...prev, { rol: 'model', texto: r }]);
+      const { respuesta, accion } = await preguntarAlAsistente(
+        historial.map((m) => ({ rol: m.rol, texto: m.texto })),
+        language === 'en' ? 'en' : 'es',
+        rol ?? '',
+        pantalla,
+      );
+      setMensajes((prev) => [...prev, { rol: 'model', texto: respuesta, accion }]);
     } catch (e: any) {
       setErr(e?.message || 'Algo salió mal.');
     } finally {
       setCargando(false);
     }
-  }, [input, cargando, mensajes, language, rol]);
+  }, [input, cargando, mensajes, language, rol, pantalla]);
+
+  const irA = useCallback(
+    (destino: string) => {
+      setOpen(false);
+      setTimeout(() => irADestino(destino, { router, rol }), Platform.OS === 'ios' ? 300 : 0);
+    },
+    [router, rol],
+  );
 
   // No para admin ni sin sesión, y solo si el admin habilitó la burbuja.
   if (!user?.uid || rol === 'admin' || !habilitado) return null;
@@ -137,8 +177,22 @@ export default function AsistenteGradly({ bottom = 158 }: Props) {
                     <Text style={s.burbujaYoTxt} noTranslate>{m.texto}</Text>
                   </View>
                 ) : (
-                  <View key={i} style={[s.burbuja, s.burbujaBot]}>
-                    <Text style={s.burbujaBotTxt} noTranslate>{m.texto}</Text>
+                  <View key={i} style={{ alignSelf: 'flex-start', maxWidth: '86%', gap: 6 }}>
+                    <View style={[s.burbuja, s.burbujaBot, { maxWidth: '100%' }]}>
+                      <Text style={s.burbujaBotTxt} noTranslate>{m.texto}</Text>
+                    </View>
+                    {m.accion?.tipo === 'irA' && labelDestino(m.accion.destino) ? (
+                      <TouchableOpacity
+                        style={[s.irBtn, { borderColor: colors.primary }]}
+                        onPress={() => irA(m.accion!.destino)}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="arrow-forward-circle-outline" size={16} color={colors.primary} />
+                        <Text style={[s.irBtnTxt, { color: colors.primary }]}>
+                          {`Ir a ${labelDestino(m.accion.destino)}`}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 ),
               )}
@@ -236,6 +290,17 @@ const makeStyles = (C: GradlyColors) =>
     burbujaBotTxt: { fontSize: 14, lineHeight: 20, fontFamily: FONTS.interRegular, color: C.textPrimary },
     burbujaYo: { alignSelf: 'flex-end' },
     burbujaYoTxt: { fontSize: 14, lineHeight: 20, fontFamily: FONTS.interRegular, color: '#fff' },
+    irBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 6,
+      borderWidth: 1,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+    },
+    irBtnTxt: { fontSize: 13, fontFamily: FONTS.interSemiBold },
     escribiendo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     escribiendoTxt: { fontSize: 12, fontFamily: FONTS.interRegular, color: C.textMuted },
     err: { fontSize: 12, fontFamily: FONTS.interMedium, alignSelf: 'center', textAlign: 'center' },

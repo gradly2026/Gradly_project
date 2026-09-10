@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 // CRUD de Firestore usados en este archivo: addDoc (crear), doc+updateDoc
 // (actualizar), deleteField (borrar un campo específico al editar), getDocs
@@ -725,6 +725,19 @@ export default function DashboardEmpresa() {
   // campos del formulario "Nueva Vacante" (prefijo nv*) y de la tarjeta
   // (prefijo card*). Los comentarios en línea marcan solo lo no obvio.
   const [seccion,     setSeccion]     = useState<SeccionEmpresa>('inicio');
+
+  // `?seccion=<clave>` → salta a esa sección (lo usa el Asistente Gradly). El
+  // parámetro se consume tras leerlo, igual que `?verPasante=` en universidad.
+  const asistParams = useLocalSearchParams<{ seccion?: string }>();
+  useEffect(() => {
+    const sec = asistParams.seccion ? String(asistParams.seccion) : '';
+    const validas: SeccionEmpresa[] = ['inicio', 'vacantes', 'kanban', 'activas', 'perfil', 'mensajes'];
+    if (sec && (validas as string[]).includes(sec)) {
+      setSeccion(sec as SeccionEmpresa);
+      router.setParams({ seccion: '' } as any);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asistParams.seccion]);
   // useAuthBackGuard(): controla el botón "atrás" del navegador para que
   // primero recorra las secciones internas visitadas (Inicio → Vacantes →
   // Mensajes → ...) y solo al final pregunte si desea cerrar sesión — con

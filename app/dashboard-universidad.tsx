@@ -511,7 +511,7 @@ export default function DashboardUniversidad() {
   // la sección "Pasantías" y abrimos ahí el CertificarPasanteModal de ese
   // estudiante. El parámetro se consume (se limpia) una vez leído, igual que
   // `?chat=` en app/(tabs)/mensajes.tsx.
-  const params = useLocalSearchParams<{ verPasante?: string }>();
+  const params = useLocalSearchParams<{ verPasante?: string; seccion?: string }>();
   const [pasanteAAbrir, setPasanteAAbrir] = useState<string | null>(null);
 
   const [seccion,      setSeccion]      = useState<SeccionUni>('inicio');
@@ -526,6 +526,17 @@ export default function DashboardUniversidad() {
     router.setParams({ verPasante: '' } as any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.verPasante]);
+
+  // `?seccion=<clave>` → salta a esa sección (lo usa el Asistente Gradly).
+  useEffect(() => {
+    const sec = params.seccion ? String(params.seccion) : '';
+    const validas: SeccionUni[] = ['inicio', 'estudiantes', 'aprobar', 'estadisticas', 'perfil', 'mensajes'];
+    if (sec && (validas as string[]).includes(sec)) {
+      setSeccion(sec as SeccionUni);
+      router.setParams({ seccion: '' } as any);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.seccion]);
   // useAuthBackGuard(): controla el botón "atrás" del navegador para que
   // primero recorra las secciones internas visitadas (Inicio → Estudiantes →
   // Mensajes → ...) y solo al final pregunte si desea cerrar sesión — con
