@@ -90,6 +90,7 @@ import HistorialPasantes from '../src/components/HistorialPasantes';
 import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import RangoCard from '../src/components/RangoCard';
 import ResenasFeedback from '../src/components/ResenasFeedback';
+import HistorialPuestos from '../src/components/HistorialPuestos';
 import SeccionMensajes from '../src/components/SeccionMensajes';
 import { SolicitudesEmpresa } from '../src/components/Matchmaking';
 import type { AcuerdoData } from '../src/types/chat';
@@ -2013,6 +2014,14 @@ export default function DashboardEmpresa() {
             render: () => (
               <ResenasFeedback entidadId={user?.uid ?? ''} entidadRol="empresa" theme={isDark ? 'dark' : 'light'} />
             ),
+          },
+          {
+            id: 'historialContrataciones',
+            title: 'Historial de contrataciones',
+            subtitle: 'Contrataciones anteriores y cómo terminaron',
+            icon: 'people-outline' as const,
+            tone: 'purple' as const,
+            render: () => <HistorialPuestos rol="empresa" id={user?.uid ?? ''} propio />,
           },
           {
             id: 'plan',

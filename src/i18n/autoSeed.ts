@@ -1632,6 +1632,19 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   "Ir a Mis estudiantes": "Go to My students",
   "Ir a Aprobaciones": "Go to Approvals",
 
+  // Historial de puestos (HistorialPuestos.tsx + secciones de Mi perfil)
+  "Historial de puestos": "Job history",
+  "Empleos anteriores y cómo terminaron": "Previous jobs and how they ended",
+  "Historial de contrataciones": "Hiring history",
+  "Contrataciones anteriores y cómo terminaron": "Previous hires and how they ended",
+  "Todavía no hay puestos de trabajo anteriores.": "No previous jobs yet.",
+  "Todavía no hay contrataciones anteriores.": "No previous hires yet.",
+  "Renunció": "Resigned",
+  "Contrato terminado por la empresa": "Contract ended by the company",
+  "Sin motivo registrado.": "No reason recorded.",
+  "El motivo solo lo ven la persona y la empresa involucradas.":
+    "The reason is only visible to the person and the company involved.",
+
   // Audios en el chat (ChatAudioRecorderModal / ChatThread)
   "Mensaje de voz": "Voice message",
   "Preparando el micrófono…": "Preparing the microphone…",

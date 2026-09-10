@@ -29,6 +29,7 @@ import {
   increment,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -41,6 +42,42 @@ import type { HorarioPasantia } from '../data/disponibilidad';
 export const COL_CONTRATOS = 'contratos_laborales';
 export const COL_TAREAS = 'tareas_laborales';
 export const COL_OFERTAS = 'ofertas_empleo';
+/** Espejo público y sanitizado de un contrato terminado (ver historialLaboralService.ts). */
+export const COL_HISTORIAL_PUB = 'historial_laboral_publico';
+
+/**
+ * Escribe (best-effort) la entrada PÚBLICA del historial cuando un contrato
+ * termina. Relee el contrato para tomar los datos reales (incluidas las fechas
+ * de servidor) y publica una versión sin el motivo del despido — ese queda solo
+ * en `contratos_laborales`, que solo leen las dos partes.
+ * Doc id = id del contrato (1:1) → idempotente; si otra parte ya lo creó, el
+ * `setDoc` fallará por permiso (update solo admin) y se ignora.
+ */
+async function escribirHistorialPublico(contratoId: string): Promise<void> {
+  try {
+    const snap = await getDoc(doc(db, COL_CONTRATOS, contratoId));
+    if (!snap.exists()) return;
+    const c = snap.data() as ContratoLaboral;
+    if (c.estado !== 'renuncia' && c.estado !== 'despido') return;
+    await setDoc(doc(db, COL_HISTORIAL_PUB, contratoId), {
+      contratoId,
+      empresaId: c.empresaId,
+      empresaNombre: c.empresaNombre ?? '',
+      estudianteId: c.estudianteId,
+      estudianteNombre: c.estudianteNombre ?? '',
+      vacanteTitulo: c.vacanteTitulo ?? '',
+      fechaInicio: c.fechaInicio ?? null,
+      fechaFin: c.fechaFin ?? serverTimestamp(),
+      estado: c.estado,
+      finPor: c.finPor ?? (c.estado === 'despido' ? 'empresa' : 'estudiante'),
+      // Intermedio: el motivo de la RENUNCIA sí es público; el del despido NO.
+      motivoPublico: c.estado === 'renuncia' ? (c.motivoFin ?? '') : '',
+      createdAt: serverTimestamp(),
+    });
+  } catch {
+    /* no-op: el historial público es secundario, nunca romper el flujo */
+  }
+}
 
 /** Estado de un contrato laboral. No se reabre: 'renuncia'/'despido' son finales. */
 export type EstadoContrato = 'activo' | 'renuncia' | 'despido';
@@ -530,6 +567,7 @@ export async function despedirEmpleado(params: {
     ultimoAvisoEmpleado: { tipo: 'despido', texto: motivo.trim(), fecha },
     updatedAt: serverTimestamp(),
   });
+  await escribirHistorialPublico(contratoId);
   await enviarNotificacion(
     estudianteId,
     'Se terminó tu contrato',
@@ -597,6 +635,7 @@ export async function renunciarPuesto(params: {
     ultimoAvisoEmpresa: { tipo: 'renuncia', texto: motivo.trim(), fecha },
     updatedAt: serverTimestamp(),
   });
+  await escribirHistorialPublico(contratoId);
   await enviarNotificacion(
     empresaId,
     'Un empleado renunció',

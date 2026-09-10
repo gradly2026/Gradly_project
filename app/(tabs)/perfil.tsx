@@ -54,6 +54,7 @@ import CertificadoGradly from '../../src/components/CertificadoGradly';
 // XP, calificación y pasantías completadas) — parte del sistema de
 // gamificación del proyecto.
 import ResenasFeedback from '../../src/components/ResenasFeedback';
+import HistorialPuestos from '../../src/components/HistorialPuestos';
 // Muestra las reseñas/calificaciones que el estudiante recibió de las
 // empresas donde trabajó.
 import SalirSesionModal from '../../src/components/SalirSesionModal';
@@ -622,6 +623,14 @@ export default function PerfilTab() {
                 theme={isDark ? 'dark' : 'light'}
               />
             ),
+          },
+          {
+            id: 'historialPuestos',
+            title: 'Historial de puestos',
+            subtitle: 'Empleos anteriores y cómo terminaron',
+            icon: 'briefcase-outline' as const,
+            tone: 'purple' as const,
+            render: () => <HistorialPuestos rol="estudiante" id={user?.uid ?? ''} propio />,
           },
           /* ── "Mi disponibilidad" OCULTA a pedido del usuario (2026-09-02).
              El estudiante ya no fija sus horarios aquí; el horario de la
