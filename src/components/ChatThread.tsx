@@ -1027,8 +1027,15 @@ export default function ChatThread({
         replyMessage: null,
         forwarded: false,
       });
+      // Si el mensaje eliminado era el ÚLTIMO real de la conversación, el
+      // preview de la bandeja (chats.lastMessage) también pasa a "Mensaje
+      // eliminado" (no se toca `updatedAt`: borrar no reordena el inbox).
+      const ultimoReal = messages.find((m) => !m.system && m.type !== "system");
+      if (ultimoReal && String(ultimoReal._id) === String(msg._id)) {
+        void updateDoc(doc(db, "chats", chatId), { lastMessage: "Mensaje eliminado" });
+      }
     },
-    [chatId],
+    [chatId, messages],
   );
 
   // Reenvía el mensaje (texto, imagen o audio) a otro chat activo.
@@ -1358,7 +1365,10 @@ export default function ChatThread({
                   {msg.replyMessage.user?.name || "Mensaje"}
                 </Text>
                 <Text style={styles.replyQuoteText} numberOfLines={1}>
-                  {msg.replyMessage.text}
+                  {/* Si el mensaje citado ya se eliminó, la cita también lo dice. */}
+                  {messages.find((m) => String(m._id) === String(msg.replyMessage?._id))?.isDeleted
+                    ? "Mensaje eliminado"
+                    : msg.replyMessage.text}
                 </Text>
               </View>
             </View>
@@ -1388,7 +1398,7 @@ export default function ChatThread({
         </View>
       );
     },
-    [isGroup, peerUid, lastReadMap, group?.participantsInfo, C, styles],
+    [isGroup, peerUid, lastReadMap, group?.participantsInfo, C, styles, messages],
   );
 
   // ── Barra de entrada con aspecto flotante (neumórfico sutil) ──
