@@ -988,11 +988,14 @@ export default function ChatThread({
   // ── Acciones del menú long-press ──
   const startReply = useCallback((msg: ChatMessage) => {
     setActionMsg(null);
-    setReplyTo({
-      _id: msg._id,
-      text: msg.isDeleted ? "Mensaje eliminado" : msg.text,
-      user: msg.user,
-    });
+    const cita = msg.isDeleted
+      ? "Mensaje eliminado"
+      : msg.type === "image"
+        ? "📷 Foto"
+        : msg.type === "audio"
+          ? "🎤 Audio"
+          : msg.text;
+    setReplyTo({ _id: msg._id, text: cita, user: msg.user });
   }, []);
 
   const startEdit = useCallback((msg: ChatMessage) => {
@@ -1012,31 +1015,45 @@ export default function ChatThread({
     (msg: ChatMessage) => {
       setActionMsg(null);
       if (!chatId) return;
-      // Borrado lógico: nunca se elimina el documento.
+      // Borrado lógico: nunca se elimina el documento. Se limpian también los
+      // adjuntos (imagen/audio) para que la burbuja muestre SOLO "Mensaje
+      // eliminado", sin la foto ni el reproductor.
       void updateDoc(doc(db, "chats", chatId, "messages", String(msg._id)), {
         text: "Mensaje eliminado",
         isDeleted: true,
+        image: null,
+        audio: null,
+        audioDuration: null,
       });
     },
     [chatId],
   );
 
-  // Reenvía el texto del mensaje a otro chat activo.
+  // Reenvía el mensaje (texto, imagen o audio) a otro chat activo.
   const reenviarA = useCallback(
     (destino: ChatListItem) => {
       const msg = forwardMsg;
       setForwardMsg(null);
       if (!msg) return;
+      const esImg = msg.type === "image" && !!msg.image;
+      const esAud = msg.type === "audio" && !!msg.audio;
       const ref = doc(collection(db, "chats", destino.id, "messages"));
-      void setDoc(ref, {
+      const payload: Record<string, unknown> = {
         _id: ref.id,
-        text: msg.text,
-        type: "text",
+        text: esImg || esAud ? "" : msg.text,
+        type: esImg ? "image" : esAud ? "audio" : "text",
         forwarded: true, // → muestra la etiqueta "Reenviado" en el destino.
         createdAt: serverTimestamp(),
         user: { _id: giftedUser._id, name: giftedUser.name },
-      });
-      void touchChatOnMessage(destino.id, msg.text, giftedUser._id, destino.users);
+      };
+      if (esImg) payload.image = msg.image;
+      if (esAud) {
+        payload.audio = msg.audio;
+        payload.audioDuration = Math.round(Number(msg.audioDuration ?? 0)) || 0;
+      }
+      void setDoc(ref, payload);
+      const resumen = esImg ? "📷 Foto" : esAud ? "🎤 Audio" : msg.text;
+      void touchChatOnMessage(destino.id, resumen, giftedUser._id, destino.users);
     },
     [forwardMsg, giftedUser._id, giftedUser.name],
   );
@@ -1246,13 +1263,14 @@ export default function ChatThread({
       const nombreRemitente =
         group?.participantsInfo?.[sid]?.nombre ?? msg?.user?.name ?? "";
       const mostrarNombre = !esMio && isGroup && !!msg && !esSistema && !!nombreRemitente;
-      // ¿Se muestra la burbuja de acciones al lado del mensaje? Solo en los
-      // mensajes de texto que YO envié, que no son de sistema y que no están
-      // ya eliminados. Es solo un disparador visible del menú que ya existía
-      // en "mantener presionado" (setActionMsg): no cambia ninguna lógica de
-      // editar/eliminar/etc.
+      // ¿Se muestra la burbuja de acciones "⋯" al lado del mensaje? En los
+      // mensajes que YO envié (texto, imagen o audio), que no son de sistema y
+      // que no están ya eliminados. Es solo un disparador visible del menú que
+      // ya existía en "mantener presionado" (setActionMsg).
       const esTexto = !msg?.type || msg.type === "text";
-      const mostrarAcciones = esMio && !!msg && !esSistema && esTexto && !msg?.isDeleted;
+      const esMedia = msg?.type === "image" || msg?.type === "audio";
+      const mostrarAcciones =
+        esMio && !!msg && !esSistema && (esTexto || esMedia) && !msg?.isDeleted;
       const bubble = (
         <Bubble
           {...props}
@@ -1456,9 +1474,12 @@ export default function ChatThread({
     [inputBloqueado, styles, elegirImagen, C],
   );
 
-  // ── Burbuja de imagen: miniatura que abre el visor a pantalla completa. ──
+  // ── Burbuja de imagen: miniatura que abre el visor a pantalla completa.
+  //    Si el mensaje ya se eliminó, no se dibuja nada aquí (solo queda el
+  //    texto "Mensaje eliminado" de renderMessageText). ──
   const renderMessageImage = useCallback(
     (props: { currentMessage?: ChatMessage }) => {
+      if (props.currentMessage?.isDeleted) return null;
       const uri = props.currentMessage?.image;
       if (!uri) return null;
       return (
@@ -1470,9 +1491,11 @@ export default function ChatThread({
     [styles],
   );
 
-  // ── Burbuja de audio: reproductor compacto (play/pausa + barra + tiempo). ──
+  // ── Burbuja de audio: reproductor compacto (play/pausa + barra + tiempo).
+  //    Igual que la imagen: no se dibuja si el mensaje fue eliminado. ──
   const renderMessageAudio = useCallback(
     (props: { currentMessage?: ChatMessage; position?: "left" | "right" }) => {
+      if (props.currentMessage?.isDeleted) return null;
       const url = props.currentMessage?.audio;
       if (!url) return null;
       return (
@@ -2176,6 +2199,9 @@ export default function ChatThread({
   }, [editing, replyTo, cancelarComposer, C, styles]);
 
   const esPropio = actionMsg?.user?._id === giftedUser._id;
+  // Imagen/audio: comparten el menú de acciones con el texto, pero sin "Copiar"
+  // ni "Editar" (no hay texto que copiar ni editar).
+  const actionEsMedia = actionMsg?.type === "image" || actionMsg?.type === "audio";
   // El admin del grupo puede borrar mensajes ajenos (moderación en vivo).
   const puedeEliminar = (esPropio || isAdmin) && !actionMsg?.isDeleted;
   const labelEliminar = !esPropio && isAdmin ? "Eliminar para todos" : "Eliminar mensaje";
@@ -2465,11 +2491,13 @@ export default function ChatThread({
             onPress={() => {}}
             style={styles.actionMenuSheet}
           >
-            <MenuOption
-              icon="copy-outline"
-              label="Copiar"
-              onPress={() => actionMsg && copiarMensaje(actionMsg)}
-            />
+            {!actionEsMedia ? (
+              <MenuOption
+                icon="copy-outline"
+                label="Copiar"
+                onPress={() => actionMsg && copiarMensaje(actionMsg)}
+              />
+            ) : null}
             <MenuOption
               icon="arrow-undo-outline"
               label="Responder"
@@ -2508,7 +2536,7 @@ export default function ChatThread({
                 }}
               />
             ) : null}
-            {esPropio && !actionMsg?.isDeleted ? (
+            {esPropio && !actionMsg?.isDeleted && !actionEsMedia ? (
               <MenuOption
                 icon="create-outline"
                 label="Editar"

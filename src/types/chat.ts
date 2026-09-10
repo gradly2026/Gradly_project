@@ -59,7 +59,13 @@ export const acuerdoToSchedule = (a: AcuerdoData): ScheduleData => ({
 });
 
 /** Tipos de mensaje que viajan por el chat. */
-export type ChatMessageType = "text" | "proposal" | "system" | "group_offer";
+export type ChatMessageType =
+  | "text"
+  | "image"
+  | "audio"
+  | "proposal"
+  | "system"
+  | "group_offer";
 
 /**
  * Tarjeta interactiva con la que la Universidad comparte un grupo de
