@@ -587,22 +587,28 @@ export default function PerfilTab() {
           //     genéricos, que PerfilMasterDetail sabe dibujar y editar
           //     por sí solo, sin necesitar JSX personalizado (usado en la
           //     sección 'info').
-          {
-            id: 'cert',
-            title: t('perfil_stat_nivel'),
-            subtitle: `${horasAprobadas}h · ${Math.min(pct, 100)}%`,
-            icon: 'ribbon-outline',
-            tone: 'orange',
-            render: () => (
-              <CertificadoGradly
-                xp={Number((perfil as any)?.puntos_experiencia ?? 0)}
-                calificacion={Number(perfil?.calificacion_promedio ?? 0)}
-                nombre={perfil?.nombre_completo}
-                theme={isDark ? 'dark' : 'light'}
-                pasantiaCulminada={pasantiaCulminada}
-              />
-            ),
-          },
+          /* ── "Nivel" (id: 'cert') OCULTA a pedido del usuario (2026-09-10).
+             Para restaurarla, cambia `false ?` por `true ?` abajo. El
+             componente CertificadoGradly y `horasAprobadas`/`pct` se siguen
+             usando en la rama, así que nada queda huérfano. */
+          ...(false
+            ? [{
+                id: 'cert',
+                title: t('perfil_stat_nivel'),
+                subtitle: `${horasAprobadas}h · ${Math.min(pct, 100)}%`,
+                icon: 'ribbon-outline' as const,
+                tone: 'orange' as const,
+                render: () => (
+                  <CertificadoGradly
+                    xp={Number((perfil as any)?.puntos_experiencia ?? 0)}
+                    calificacion={Number(perfil?.calificacion_promedio ?? 0)}
+                    nombre={perfil?.nombre_completo}
+                    theme={isDark ? 'dark' : 'light'}
+                    pasantiaCulminada={pasantiaCulminada}
+                  />
+                ),
+              }]
+            : []),
           {
             id: 'resenas',
             title: t('resenas_titulo'),
