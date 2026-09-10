@@ -83,6 +83,40 @@ export async function getHistorialPropio(
 }
 
 /**
+ * Motivos REALES (`motivoFin`) de los contratos terminados entre una empresa y
+ * un estudiante CONCRETOS. Solo funciona si `request.auth.uid` es una de las
+ * dos partes (las reglas de `contratos_laborales` lo exigen). Sirve para que,
+ * en el perfil público del otro, la parte involucrada SÍ vea el motivo del
+ * despido de SU propio contrato. Devuelve `{ [contratoId]: motivoFin }`.
+ */
+export async function getMotivosDelPar(
+  empresaId: string,
+  estudianteId: string,
+): Promise<Record<string, string>> {
+  if (!empresaId || !estudianteId) return {};
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, COL_CONTRATOS),
+        where('empresaId', '==', empresaId),
+        where('estudianteId', '==', estudianteId),
+      ),
+    );
+    const out: Record<string, string> = {};
+    snap.docs.forEach((d) => {
+      const c = d.data() as any;
+      if ((c.estado === 'renuncia' || c.estado === 'despido') && c.motivoFin) {
+        out[d.id] = String(c.motivoFin);
+      }
+    });
+    return out;
+  } catch (e) {
+    console.warn('getMotivosDelPar:', e);
+    return {};
+  }
+}
+
+/**
  * Historial PÚBLICO (lee `historial_laboral_publico`). Lo que ve un tercero en
  * el perfil de un estudiante o de una empresa. Sin motivos de despido.
  */

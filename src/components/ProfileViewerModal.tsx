@@ -43,6 +43,7 @@ import ReportarUsuarioModal from './ReportarUsuarioModal';
 import UbicacionCardSV from './UbicacionCardSV';
 import UbicacionPrecisaModal from './UbicacionPrecisaModal';
 import TopEstudiantesCard from './TopEstudiantesCard';
+import HistorialPuestos from './HistorialPuestos';
 import CalendarioEventos from './CalendarioEventos';
 import type { TopEstudianteEntry } from '../services/topEstudiantesService';
 import { progresoPorMeta, type ProgresoMeta } from '../utils/horasPasantia';
@@ -818,6 +819,20 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId, 
                   )}
                 </View>
 
+                {/* Historial de puestos de trabajo. Versión pública para un
+                    tercero; si quien mira es la empresa involucrada en un
+                    despido, se le revela el motivo de ESE contrato. */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Historial de puestos</Text>
+                  <HistorialPuestos
+                    rol="estudiante"
+                    id={profileId}
+                    propio={esMiPerfil}
+                    viewerId={user?.uid}
+                    viewerRol={rol === 'empresa' ? 'empresa' : rol === 'estudiante' ? 'estudiante' : undefined}
+                  />
+                </View>
+
                 {/* Reportar perfil */}
                 {!esMiPerfil && (
                   <View style={styles.section}>
@@ -915,6 +930,21 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId, 
                   </View>
                 )}
               </>
+            )}
+
+            {/* Historial de contrataciones de la empresa (público). Simétrico
+                al del estudiante: ayuda a ver la "trascendencia" del empleador. */}
+            {tipo === 'empresa' && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Historial de contrataciones</Text>
+                <HistorialPuestos
+                  rol="empresa"
+                  id={profileId}
+                  propio={esMiPerfil}
+                  viewerId={user?.uid}
+                  viewerRol={rol === 'empresa' ? 'empresa' : rol === 'estudiante' ? 'estudiante' : undefined}
+                />
+              </View>
             )}
 
             {/* ADMIN · alianzas de esta empresa/universidad (con quién trabajó). */}

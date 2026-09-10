@@ -20,6 +20,7 @@ import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import {
   getHistorialPropio,
   getHistorialPublico,
+  getMotivosDelPar,
   type EntradaHistorial,
   type RolHistorial,
 } from '../services/historialLaboralService';
@@ -29,12 +30,15 @@ interface Props {
   id: string;
   /** true = es MI perfil → historial completo con motivos. */
   propio: boolean;
+  /** Quién está mirando (para revelarle el motivo del despido de SU contrato). */
+  viewerId?: string;
+  viewerRol?: RolHistorial;
 }
 
 const fmtFecha = (d: Date | null) =>
   d ? d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : '—';
 
-export default function HistorialPuestos({ rol, id, propio }: Props) {
+export default function HistorialPuestos({ rol, id, propio, viewerId, viewerRol }: Props) {
   const { colors } = useTheme();
   const s = makeStyles(colors);
   const [items, setItems] = useState<EntradaHistorial[] | null>(null);
@@ -42,11 +46,35 @@ export default function HistorialPuestos({ rol, id, propio }: Props) {
   useEffect(() => {
     let cancel = false;
     setItems(null);
-    (propio ? getHistorialPropio(rol, id) : getHistorialPublico(rol, id))
-      .then((r) => { if (!cancel) setItems(r); })
-      .catch(() => { if (!cancel) setItems([]); });
+    (async () => {
+      try {
+        if (propio) {
+          const r = await getHistorialPropio(rol, id);
+          if (!cancel) setItems(r);
+          return;
+        }
+        let r = await getHistorialPublico(rol, id);
+        // Si quien mira es una de las partes de alguna entrada, se le revela el
+        // motivo real (del despido) de ESE contrato.
+        if (viewerId && viewerRol) {
+          const empresaId = rol === 'empresa' ? id : viewerRol === 'empresa' ? viewerId : '';
+          const estudianteId = rol === 'estudiante' ? id : viewerRol === 'estudiante' ? viewerId : '';
+          if (empresaId && estudianteId) {
+            const motivos = await getMotivosDelPar(empresaId, estudianteId);
+            r = r.map((e) =>
+              motivos[e.contratoId]
+                ? { ...e, motivo: motivos[e.contratoId], motivoOculto: false }
+                : e,
+            );
+          }
+        }
+        if (!cancel) setItems(r);
+      } catch {
+        if (!cancel) setItems([]);
+      }
+    })();
     return () => { cancel = true; };
-  }, [rol, id, propio]);
+  }, [rol, id, propio, viewerId, viewerRol]);
 
   if (items === null) {
     return (
