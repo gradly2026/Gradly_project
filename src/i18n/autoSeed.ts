@@ -1584,6 +1584,10 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   "Pagos o suscripción": "Payments or subscription",
   "Un error o fallo técnico": "A bug or technical issue",
   "Una sugerencia": "A suggestion",
+  "Responder": "Reply",
+  "Tu respuesta": "Your reply",
+  "Enviaste tu mensaje. Podrás escribir de nuevo cuando el equipo te responda.":
+    "You've sent your message. You'll be able to write again once the team replies.",
 
   // Imágenes en el chat (ChatImagePreviewModal / ChatThread)
   "Enviar imagen": "Send image",

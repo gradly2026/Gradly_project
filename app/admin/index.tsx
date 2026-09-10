@@ -5367,12 +5367,15 @@ export default function AdminPreview() {
   // Resueltos. Tocar un ticket abre el hilo (SoporteTicketModal en modoAdmin:
   // responder, adjuntar imágenes, "Marcar como resuelto").
   const renderSoporte = () => {
-    const FILTROS: { key: SoporteFiltro; label: string }[] = [
+    // Filtros por ROL (fila principal) y por ESTADO (fila secundaria, debajo).
+    const FILTROS_ROL: { key: SoporteFiltro; label: string }[] = [
       { key: "todos", label: "Todos" },
-      { key: "sin_resolver", label: "Sin resolver" },
       { key: "estudiante", label: "Estudiantes" },
       { key: "universidad", label: "Universidades" },
       { key: "empresa", label: "Empresas" },
+    ];
+    const FILTROS_ESTADO: { key: SoporteFiltro; label: string }[] = [
+      { key: "sin_resolver", label: "Sin resolver" },
       { key: "resueltos", label: "Resueltos" },
     ];
     const necesitaAtencion = (t: TicketSoporte) =>
@@ -5444,7 +5447,18 @@ export default function AdminPreview() {
             />
           </View>
           <View style={[s.chipRow, { marginTop: 14 }]}>
-            {FILTROS.map((f) => (
+            {FILTROS_ROL.map((f) => (
+              <Chip
+                key={f.key}
+                label={f.label}
+                active={soporteFiltro === f.key}
+                onPress={() => setSoporteFiltro(f.key)}
+              />
+            ))}
+          </View>
+          <Text style={[s.textMuted, { fontSize: 11, letterSpacing: 0.8, marginTop: 14, marginBottom: 8 }]}>ESTADO</Text>
+          <View style={s.chipRow}>
+            {FILTROS_ESTADO.map((f) => (
               <Chip
                 key={f.key}
                 label={f.label}

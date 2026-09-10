@@ -229,6 +229,13 @@ export default function SoporteTicketModal({
 
   const cerrado = ticket?.estado === 'resuelto';
 
+  // Lado usuario: tras enviar su mensaje NO puede escribir de nuevo hasta que
+  // el equipo responda (evita una ráfaga de mensajes sin respuesta). El admin
+  // nunca queda a la espera.
+  const esperandoRespuesta =
+    modoHilo && !modoAdmin && !cerrado && ticket?.ultimoAutor === 'usuario';
+  const puedeResponder = modoHilo && !cerrado && !esperandoRespuesta;
+
   const tituloHeader = modoHilo
     ? labelCategoriaSoporte(ticket?.categoria)
     : 'Enviar un mensaje';
@@ -332,6 +339,28 @@ export default function SoporteTicketModal({
                         El equipo marcó esta conversación como resuelta.
                       </Text>
                     </View>
+                  ) : esperandoRespuesta ? (
+                    <View style={s.cerradoBox}>
+                      <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+                      <Text style={[s.cerradoTxt, { color: colors.textMuted }]}>
+                        Enviaste tu mensaje. Podrás escribir de nuevo cuando el equipo te responda.
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {puedeResponder ? (
+                    <View>
+                      <Text style={s.label}>{modoAdmin ? 'Tu respuesta' : 'Responder'}</Text>
+                      <TextInput
+                        style={s.input}
+                        value={texto}
+                        onChangeText={setTexto}
+                        placeholder={modoAdmin ? 'Escribe tu respuesta…' : 'Escribe tu mensaje…'}
+                        placeholderTextColor={colors.textMuted}
+                        multiline
+                        editable={!enviando}
+                      />
+                    </View>
                   ) : null}
                 </>
               )
@@ -395,8 +424,8 @@ export default function SoporteTicketModal({
               </>
             )}
 
-            {/* Adjuntar imágenes — común a crear y responder (si no está cerrado). */}
-            {(!modoHilo || !cerrado) && (
+            {/* Adjuntar imágenes — al crear, o al responder si se puede responder. */}
+            {(!modoHilo || puedeResponder) && (
               <View>
                 <Text style={s.label}>
                   {modoHilo ? 'Adjuntar imagen (opcional)' : 'Adjuntar imágenes (opcional)'}
@@ -432,8 +461,8 @@ export default function SoporteTicketModal({
 
             {/* Acción principal. */}
             {modoHilo ? (
-              !cerrado ? (
-                <>
+              <>
+                {puedeResponder ? (
                   <TouchableOpacity
                     style={[s.btn, { backgroundColor: colors.primary, opacity: enviando ? 0.6 : 1 }]}
                     onPress={enviarRespuesta}
@@ -446,21 +475,21 @@ export default function SoporteTicketModal({
                       <Text style={s.btnTxt}>Enviar respuesta</Text>
                     )}
                   </TouchableOpacity>
-                  {modoAdmin && ticket ? (
-                    <TouchableOpacity
-                      style={[s.btnOutline, { borderColor: colors.success, opacity: enviando ? 0.6 : 1 }]}
-                      onPress={marcarResuelto}
-                      activeOpacity={0.9}
-                      disabled={enviando}
-                    >
-                      <Ionicons name="checkmark-done-outline" size={16} color={colors.success} />
-                      <Text style={[s.btnOutlineTxt, { color: colors.success }]}>
-                        Marcar como resuelto
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </>
-              ) : null
+                ) : null}
+                {modoAdmin && ticket && !cerrado ? (
+                  <TouchableOpacity
+                    style={[s.btnOutline, { borderColor: colors.success, opacity: enviando ? 0.6 : 1 }]}
+                    onPress={marcarResuelto}
+                    activeOpacity={0.9}
+                    disabled={enviando}
+                  >
+                    <Ionicons name="checkmark-done-outline" size={16} color={colors.success} />
+                    <Text style={[s.btnOutlineTxt, { color: colors.success }]}>
+                      Marcar como resuelto
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </>
             ) : (
               <TouchableOpacity
                 style={[
