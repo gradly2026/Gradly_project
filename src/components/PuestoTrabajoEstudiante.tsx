@@ -20,6 +20,7 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
   View,
@@ -76,6 +77,7 @@ export default function PuestoTrabajoEstudiante({
   const [contrato, setContrato] = useState<ContratoLaboral | null>(null);
   const [cargando, setCargando] = useState(true);
   const [renunciaOpen, setRenunciaOpen] = useState(false);
+  const [llamadosOpen, setLlamadosOpen] = useState(false);
 
   useEffect(() => {
     if (!uid) return;
@@ -181,6 +183,29 @@ export default function PuestoTrabajoEstudiante({
         </View>
       </GlassCard>
 
+      {/* ── Llamados de atención: cuadro visible + modal con el detalle ──
+          Va arriba (después de "Mi institución") para que el estudiante lo vea
+          en cuanto entra y "tome consciencia". El detalle (motivo, fecha de
+          cada uno) se abre en LlamadosModal al tocar. */}
+      {hayLlamados && (
+        <TouchableOpacity
+          style={s.avisoCard}
+          activeOpacity={0.85}
+          onPress={() => setLlamadosOpen(true)}
+        >
+          <View style={s.avisoIcon}>
+            <Ionicons name="alert-circle" size={18} color={colors.error} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.avisoTitulo}>Llamados de atención de tu empresa</Text>
+            <Text style={s.avisoSub} noTranslate>
+              {`${nReportes + advertenciasEmpresa.length} registro(s) · toca para ver el motivo`}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+      )}
+
       {/* ── Mi calendario ── */}
       <Text style={s.sectionTitle}>Mi calendario</Text>
       {contrato.horario && fechaInicioISO ? (
@@ -203,62 +228,6 @@ export default function PuestoTrabajoEstudiante({
         </View>
       )}
 
-      {/* ── Llamados de atención ── (solo si la empresa levantó alguno) */}
-      {hayLlamados && (
-        <>
-          <Text style={s.sectionTitle}>Llamados de atención</Text>
-          <View style={s.llamadosNota}>
-            <Ionicons name="alert-circle" size={15} color={colors.warning} />
-            <Text style={s.llamadosNotaTxt}>
-              Reportes y advertencias que tu empresa registró sobre tu desempeño. Acumular varios puede terminar tu contrato.
-            </Text>
-          </View>
-
-          <View style={s.llamadosChips}>
-            {nReportes > 0 && (
-              <View style={[s.llamadoChip, { borderColor: colors.warning + '55', backgroundColor: colors.warning + '14' }]}>
-                <Ionicons name="flag" size={12} color={colors.warning} />
-                <Text style={[s.llamadoChipTxt, { color: colors.warning }]} noTranslate>{nReportes}</Text>
-                <Text style={[s.llamadoChipTxt, { color: colors.warning }]}>{nReportes === 1 ? 'reporte' : 'reportes'}</Text>
-              </View>
-            )}
-            {advertenciasEmpresa.length > 0 && (
-              <View style={[s.llamadoChip, { borderColor: colors.error + '55', backgroundColor: colors.error + '12' }]}>
-                <Ionicons name="alert-circle" size={12} color={colors.error} />
-                <Text style={[s.llamadoChipTxt, { color: colors.error }]} noTranslate>{advertenciasEmpresa.length}</Text>
-                <Text style={[s.llamadoChipTxt, { color: colors.error }]}>{advertenciasEmpresa.length === 1 ? 'advertencia' : 'advertencias'}</Text>
-              </View>
-            )}
-          </View>
-
-          {llamados.length > 0 ? (
-            <View style={{ gap: 8, marginBottom: 18 }}>
-              {llamados.map((it, i) => (
-                <View key={`${it.fecha}-${i}`} style={s.llamadoCard}>
-                  <Ionicons
-                    name={it.tipo === 'reporte' ? 'flag-outline' : 'alert-circle-outline'}
-                    size={16}
-                    color={it.tipo === 'reporte' ? colors.warning : colors.error}
-                    style={{ marginTop: 1 }}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.llamadoTipo}>{it.tipo === 'reporte' ? 'Reporte' : 'Advertencia'}</Text>
-                    <Text style={s.llamadoTexto} noTranslate>{it.texto}</Text>
-                    {!!fechaLegible(it.fecha) && <Text style={s.llamadoFecha} noTranslate>{fechaLegible(it.fecha)}</Text>}
-                  </View>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <View style={[s.llamadoCard, { marginBottom: 18 }]}>
-              <Ionicons name="flag-outline" size={16} color={colors.warning} style={{ marginTop: 1 }} />
-              <Text style={[s.llamadoTexto, { flex: 1 }]}>
-                Tu empresa registró {nReportes === 1 ? 'un reporte' : `${nReportes} reportes`} sobre tu desempeño. Abre tus notificaciones para ver el detalle.
-              </Text>
-            </View>
-          )}
-        </>
-      )}
 
       {/* ── Renuncia ── */}
       <TouchableOpacity style={s.renunciaBtn} onPress={() => setRenunciaOpen(true)} activeOpacity={0.85}>
@@ -274,7 +243,93 @@ export default function PuestoTrabajoEstudiante({
         s={s}
         onClose={() => setRenunciaOpen(false)}
       />
+
+      <LlamadosModal
+        visible={llamadosOpen}
+        llamados={llamados}
+        nReportes={nReportes}
+        nAdvertencias={advertenciasEmpresa.length}
+        colors={colors}
+        s={s}
+        onClose={() => setLlamadosOpen(false)}
+      />
     </>
+  );
+}
+
+/** Detalle de los llamados de atención (reportes + advertencias) de la empresa. */
+function LlamadosModal({
+  visible, llamados, nReportes, nAdvertencias, colors, s, onClose,
+}: {
+  visible: boolean;
+  llamados: { tipo: 'reporte' | 'advertencia'; texto: string; fecha: string }[];
+  nReportes: number;
+  nAdvertencias: number;
+  colors: GradlyColors;
+  s: ReturnType<typeof makeStyles>;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <View style={s.modalOverlay}>
+        <View style={s.modalCard}>
+          <Text style={s.modalTitulo}>Llamados de atención</Text>
+          <View style={s.llamadosNota}>
+            <Ionicons name="alert-circle" size={15} color={colors.warning} />
+            <Text style={s.llamadosNotaTxt}>
+              Reportes y advertencias que tu empresa registró sobre tu desempeño. Acumular varios puede terminar tu contrato.
+            </Text>
+          </View>
+
+          <View style={s.llamadosChips}>
+            {nReportes > 0 && (
+              <View style={[s.llamadoChip, { borderColor: colors.warning + '55', backgroundColor: colors.warning + '14' }]}>
+                <Ionicons name="flag" size={12} color={colors.warning} />
+                <Text style={[s.llamadoChipTxt, { color: colors.warning }]} noTranslate>{nReportes}</Text>
+                <Text style={[s.llamadoChipTxt, { color: colors.warning }]}>{nReportes === 1 ? 'reporte' : 'reportes'}</Text>
+              </View>
+            )}
+            {nAdvertencias > 0 && (
+              <View style={[s.llamadoChip, { borderColor: colors.error + '55', backgroundColor: colors.error + '12' }]}>
+                <Ionicons name="alert-circle" size={12} color={colors.error} />
+                <Text style={[s.llamadoChipTxt, { color: colors.error }]} noTranslate>{nAdvertencias}</Text>
+                <Text style={[s.llamadoChipTxt, { color: colors.error }]}>{nAdvertencias === 1 ? 'advertencia' : 'advertencias'}</Text>
+              </View>
+            )}
+          </View>
+
+          {llamados.length > 0 ? (
+            <View style={{ gap: 8, marginTop: 4, maxHeight: 320 }}>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {llamados.map((it, i) => (
+                  <View key={`${it.fecha}-${i}`} style={[s.llamadoCard, { marginBottom: 8 }]}>
+                    <Ionicons
+                      name={it.tipo === 'reporte' ? 'flag-outline' : 'alert-circle-outline'}
+                      size={16}
+                      color={it.tipo === 'reporte' ? colors.warning : colors.error}
+                      style={{ marginTop: 1 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.llamadoTipo}>{it.tipo === 'reporte' ? 'Reporte' : 'Advertencia'}</Text>
+                      <Text style={s.llamadoTexto} noTranslate>{it.texto}</Text>
+                      {!!fechaLegible(it.fecha) && <Text style={s.llamadoFecha} noTranslate>{fechaLegible(it.fecha)}</Text>}
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          ) : (
+            <Text style={[s.modalTexto, { marginTop: 4 }]}>
+              Tu empresa registró {nReportes === 1 ? 'un reporte' : `${nReportes} reportes`} sobre tu desempeño. Abre tus notificaciones para ver el detalle.
+            </Text>
+          )}
+
+          <TouchableOpacity style={s.modalCancelar} onPress={onClose} activeOpacity={0.85}>
+            <Text style={s.modalCancelarTxt}>Cerrar</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -451,6 +506,18 @@ const makeStyles = (c: GradlyColors) =>
       borderRadius: 14, paddingVertical: 13, marginBottom: 24,
     },
     renunciaBtnTxt: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: c.error },
+
+    avisoCard: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      borderWidth: 1, borderColor: c.error + '55', backgroundColor: c.error + '12',
+      borderRadius: 14, padding: 14, marginBottom: 18,
+    },
+    avisoIcon: {
+      width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: c.error + '22',
+    },
+    avisoTitulo: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: c.textPrimary },
+    avisoSub: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: c.textMuted, marginTop: 2 },
 
     modalOverlay: { flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
     modalCard: {

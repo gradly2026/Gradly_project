@@ -201,6 +201,8 @@ export default function SeccionReclutamiento({
   const [filtroSupremo, setFiltroSupremo] = useState<'porVacantes' | 'recontratar'>('porVacantes');
   const [tab, setTab] = useState<'reclutamiento' | 'contratado'>('reclutamiento');
   const [filtroContratado, setFiltroContratado] = useState<'puestos' | 'todos'>('puestos');
+  // "Todos los contratados": mostrar solo los que dejaron un aviso a la empresa.
+  const [soloConAvisos, setSoloConAvisos] = useState(false);
   const [vacanteSelId, setVacanteSelId] = useState<string | null>(null);
   // Drill-in de "Todos los contratados": el contrato (empleado) enfocado.
   const [empleadoSelId, setEmpleadoSelId] = useState<string | null>(null);
@@ -273,12 +275,19 @@ export default function SeccionReclutamiento({
     [contratosPorVacante, vacantesEmpleo],
   );
 
+  // ¿Tiene avisos del empleado sin resolver? (advertencia de renuncia, etc.)
+  const tieneAvisoEmpleado = (c: ContratoLaboral) =>
+    Array.isArray(c.advertenciasEstudiante) && c.advertenciasEstudiante.length > 0;
+
   // "Contratado" → filtro "Todos los contratados": lista plana de empleados.
   const contratadosPlano = useMemo(
     () =>
-      [...contratosActivos].sort((a, b) => (a.estudianteNombre || '').localeCompare(b.estudianteNombre || '')),
-    [contratosActivos],
+      [...contratosActivos]
+        .filter((c) => !soloConAvisos || tieneAvisoEmpleado(c))
+        .sort((a, b) => (a.estudianteNombre || '').localeCompare(b.estudianteNombre || '')),
+    [contratosActivos, soloConAvisos],
   );
+  const nConAvisos = useMemo(() => contratosActivos.filter(tieneAvisoEmpleado).length, [contratosActivos]);
 
   const vacanteSel = vacanteSelId ? vacantes.find((v) => v.id === vacanteSelId) ?? null : null;
   const empleadoSel = empleadoSelId ? contratos.find((c) => c.id === empleadoSelId) ?? null : null;
@@ -492,27 +501,59 @@ export default function SeccionReclutamiento({
           style={[{ flex: 1 }, webScrollStyle(colors)]}
           contentContainerStyle={s.listaPlana}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<Text style={s.vacio}>Todavía no hay contratados.</Text>}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={s.filaPersona}
-              activeOpacity={0.75}
-              onPress={() => setEmpleadoSelId(item.id)}
-            >
-              {item.estudianteFoto ? (
-                <Image source={{ uri: item.estudianteFoto }} style={s.avatar} />
-              ) : (
-                <View style={s.avatar}>
-                  <Ionicons name="person" size={16} color={colors.primaryLight} />
+          ListHeaderComponent={
+            nConAvisos > 0 || soloConAvisos ? (
+              <TouchableOpacity
+                style={[
+                  s.avisosFiltroChip,
+                  { borderColor: soloConAvisos ? colors.warning : colors.border,
+                    backgroundColor: soloConAvisos ? colors.warning + '18' : 'transparent' },
+                ]}
+                onPress={() => setSoloConAvisos((v) => !v)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="alert-circle-outline" size={14} color={soloConAvisos ? colors.warning : colors.textMuted} />
+                <Text style={[s.avisosFiltroTxt, { color: soloConAvisos ? colors.warning : colors.textMuted }]} noTranslate>
+                  {`Con avisos del empleado (${nConAvisos})`}
+                </Text>
+              </TouchableOpacity>
+            ) : null
+          }
+          ListEmptyComponent={
+            <Text style={s.vacio}>
+              {soloConAvisos ? 'Ningún empleado tiene avisos pendientes.' : 'Todavía no hay contratados.'}
+            </Text>
+          }
+          renderItem={({ item }) => {
+            const nAvisos = Array.isArray(item.advertenciasEstudiante) ? item.advertenciasEstudiante.length : 0;
+            return (
+              <TouchableOpacity
+                style={s.filaPersona}
+                activeOpacity={0.75}
+                onPress={() => setEmpleadoSelId(item.id)}
+              >
+                {item.estudianteFoto ? (
+                  <Image source={{ uri: item.estudianteFoto }} style={s.avatar} />
+                ) : (
+                  <View style={s.avatar}>
+                    <Ionicons name="person" size={16} color={colors.primaryLight} />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={s.personaNombre} numberOfLines={1} noTranslate>{item.estudianteNombre}</Text>
+                    {nAvisos > 0 && (
+                      <View style={[s.avisoDot, { backgroundColor: colors.warning }]} />
+                    )}
+                  </View>
+                  <Text style={s.personaMeta} numberOfLines={1} noTranslate>
+                    {nAvisos > 0 ? `${nAvisos} aviso(s) del empleado · ${item.vacanteTitulo}` : item.vacanteTitulo}
+                  </Text>
                 </View>
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={s.personaNombre} numberOfLines={1} noTranslate>{item.estudianteNombre}</Text>
-                <Text style={s.personaMeta} numberOfLines={1} noTranslate>{item.vacanteTitulo}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-          )}
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            );
+          }}
         />
       )}
       </>
@@ -1435,6 +1476,9 @@ function EmpleadoRow({
 }) {
   const reportes = Number(contrato.reportesCount) || 0;
   const advertencias = Array.isArray(contrato.advertenciasEmpresa) ? contrato.advertenciasEmpresa.length : 0;
+  const avisosEmpleado = Array.isArray(contrato.advertenciasEstudiante)
+    ? [...contrato.advertenciasEstudiante].sort((a, b) => (Date.parse(b.fecha) || 0) - (Date.parse(a.fecha) || 0))
+    : [];
   return (
     <View style={s.candCard}>
       <TouchableOpacity style={s.candTop} activeOpacity={0.75} onPress={onVerPerfil}>
@@ -1452,7 +1496,7 @@ function EmpleadoRow({
         </View>
       </TouchableOpacity>
 
-      {(reportes > 0 || advertencias > 0) && (
+      {(reportes > 0 || advertencias > 0 || avisosEmpleado.length > 0) && (
         <View style={s.chipsRow}>
           {reportes > 0 && (
             <View style={[s.chip, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '55' }]}>
@@ -1468,6 +1512,32 @@ function EmpleadoRow({
               <Text style={[s.chipCumpleTxt, { color: colors.error }]}>{advertencias === 1 ? 'advertencia' : 'advertencias'}</Text>
             </View>
           )}
+          {avisosEmpleado.length > 0 && (
+            <View style={[s.chip, { backgroundColor: colors.primaryLight + '1c', borderColor: colors.primaryLight + '55' }]}>
+              <Ionicons name="chatbubble-ellipses" size={11} color={colors.primaryLight} />
+              <Text style={[s.chipCumpleTxt, { color: colors.primaryLight }]} noTranslate>{avisosEmpleado.length}</Text>
+              <Text style={[s.chipCumpleTxt, { color: colors.primaryLight }]}>
+                {avisosEmpleado.length === 1 ? 'aviso del empleado' : 'avisos del empleado'}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {avisosEmpleado.length > 0 && (
+        <View style={s.avisosEmpleadoBox}>
+          <Text style={s.avisosEmpleadoTitulo}>Avisos del empleado</Text>
+          {avisosEmpleado.map((a, i) => (
+            <View key={`${a.fecha}-${i}`} style={s.avisoEmpleadoItem}>
+              <Ionicons name="alert-circle-outline" size={14} color={colors.primaryLight} style={{ marginTop: 1 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.avisoEmpleadoTexto} noTranslate>{a.texto}</Text>
+                <Text style={s.avisoEmpleadoFecha} noTranslate>
+                  {new Date(a.fecha).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}
+                </Text>
+              </View>
+            </View>
+          ))}
         </View>
       )}
 
@@ -2154,6 +2224,22 @@ const makeStyles = (c: GradlyColors) =>
     },
     personaNombre: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: c.textPrimary },
     personaMeta: { fontSize: 11.5, color: c.textMuted, marginTop: 1 },
+    avisoDot: { width: 7, height: 7, borderRadius: 4 },
+    avisosFiltroChip: {
+      flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+      borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6, marginBottom: 4,
+    },
+    avisosFiltroTxt: { fontSize: 11.5, fontFamily: FONTS.interSemiBold },
+    avisosEmpleadoBox: {
+      marginTop: 8, gap: 6, borderTopWidth: 1, borderTopColor: c.border, paddingTop: 8,
+    },
+    avisosEmpleadoTitulo: {
+      fontSize: 10.5, fontFamily: FONTS.interSemiBold, color: c.textMuted,
+      textTransform: 'uppercase', letterSpacing: 0.4,
+    },
+    avisoEmpleadoItem: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
+    avisoEmpleadoTexto: { fontSize: 12.5, fontFamily: FONTS.interRegular, color: c.textPrimary, lineHeight: 17 },
+    avisoEmpleadoFecha: { fontSize: 10.5, fontFamily: FONTS.interRegular, color: c.textMuted, marginTop: 2 },
 
     // Microsección — mismo ancho amplio y margen lateral que `wrap`.
     microWrap: {
