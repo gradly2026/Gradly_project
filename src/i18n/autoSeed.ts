@@ -482,6 +482,14 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "Panel de administración": "Administration panel",
   "Control operativo y moderación": "Operations and moderation",
   "Administrador": "Administrator",
+  // ── Config → Asistente Gradly (visibilidad de la burbuja del chatbot) ──
+  // ("Asistente Gradly" ya está sembrado en NOTIF_MODALES_SEED_EN.)
+  "Controla si la burbuja del asistente de ayuda se ve en los dashboards de estudiantes, empresas y universidades. Empieza oculta hasta que la actives aquí.":
+    "Controls whether the help assistant bubble shows on the student, company and university dashboards. It starts hidden until you turn it on here.",
+  "La burbuja del asistente está visible para los usuarios.": "The assistant bubble is visible to users.",
+  "La burbuja del asistente está oculta.": "The assistant bubble is hidden.",
+  "Mostrar el asistente": "Show the assistant",
+  "Ocultar el asistente": "Hide the assistant",
   // ── Backfill de alianzas/calificaciones (Configuración → Mantenimiento) ──
   "Recalcular alianzas y calificaciones": "Recalculate partnerships and ratings",
   "Recalculando…": "Recalculating…",

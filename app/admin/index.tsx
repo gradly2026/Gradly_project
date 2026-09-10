@@ -1736,6 +1736,47 @@ export default function AdminPreview() {
     });
   };
 
+  // ── Asistente Gradly: visible solo si el admin lo habilita (doc `config/asistente`) ──
+  const [asisActivo, setAsisActivo] = useState(false);
+  const [asisCargado, setAsisCargado] = useState(false);
+  const [asisGuardando, setAsisGuardando] = useState(false);
+  const fetchAsistente = useCallback(async () => {
+    try {
+      const snap = await getDoc(doc(db, "config", "asistente"));
+      setAsisActivo(snap.exists() && (snap.data() as any)?.habilitado === true);
+    } catch {
+      /* fail-safe: queda oculto */
+    } finally {
+      setAsisCargado(true);
+    }
+  }, []);
+  const guardarAsistente = (activar: boolean) => {
+    setConfirmDialog({
+      title: activar ? "Mostrar el asistente" : "Ocultar el asistente",
+      message: activar
+        ? "La burbuja del Asistente Gradly aparecerá en los dashboards de estudiantes, empresas y universidades."
+        : "La burbuja del asistente dejará de verse para todos los usuarios.",
+      confirmLabel: activar ? "Mostrar" : "Ocultar",
+      destructive: !activar,
+      onConfirm: async () => {
+        setAsisGuardando(true);
+        try {
+          await setDoc(
+            doc(db, "config", "asistente"),
+            { habilitado: activar, actualizadoPor: auth.currentUser?.uid ?? null, actualizadoAt: serverTimestamp() },
+            { merge: true },
+          );
+          setAsisActivo(activar);
+          mostrarAviso("exito", activar ? "Asistente visible" : "Asistente oculto", activar ? "Ya aparece la burbuja en los dashboards." : "La burbuja ya no se muestra.");
+        } catch (error) {
+          mostrarAviso("error", "No se pudo guardar", "Vuelve a intentarlo.", translateSync(adminDataErrorMessage(error, "el asistente")));
+        } finally {
+          setAsisGuardando(false);
+        }
+      },
+    });
+  };
+
   // ── Soporte / tickets de ayuda (colección `tickets_soporte`) ──────
   const [soporteTickets, setSoporteTickets] = useState<TicketSoporte[]>([]);
   const [soporteLoading, setSoporteLoading] = useState(false);
@@ -2591,6 +2632,7 @@ export default function AdminPreview() {
     if (page === "soporte" && !soporteAttempted && !soporteLoading) fetchTicketsSoporte();
     if (page === "config" && !comunicadosCargado) { void fetchComunicados(); }
     if (page === "config" && !mantCargado) { void fetchMantenimiento(); }
+    if (page === "config" && !asisCargado) { void fetchAsistente(); }
     if (page === "suscripciones" && !suscripcionesAttempted && !suscripcionesLoading) fetchSuscripciones();
     if (page === "roles" && !permissionsLoaded && !permissionsLoading) {
       fetchPermissionsOverview();
@@ -2606,8 +2648,10 @@ export default function AdminPreview() {
     soporteLoading,
     fetchComunicados,
     fetchMantenimiento,
+    fetchAsistente,
     comunicadosCargado,
     mantCargado,
+    asisCargado,
     fetchPermissionsOverview,
     fetchSuscripciones,
     logsAttempted,
@@ -5713,6 +5757,33 @@ export default function AdminPreview() {
         >
           <Text style={s.btnPrimaryText}>
             {mantGuardando ? "Guardando…" : mantActivo ? "Desactivar mantenimiento" : "Activar mantenimiento"}
+          </Text>
+        </TouchableOpacity>
+      </Card>
+
+      {/* ── Asistente Gradly (burbuja del chatbot de ayuda) ── */}
+      <Card style={{ marginBottom: 14 }}>
+        <Text style={s.cardTitle}>Asistente Gradly</Text>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          Controla si la burbuja del asistente de ayuda se ve en los dashboards de estudiantes,
+          empresas y universidades. Empieza oculta hasta que la actives aquí.
+        </Text>
+        <View style={[s.row, { marginTop: 12 }]}>
+          <View style={[s.avatar, { backgroundColor: (asisActivo ? C.green : C.textMuted) + "22" }]}>
+            <Ionicons name={asisActivo ? "sparkles" : "eye-off-outline"} size={16} color={asisActivo ? C.green : C.textMuted} />
+          </View>
+          <Text style={[s.itemSub, { marginLeft: 10 }]}>
+            {asisActivo ? "La burbuja del asistente está visible para los usuarios." : "La burbuja del asistente está oculta."}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[s.btnPrimary, { marginTop: 14, backgroundColor: asisActivo ? C.red : C.green, opacity: asisCargado && !asisGuardando ? 1 : 0.6 }]}
+          disabled={!asisCargado || asisGuardando}
+          onPress={() => guardarAsistente(!asisActivo)}
+          activeOpacity={0.85}
+        >
+          <Text style={s.btnPrimaryText}>
+            {asisGuardando ? "Guardando…" : asisActivo ? "Ocultar el asistente" : "Mostrar el asistente"}
           </Text>
         </TouchableOpacity>
       </Card>

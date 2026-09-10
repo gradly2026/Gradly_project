@@ -8,6 +8,7 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import { Ionicons } from '@expo/vector-icons';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -21,6 +22,7 @@ import {
   View,
 } from 'react-native';
 import { AutoText as Text } from './AutoText';
+import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
 import { useTranslationContext } from '../context/TranslationContext';
@@ -46,7 +48,19 @@ export default function AsistenteGradly({ bottom = 158 }: Props) {
   const [input, setInput] = useState('');
   const [cargando, setCargando] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // La burbuja solo se ve si el admin la habilitó (doc `config/asistente`).
+  // Arranca oculta; el listener la muestra si `habilitado === true`.
+  const [habilitado, setHabilitado] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'config', 'asistente'),
+      (snap) => setHabilitado(snap.exists() && (snap.data() as any)?.habilitado === true),
+      () => setHabilitado(false),
+    );
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (open) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
@@ -71,8 +85,8 @@ export default function AsistenteGradly({ bottom = 158 }: Props) {
     }
   }, [input, cargando, mensajes, language, rol]);
 
-  // No para admin ni sin sesión.
-  if (!user?.uid || rol === 'admin') return null;
+  // No para admin ni sin sesión, y solo si el admin habilitó la burbuja.
+  if (!user?.uid || rol === 'admin' || !habilitado) return null;
 
   return (
     <>
