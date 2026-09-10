@@ -1016,14 +1016,16 @@ export default function ChatThread({
       setActionMsg(null);
       if (!chatId) return;
       // Borrado lógico: nunca se elimina el documento. Se limpian también los
-      // adjuntos (imagen/audio) para que la burbuja muestre SOLO "Mensaje
-      // eliminado", sin la foto ni el reproductor.
+      // adjuntos (imagen/audio) y las decoraciones (cita de respuesta, etiqueta
+      // "Reenviado") para que la burbuja quede SOLO con "Mensaje eliminado".
       void updateDoc(doc(db, "chats", chatId, "messages", String(msg._id)), {
         text: "Mensaje eliminado",
         isDeleted: true,
         image: null,
         audio: null,
         audioDuration: null,
+        replyMessage: null,
+        forwarded: false,
       });
     },
     [chatId],
@@ -1332,7 +1334,7 @@ export default function ChatThread({
               </Text>
             </TouchableOpacity>
           ) : null}
-          {msg?.forwarded && !esSistema ? (
+          {msg?.forwarded && !esSistema && !msg?.isDeleted ? (
             <View
               style={[
                 styles.reenviadoLabel,
@@ -1343,7 +1345,7 @@ export default function ChatThread({
               <Text style={styles.reenviadoText}>Reenviado</Text>
             </View>
           ) : null}
-          {msg?.replyMessage && !esSistema ? (
+          {msg?.replyMessage && !esSistema && !msg?.isDeleted ? (
             <View
               style={[
                 styles.replyQuote,
