@@ -337,7 +337,12 @@ const DIA_A_JS_ASISTENCIA: Record<string, number> = {
   Lunes: 1, Martes: 2, Miércoles: 3, Jueves: 4, Viernes: 5,
 };
 
-function MiInscripcionCard({ asignacion, ledger }: { asignacion: AsignacionCupo; ledger: ProgresoMeta | null }) {
+function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
+  asignacion: AsignacionCupo; ledger: ProgresoMeta | null;
+  /** Fechas ISO marcadas como "no computadas" (Fase 1) — hoy no debe poder
+   *  marcar asistencia en un día que la empresa ya excusó. */
+  diasExcluidos?: string[];
+}) {
   const { styles } = useThemedStyles();
   const router = useRouter();
   const [abriendoChat, setAbriendoChat] = useState(false);
@@ -358,8 +363,9 @@ function MiInscripcionCard({ asignacion, ledger }: { asignacion: AsignacionCupo;
     const set = new Set(dias.map(d => DIA_A_JS_ASISTENCIA[d]).filter((n): n is number => n !== undefined));
     const hoy = new Date();
     const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+    if ((diasExcluidos ?? []).includes(hoyISO)) return false; // día no computado (Fase 1) — nada que marcar.
     return set.has(hoy.getDay()) && hoyISO >= asignacion.fechaPresentacion;
-  }, [asignacion.horario, asignacion.fechaPresentacion]);
+  }, [asignacion.horario, asignacion.fechaPresentacion, diasExcluidos]);
 
   // Chat directo con la empresa para coordinar el primer día. El helper usa un
   // id determinístico (`direct_{empresaId}_{estudianteId}`): si ya existía la
@@ -989,7 +995,7 @@ export default function ProgresoTab() {
           <>
             <Text style={styles.sectionTitle}>Tu pasantía activa</Text>
             {inscripcionActiva ? (
-              <MiInscripcionCard asignacion={inscripcionActiva} ledger={ledger} />
+              <MiInscripcionCard asignacion={inscripcionActiva} ledger={ledger} diasExcluidos={ajustesAsistencia.map(a => a.fecha)} />
             ) : activa ? (
               <PasantiaActivaCard app={activa} onFinalizar={() => handleFinalizar(activa.id)} />
             ) : acuerdo ? (

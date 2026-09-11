@@ -1401,6 +1401,8 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Presente": "Present",
   "Salida confirmada": "Check-out confirmed",
   "No se pudo confirmar": "Couldn't confirm it",
+  "Tu empresa marcó hoy como día no computado. No necesitas marcar asistencia.":
+    "Your company marked today as not counted. You don't need to mark attendance.",
 };
 
 // ── Onboarding de dirección del estudiante (UbicacionSelector,

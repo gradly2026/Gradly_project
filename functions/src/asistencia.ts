@@ -191,7 +191,15 @@ export const generarCodigoAsistencia = onCall({ region: REGION }, async (req) =>
     throw new HttpsError("already-exists", "Ya marcaste tu asistencia de hoy.");
   }
 
+  // Día marcado como "no computado" (Fase 1, ajustes_asistencia): la empresa
+  // ya avisó que hoy no cuenta, así que no tiene sentido mintear un código.
   const excluidas = await diasExcluidosDe(activa.id);
+  if (excluidas.has(fecha)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Tu empresa marcó hoy como día no computado. No necesitas marcar asistencia.",
+    );
+  }
   const diaN = contarDiaN(diasSet, activa.fechaPresentacion, fecha, excluidas);
 
   // Idempotencia: si ya hay un código vigente sin usar para HOY, se reutiliza
