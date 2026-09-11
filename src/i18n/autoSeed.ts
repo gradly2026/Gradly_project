@@ -1368,6 +1368,31 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Asistencia sin marcar": "Attendance not marked",
   "Tienes un pasante sin registrar asistencia hoy. Pídele su código.":
     "You have one intern who hasn't recorded attendance today. Ask them for their code.",
+
+  // ── Fin anticipado de la pasantía — despido/renuncia (Fase 5 de asistencia) —
+  //    TerminarPasantiaModal, TerminacionPasantiaInfoModal, botón en
+  //    FechaPresentacionModal, historial en progreso.tsx. ──
+  "Terminar pasantía": "End internship",
+  "Úsalo cuando el pasante ya no pueda continuar (lo despides, o renunció). Sus horas reales quedan congeladas y se avisa a su universidad — ella decide qué pasa con esas horas en su próxima pasantía.":
+    "Use this when the intern can no longer continue (you let them go, or they quit). Their real hours are frozen and their university is notified — they decide what happens with those hours in the intern's next internship.",
+  "¿Qué pasó?": "What happened?",
+  "La empresa lo termina": "The company is ending it",
+  "El estudiante renunció": "The student quit",
+  "Gravedad": "Severity",
+  "Leve": "Minor",
+  "Moderada": "Moderate",
+  "Grave": "Serious",
+  "Terminar la pasantía": "End the internship",
+  "Pasantía terminada": "Internship ended",
+  "Se avisó al estudiante y a su universidad.": "The student and their university were notified.",
+  "No se pudo terminar": "Couldn't end it",
+  "Pasantía terminada por la empresa": "Internship ended by the company",
+  "El estudiante renunció a la pasantía": "The student quit the internship",
+  "No se encontró esta pasantía": "This internship wasn't found",
+  "Estas horas quedan registradas, pero no se acreditan solas a una pasantía nueva. Si el estudiante se inscribe en otra pasantía, tú decides si continúa con ellas o empieza de cero.":
+    "These hours are recorded, but they aren't credited automatically to a new internship. If the student enrolls in another one, you decide whether they carry over or start from zero.",
+  "Terminada anticipadamente · Despido": "Ended early · Let go",
+  "Terminada anticipadamente · Renuncia": "Ended early · Quit",
 };
 
 // ── Onboarding de dirección del estudiante (UbicacionSelector,

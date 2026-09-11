@@ -37,7 +37,8 @@ export type NotifRefKind =
   | 'ofertaRespondida'
   | 'incidencia'
   | 'ticketSoporte'
-  | 'completarPerfil';
+  | 'completarPerfil'
+  | 'terminacionPasantia';
 // Tipo de TypeScript que limita `kind` a exactamente estos valores de
 // texto posibles. Cada uno corresponde a un modal de detalle distinto:
 //   'vacante'              → VacanteDetailByIdModal.tsx
@@ -71,6 +72,10 @@ export type NotifRefKind =
 //                           acepta / rechaza / abre chat)
 //   'ofertaRespondida'   → OfertaRespondidaModal.tsx (mismo id; la empresa ve
 //                           si el estudiante aceptó o rechazó su oferta)
+//   'terminacionPasantia' → TerminacionPasantiaInfoModal.tsx (el id es el de
+//                           la `asignaciones_cupo` terminada anticipadamente
+//                           por despido o renuncia — Fase 5 de "asistencia
+//                           real"; lo ven estudiante, empresa y universidad)
 
 export interface NotifRef {
   // Forma del resultado "ya interpretado": qué tipo de entidad es, y cuál
@@ -79,7 +84,7 @@ export interface NotifRef {
   id: string;
 }
 
-const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'certificarPasante', 'feedbackPendiente', 'postulacionRechazada', 'contratoAviso', 'ofertaEmpleo', 'ofertaRespondida', 'incidencia', 'ticketSoporte', 'completarPerfil'];
+const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'certificarPasante', 'feedbackPendiente', 'postulacionRechazada', 'contratoAviso', 'ofertaEmpleo', 'ofertaRespondida', 'incidencia', 'ticketSoporte', 'completarPerfil', 'terminacionPasantia'];
 // La MISMA lista de valores que el tipo NotifRefKind de arriba, pero como
 // un ARRAY real (no solo un tipo). Se necesita en tiempo de ejecución
 // (los tipos de TypeScript desaparecen al compilar, no existen dentro del

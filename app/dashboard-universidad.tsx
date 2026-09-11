@@ -2500,10 +2500,13 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
     return m;
   }, [comprobantes]);
 
-  // Pasantías por cupo cuyo TIEMPO ya terminó (`finalizada === true`).
+  // Pasantías por cupo cuyo TIEMPO ya terminó (`finalizada === true`). Las
+  // terminadas anticipadamente (despido/renuncia, Fase 5) quedan fuera: no
+  // tienen comprobante que certificar, así que no pertenecen a "Por
+  // certificar"/"Certificados" — la universidad se entera por notificación.
   const finalizadas = useMemo(
     () => (asignacionesCupo ?? [])
-      .filter((a: any) => a.finalizada === true && a.estado !== 'cancelado')
+      .filter((a: any) => a.finalizada === true && a.estado !== 'cancelado' && a.terminacionAnticipada !== true)
       .sort((a: any, b: any) => String(a.estudianteNombre ?? '').localeCompare(String(b.estudianteNombre ?? ''))),
     [asignacionesCupo],
   );

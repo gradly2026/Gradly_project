@@ -172,6 +172,20 @@ export interface AsignacionCupo {
   fechaPresentacion?: string | null;
   /** Cuándo la empresa fijó/editó `fechaPresentacion` (serverTimestamp). */
   fechaPresentacionAt?: any;
+  /**
+   * true = la pasantía se cerró ANTES de cumplir la meta de horas (despido o
+   * renuncia — Fase 5 de "asistencia real"), a diferencia de `finalizada`
+   * sola, que también es true en el cierre normal por horas. Sirve para que
+   * las pantallas de comprobante/certificación y de "volver a contactar" NO
+   * traten esto como una pasantía completada con éxito.
+   */
+  terminacionAnticipada?: boolean;
+  /** Quién terminó la pasantía. Solo tiene sentido si `terminacionAnticipada`. */
+  finPor?: 'empresa' | 'estudiante';
+  /** Solo si `finPor:'empresa'` (despido) — la gravedad que reportó la empresa. */
+  gravedad?: 'leve' | 'moderada' | 'grave';
+  /** Motivo del fin anticipado (lo ven el estudiante, la empresa y la universidad). */
+  motivoFin?: string;
 }
 
 /** Datos que la UI pasa al reclamar. */
@@ -878,6 +892,88 @@ export async function finalizarInscripcionPorHoras(
     await enviarNotificacion(datos.empresaId, 'Estudiante culminó su pasantía', `${quien} cumplió sus horas de "${cual}".`, 'success', '/dashboard-empresa');
   }
   return true;
+}
+
+/**
+ * Fase 5 de "asistencia real": la EMPRESA termina la pasantía ANTES de que
+ * el estudiante cumpla sus horas (lo despide, o reporta que el estudiante
+ * renunció). Congela las horas reales acumuladas hasta este momento (no la
+ * meta, como sí hace un cierre normal) y avisa al estudiante y a la
+ * universidad — la universidad decide caso por caso, fuera del sistema, si
+ * esas horas le sirven de crédito en la próxima pasantía o si empieza de
+ * cero; el sistema no lo automatiza.
+ *
+ * `terminacionAnticipada:true` es lo que distingue esto de un cierre normal
+ * por horas — así comprobantes/certificación y "volver a contactar" no lo
+ * confunden con una pasantía completada con éxito.
+ */
+export async function terminarPasantiaAnticipada(params: {
+  asignacionId: string;
+  finPor: 'empresa' | 'estudiante';
+  gravedad?: 'leve' | 'moderada' | 'grave';
+  motivo: string;
+  /** Horas reales acumuladas hasta ahora (ya calculadas por el llamador con progresoPorMeta). */
+  horasCumplidas: number;
+}): Promise<void> {
+  const { asignacionId, finPor, gravedad, motivo } = params;
+  if (!asignacionId) throw new Error('Asignación inválida.');
+  if (!motivo.trim()) throw new Error('Indica el motivo.');
+  const horas = Math.max(0, Math.round(Number(params.horasCumplidas) || 0));
+
+  const ref = doc(db, COLECCION_ASIGNACIONES, asignacionId);
+  const datos = await runTransaction(db, async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Esta asignación ya no existe.');
+    const a = snap.data() as AsignacionCupo;
+    if (a.estado !== 'tomado' || a.finalizada === true) {
+      throw new Error('Esta pasantía ya no está activa.');
+    }
+    tx.update(ref, {
+      finalizada: true,
+      finalizadaAt: serverTimestamp(),
+      terminacionAnticipada: true,
+      finPor,
+      ...(finPor === 'empresa' && gravedad ? { gravedad } : {}),
+      motivoFin: motivo.trim(),
+      horasCumplidas: horas,
+    });
+    return {
+      estudianteId: a.estudianteId,
+      estudianteNombre: a.estudianteNombre ?? '',
+      universidadId: a.universidadId,
+      empresaNombre: a.empresaNombre ?? '',
+      vacanteTitulo: a.vacanteTitulo ?? '',
+    };
+  });
+
+  // Estado de pasantía autoreportado — el estudiante vuelve a estar
+  // "sin_iniciar" (puede buscar/inscribirse en una pasantía nueva).
+  if (datos.estudianteId) {
+    try {
+      await updateDoc(doc(db, 'perfiles_estudiantes', datos.estudianteId), { estado_pasantia: 'sin_iniciar' });
+    } catch { /* no crítico */ }
+  }
+
+  const cual = datos.vacanteTitulo || 'su pasantía';
+  const razon = finPor === 'empresa' ? 'despido' : 'renuncia';
+  if (datos.estudianteId) {
+    await enviarNotificacion(
+      datos.estudianteId,
+      finPor === 'empresa' ? 'Tu pasantía terminó anticipadamente' : 'Se registró tu renuncia a la pasantía',
+      `${datos.empresaNombre || 'La empresa'} reportó el fin de "${cual}" (${razon}). Tus ${horas} h acumuladas quedaron registradas. Puedes buscar e inscribirte en una nueva pasantía.`,
+      finPor === 'empresa' ? 'warning' : 'info',
+      `terminacionPasantia:${asignacionId}`,
+    );
+  }
+  if (datos.universidadId) {
+    await enviarNotificacion(
+      datos.universidadId,
+      'Un estudiante dejó su pasantía antes de tiempo',
+      `${datos.estudianteNombre || 'Un estudiante'} dejó "${cual}" (${razon}) con ${horas} h acumuladas.`,
+      'warning',
+      `terminacionPasantia:${asignacionId}`,
+    );
+  }
 }
 
 // ─────────────────────────────────────────────

@@ -83,7 +83,11 @@ export function useInscripcionesActivas(
     return () => { cancel = true; };
   }, [asignaciones, metaPorGrupo]);
 
-  return asignaciones.map(a => {
+  // Una pasantía terminada anticipadamente (despido/renuncia, Fase 5) ya no
+  // es "activa" aunque siga en `estado:'tomado'` — sin esto se quedaría
+  // mostrando una barra de progreso congelada para siempre en los
+  // home-cards y en "Mis Estudiantes".
+  return asignaciones.filter(a => a.terminacionAnticipada !== true).map(a => {
     const meta = a.grupoId ? metaPorGrupo[a.grupoId] : null;
     return {
       asignacion: a,

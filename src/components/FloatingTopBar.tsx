@@ -147,6 +147,7 @@ import GrupoDetailViewerModal from './GrupoDetailViewerModal';
 import AplicacionGrupoDetailModal from './AplicacionGrupoDetailModal';
 import ReclamoDetailModal from './ReclamoDetailModal';
 import ComprobanteInfoModal from './ComprobanteInfoModal';
+import TerminacionPasantiaInfoModal from './TerminacionPasantiaInfoModal';
 import PostulacionRechazadaModal from './PostulacionRechazadaModal';
 import ContratoAvisoModal from './ContratoAvisoModal';
 import OfertaEmpleoModal from './OfertaEmpleoModal';
@@ -238,6 +239,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const [aplicacionModalId, setAplicacionModalId] = useState<string | null>(null);
   const [reclamoModalId, setReclamoModalId] = useState<string | null>(null);
   const [comprobanteModalId, setComprobanteModalId] = useState<string | null>(null);
+  const [terminacionModalId, setTerminacionModalId] = useState<string | null>(null);
   const [postulacionRechazadaId, setPostulacionRechazadaId] = useState<string | null>(null);
   const [contratoAvisoId, setContratoAvisoId] = useState<string | null>(null);
   const [ofertaEmpleoId, setOfertaEmpleoId] = useState<string | null>(null);
@@ -421,6 +423,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         // entidad sea la referencia, se abre el estado (y por lo tanto el
         // modal) correspondiente.
         case 'comprobante': setComprobanteModalId(ref.id); break;
+        case 'terminacionPasantia': setTerminacionModalId(ref.id); break;
         case 'vacante': setVacanteModalId(ref.id); break;
         case 'grupo': setGrupoModalId(ref.id); break;
         case 'aplicacionGrupo': setAplicacionModalId(ref.id); break;
@@ -736,6 +739,11 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         visible={!!comprobanteModalId}
         asignacionId={comprobanteModalId}
         onClose={() => setComprobanteModalId(null)}
+      />
+      <TerminacionPasantiaInfoModal
+        visible={!!terminacionModalId}
+        asignacionId={terminacionModalId}
+        onClose={() => setTerminacionModalId(null)}
       />
       <PostulacionRechazadaModal
         visible={!!postulacionRechazadaId}

@@ -57,7 +57,10 @@ export default function ComprobantePasantiaCard({ rol, uid }: { rol: Rol; uid: s
         setCulminadas(
           snap.docs
             .map(d => ({ id: d.id, ...d.data() } as AsignacionCupo))
-            .filter(a => a.finalizada === true && a.estado !== 'cancelado'),
+            // Una pasantía terminada anticipadamente (despido/renuncia, Fase 5)
+            // no tiene comprobante que enviar/validar — no es una culminación
+            // exitosa, así que no entra a este ciclo.
+            .filter(a => a.finalizada === true && a.estado !== 'cancelado' && a.terminacionAnticipada !== true),
         ),
       e => console.warn('Error en listener (comprobante card / asignaciones):', e),
     );

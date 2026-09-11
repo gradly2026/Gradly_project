@@ -24,6 +24,8 @@ interface Props {
   /** Abrir "Ajustar asistencia" (días no computados) para esta asignación.
    *  El padre cierra este modal y abre el suyo (mismo patrón que onVerPerfil). */
   onAjustarAsistencia?: (asignacion: AsignacionCupo) => void;
+  /** Abrir "Terminar pasantía" (despido/renuncia, Fase 5) para esta asignación. */
+  onTerminarPasantia?: (asignacion: AsignacionCupo) => void;
 }
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -42,7 +44,8 @@ const fechaLarga = (d: Date) =>
  * atajo para chatear con el estudiante y coordinar ese día.
  */
 export default function FechaPresentacionModal({
-  visible, asignacion, empresaId, empresaNombre, onClose, onGuardado, onVerPerfil, onAjustarAsistencia,
+  visible, asignacion, empresaId, empresaNombre, onClose, onGuardado, onVerPerfil,
+  onAjustarAsistencia, onTerminarPasantia,
 }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -169,6 +172,19 @@ export default function FechaPresentacionModal({
               </TouchableOpacity>
             )}
 
+            {/* Terminar pasantía (despido/renuncia): solo tiene sentido con
+                Día 1 ya fijado — antes de eso, la pasantía ni ha empezado. */}
+            {!!onTerminarPasantia && !!fechaActual && (
+              <TouchableOpacity
+                style={s.btnPeligro}
+                activeOpacity={0.85}
+                onPress={() => onTerminarPasantia(asignacion)}
+              >
+                <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
+                <Text style={s.btnPeligroTxt}>Terminar pasantía</Text>
+              </TouchableOpacity>
+            )}
+
             {!!onVerPerfil && asignacion.estudianteId && (
               <TouchableOpacity
                 style={s.verPerfilRow}
@@ -233,6 +249,11 @@ const makeStyles = (COLORS: GradlyColors) =>
       borderRadius: 13, borderWidth: 1, borderColor: COLORS.border, paddingVertical: 12,
     },
     btnSecundarioTxt: { color: COLORS.primaryLight, fontFamily: FONTS.interSemiBold, fontSize: 13 },
+    btnPeligro: {
+      marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+      borderRadius: 13, borderWidth: 1, borderColor: COLORS.error + '55', paddingVertical: 12,
+    },
+    btnPeligroTxt: { color: COLORS.error, fontFamily: FONTS.interSemiBold, fontSize: 13 },
     verPerfilRow: {
       flexDirection: 'row', alignItems: 'center', gap: 8,
       marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border,

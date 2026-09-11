@@ -117,6 +117,7 @@ import AjusteAsistenciaModal from '../src/components/AjusteAsistenciaModal';
 import CandidatosVacante from '../src/components/CandidatosVacante';
 import FechaPresentacionModal from '../src/components/FechaPresentacionModal';
 import RegistrarAsistenciaModal from '../src/components/RegistrarAsistenciaModal';
+import TerminarPasantiaModal from '../src/components/TerminarPasantiaModal';
 import VacanteDetailModal, { type VacanteDetalle } from '../src/components/VacanteDetailModal';
 import ReportarIncidenciaEmpresaModal, { type PasanteReportable } from '../src/components/ReportarIncidenciaEmpresaModal';
 import SeccionReclutamiento from '../src/components/SeccionReclutamiento';
@@ -3503,6 +3504,8 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
   const [ajusteSel, setAjusteSel] = useState<any | null>(null);
   // Modal "Registrar asistencia de pasantes" (código de 8 dígitos, Fase 2).
   const [asistenciaOpen, setAsistenciaOpen] = useState(false);
+  // Cupo seleccionado → TerminarPasantiaModal (despido/renuncia, Fase 5).
+  const [terminarSel, setTerminarSel] = useState<any | null>(null);
   // Pasantía cuyo detalle se abre al tocar su nombre dentro de una tarjeta.
   const [vacDetalle, setVacDetalle] = useState<VacanteDetalle | null>(null);
   useEffect(() => {
@@ -3776,6 +3779,10 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
           setCupoSel(null);
           setTimeout(() => setAjusteSel(a), Platform.OS === 'ios' ? 350 : 0);
         }}
+        onTerminarPasantia={(a) => {
+          setCupoSel(null);
+          setTimeout(() => setTerminarSel(a), Platform.OS === 'ios' ? 350 : 0);
+        }}
       />
 
       {/* Días no computados (enfermedad/permiso/emergencia) del cupo elegido. */}
@@ -3789,6 +3796,9 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
 
       {/* Registrar asistencia de pasantes con el código de 8 dígitos (Fase 2). */}
       <RegistrarAsistenciaModal visible={asistenciaOpen} onClose={() => setAsistenciaOpen(false)} />
+
+      {/* Terminar pasantía anticipadamente: despido o renuncia (Fase 5). */}
+      <TerminarPasantiaModal visible={!!terminarSel} asignacion={terminarSel} onClose={() => setTerminarSel(null)} />
 
       {/* Detalle de la pasantía, abierto al tocar su nombre en una tarjeta. */}
       <VacanteDetailModal

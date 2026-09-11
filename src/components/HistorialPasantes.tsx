@@ -136,7 +136,10 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
         setCuposFin(
           snap.docs
             .map((d) => ({ id: d.id, ...(d.data() as any) }))
-            .filter((c) => c.finalizada === true && c.estado !== "cancelado"),
+            // Un pasante terminado anticipadamente (despido/renuncia, Fase 5)
+            // no pertenece a "quiénes completaron su pasantía conmigo" — esta
+            // tarjeta ofrece "Ofertar empleo"/"Re-contactar", que no aplica ahí.
+            .filter((c) => c.finalizada === true && c.estado !== "cancelado" && c.terminacionAnticipada !== true),
         ),
       (error) => console.warn("Error en listener (historial cupos):", error),
     );

@@ -1043,16 +1043,37 @@ export default function ProgresoTab() {
               const horas =
                 a.horasCumplidas ??
                 (metaInscripcion && inscripcion?.id === a.id ? metaInscripcion : null);
+              // Fase 5: una pasantía terminada anticipadamente (despido/renuncia)
+              // se distingue de una culminada con éxito — otro ícono/color, otro
+              // texto de horas, y el motivo que dejó la empresa (es tu propio
+              // registro, por eso se muestra completo).
+              const terminada = a.terminacionAnticipada === true;
+              const esDespido = a.finPor === 'empresa';
               return (
-                <GlassCard key={a.id} style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
-                  <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+                <GlassCard key={a.id} style={{ marginBottom: 8 }} contentStyle={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14 }}>
+                  <Ionicons
+                    name={terminada ? (esDespido ? 'close-circle' : 'exit-outline') : 'checkmark-circle'}
+                    size={20}
+                    color={terminada ? (esDespido ? COLORS.error : COLORS.warning) : COLORS.success}
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.historialEmpresa}>{a.empresaNombre ?? 'Empresa'}</Text>
                     <Text style={styles.historialHoras}>
-                      {horas != null ? `${Math.round(horas)} horas completadas` : 'Pasantía completada'}
+                      {terminada
+                        ? `Terminada anticipadamente · ${esDespido ? 'Despido' : 'Renuncia'}`
+                        : horas != null ? `${Math.round(horas)} horas completadas` : 'Pasantía completada'}
                     </Text>
+                    {terminada && (
+                      <Text style={styles.historialHoras} noTranslate>
+                        {horas != null ? `${Math.round(horas)} h acumuladas` : ''}
+                        {a.gravedad ? `  ·  Gravedad: ${a.gravedad}` : ''}
+                      </Text>
+                    )}
                     {!!a.vacanteTitulo && (
                       <Text style={styles.historialHoras}>{a.vacanteTitulo}</Text>
+                    )}
+                    {terminada && !!a.motivoFin && (
+                      <Text style={[styles.historialHoras, { marginTop: 2 }]} noTranslate>{a.motivoFin}</Text>
                     )}
                   </View>
                 </GlassCard>

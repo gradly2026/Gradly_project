@@ -351,6 +351,23 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['finalizada', 'finalizadaAt', 'horasCumplidas'])
           )
+          // 🆕 Fase 5 de "asistencia real": la EMPRESA dueña termina la
+          //    pasantía anticipadamente (despido o renuncia del estudiante,
+          //    antes de cumplir sus horas). Mismo candado false→true de
+          //    `finalizada` que el cierre normal, más `terminacionAnticipada`
+          //    obligatorio en true (así NUNCA se confunde con un cierre por
+          //    horas) y `finPor` acotado a los 2 valores válidos. `gravedad`
+          //    es opcional (solo aplica si `finPor:'empresa'`, ver cliente).
+          || (
+            request.auth.uid == resource.data.empresaId
+            && resource.data.estado == 'tomado'
+            && resource.data.finalizada != true
+            && request.resource.data.finalizada == true
+            && request.resource.data.terminacionAnticipada == true
+            && request.resource.data.finPor in ['empresa', 'estudiante']
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['finalizada', 'finalizadaAt', 'terminacionAnticipada', 'finPor', 'gravedad', 'motivoFin', 'horasCumplidas'])
+          )
         );
       allow delete: if esAdmin();
     }

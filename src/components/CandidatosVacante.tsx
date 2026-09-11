@@ -7,6 +7,7 @@ import { db } from "../config/firebaseConfig";
 import { FONTS, useTheme, type GradlyColors } from "../context/ThemeContext";
 import AjusteAsistenciaModal from "./AjusteAsistenciaModal";
 import FechaPresentacionModal from "./FechaPresentacionModal";
+import TerminarPasantiaModal from "./TerminarPasantiaModal";
 import type { AsignacionCupo } from "../services/reclamoCuposService";
 import { progresoPorMeta } from "../utils/horasPasantia";
 
@@ -70,6 +71,8 @@ export default function CandidatosVacante({
   const [asignSel, setAsignSel] = useState<AsignacionCupo | null>(null);
   // Días no computados, abierto desde FechaPresentacionModal.
   const [ajusteSel, setAjusteSel] = useState<AsignacionCupo | null>(null);
+  // Terminar pasantía (despido/renuncia), abierto desde FechaPresentacionModal.
+  const [terminarSel, setTerminarSel] = useState<AsignacionCupo | null>(null);
 
   useEffect(() => {
     if (!vacanteId || !empresaId) return;
@@ -274,6 +277,10 @@ export default function CandidatosVacante({
           setAsignSel(null);
           setTimeout(() => setAjusteSel(a), Platform.OS === "ios" ? 350 : 0);
         }}
+        onTerminarPasantia={(a) => {
+          setAsignSel(null);
+          setTimeout(() => setTerminarSel(a), Platform.OS === "ios" ? 350 : 0);
+        }}
       />
 
       <AjusteAsistenciaModal
@@ -282,6 +289,12 @@ export default function CandidatosVacante({
         marcadoPorUid={empresaId}
         marcadoPorRol="empresa"
         onClose={() => setAjusteSel(null)}
+      />
+
+      <TerminarPasantiaModal
+        visible={!!terminarSel}
+        asignacion={terminarSel}
+        onClose={() => setTerminarSel(null)}
       />
     </View>
   );
