@@ -118,12 +118,11 @@ export default function AjusteAsistenciaModal({
   };
 
   const tocarDia = (d: Date) => {
+    // Cualquier día programado se puede ajustar — pasado (corrige/reporta lo
+    // que ya pasó) o futuro (el estudiante avisa CON ANTICIPACIÓN que ese día
+    // no podrá presentarse, p. ej. una cita médica la próxima semana).
     const esProgramado = diasSet.has(d.getDay()) && d.getTime() >= inicio.getTime();
     if (!esProgramado) return;
-    if (d.getTime() > hoy.getTime()) {
-      void showAlert('Aún no', 'Solo puedes ajustar días de hoy hacia atrás.');
-      return;
-    }
     setDiaSel(sameDay(d, diaSel ?? new Date(0)) ? null : d);
     setCategoria(null);
     setMotivo('');

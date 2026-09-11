@@ -1336,8 +1336,6 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Permiso": "Leave of absence",
   "Emergencia": "Emergency",
   "Otro motivo": "Other reason",
-  "Aún no": "Not yet",
-  "Solo puedes ajustar días de hoy hacia atrás.": "You can only adjust today's date or earlier.",
 
   // ── Código de asistencia diario (Fase 2 de asistencia) — AsistenciaCodigoModal
   //    (estudiante), RegistrarAsistenciaModal (empresa), botones en progreso.tsx
