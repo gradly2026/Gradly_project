@@ -40,6 +40,13 @@
  *    con la API key como secreto (chatbot.ts). Requiere sesión; tope diario por
  *    usuario en `chatbot_uso/{uid}`. Necesita: firebase functions:secrets:set
  *    GEMINI_API_KEY  +  firebase deploy --only functions:chatbotGradly.
+ *  · generarCodigoAsistencia / registrarAsistenciaPorCodigo → código diario
+ *    de 8 dígitos para marcar asistencia real de una pasantía de cupo
+ *    (asistencia.ts, Fase 2 de "asistencia real" — ver ajusteAsistenciaService.ts
+ *    en el cliente para la Fase 1, "días no computados").
+ *  · recordatorioAsistenciaPendiente → job diario (11:00 América/El_Salvador)
+ *    que avisa a la empresa si tiene pasantes que hoy les tocaba marcar
+ *    asistencia y aún no lo han hecho (asistencia.ts).
  *
  * Nota: el antiguo patrón "traducir al escribir" (triggers translate_*) se
  * retiró — se reemplazó por la traducción al vuelo con caché, que cubre también
@@ -67,3 +74,8 @@ export {
 } from "./admin";
 export { eliminarEstudiante, eliminarGrupo } from "./universidad";
 export { chatbotGradly } from "./chatbot";
+export {
+  generarCodigoAsistencia,
+  registrarAsistenciaPorCodigo,
+  recordatorioAsistenciaPendiente,
+} from "./asistencia";

@@ -392,6 +392,31 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // 🔐 CODIGOS_ASISTENCIA — código diario de 8 dígitos para marcar la
+    //    asistencia real de una pasantía de cupo (Fase 2 de "asistencia
+    //    real"). Igual que `codigos_otp`: solo lo tocan las Cloud Functions
+    //    generarCodigoAsistencia / registrarAsistenciaPorCodigo (Admin SDK,
+    //    bypassa las reglas) — ningún cliente lee ni escribe aquí, así nadie
+    //    puede leer/adivinar el código de otro pasante desde la app.
+    // ═══════════════════════════════════════════════════════════════════
+    match /codigos_asistencia/{codigo} { allow read, write: if false; }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 📋 REGISTROS_ASISTENCIA — un doc por (asignación, día) con lo que pasó
+    //    ese día (presente/tarde). Lo ESCRIBE solo registrarAsistenciaPorCodigo
+    //    (Admin SDK); lo LEEN las 3 partes de la asignación para historial y
+    //    transparencia.
+    // ═══════════════════════════════════════════════════════════════════
+    match /registros_asistencia/{registroId} {
+      allow read: if request.auth != null
+        && (request.auth.uid == resource.data.estudianteId
+            || request.auth.uid == resource.data.empresaId
+            || request.auth.uid == resource.data.universidadId
+            || esAdmin());
+      allow write: if false;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // 💼 CONTRATOS_LABORALES — empleo real: un graduado contratado a una
     //    vacante `categoria:'vacante'`. Es la fuente de verdad del "Puesto de
     //    trabajo": lo ven SOLO la empresa empleadora y el estudiante

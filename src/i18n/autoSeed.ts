@@ -1338,6 +1338,36 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Otro motivo": "Other reason",
   "Aún no": "Not yet",
   "Solo puedes ajustar días de hoy hacia atrás.": "You can only adjust today's date or earlier.",
+
+  // ── Código de asistencia diario (Fase 2 de asistencia) — AsistenciaCodigoModal
+  //    (estudiante), RegistrarAsistenciaModal (empresa), botones en progreso.tsx
+  //    y dashboard-empresa.tsx. ──
+  "Asistencia de hoy": "Today's attendance",
+  "Muéstrale este código a tu empresa para que registren tu asistencia de hoy.":
+    "Show this code to your company so they can register your attendance today.",
+  "Válido solo por hoy. No lo compartas por chat ni redes.":
+    "Valid only for today. Don't share it over chat or social media.",
+  "No tienes una pasantía activa.": "You don't have an active internship.",
+  "Tu empresa todavía no fija tu primer día.": "Your company hasn't set your first day yet.",
+  "Hoy no te toca según tu horario.": "Today isn't a scheduled day per your shift.",
+  "Ya marcaste tu asistencia de hoy.": "You already marked your attendance today.",
+  "No se pudo generar tu código. Intenta de nuevo.": "Couldn't generate your code. Try again.",
+  "Marcar asistencia de hoy": "Mark today's attendance",
+  "Asistencia de hoy registrada": "Today's attendance recorded",
+  "Registrar asistencia": "Record attendance",
+  "Registrar asistencia de pasantes": "Record interns' attendance",
+  "Pídele al pasante su código de 8 dígitos y escríbelo aquí.":
+    "Ask the intern for their 8-digit code and enter it here.",
+  "Registrar otro pasante": "Record another intern",
+  "Asistencia registrada": "Attendance recorded",
+  "Código no encontrado. Verifica que esté bien escrito.": "Code not found. Check that it's typed correctly.",
+  "Este código no pertenece a un pasante de tu empresa.": "This code doesn't belong to an intern at your company.",
+  "Este código ya fue usado.": "This code was already used.",
+  "Este código ya caducó (los códigos son de un solo día).": "This code has expired (codes are valid for one day only).",
+  "No se pudo registrar la asistencia. Intenta de nuevo.": "Couldn't record attendance. Try again.",
+  "Asistencia sin marcar": "Attendance not marked",
+  "Tienes un pasante sin registrar asistencia hoy. Pídele su código.":
+    "You have one intern who hasn't recorded attendance today. Ask them for their code.",
 };
 
 // ── Onboarding de dirección del estudiante (UbicacionSelector,

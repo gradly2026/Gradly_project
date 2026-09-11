@@ -116,6 +116,7 @@ import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import AjusteAsistenciaModal from '../src/components/AjusteAsistenciaModal';
 import CandidatosVacante from '../src/components/CandidatosVacante';
 import FechaPresentacionModal from '../src/components/FechaPresentacionModal';
+import RegistrarAsistenciaModal from '../src/components/RegistrarAsistenciaModal';
 import VacanteDetailModal, { type VacanteDetalle } from '../src/components/VacanteDetailModal';
 import ReportarIncidenciaEmpresaModal, { type PasanteReportable } from '../src/components/ReportarIncidenciaEmpresaModal';
 import SeccionReclutamiento from '../src/components/SeccionReclutamiento';
@@ -3500,6 +3501,8 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
   // DESDE FechaPresentacionModal (que se cierra primero — dos <Modal> nativos
   // a la vez fallan silenciosamente en iOS, mismo cuidado que en ChatThread).
   const [ajusteSel, setAjusteSel] = useState<any | null>(null);
+  // Modal "Registrar asistencia de pasantes" (código de 8 dígitos, Fase 2).
+  const [asistenciaOpen, setAsistenciaOpen] = useState(false);
   // Pasantía cuyo detalle se abre al tocar su nombre dentro de una tarjeta.
   const [vacDetalle, setVacDetalle] = useState<VacanteDetalle | null>(null);
   useEffect(() => {
@@ -3708,6 +3711,23 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
         <FiltroChip label="Historial de Pasantes" activo={filtro === 'historial'} onPress={() => setFiltro('historial')} />
       </View>
 
+      {filtro === 'porCupo' && cuposEnCurso.length > 0 && (
+        <TouchableOpacity
+          onPress={() => setAsistenciaOpen(true)}
+          activeOpacity={0.85}
+          style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+            marginHorizontal: 16, marginTop: 10, borderRadius: 12, borderWidth: 1,
+            borderColor: colors.primary, backgroundColor: colors.primary + '18', paddingVertical: 11,
+          }}
+        >
+          <Ionicons name="keypad-outline" size={16} color={colors.primaryLight} />
+          <Text style={{ fontSize: 13, fontFamily: FONTS.interSemiBold, color: colors.primaryLight }}>
+            Registrar asistencia de pasantes
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {filtro === 'incidencias' && (
         <ScrollView style={[{ flex: 1 }, webScrollStyle(colors)]} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
           {pasantesReportables.length > 0 && (
@@ -3766,6 +3786,9 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
         marcadoPorRol="empresa"
         onClose={() => setAjusteSel(null)}
       />
+
+      {/* Registrar asistencia de pasantes con el código de 8 dígitos (Fase 2). */}
+      <RegistrarAsistenciaModal visible={asistenciaOpen} onClose={() => setAsistenciaOpen(false)} />
 
       {/* Detalle de la pasantía, abierto al tocar su nombre en una tarjeta. */}
       <VacanteDetailModal

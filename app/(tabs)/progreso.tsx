@@ -44,6 +44,7 @@ import { progresoPorFechas } from '../../src/utils/progresoPasantia';
 // cosas como el estado ('por_iniciar' | 'en_curso' | 'completado'), el
 // porcentaje transcurrido, días transcurridos/totales/restantes. Se usa
 // para dibujar la "línea de tiempo" de la tarjeta "Mi pasantía".
+import AsistenciaCodigoModal from '../../src/components/AsistenciaCodigoModal';
 import CalendarioEventos from '../../src/components/CalendarioEventos';
 import TableroCupos from '../../src/components/TableroCupos';
 import MiInstitucionCard from '../../src/components/MiInstitucionCard';
@@ -52,6 +53,7 @@ import { textoHorario } from '../../src/data/disponibilidad';
 import type { AsignacionCupo } from '../../src/services/reclamoCuposService';
 import type { ProgresoMeta } from '../../src/utils/horasPasantia';
 import { useProgresoInscripcion } from '../../src/hooks/useProgresoInscripcion';
+import { suscribirRegistroDeHoy, type RegistroAsistenciaDia } from '../../src/services/asistenciaCodigoService';
 // Libro mayor de horas del reparto de cupos: horas que avanzan solas desde la
 // fecha de presentación que fijó la empresa, sobre la meta del grupo (Fase D).
 // Ficha completa de la universidad y el grupo del estudiante. Va primero
@@ -330,12 +332,34 @@ function PasantiaActivaCard({ app, onFinalizar }: { app: Aplicacion; onFinalizar
 // Muestra el libro mayor de horas: horas que avanzan solas desde el "Día 1"
 // que fijó la empresa, sobre la meta del grupo.
 // ─────────────────────────────────────────────
+/** Nombre de día laboral del horario → getDay() de JS (Lun–Vie). */
+const DIA_A_JS_ASISTENCIA: Record<string, number> = {
+  Lunes: 1, Martes: 2, Miércoles: 3, Jueves: 4, Viernes: 5,
+};
+
 function MiInscripcionCard({ asignacion, ledger }: { asignacion: AsignacionCupo; ledger: ProgresoMeta | null }) {
   const { styles } = useThemedStyles();
   const router = useRouter();
   const [abriendoChat, setAbriendoChat] = useState(false);
   const horario = textoHorario(asignacion.horario);
   const sinFecha = !asignacion.fechaPresentacion;
+
+  // Código de asistencia de hoy (Fase 2): el botón solo aparece si hoy es un
+  // día programado del horario y todavía no se registró.
+  const [registroHoy, setRegistroHoy] = useState<RegistroAsistenciaDia | null>(null);
+  const [codigoOpen, setCodigoOpen] = useState(false);
+  useEffect(() => {
+    const unsub = suscribirRegistroDeHoy(asignacion.id, setRegistroHoy);
+    return unsub;
+  }, [asignacion.id]);
+  const hoyEsDiaProgramado = useMemo(() => {
+    if (!asignacion.fechaPresentacion) return false;
+    const dias: string[] = Array.isArray(asignacion.horario?.dias) ? asignacion.horario!.dias : [];
+    const set = new Set(dias.map(d => DIA_A_JS_ASISTENCIA[d]).filter((n): n is number => n !== undefined));
+    const hoy = new Date();
+    const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+    return set.has(hoy.getDay()) && hoyISO >= asignacion.fechaPresentacion;
+  }, [asignacion.horario, asignacion.fechaPresentacion]);
 
   // Chat directo con la empresa para coordinar el primer día. El helper usa un
   // id determinístico (`direct_{empresaId}_{estudianteId}`): si ya existía la
@@ -431,6 +455,41 @@ function MiInscripcionCard({ asignacion, ledger }: { asignacion: AsignacionCupo;
           </Text>
         </View>
       )}
+
+      {/* Código de asistencia de hoy (Fase 2 de "asistencia real"). */}
+      {!completado && hoyEsDiaProgramado && (
+        registroHoy ? (
+          <View style={styles.miPasanRow}>
+            <Ionicons
+              name={registroHoy.estado === 'tarde' ? 'alert-circle' : 'checkmark-circle'}
+              size={15}
+              color={registroHoy.estado === 'tarde' ? COLORS.warning : COLORS.success}
+            />
+            <Text style={[styles.miPasanText, { color: registroHoy.estado === 'tarde' ? COLORS.warning : COLORS.success }]}>
+              {registroHoy.estado === 'tarde'
+                ? `Asistencia de hoy registrada (llegaste ${registroHoy.tardanzaMin} min tarde)`
+                : 'Asistencia de hoy registrada'}
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => setCodigoOpen(true)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+              borderWidth: 1, borderColor: COLORS.primary + '55', borderRadius: 12,
+              paddingVertical: 11, marginTop: 2,
+            }}
+          >
+            <Ionicons name="keypad-outline" size={16} color={COLORS.primaryLight} />
+            <Text style={{ fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight }}>
+              Marcar asistencia de hoy
+            </Text>
+          </TouchableOpacity>
+        )
+      )}
+
+      <AsistenciaCodigoModal visible={codigoOpen} onClose={() => setCodigoOpen(false)} />
     </GlassCard>
   );
 }
