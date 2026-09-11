@@ -2,6 +2,7 @@ import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/fire
 import { useEffect, useState } from 'react';
 import { db } from '../config/firebaseConfig';
 import { COLECCION_ASIGNACIONES, type AsignacionCupo } from '../services/reclamoCuposService';
+import { COLECCION_AJUSTES, type AjusteDia } from '../services/ajusteAsistenciaService';
 import { progresoPorMeta, type ProgresoMeta } from '../utils/horasPasantia';
 
 export interface InscripcionActiva {
@@ -39,6 +40,25 @@ export function useInscripcionesActivas(
     return unsub;
   }, [campo, uid]);
 
+  // Días no computados por asignación (Fase 1 de asistencia) — un listener
+  // por asignación activa, indexado por id. Se re-suscribe solo cuando
+  // cambia el CONJUNTO de ids (no en cada actualización de campos sueltos),
+  // para no abrir/cerrar listeners de más en cada tick del progreso.
+  const [ajustesPorAsignacion, setAjustesPorAsignacion] = useState<Record<string, string[]>>({});
+  const idsKey = asignaciones.map(a => a.id).filter(Boolean).sort().join(',');
+  useEffect(() => {
+    const ids = idsKey ? idsKey.split(',') : [];
+    const unsubs = ids.map(id => onSnapshot(
+      doc(db, COLECCION_AJUSTES, id),
+      snap => {
+        const dias: AjusteDia[] = snap.exists() ? ((snap.data() as any).dias ?? []) : [];
+        setAjustesPorAsignacion(prev => ({ ...prev, [id]: dias.map(d => d.fecha) }));
+      },
+      () => {},
+    ));
+    return () => unsubs.forEach(u => u());
+  }, [idsKey]);
+
   // Metas de grupo que aún no están en caché.
   useEffect(() => {
     const faltan = Array.from(
@@ -67,7 +87,9 @@ export function useInscripcionesActivas(
     const meta = a.grupoId ? metaPorGrupo[a.grupoId] : null;
     return {
       asignacion: a,
-      progreso: meta ? progresoPorMeta(a.horario, a.fechaPresentacion, meta, new Date(ahora)) : null,
+      progreso: meta
+        ? progresoPorMeta(a.horario, a.fechaPresentacion, meta, new Date(ahora), ajustesPorAsignacion[a.id])
+        : null,
     };
   });
 }

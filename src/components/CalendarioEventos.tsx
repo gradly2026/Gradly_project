@@ -50,6 +50,8 @@ export interface InscripcionCalendario {
   fechaPresentacion?: string | null;
   /** Último día de práctica estimado (del libro mayor de horas). */
   fechaFin?: Date | null;
+  /** Días programados marcados como "no computados" (enfermedad/permiso/...). */
+  noComputados?: { fecha: string; categoria: string; motivo: string }[];
 }
 
 const META: Record<TipoEvento, { icon: keyof typeof Ionicons.glyphMap; colorKey: keyof GradlyColors }> = {
@@ -271,6 +273,17 @@ export default function CalendarioEventos({
     return out;
   }, [esEmpresa, esEstudiante, registro, grupos, vacantes, postulaciones, solicitudes, inscripcion]);
 
+  // Días "no computados" (Fase 1 de asistencia) — índice por clave de día,
+  // para pintarlos distinto en la grilla y mostrar el motivo en el detalle.
+  const noComputadosPorDia = useMemo(() => {
+    const m = new Map<string, { categoria: string; motivo: string }>();
+    (inscripcion?.noComputados ?? []).forEach(nc => {
+      const f = aFecha(nc.fecha);
+      if (f) m.set(claveDia(f), { categoria: nc.categoria, motivo: nc.motivo });
+    });
+    return m;
+  }, [inscripcion?.noComputados]);
+
   // Índice día → eventos.
   const porDia = useMemo(() => {
     const m = new Map<string, Evento[]>();
@@ -313,6 +326,7 @@ export default function CalendarioEventos({
   };
 
   const eventosDiaSel = diaSel ? (porDia.get(claveDia(diaSel)) ?? []) : [];
+  const noComputadoDiaSel = diaSel ? noComputadosPorDia.get(claveDia(diaSel)) : undefined;
 
   // Próximos eventos (a partir de hoy) cuando no hay día seleccionado.
   const proximos = useMemo(() => {
@@ -378,6 +392,7 @@ export default function CalendarioEventos({
             const esPractica = evs.some(e => e.tipo === 'practica_dia');
             // Día de práctica ya pasado → naranja; el que aún falta → contorno claro.
             const practicaPasada = esPractica && d.getTime() < new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime();
+            const noComputado = esPractica && noComputadosPorDia.has(claveDia(d));
             return (
               <TouchableOpacity
                 key={i}
@@ -388,6 +403,7 @@ export default function CalendarioEventos({
                 <View style={[
                   styles.dia,
                   esPractica && (practicaPasada ? styles.diaPracticaPasada : styles.diaPracticaFutura),
+                  noComputado && styles.diaNoComputado,
                   esHoy && styles.diaHoy,
                   esSel && styles.diaSel,
                 ]}>
@@ -406,9 +422,22 @@ export default function CalendarioEventos({
         {/* Detalle: eventos del día seleccionado o próximos */}
         <View style={styles.detalle}>
           {diaSel ? (
-            eventosDiaSel.length === 0
-              ? <Text style={styles.empty}>Sin eventos el {formatoFechaDetalle.format(diaSel)}.</Text>
-              : eventosDiaSel.map(renderEvento)
+            <>
+              {!!noComputadoDiaSel && (
+                <View style={styles.evRow}>
+                  <View style={[styles.evIcon, { backgroundColor: colors.error + '22' }]}>
+                    <Ionicons name="close-circle" size={14} color={colors.error} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.evTitulo}>No computado</Text>
+                    <Text style={styles.evDetalle} noTranslate>{noComputadoDiaSel.motivo}</Text>
+                  </View>
+                </View>
+              )}
+              {eventosDiaSel.length === 0 && !noComputadoDiaSel
+                ? <Text style={styles.empty}>Sin eventos el {formatoFechaDetalle.format(diaSel)}.</Text>
+                : eventosDiaSel.map(renderEvento)}
+            </>
           ) : proximos.length === 0 ? (
             <Text style={styles.empty}>Sin eventos</Text>
           ) : (
@@ -440,6 +469,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   // Día de práctica ya cumplido → naranja; el que aún falta → contorno claro.
   diaPracticaPasada: { backgroundColor: COLORS.warning + '33', borderWidth: 1, borderColor: COLORS.warning + '88' },
   diaPracticaFutura: { borderWidth: 1, borderColor: COLORS.border },
+  diaNoComputado: { backgroundColor: COLORS.error + '33', borderWidth: 1, borderColor: COLORS.error + '88' },
   diaSel: { backgroundColor: COLORS.primary },
   diaTxt: { fontSize: 13, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
   diaTxtActivo: { color: COLORS.textPrimary, fontFamily: FONTS.interSemiBold },

@@ -591,7 +591,7 @@ export default function ProgresoTab() {
   // termómetro muestra sus horas REALES avanzando; si no, cae al expediente
   // del perfil (`horas_aprobadas`/`horas_objetivo`, que solo se acreditan al
   // certificar).
-  const { asignacion: inscripcion, metaHoras: metaInscripcion, progreso: ledger } = useProgresoInscripcion(user?.uid);
+  const { asignacion: inscripcion, metaHoras: metaInscripcion, progreso: ledger, ajustes: ajustesAsistencia } = useProgresoInscripcion(user?.uid);
   const horasObjetivo = ledger ? ledger.meta : horasObjetivoPerfil;
   const horasCumplidas = ledger ? ledger.cumplidas : horasAprobadas;
   const horasRestantes = ledger ? ledger.restantes : Math.max(0, horasObjetivoPerfil - horasAprobadas);
@@ -914,6 +914,7 @@ export default function ProgresoTab() {
                       horario: inscripcion.horario,
                       fechaPresentacion: inscripcion.fechaPresentacion,
                       fechaFin: ledger?.fechaFin ?? null,
+                      noComputados: ajustesAsistencia,
                     }
                   : null
               }

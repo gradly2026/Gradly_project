@@ -113,6 +113,7 @@ import { cuposOcupados, cuposTotales, hayCupos, textoCupos, textoSalario, valCup
 import { AREAS as AREAS_CATALOGO, AREAS_PUBLICABLES, tagsDeArea } from '../src/data/areas';
 import { normalizarHorario, textoHorario, valHorario, type HorarioPasantia } from '../src/data/disponibilidad';
 import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
+import AjusteAsistenciaModal from '../src/components/AjusteAsistenciaModal';
 import CandidatosVacante from '../src/components/CandidatosVacante';
 import FechaPresentacionModal from '../src/components/FechaPresentacionModal';
 import VacanteDetailModal, { type VacanteDetalle } from '../src/components/VacanteDetailModal';
@@ -3495,6 +3496,10 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
   // Cupo seleccionado → FechaPresentacionModal (detalle de su pasantía + fijar/
   // editar el Día 1 + chat + ver perfil).
   const [cupoSel, setCupoSel] = useState<any | null>(null);
+  // Cupo seleccionado → AjusteAsistenciaModal (días no computados). Se abre
+  // DESDE FechaPresentacionModal (que se cierra primero — dos <Modal> nativos
+  // a la vez fallan silenciosamente en iOS, mismo cuidado que en ChatThread).
+  const [ajusteSel, setAjusteSel] = useState<any | null>(null);
   // Pasantía cuyo detalle se abre al tocar su nombre dentro de una tarjeta.
   const [vacDetalle, setVacDetalle] = useState<VacanteDetalle | null>(null);
   useEffect(() => {
@@ -3747,6 +3752,19 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
         empresaNombre={empresaNombre}
         onClose={() => setCupoSel(null)}
         onVerPerfil={onVerPerfil}
+        onAjustarAsistencia={(a) => {
+          setCupoSel(null);
+          setTimeout(() => setAjusteSel(a), Platform.OS === 'ios' ? 350 : 0);
+        }}
+      />
+
+      {/* Días no computados (enfermedad/permiso/emergencia) del cupo elegido. */}
+      <AjusteAsistenciaModal
+        visible={!!ajusteSel}
+        asignacion={ajusteSel}
+        marcadoPorUid={empresaId}
+        marcadoPorRol="empresa"
+        onClose={() => setAjusteSel(null)}
       />
 
       {/* Detalle de la pasantía, abierto al tocar su nombre en una tarjeta. */}

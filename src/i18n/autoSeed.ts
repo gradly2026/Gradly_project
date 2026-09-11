@@ -1322,6 +1322,22 @@ export const CUPOS_SEED_EN: Record<string, string> = {
     "The job's area doesn't match this group's major. You can reserve anyway.",
   "Elige a qué grupo de estudiantes asignarás estos cupos.":
     "Choose which student group you'll assign these slots to.",
+
+  // ── Días no computados (Fase 1 de asistencia) — AjusteAsistenciaModal,
+  //    botón en FechaPresentacionModal, marcas en CalendarioEventos. ──
+  "Ajustar asistencia": "Adjust attendance",
+  "Toca un día programado del horario para marcarlo como \"no computado\" (no cuenta para sus horas). La fecha de fin de la pasantía se corre un día por cada uno.":
+    "Tap a scheduled day to mark it as \"not counted\" (it won't count toward their hours). The internship's end date moves one day for each one.",
+  "No computar este día": "Don't count this day",
+  "Reactivar este día": "Reactivate this day",
+  "Programado": "Scheduled",
+  "No computado": "Not counted",
+  "Enfermedad": "Illness",
+  "Permiso": "Leave of absence",
+  "Emergencia": "Emergency",
+  "Otro motivo": "Other reason",
+  "Aún no": "Not yet",
+  "Solo puedes ajustar días de hoy hacia atrás.": "You can only adjust today's date or earlier.",
 };
 
 // ── Onboarding de dirección del estudiante (UbicacionSelector,

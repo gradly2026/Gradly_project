@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import { AutoText as Text } from "./AutoText";
 import { db } from "../config/firebaseConfig";
 import { FONTS, useTheme, type GradlyColors } from "../context/ThemeContext";
+import AjusteAsistenciaModal from "./AjusteAsistenciaModal";
 import FechaPresentacionModal from "./FechaPresentacionModal";
 import type { AsignacionCupo } from "../services/reclamoCuposService";
 import { progresoPorMeta } from "../utils/horasPasantia";
@@ -67,6 +68,8 @@ export default function CandidatosVacante({
   const [cargando, setCargando] = useState(true);
   // Modal de "primer día" (solo para pasantías de cupo, que tienen asignación).
   const [asignSel, setAsignSel] = useState<AsignacionCupo | null>(null);
+  // Días no computados, abierto desde FechaPresentacionModal.
+  const [ajusteSel, setAjusteSel] = useState<AsignacionCupo | null>(null);
 
   useEffect(() => {
     if (!vacanteId || !empresaId) return;
@@ -267,6 +270,18 @@ export default function CandidatosVacante({
         empresaNombre={empresaNombre}
         onClose={() => setAsignSel(null)}
         onVerPerfil={onVerPerfil}
+        onAjustarAsistencia={(a) => {
+          setAsignSel(null);
+          setTimeout(() => setAjusteSel(a), Platform.OS === "ios" ? 350 : 0);
+        }}
+      />
+
+      <AjusteAsistenciaModal
+        visible={!!ajusteSel}
+        asignacion={ajusteSel}
+        marcadoPorUid={empresaId}
+        marcadoPorRol="empresa"
+        onClose={() => setAjusteSel(null)}
       />
     </View>
   );

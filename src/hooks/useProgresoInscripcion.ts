@@ -1,11 +1,12 @@
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../config/firebaseConfig';
 import {
   COLECCION_ASIGNACIONES,
   finalizarInscripcionPorHoras,
   type AsignacionCupo,
 } from '../services/reclamoCuposService';
+import { suscribirAjustesAsistencia, type AjusteDia } from '../services/ajusteAsistenciaService';
 import { progresoPorMeta, type ProgresoMeta } from '../utils/horasPasantia';
 
 export interface ProgresoInscripcion {
@@ -16,6 +17,8 @@ export interface ProgresoInscripcion {
   /** Libro mayor de horas, o null si aún no hay datos suficientes
    *  (sin inscripción, sin `fechaPresentacion`, o sin meta). */
   progreso: ProgresoMeta | null;
+  /** Días no computados de la asignación activa (enfermedad/permiso/...). */
+  ajustes: AjusteDia[];
   /** false mientras aún no resuelve la primera lectura. */
   cargado: boolean;
 }
@@ -65,6 +68,14 @@ export function useProgresoInscripcion(estudianteId?: string | null): ProgresoIn
     return unsub;
   }, [estudianteId]);
 
+  // Días no computados de la asignación activa (Fase 1 de asistencia).
+  const [ajustes, setAjustes] = useState<AjusteDia[]>([]);
+  useEffect(() => {
+    const unsub = suscribirAjustesAsistencia(asignacion?.id, setAjustes);
+    return unsub;
+  }, [asignacion?.id]);
+  const fechasExcluidas = useMemo(() => ajustes.map(a => a.fecha), [ajustes]);
+
   // Meta de horas del grupo de la asignación.
   useEffect(() => {
     const grupoId = asignacion?.grupoId;
@@ -86,7 +97,7 @@ export function useProgresoInscripcion(estudianteId?: string | null): ProgresoIn
 
   const progreso =
     asignacion && metaHoras
-      ? progresoPorMeta(asignacion.horario, asignacion.fechaPresentacion, metaHoras, new Date(ahora))
+      ? progresoPorMeta(asignacion.horario, asignacion.fechaPresentacion, metaHoras, new Date(ahora), fechasExcluidas)
       : null;
 
   // ── Cierre automático al cumplir la meta (Fase E) ──
@@ -115,5 +126,5 @@ export function useProgresoInscripcion(estudianteId?: string | null): ProgresoIn
     }
   }, [asignacion, progreso?.completado]);
 
-  return { asignacion, metaHoras, progreso, cargado };
+  return { asignacion, metaHoras, progreso, ajustes, cargado };
 }

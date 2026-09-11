@@ -356,6 +356,42 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // 📅 AJUSTES_ASISTENCIA — "días no computados" de una pasantía de cupo:
+    //    un día programado del horario que NO cuenta para el libro mayor de
+    //    horas (enfermedad, permiso, emergencia...). Doc 1:1 con la
+    //    asignación (id = id de la asignación), colección aparte para NO
+    //    tocar las reglas de `asignaciones_cupo` — mismo patrón que
+    //    `comprobantes_pasantia`. Lo marca la empresa o la universidad de esa
+    //    asignación; se valida cruzando con el doc real vía get().
+    // ═══════════════════════════════════════════════════════════════════
+    match /ajustes_asistencia/{asignacionId} {
+      allow read: if resource == null
+        || (request.auth != null
+            && (request.auth.uid == resource.data.estudianteId
+                || request.auth.uid == resource.data.empresaId
+                || request.auth.uid == resource.data.universidadId
+                || esAdmin()));
+
+      allow create: if request.auth != null
+        && (request.auth.uid == request.resource.data.empresaId
+            || request.auth.uid == request.resource.data.universidadId)
+        && request.resource.data.empresaId
+             == get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.empresaId
+        && request.resource.data.estudianteId
+             == get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.estudianteId
+        && request.resource.data.universidadId
+             == get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.universidadId;
+
+      allow update: if request.auth != null
+        && (request.auth.uid == resource.data.empresaId || request.auth.uid == resource.data.universidadId)
+        && request.resource.data.empresaId == resource.data.empresaId
+        && request.resource.data.estudianteId == resource.data.estudianteId
+        && request.resource.data.universidadId == resource.data.universidadId;
+
+      allow delete: if esAdmin();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // 💼 CONTRATOS_LABORALES — empleo real: un graduado contratado a una
     //    vacante `categoria:'vacante'`. Es la fuente de verdad del "Puesto de
     //    trabajo": lo ven SOLO la empresa empleadora y el estudiante

@@ -21,6 +21,9 @@ interface Props {
   onGuardado?: () => void;
   /** Abrir el perfil del estudiante (opcional). */
   onVerPerfil?: (estudianteId: string) => void;
+  /** Abrir "Ajustar asistencia" (días no computados) para esta asignación.
+   *  El padre cierra este modal y abre el suyo (mismo patrón que onVerPerfil). */
+  onAjustarAsistencia?: (asignacion: AsignacionCupo) => void;
 }
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -39,7 +42,7 @@ const fechaLarga = (d: Date) =>
  * atajo para chatear con el estudiante y coordinar ese día.
  */
 export default function FechaPresentacionModal({
-  visible, asignacion, empresaId, empresaNombre, onClose, onGuardado, onVerPerfil,
+  visible, asignacion, empresaId, empresaNombre, onClose, onGuardado, onVerPerfil, onAjustarAsistencia,
 }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -152,6 +155,19 @@ export default function FechaPresentacionModal({
               <Ionicons name="chatbubbles-outline" size={16} color={colors.primaryLight} />
               <Text style={s.btnSecundarioTxt}>Coordinar por chat con el estudiante</Text>
             </TouchableOpacity>
+
+            {/* Días no computados: solo tiene sentido una vez que hay Día 1
+                fijado (si no, todavía no hay ningún día programado que excusar). */}
+            {!!onAjustarAsistencia && !!fechaActual && (
+              <TouchableOpacity
+                style={s.btnSecundario}
+                activeOpacity={0.85}
+                onPress={() => onAjustarAsistencia(asignacion)}
+              >
+                <Ionicons name="calendar-clear-outline" size={16} color={colors.primaryLight} />
+                <Text style={s.btnSecundarioTxt}>Ajustar asistencia</Text>
+              </TouchableOpacity>
+            )}
 
             {!!onVerPerfil && asignacion.estudianteId && (
               <TouchableOpacity

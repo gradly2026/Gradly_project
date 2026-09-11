@@ -164,6 +164,14 @@ export function progresoPorMeta(
   fechaPresentacionISO: string | null | undefined,
   horasMeta: number | null | undefined,
   ahora: Date = new Date(),
+  /**
+   * Días programados que NO cuentan (ISO `yyyy-mm-dd`) — "días no
+   * computados" por enfermedad/permiso/emergencia (ver
+   * ajusteAsistenciaService.ts). Se saltan al sumar Y al derivar la fecha de
+   * fin, así que cada día excluido corre la fecha de fin un día programado
+   * más — la pasantía se "extiende" en vez de perder esas horas.
+   */
+  fechasExcluidas?: string[] | null,
 ): ProgresoMeta {
   if (!horario) return PROGRESO_META_VACIO;
   const dias: DiaLaboral[] = Array.isArray(horario.dias) ? horario.dias : [];
@@ -181,18 +189,25 @@ export function progresoPorMeta(
   const horasPorDia = (fin - ini) / 60;
   const diasSet = new Set(dias.map(d => DIA_A_JS[d]).filter(n => n !== undefined));
   const hoy0 = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+  const excluidas = new Set(fechasExcluidas ?? []);
+  const aISO = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   let acumTotal = 0;   // hasta cubrir la meta (define fechaFin)
   let acumHoy = 0;     // hasta hoy
   let fechaFin: Date | null = null;
   let horasUltimoDia = 0;
   const cursor = new Date(inicio);
-  // Bucle acotado: como mucho meta/horasPorDia días laborables (semanas/meses).
-  // El tope duro cubre ~11 años de pasos diarios por si el horario fuera raro.
+  // Bucle acotado: como mucho meta/horasPorDia días laborables (semanas/meses),
+  // más los días excluidos (pocos en la práctica). El tope duro cubre ~11 años
+  // de pasos diarios por si el horario fuera raro.
   let guard = 0;
   while (acumTotal < meta && guard < 4000) {
     guard++;
-    if (diasSet.has(cursor.getDay())) {
+    // Un día "no computado" es como si ese día no fuera laborable: no suma
+    // ni a la meta ni a lo cumplido, y el cursor sigue — así la fecha de fin
+    // se corre exactamente un día programado por cada exclusión.
+    if (diasSet.has(cursor.getDay()) && !excluidas.has(aISO(cursor))) {
       const hoyEste = Math.min(horasPorDia, meta - acumTotal); // último día puede ser parcial
       acumTotal += hoyEste;
       if (cursor <= hoy0) acumHoy += hoyEste;
@@ -241,6 +256,8 @@ export interface InscripcionParaProgreso {
   horario?: HorarioMinimo | null;
   /** "Día 1" fijado por la empresa (ISO `yyyy-mm-dd`). */
   fechaPresentacion?: string | null;
+  /** Días no computados (ISO `yyyy-mm-dd`) — ver `progresoPorMeta`. */
+  fechasExcluidas?: string[] | null;
 }
 
 /** Datos de período de un grupo, tal como los guarda `PeriodoPracticasField`. */
@@ -274,7 +291,10 @@ export function progresoDeGrupo(
 ): ProgresoGrupo {
   // 0. Libro mayor de horas del reparto de cupos (Fase D).
   if (inscripcion?.fechaPresentacion && grupo.horasRequeridas && grupo.horasRequeridas > 0) {
-    const m = progresoPorMeta(inscripcion.horario, inscripcion.fechaPresentacion, grupo.horasRequeridas);
+    const m = progresoPorMeta(
+      inscripcion.horario, inscripcion.fechaPresentacion, grupo.horasRequeridas,
+      undefined, inscripcion.fechasExcluidas,
+    );
     if (m.valido) {
       return {
         visible: true,
