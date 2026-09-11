@@ -76,6 +76,11 @@ export const MOTIVOS_INCIDENCIA_EMPRESA = [
   'Bajo rendimiento sostenido',
   'Conducta inadecuada',
   'Abandono del puesto',
+  // Fase 4 de "asistencia real" (ver [[project_asistencia_pasantia]]): la
+  // empresa mueve al pasante de área/puesto sin sacarlo de la pasantía (para
+  // no perder la oportunidad). No es una acción propia con campos nuevos —
+  // deliberadamente es solo una entrada más aquí, queda como constancia.
+  'Cambio de área o puesto',
   'Otro',
 ] as const;
 

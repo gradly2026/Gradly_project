@@ -1728,6 +1728,7 @@ export const INCIDENCIAS_SEED_EN: Record<string, string> = {
   "Bajo rendimiento sostenido": "Sustained poor performance",
   "Conducta inadecuada": "Inappropriate conduct",
   "Abandono del puesto": "Abandonment of the post",
+  "Cambio de área o puesto": "Change of area or role",
 };
 
 // ── Rediseño de la sección "Reclutamiento" del dashboard empresa
