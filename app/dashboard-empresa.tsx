@@ -116,6 +116,7 @@ import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import AjusteAsistenciaModal from '../src/components/AjusteAsistenciaModal';
 import CandidatosVacante from '../src/components/CandidatosVacante';
 import FechaPresentacionModal from '../src/components/FechaPresentacionModal';
+import HistorialAsistenciaModal from '../src/components/HistorialAsistenciaModal';
 import RegistrarAsistenciaModal from '../src/components/RegistrarAsistenciaModal';
 import TerminarPasantiaModal from '../src/components/TerminarPasantiaModal';
 import VacanteDetailModal, { type VacanteDetalle } from '../src/components/VacanteDetailModal';
@@ -3504,6 +3505,8 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
   const [ajusteSel, setAjusteSel] = useState<any | null>(null);
   // Modal "Registrar asistencia de pasantes" (código de 8 dígitos, Fase 2).
   const [asistenciaOpen, setAsistenciaOpen] = useState(false);
+  // Modal "Historial de asistencia" (hoy, con confirmar salida — Fase 3).
+  const [historialAsistOpen, setHistorialAsistOpen] = useState(false);
   // Cupo seleccionado → TerminarPasantiaModal (despido/renuncia, Fase 5).
   const [terminarSel, setTerminarSel] = useState<any | null>(null);
   // Pasantía cuyo detalle se abre al tocar su nombre dentro de una tarjeta.
@@ -3731,6 +3734,23 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
         </TouchableOpacity>
       )}
 
+      {filtro === 'porCupo' && cuposEnCurso.length > 0 && (
+        <TouchableOpacity
+          onPress={() => setHistorialAsistOpen(true)}
+          activeOpacity={0.85}
+          style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+            marginHorizontal: 16, marginTop: 8, borderRadius: 12, borderWidth: 1,
+            borderColor: colors.border, paddingVertical: 10,
+          }}
+        >
+          <Ionicons name="list-outline" size={16} color={colors.textSecondary} />
+          <Text style={{ fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: colors.textSecondary }}>
+            Historial de asistencia
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {filtro === 'incidencias' && (
         <ScrollView style={[{ flex: 1 }, webScrollStyle(colors)]} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
           {pasantesReportables.length > 0 && (
@@ -3796,6 +3816,13 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
 
       {/* Registrar asistencia de pasantes con el código de 8 dígitos (Fase 2). */}
       <RegistrarAsistenciaModal visible={asistenciaOpen} onClose={() => setAsistenciaOpen(false)} />
+
+      {/* Historial de asistencia de hoy + confirmar salida (Fase 3). */}
+      <HistorialAsistenciaModal
+        visible={historialAsistOpen}
+        empresaId={empresaId}
+        onClose={() => setHistorialAsistOpen(false)}
+      />
 
       {/* Terminar pasantía anticipadamente: despido o renuncia (Fase 5). */}
       <TerminarPasantiaModal visible={!!terminarSel} asignacion={terminarSel} onClose={() => setTerminarSel(null)} />

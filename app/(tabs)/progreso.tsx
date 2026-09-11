@@ -469,6 +469,7 @@ function MiInscripcionCard({ asignacion, ledger }: { asignacion: AsignacionCupo;
               {registroHoy.estado === 'tarde'
                 ? `Asistencia de hoy registrada (llegaste ${registroHoy.tardanzaMin} min tarde)`
                 : 'Asistencia de hoy registrada'}
+              {registroHoy.salidaConfirmada ? ' · salida confirmada' : ''}
             </Text>
           </View>
         ) : (

@@ -420,9 +420,13 @@ service cloud.firestore {
 
     // ═══════════════════════════════════════════════════════════════════
     // 📋 REGISTROS_ASISTENCIA — un doc por (asignación, día) con lo que pasó
-    //    ese día (presente/tarde). Lo ESCRIBE solo registrarAsistenciaPorCodigo
-    //    (Admin SDK); lo LEEN las 3 partes de la asignación para historial y
-    //    transparencia.
+    //    ese día (presente/tarde). La ENTRADA la escribe solo
+    //    registrarAsistenciaPorCodigo (Admin SDK) — create/delete quedan
+    //    cerrados a cliente. La SALIDA (Fase 3) la puede confirmar la EMPRESA
+    //    directo desde el cliente, un solo toque sin código (a esa hora ya se
+    //    validó que el pasante entró) — `hasOnly` la limita a esos 3 campos,
+    //    nunca puede tocar `estado`/`tardanzaMin`. Lo LEEN las 3 partes de la
+    //    asignación para historial y transparencia.
     // ═══════════════════════════════════════════════════════════════════
     match /registros_asistencia/{registroId} {
       allow read: if request.auth != null
@@ -430,7 +434,11 @@ service cloud.firestore {
             || request.auth.uid == resource.data.empresaId
             || request.auth.uid == resource.data.universidadId
             || esAdmin());
-      allow write: if false;
+      allow create, delete: if false;
+      allow update: if request.auth != null
+        && request.auth.uid == resource.data.empresaId
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['salidaConfirmada', 'salidaConfirmadaAt', 'salidaConfirmadaPor']);
     }
 
     // ═══════════════════════════════════════════════════════════════════

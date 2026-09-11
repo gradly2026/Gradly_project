@@ -1391,6 +1391,16 @@ export const CUPOS_SEED_EN: Record<string, string> = {
     "These hours are recorded, but they aren't credited automatically to a new internship. If the student enrolls in another one, you decide whether they carry over or start from zero.",
   "Terminada anticipadamente · Despido": "Ended early · Let go",
   "Terminada anticipadamente · Renuncia": "Ended early · Quit",
+
+  // ── Confirmar salida + historial de asistencia del día (Fase 3 de
+  //    asistencia) — HistorialAsistenciaModal, botón en dashboard-empresa. ──
+  "Historial de asistencia": "Attendance history",
+  "Sin registrar": "Not recorded",
+  "Confirmar salida": "Confirm check-out",
+  "Nadie en esta lista por ahora.": "No one on this list right now.",
+  "Presente": "Present",
+  "Salida confirmada": "Check-out confirmed",
+  "No se pudo confirmar": "Couldn't confirm it",
 };
 
 // ── Onboarding de dirección del estudiante (UbicacionSelector,

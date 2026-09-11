@@ -8,7 +8,7 @@
 // el servidor — el cliente solo llama y muestra el resultado. Ver
 // [[project_asistencia_pasantia]] en memoria para el diseño completo.
 // ════════════════════════════════════════════════════════════════════════
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app, db } from '../config/firebaseConfig';
 
@@ -92,6 +92,9 @@ export async function registrarAsistenciaConCodigo(codigo: string): Promise<Conf
 export interface RegistroAsistenciaDia {
   estado: 'presente' | 'tarde';
   tardanzaMin: number;
+  salidaConfirmada: boolean;
+  /** Milisegundos (epoch), o null si aún no se confirmó. */
+  salidaConfirmadaAt: number | null;
 }
 
 /** ISO `yyyy-mm-dd` de HOY según el reloj del dispositivo — solo para decidir
@@ -102,21 +105,50 @@ export function hoyISOLocal(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function mapRegistro(data: any): RegistroAsistenciaDia {
+  return {
+    estado: data.estado === 'tarde' ? 'tarde' : 'presente',
+    tardanzaMin: Number(data.tardanzaMin) || 0,
+    salidaConfirmada: data.salidaConfirmada === true,
+    salidaConfirmadaAt: typeof data.salidaConfirmadaAt?.toMillis === 'function' ? data.salidaConfirmadaAt.toMillis() : null,
+  };
+}
+
+/** Escucha el registro de asistencia de una asignación en una fecha puntual
+ *  (`yyyy-mm-dd`), o `null` si ese día no se ha marcado. */
+export function suscribirRegistroDia(
+  asignacionId: string | null | undefined,
+  fecha: string,
+  cb: (registro: RegistroAsistenciaDia | null) => void,
+): () => void {
+  if (!asignacionId) { cb(null); return () => {}; }
+  return onSnapshot(
+    doc(db, 'registros_asistencia', `${asignacionId}_${fecha}`),
+    snap => cb(snap.exists() ? mapRegistro(snap.data()) : null),
+    () => cb(null),
+  );
+}
+
 /** Escucha el registro de asistencia de HOY de una asignación (o `null` si
  *  todavía no se ha marcado). */
 export function suscribirRegistroDeHoy(
   asignacionId: string | null | undefined,
   cb: (registro: RegistroAsistenciaDia | null) => void,
 ): () => void {
-  if (!asignacionId) { cb(null); return () => {}; }
-  const id = `${asignacionId}_${hoyISOLocal()}`;
-  return onSnapshot(
-    doc(db, 'registros_asistencia', id),
-    snap => {
-      if (!snap.exists()) { cb(null); return; }
-      const d = snap.data() as any;
-      cb({ estado: d.estado === 'tarde' ? 'tarde' : 'presente', tardanzaMin: Number(d.tardanzaMin) || 0 });
-    },
-    () => cb(null),
-  );
+  return suscribirRegistroDia(asignacionId, hoyISOLocal(), cb);
+}
+
+/**
+ * Fase 3: la empresa (o su tutor, desde la misma cuenta) confirma con un solo
+ * toque que el pasante YA SALIÓ ese día — sin código, porque a esa hora la
+ * confianza ya está puesta (ya se le vio entrar). Solo puede tocar los campos
+ * de salida (reglas `hasOnly`); no puede alterar `estado`/`tardanzaMin`.
+ */
+export async function confirmarSalida(asignacionId: string, fecha: string, empresaUid: string): Promise<void> {
+  if (!asignacionId || !fecha) throw new Error('Datos inválidos.');
+  await updateDoc(doc(db, 'registros_asistencia', `${asignacionId}_${fecha}`), {
+    salidaConfirmada: true,
+    salidaConfirmadaAt: serverTimestamp(),
+    salidaConfirmadaPor: empresaUid,
+  });
 }
