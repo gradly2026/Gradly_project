@@ -8,6 +8,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Switch,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -34,13 +35,16 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { auth, db } from "../../src/config/firebaseConfig";
+import * as DocumentPicker from "expo-document-picker";
+import { deleteObject, ref as storageRef, uploadBytes } from "firebase/storage";
+import { auth, db, storage } from "../../src/config/firebaseConfig";
 import { useAuth } from "../../src/context/AuthContext";
 import {
   backfillAlianzasCalificaciones,
   deleteUserComplete as deleteUserCompleteAction,
   deshabilitarVacanteAdmin as deshabilitarVacanteAdminAction,
   eliminarVacanteAdmin as eliminarVacanteAdminAction,
+  extraerFaqDeDocumento,
   obtenerAsistenciaPasantiaAdmin,
   obtenerSaludAsistencia,
   resolveReport as resolveReportAction,
@@ -1796,31 +1800,25 @@ export default function AdminPreview() {
       setAsisCargado(true);
     }
   }, []);
-  const guardarAsistente = (activar: boolean) => {
-    setConfirmDialog({
-      title: activar ? "Mostrar el asistente" : "Ocultar el asistente",
-      message: activar
-        ? "La burbuja del Asistente Gradly aparecerá en los dashboards de estudiantes, empresas y universidades."
-        : "La burbuja del asistente dejará de verse para todos los usuarios.",
-      confirmLabel: activar ? "Mostrar" : "Ocultar",
-      destructive: !activar,
-      onConfirm: async () => {
-        setAsisGuardando(true);
-        try {
-          await setDoc(
-            doc(db, "config", "asistente"),
-            { habilitado: activar, actualizadoPor: auth.currentUser?.uid ?? null, actualizadoAt: serverTimestamp() },
-            { merge: true },
-          );
-          setAsisActivo(activar);
-          mostrarAviso("exito", activar ? "Asistente visible" : "Asistente oculto", activar ? "Ya aparece la burbuja en los dashboards." : "La burbuja ya no se muestra.");
-        } catch (error) {
-          mostrarAviso("error", "No se pudo guardar", "Vuelve a intentarlo.", translateSync(adminDataErrorMessage(error, "el asistente")));
-        } finally {
-          setAsisGuardando(false);
-        }
-      },
-    });
+  // Switch = toggle directo, sin diálogo de confirmación: a diferencia de
+  // "Modo mantenimiento" (que sí confirma porque bloquea a TODOS los
+  // usuarios), mostrar/ocultar una burbuja de ayuda es de bajo riesgo y
+  // reversible con un toque — no amerita una pausa extra.
+  const guardarAsistente = async (activar: boolean) => {
+    setAsisGuardando(true);
+    try {
+      await setDoc(
+        doc(db, "config", "asistente"),
+        { habilitado: activar, actualizadoPor: auth.currentUser?.uid ?? null, actualizadoAt: serverTimestamp() },
+        { merge: true },
+      );
+      setAsisActivo(activar);
+      mostrarAviso("exito", activar ? "Asistente visible" : "Asistente oculto", activar ? "Ya aparece la burbuja en los dashboards." : "La burbuja ya no se muestra.");
+    } catch (error) {
+      mostrarAviso("error", "No se pudo guardar", "Vuelve a intentarlo.", translateSync(adminDataErrorMessage(error, "el asistente")));
+    } finally {
+      setAsisGuardando(false);
+    }
   };
 
   // ── FAQ del asistente (doc `config/faq`, campo `entradas: {p,r}[]`) ──
@@ -1860,6 +1858,82 @@ export default function AdminPreview() {
       mostrarAviso("error", "No se pudo guardar", "Vuelve a intentarlo.", translateSync(adminDataErrorMessage(error, "las preguntas frecuentes")));
     } finally {
       setFaqGuardando(false);
+    }
+  };
+
+  // ── Subir documento para precargar el FAQ (extraerFaqDeDocumento) ──
+  // El resultado se agrega a `faqEntradas` SIN guardar solo: el admin lo
+  // revisa/edita en la lista de siempre y guarda con el botón de siempre.
+  const [faqSubidaFase, setFaqSubidaFase] = useState<"idle" | "subiendo" | "procesando">("idle");
+  const EXT_FAQ_POR_MIME: Record<string, "pdf" | "docx" | "txt"> = {
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "text/plain": "txt",
+  };
+  const subirDocumentoFaq = async () => {
+    const cuposDisponibles = 40 - faqEntradas.length;
+    if (cuposDisponibles <= 0) {
+      mostrarAviso("advertencia", "Ya tienes 40 preguntas", "Borra alguna antes de subir un documento nuevo.");
+      return;
+    }
+    const res = await DocumentPicker.getDocumentAsync({
+      type: [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+      ],
+      copyToCacheDirectory: true,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const asset = res.assets[0];
+    const extPorNombre = asset.name?.split(".").pop()?.toLowerCase();
+    const extension =
+      EXT_FAQ_POR_MIME[asset.mimeType ?? ""] ??
+      (extPorNombre === "pdf" || extPorNombre === "docx" || extPorNombre === "txt" ? extPorNombre : null);
+    if (!extension) {
+      mostrarAviso("error", "Formato no soportado", "Usa un archivo .pdf, .docx o .txt.");
+      return;
+    }
+    if ((asset.size ?? 0) > 11 * 1024 * 1024) {
+      mostrarAviso("error", "Archivo muy pesado", "El límite es 11 MB.");
+      return;
+    }
+
+    const path = `faq_uploads/${auth.currentUser!.uid}/${Date.now()}.${extension}`;
+    const archivoRef = storageRef(storage, path);
+    setFaqSubidaFase("subiendo");
+    try {
+      const respuesta = await fetch(asset.uri);
+      const blob = await respuesta.blob();
+      await uploadBytes(archivoRef, blob, { contentType: asset.mimeType || undefined });
+
+      setFaqSubidaFase("procesando");
+      const { entradas } = await extraerFaqDeDocumento({ storagePath: path, extension, cuposDisponibles });
+
+      const aUsar = entradas.slice(0, cuposDisponibles);
+      setFaqEntradas((prev) => [...prev, ...aUsar]);
+
+      if (entradas.length > cuposDisponibles) {
+        mostrarAviso(
+          "advertencia",
+          "Se agregaron algunas preguntas",
+          `El documento traía ${entradas.length}, pero solo cabían ${cuposDisponibles} (máximo 40 en total). Se agregaron las primeras ${aUsar.length} y el resto se descartó. Revísalas y presiona "Guardar preguntas frecuentes".`,
+        );
+      } else {
+        mostrarAviso(
+          "exito",
+          "Preguntas agregadas",
+          `Se agregaron ${aUsar.length} pregunta(s) del documento. Revísalas y presiona "Guardar preguntas frecuentes" para conservarlas.`,
+        );
+      }
+    } catch (error) {
+      mostrarAviso("error", "No se pudo procesar el documento", "Intenta de nuevo.", translateSync(adminDataErrorMessage(error, "el documento del FAQ")));
+    } finally {
+      setFaqSubidaFase("idle");
+      // Limpieza extra por si la Cloud Function no llegó a correr (p. ej. la
+      // subida terminó pero la llamada nunca salió) — la function ya la
+      // intenta sola en su propio finally; esto es solo un respaldo.
+      deleteObject(archivoRef).catch(() => {});
     }
   };
 
@@ -5700,6 +5774,7 @@ export default function AdminPreview() {
   // "Recalcular alianzas y calificaciones" (runBackfillAlianzas, con su
   // propio modal de confirmación RecalcularConfirmModal) y cerrar sesión.
   const renderConfig = () => (
+    <>
     <ScrollView {...pageScrollProps} showsVerticalScrollIndicator>
       <View style={s.sectionHeader}>
         <View style={{ flex: 1 }}>
@@ -5860,24 +5935,27 @@ export default function AdminPreview() {
           Controla si la burbuja del asistente de ayuda se ve en los dashboards de estudiantes,
           empresas y universidades. Empieza oculta hasta que la actives aquí.
         </Text>
-        <View style={[s.row, { marginTop: 12 }]}>
-          <View style={[s.avatar, { backgroundColor: (asisActivo ? C.green : C.textMuted) + "22" }]}>
-            <Ionicons name={asisActivo ? "sparkles" : "eye-off-outline"} size={16} color={asisActivo ? C.green : C.textMuted} />
+        <View style={[s.row, { marginTop: 12, justifyContent: "space-between" }]}>
+          <View style={[s.row, { flex: 1, paddingRight: 10 }]}>
+            <View style={[s.avatar, { backgroundColor: (asisActivo ? C.green : C.textMuted) + "22" }]}>
+              <Ionicons name={asisActivo ? "sparkles" : "eye-off-outline"} size={16} color={asisActivo ? C.green : C.textMuted} />
+            </View>
+            <Text style={[s.itemSub, { marginLeft: 10, flex: 1 }]}>
+              {asisGuardando
+                ? "Guardando…"
+                : asisActivo
+                  ? "La burbuja del asistente está visible para los usuarios."
+                  : "La burbuja del asistente está oculta."}
+            </Text>
           </View>
-          <Text style={[s.itemSub, { marginLeft: 10 }]}>
-            {asisActivo ? "La burbuja del asistente está visible para los usuarios." : "La burbuja del asistente está oculta."}
-          </Text>
+          <Switch
+            value={asisActivo}
+            onValueChange={(v) => void guardarAsistente(v)}
+            disabled={!asisCargado || asisGuardando}
+            trackColor={{ false: C.border, true: C.accent }}
+            thumbColor="#fff"
+          />
         </View>
-        <TouchableOpacity
-          style={[s.btnPrimary, { marginTop: 14, backgroundColor: asisActivo ? C.red : C.green, opacity: asisCargado && !asisGuardando ? 1 : 0.6 }]}
-          disabled={!asisCargado || asisGuardando}
-          onPress={() => guardarAsistente(!asisActivo)}
-          activeOpacity={0.85}
-        >
-          <Text style={s.btnPrimaryText}>
-            {asisGuardando ? "Guardando…" : asisActivo ? "Ocultar el asistente" : "Mostrar el asistente"}
-          </Text>
-        </TouchableOpacity>
       </Card>
 
       {/* ── FAQ que usa el asistente (config/faq) ── */}
@@ -5887,6 +5965,24 @@ export default function AdminPreview() {
           Pares pregunta/respuesta que el asistente usa como fuente prioritaria. Sirve para
           enseñarle respuestas nuevas sin volver a desplegar nada. Máximo 40.
         </Text>
+
+        {faqCargado && (
+          <View style={{ marginTop: 12 }}>
+            <TouchableOpacity
+              style={[s.btnOutline, { alignSelf: "flex-start", opacity: faqEntradas.length >= 40 ? 0.5 : 1 }]}
+              onPress={() => void subirDocumentoFaq()}
+              activeOpacity={0.8}
+              disabled={faqEntradas.length >= 40 || faqSubidaFase !== "idle"}
+            >
+              <Text style={s.btnOutlineText}>📄 Subir documento (.pdf, .docx, .txt)</Text>
+            </TouchableOpacity>
+            <Text style={[s.textMuted, { fontSize: 11.5, marginTop: 6 }]}>
+              {faqEntradas.length >= 40
+                ? "Ya tienes 40 preguntas — borra alguna para poder subir un documento."
+                : `Puedes tener hasta 40 preguntas en total (te quedan ${40 - faqEntradas.length}). Si el documento trae más de las que caben, se usan las primeras y el resto se descarta.`}
+            </Text>
+          </View>
+        )}
 
         {!faqCargado ? (
           <View style={{ paddingVertical: 20, alignItems: "center" }}>
@@ -6041,6 +6137,8 @@ export default function AdminPreview() {
         </TouchableOpacity>
       </Card>
     </ScrollView>
+    {ConfirmOverlay()}
+    </>
   );
 
   // ── Modales de detalle y confirmación ──────────────────────────────
@@ -7746,6 +7844,28 @@ export default function AdminPreview() {
     </Modal>
   );
 
+  // Progreso de "Subir documento" del FAQ (subirDocumentoFaq) — 2 etapas
+  // reales (subida a Storage, luego extracción vía Gemini), sin barra de
+  // porcentaje inventada: no hay una señal granular de avance dentro de una
+  // sola llamada a la Cloud Function.
+  const FaqSubidaModal = () => (
+    <Modal visible={faqSubidaFase !== "idle"} transparent animationType="none">
+      <View style={s.modalOverlay}>
+        <View style={[s.modal, isPhone && s.modalCompact, { alignItems: "center", paddingVertical: 30 }]}>
+          <ActivityIndicator color={C.accent70} size="large" />
+          <Text style={[s.modalTitle, { marginTop: 16, textAlign: "center" }]}>
+            {faqSubidaFase === "subiendo" ? "Subiendo archivo…" : "Extrayendo preguntas…"}
+          </Text>
+          <Text style={[s.textMuted, { marginTop: 8, textAlign: "center" }]}>
+            {faqSubidaFase === "subiendo"
+              ? "Esto no debería tardar mucho."
+              : "El asistente está leyendo el documento. Puede tardar unos segundos."}
+          </Text>
+        </View>
+      </View>
+    </Modal>
+  );
+
   // Despacha al renderX() de la página activa — mismo switch simple que
   // renderSeccion() en los dashboards de empresa/universidad.
   const renderBody = () => {
@@ -7944,6 +8064,7 @@ export default function AdminPreview() {
       {VacanteDetailAdminModal()}
       {VacanteModeracionModal()}
       {RecalcularConfirmModal()}
+      {FaqSubidaModal()}
       {!isDesktop ? Drawer() : null}
       {AvisoOverlay()}
 

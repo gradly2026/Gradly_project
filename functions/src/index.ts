@@ -55,6 +55,11 @@
  *  · recordatorioAsistenciaPendiente → job diario (11:00 América/El_Salvador)
  *    que avisa a la empresa si tiene pasantes que hoy les tocaba marcar
  *    asistencia y aún no lo han hecho (asistencia.ts).
+ *  · extraerFaqDeDocumento → el admin sube un .pdf/.docx/.txt a Storage y
+ *    esta function extrae el texto y le pide a Gemini pares pregunta/
+ *    respuesta en JSON, para precargar el FAQ del Asistente Gradly
+ *    (faqExtractor.ts). Solo admin; usa el mismo GEMINI_API_KEY que
+ *    chatbotGradly, sin secretos nuevos.
  *
  * Nota: el antiguo patrón "traducir al escribir" (triggers translate_*) se
  * retiró — se reemplazó por la traducción al vuelo con caché, que cubre también
@@ -84,6 +89,7 @@ export {
 } from "./admin";
 export { eliminarEstudiante, eliminarGrupo } from "./universidad";
 export { chatbotGradly } from "./chatbot";
+export { extraerFaqDeDocumento } from "./faqExtractor";
 export {
   generarCodigoAsistencia,
   registrarAsistenciaPorCodigo,

@@ -495,6 +495,24 @@ export const ADMIN_SEED_EN: Record<string, string> = {
     "Question/answer pairs the assistant uses as a priority source. Useful for teaching it new answers without redeploying anything. Max 40.",
   "+ Agregar pregunta": "+ Add question",
   "Guardar preguntas frecuentes": "Save FAQ",
+  // ── Subir documento para precargar el FAQ (extraerFaqDeDocumento, v158) ──
+  "📄 Subir documento (.pdf, .docx, .txt)": "📄 Upload document (.pdf, .docx, .txt)",
+  "Ya tienes 40 preguntas — borra alguna para poder subir un documento.":
+    "You already have 40 questions — delete one to be able to upload a document.",
+  "Subiendo archivo…": "Uploading file…",
+  "Esto no debería tardar mucho.": "This shouldn't take long.",
+  "Extrayendo preguntas…": "Extracting questions…",
+  "El asistente está leyendo el documento. Puede tardar unos segundos.":
+    "The assistant is reading the document. It may take a few seconds.",
+  "Ya tienes 40 preguntas": "You already have 40 questions",
+  "Borra alguna antes de subir un documento nuevo.": "Delete one before uploading a new document.",
+  "Formato no soportado": "Unsupported format",
+  "Usa un archivo .pdf, .docx o .txt.": "Use a .pdf, .docx or .txt file.",
+  "Archivo muy pesado": "File too large",
+  "El límite es 11 MB.": "The limit is 11 MB.",
+  "Se agregaron algunas preguntas": "Some questions were added",
+  "Preguntas agregadas": "Questions added",
+  "No se pudo procesar el documento": "The document couldn't be processed",
   // ── Backfill de alianzas/calificaciones (Configuración → Mantenimiento) ──
   "Recalcular alianzas y calificaciones": "Recalculate partnerships and ratings",
   "Recalculando…": "Recalculating…",

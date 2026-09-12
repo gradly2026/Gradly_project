@@ -96,5 +96,23 @@ service firebase.storage {
                    && (request.resource.contentType.matches('image/.*')
                        || request.resource.contentType.matches('audio/.*'));
     }
+
+    // 🤖 Documento que el admin sube para extraer preguntas/respuestas del
+    //    FAQ del Asistente Gradly (ver functions/src/faqExtractor.ts). Solo
+    //    lo lee esa Cloud Function con el Admin SDK (bypasa reglas) — nadie
+    //    más lo necesita, por eso `allow read: if false`. La propia function
+    //    lo borra al terminar de procesarlo.
+    match /faq_uploads/{uid}/{fileName} {
+      allow read: if false;
+      allow write: if request.auth != null && request.auth.uid == uid
+                   && esAdmin()
+                   && request.resource.size < 11 * 1024 * 1024
+                   && request.resource.contentType in [
+                        'text/plain',
+                        'application/pdf',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                      ];
+      allow delete: if request.auth != null && request.auth.uid == uid && esAdmin();
+    }
   }
 }

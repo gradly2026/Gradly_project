@@ -264,3 +264,29 @@ export async function eliminarVacanteAdmin(
   const res = await _eliminarVacanteAdmin(input);
   return res.data;
 }
+
+type ExtraerFaqDeDocumentoInput = {
+  storagePath: string;
+  extension: "pdf" | "docx" | "txt";
+  /** 40 menos las preguntas que ya tiene el FAQ — limita cuánto extrae Gemini. */
+  cuposDisponibles: number;
+};
+
+export type ExtraerFaqDeDocumentoOutput = {
+  entradas: { p: string; r: string }[];
+};
+
+const _extraerFaqDeDocumento = httpsCallable<
+  ExtraerFaqDeDocumentoInput,
+  ExtraerFaqDeDocumentoOutput
+>(functions, "extraerFaqDeDocumento");
+
+/** Sube un .pdf/.docx/.txt a Storage antes de llamar esto — ver
+ * `functions/src/faqExtractor.ts`. Devuelve los pares extraídos SIN
+ * guardarlos: el admin los revisa en la lista del FAQ antes de guardar. */
+export async function extraerFaqDeDocumento(
+  input: ExtraerFaqDeDocumentoInput,
+): Promise<ExtraerFaqDeDocumentoOutput> {
+  const res = await _extraerFaqDeDocumento(input);
+  return res.data;
+}
