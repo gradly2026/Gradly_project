@@ -25,6 +25,10 @@
  *    historial completo de `solicitudes_practicas` (admin.ts). Backfill de una
  *    sola vez para pasantías aprobadas antes de que existiera el autoreporte
  *    en tiempo real; también sirve para reconciliar si hiciera falta.
+ *  · obtenerSaludAsistencia → contadores agregados para la tarjeta "Salud
+ *    operativa" del panel admin (Config): pasantías terminadas
+ *    anticipadamente en 30 días + incidencias de tardanza reiterada abiertas
+ *    (admin.ts). Bajo demanda, no automático.
  *  · contarAplicanteNuevo / descontarAplicanteBorrado → mantienen en cada
  *    vacante el desglose `aplicantes_por_carrera` (aplicantes.ts), para que el
  *    estudiante vea CUÁNTOS compiten con él y de qué carreras, sin poder leer
@@ -66,6 +70,7 @@ export {
   deleteUserComplete,
   deshabilitarVacanteAdmin,
   eliminarVacanteAdmin,
+  obtenerSaludAsistencia,
   resolveReport,
   setUserApproval,
   setUserBan,

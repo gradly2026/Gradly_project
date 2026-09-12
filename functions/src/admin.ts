@@ -779,6 +779,50 @@ export const backfillAlianzasCalificaciones = onCall(
 );
 
 /**
+ * "Salud de asistencia" — contadores agregados para el panel admin, señal de
+ * plataforma (no un detalle persona por persona; para eso el admin abre el
+ * caso puntual desde Reportes/Incidencias). Deliberadamente por Cloud
+ * Function y no por queries directas del cliente admin: `asignaciones_cupo` e
+ * `incidencias` tienen reglas "OR de igualdades por uid", el mismo patrón que
+ * ya rompió producción una vez (ver `backfillAlianzasCalificaciones` arriba y
+ * la memoria de "Ranking alianzas") — una query sin filtro de dueño puede
+ * fallar con permission-denied aunque `esAdmin()` esté en el OR. Admin SDK
+ * bypasa esto por completo. Cada query usa SOLO una igualdad (sin combinarla
+ * con un rango de fecha) y filtra lo demás en memoria, a propósito, para no
+ * obligar a crear un índice compuesto en consola — mismo patrón que
+ * `barridoCuposVencidos`.
+ */
+export const obtenerSaludAsistencia = onCall({ region: REGION }, async (req) => {
+  try {
+    await requireAdmin(req.auth);
+
+    const corte30d = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+    const [terminadasSnap, tardanzaSnap] = await Promise.all([
+      db.collection("asignaciones_cupo").where("terminacionAnticipada", "==", true).get(),
+      db.collection("incidencias").where("motivo", "==", "Llegadas tarde reiteradas").get(),
+    ]);
+
+    const terminacionesAnticipadas30d = terminadasSnap.docs.filter((d) => {
+      const ts = d.data().finalizadaAt;
+      return typeof ts?.toMillis === "function" && ts.toMillis() >= corte30d;
+    }).length;
+
+    const incidenciasTardanzaAbiertas = tardanzaSnap.docs.filter(
+      (d) => d.data().estado !== "resuelta",
+    ).length;
+
+    return { terminacionesAnticipadas30d, incidenciasTardanzaAbiertas };
+  } catch (error: any) {
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError(
+      "internal",
+      `Error interno en obtenerSaludAsistencia: ${String(error?.message ?? error)}`,
+    );
+  }
+});
+
+/**
  * Deshabilita una vacante/pasantía por decisión administrativa (motivo
  * obligatorio). NO es un `toggleVacante` común: además de `activa:false`,
  * marca `estado_moderacion:'deshabilitada'` para que la empresa dueña (a

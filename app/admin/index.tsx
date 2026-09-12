@@ -41,11 +41,13 @@ import {
   deleteUserComplete as deleteUserCompleteAction,
   deshabilitarVacanteAdmin as deshabilitarVacanteAdminAction,
   eliminarVacanteAdmin as eliminarVacanteAdminAction,
+  obtenerSaludAsistencia,
   resolveReport as resolveReportAction,
   setUserApproval as setUserApprovalAction,
   setUserBan as setUserBanAction,
   setUserRole as setUserRoleAction,
   setUserStatus as setUserStatusAction,
+  type SaludAsistenciaOutput,
 } from "../../src/services/adminService";
 import { useTranslation } from "../../src/context/TranslationContext";
 import { useAuthGuard } from "../../src/hooks/useAuthGuard";
@@ -590,6 +592,23 @@ export default function AdminPreview() {
 
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [recalcularConfirmOpen, setRecalcularConfirmOpen] = useState(false);
+
+  // ── "Salud operativa" (Config): contadores agregados bajo demanda ──
+  const [saludAsistencia, setSaludAsistencia] = useState<SaludAsistenciaOutput | null>(null);
+  const [saludCargado, setSaludCargado] = useState(false);
+  const [saludLoading, setSaludLoading] = useState(false);
+  const fetchSaludAsistencia = useCallback(async () => {
+    setSaludLoading(true);
+    try {
+      const r = await obtenerSaludAsistencia();
+      setSaludAsistencia(r);
+    } catch (error) {
+      mostrarAviso("error", "No se pudo cargar", "Intenta de nuevo.", translateSync(adminDataErrorMessage(error, "la salud de asistencia")));
+    } finally {
+      setSaludLoading(false);
+      setSaludCargado(true);
+    }
+  }, []);
 
   // Contacto de soporte (doc `config/soporte`): lo que los 3 roles ven en la
   // pantalla "Ayuda". Se edita solo desde aquí (reglas: escritura = admin).
@@ -2674,6 +2693,7 @@ export default function AdminPreview() {
     if (page === "config" && !mantCargado) { void fetchMantenimiento(); }
     if (page === "config" && !asisCargado) { void fetchAsistente(); }
     if (page === "config" && !faqCargado) { void fetchFaq(); }
+    if (page === "config" && !saludCargado) { void fetchSaludAsistencia(); }
     if (page === "suscripciones" && !suscripcionesAttempted && !suscripcionesLoading) fetchSuscripciones();
     if (page === "roles" && !permissionsLoaded && !permissionsLoading) {
       fetchPermissionsOverview();
@@ -2691,10 +2711,12 @@ export default function AdminPreview() {
     fetchMantenimiento,
     fetchAsistente,
     fetchFaq,
+    fetchSaludAsistencia,
     comunicadosCargado,
     mantCargado,
     asisCargado,
     faqCargado,
+    saludCargado,
     fetchPermissionsOverview,
     fetchSuscripciones,
     logsAttempted,
@@ -5929,6 +5951,56 @@ export default function AdminPreview() {
             {backfillLoading ? "Recalculando…" : "Recalcular alianzas y calificaciones"}
           </Text>
         </TouchableOpacity>
+      </Card>
+
+      {/* "Salud operativa": contadores agregados bajo demanda, señal de
+          plataforma (no un detalle persona por persona — para eso el admin
+          abre el caso puntual desde Reportes/Incidencias). Ver Cloud Function
+          obtenerSaludAsistencia (admin.ts). */}
+      <Card style={{ marginBottom: 14 }}>
+        <View style={[s.row, { justifyContent: "space-between", alignItems: "center" }]}>
+          <Text style={s.cardTitle}>Salud operativa</Text>
+          <TouchableOpacity onPress={() => void fetchSaludAsistencia()} disabled={saludLoading} activeOpacity={0.8}>
+            <Ionicons name="refresh-outline" size={18} color={saludLoading ? C.textMuted : C.accent70} />
+          </TouchableOpacity>
+        </View>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          Señales agregadas de asistencia en pasantías — un vistazo de salud, no el detalle de cada persona.
+        </Text>
+        {saludLoading && !saludAsistencia ? (
+          <ActivityIndicator style={{ marginTop: 16 }} color={C.accent70} />
+        ) : (
+          <View style={[s.row, { gap: 12, marginTop: 14 }]}>
+            <View style={s.metricTile}>
+              <View style={s.statIconWrap}>
+                <Ionicons
+                  name="exit-outline"
+                  size={20}
+                  color={(saludAsistencia?.terminacionesAnticipadas30d ?? 0) > 0 ? C.red : C.textMuted}
+                />
+              </View>
+              <Text style={s.metricTileLabel}>Pasantías terminadas antes de tiempo</Text>
+              <Text style={[s.metricTileValue, { color: (saludAsistencia?.terminacionesAnticipadas30d ?? 0) > 0 ? C.red : C.text }]}>
+                {saludAsistencia ? saludAsistencia.terminacionesAnticipadas30d : "—"}
+              </Text>
+              <Text style={s.metricTileSub}>Últimos 30 días</Text>
+            </View>
+            <View style={s.metricTile}>
+              <View style={s.statIconWrap}>
+                <Ionicons
+                  name="time-outline"
+                  size={20}
+                  color={(saludAsistencia?.incidenciasTardanzaAbiertas ?? 0) > 0 ? C.red : C.textMuted}
+                />
+              </View>
+              <Text style={s.metricTileLabel}>Incidencias de tardanza</Text>
+              <Text style={[s.metricTileValue, { color: (saludAsistencia?.incidenciasTardanzaAbiertas ?? 0) > 0 ? C.red : C.text }]}>
+                {saludAsistencia ? saludAsistencia.incidenciasTardanzaAbiertas : "—"}
+              </Text>
+              <Text style={s.metricTileSub}>Sin resolver</Text>
+            </View>
+          </View>
+        )}
       </Card>
 
       <Card style={{ marginBottom: 14 }}>

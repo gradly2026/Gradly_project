@@ -102,6 +102,11 @@ type BackfillAlianzasOutput = {
   reclamosRevisados: number;
 };
 
+export type SaludAsistenciaOutput = {
+  terminacionesAnticipadas30d: number;
+  incidenciasTardanzaAbiertas: number;
+};
+
 const functions = getFunctions(app, "us-central1");
 
 const _setUserRole = httpsCallable<SetUserRoleInput, SetUserRoleOutput>(
@@ -132,6 +137,10 @@ const _deleteUserComplete = httpsCallable<
 const _backfillAlianzasCalificaciones = httpsCallable<void, BackfillAlianzasOutput>(
   functions,
   "backfillAlianzasCalificaciones",
+);
+const _obtenerSaludAsistencia = httpsCallable<void, SaludAsistenciaOutput>(
+  functions,
+  "obtenerSaludAsistencia",
 );
 const _deshabilitarVacanteAdmin = httpsCallable<ModerarVacanteInput, ModerarVacanteOutput>(
   functions,
@@ -185,6 +194,13 @@ export async function deleteUserComplete(
  * `functions/src/admin.ts` — solo admin puede invocarlo. */
 export async function backfillAlianzasCalificaciones(): Promise<BackfillAlianzasOutput> {
   const res = await _backfillAlianzasCalificaciones();
+  return res.data;
+}
+
+/** Contadores agregados de "salud de asistencia" para el panel admin (Config).
+ * Bajo demanda, no automático. Ver `functions/src/admin.ts`. */
+export async function obtenerSaludAsistencia(): Promise<SaludAsistenciaOutput> {
+  const res = await _obtenerSaludAsistencia();
   return res.data;
 }
 
