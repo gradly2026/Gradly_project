@@ -29,6 +29,10 @@
  *    operativa" del panel admin (Config): pasantías terminadas
  *    anticipadamente en 30 días + incidencias de tardanza reiterada abiertas
  *    (admin.ts). Bajo demanda, no automático.
+ *  · obtenerAsistenciaPasantiaAdmin → gancho de contexto desde el detalle de
+ *    un Reporte/Incidencia escalada: dado estudianteId+empresaId, resume la
+ *    pasantía de cupo entre ambos (días no computados, fin anticipado) sin
+ *    que el admin tenga que pedir los datos aparte (admin.ts).
  *  · contarAplicanteNuevo / descontarAplicanteBorrado → mantienen en cada
  *    vacante el desglose `aplicantes_por_carrera` (aplicantes.ts), para que el
  *    estudiante vea CUÁNTOS compiten con él y de qué carreras, sin poder leer
@@ -70,6 +74,7 @@ export {
   deleteUserComplete,
   deshabilitarVacanteAdmin,
   eliminarVacanteAdmin,
+  obtenerAsistenciaPasantiaAdmin,
   obtenerSaludAsistencia,
   resolveReport,
   setUserApproval,

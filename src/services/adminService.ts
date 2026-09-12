@@ -107,6 +107,35 @@ export type SaludAsistenciaOutput = {
   incidenciasTardanzaAbiertas: number;
 };
 
+type ObtenerAsistenciaPasantiaAdminInput = {
+  estudianteId: string;
+  empresaId: string;
+};
+
+/** Un día programado que se marcó como "no computado" (ver ajusteAsistenciaService). */
+export type DiaNoComputadoAdmin = {
+  fecha: string;
+  categoria: string;
+  motivo: string;
+};
+
+export type AsistenciaPasantiaAdminOutput =
+  | { encontrada: false }
+  | {
+      encontrada: true;
+      asignacionId: string;
+      vacanteTitulo: string;
+      estado: "tomado" | "cancelado";
+      finalizada: boolean;
+      fechaPresentacion: string | null;
+      horasCumplidas: number | null;
+      terminacionAnticipada: boolean;
+      finPor: "empresa" | "estudiante" | null;
+      gravedad: "leve" | "moderada" | "grave" | null;
+      motivoFin: string | null;
+      diasNoComputados: DiaNoComputadoAdmin[];
+    };
+
 const functions = getFunctions(app, "us-central1");
 
 const _setUserRole = httpsCallable<SetUserRoleInput, SetUserRoleOutput>(
@@ -142,6 +171,10 @@ const _obtenerSaludAsistencia = httpsCallable<void, SaludAsistenciaOutput>(
   functions,
   "obtenerSaludAsistencia",
 );
+const _obtenerAsistenciaPasantiaAdmin = httpsCallable<
+  ObtenerAsistenciaPasantiaAdminInput,
+  AsistenciaPasantiaAdminOutput
+>(functions, "obtenerAsistenciaPasantiaAdmin");
 const _deshabilitarVacanteAdmin = httpsCallable<ModerarVacanteInput, ModerarVacanteOutput>(
   functions,
   "deshabilitarVacanteAdmin",
@@ -201,6 +234,16 @@ export async function backfillAlianzasCalificaciones(): Promise<BackfillAlianzas
  * Bajo demanda, no automático. Ver `functions/src/admin.ts`. */
 export async function obtenerSaludAsistencia(): Promise<SaludAsistenciaOutput> {
   const res = await _obtenerSaludAsistencia();
+  return res.data;
+}
+
+/** Resumen de solo lectura de la pasantía de cupo entre un estudiante y una
+ * empresa (días no computados, fin anticipado) — gancho de contexto desde el
+ * detalle de un Reporte/Incidencia escalada. Ver `functions/src/admin.ts`. */
+export async function obtenerAsistenciaPasantiaAdmin(
+  input: ObtenerAsistenciaPasantiaAdminInput,
+): Promise<AsistenciaPasantiaAdminOutput> {
+  const res = await _obtenerAsistenciaPasantiaAdmin(input);
   return res.data;
 }
 

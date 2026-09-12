@@ -41,12 +41,14 @@ import {
   deleteUserComplete as deleteUserCompleteAction,
   deshabilitarVacanteAdmin as deshabilitarVacanteAdminAction,
   eliminarVacanteAdmin as eliminarVacanteAdminAction,
+  obtenerAsistenciaPasantiaAdmin,
   obtenerSaludAsistencia,
   resolveReport as resolveReportAction,
   setUserApproval as setUserApprovalAction,
   setUserBan as setUserBanAction,
   setUserRole as setUserRoleAction,
   setUserStatus as setUserStatusAction,
+  type AsistenciaPasantiaAdminOutput,
   type SaludAsistenciaOutput,
 } from "../../src/services/adminService";
 import { useTranslation } from "../../src/context/TranslationContext";
@@ -609,6 +611,31 @@ export default function AdminPreview() {
       setSaludCargado(true);
     }
   }, []);
+
+  // ── Gancho de contexto (Reportes/Incidencias): "Ver asistencia de esta
+  // pasantía" — resumen de solo lectura, se pide al abrir el modal, no antes.
+  const [asistenciaAdminOpen, setAsistenciaAdminOpen] = useState(false);
+  const [asistenciaAdminLoading, setAsistenciaAdminLoading] = useState(false);
+  const [asistenciaAdminData, setAsistenciaAdminData] = useState<AsistenciaPasantiaAdminOutput | null>(null);
+  const [asistenciaAdminCtx, setAsistenciaAdminCtx] = useState<{ estudianteNombre: string; empresaNombre: string } | null>(null);
+  const abrirAsistenciaAdmin = useCallback(
+    async (estudianteId: string, empresaId: string, estudianteNombre: string, empresaNombre: string) => {
+      setAsistenciaAdminCtx({ estudianteNombre, empresaNombre });
+      setAsistenciaAdminData(null);
+      setAsistenciaAdminOpen(true);
+      setAsistenciaAdminLoading(true);
+      try {
+        const r = await obtenerAsistenciaPasantiaAdmin({ estudianteId, empresaId });
+        setAsistenciaAdminData(r);
+      } catch (error) {
+        setAsistenciaAdminOpen(false);
+        mostrarAviso("error", "No se pudo cargar", "Intenta de nuevo.", translateSync(adminDataErrorMessage(error, "la asistencia de esta pasantía")));
+      } finally {
+        setAsistenciaAdminLoading(false);
+      }
+    },
+    [],
+  );
 
   // Contacto de soporte (doc `config/soporte`): lo que los 3 roles ven en la
   // pantalla "Ayuda". Se edita solo desde aquí (reglas: escritura = admin).
@@ -6924,6 +6951,110 @@ export default function AdminPreview() {
     );
   };
 
+  // Overlay "Ver asistencia de esta pasantía" — gancho de contexto desde el
+  // detalle de un Reporte/Incidencia escalada (se dispara con `abrirAsistenciaAdmin`).
+  // Mismo motivo que ConfirmOverlay/AvisoOverlay de arriba para ser un <View
+  // absolute> y no un <Modal> propio: siempre se abre con el detalle YA
+  // presentado encima. Es de SOLO LECTURA — el admin no marca ni revierte
+  // nada aquí, solo entiende el contexto antes de actuar sobre el caso.
+  const AsistenciaAdminOverlay = () => {
+    if (!asistenciaAdminOpen) return null;
+    const ctx = asistenciaAdminCtx;
+    const d = asistenciaAdminData;
+    const labelGravedad: Record<string, string> = { leve: "Leve", moderada: "Moderada", grave: "Grave" };
+    const labelCategoriaAjuste: Record<string, string> = {
+      enfermedad: "Enfermedad", permiso: "Permiso", emergencia: "Emergencia", otro: "Otro motivo",
+    };
+    return (
+      <View
+        style={{
+          position: "absolute",
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: "rgba(7,5,15,0.75)",
+          justifyContent: "flex-end",
+        }}
+      >
+        <View style={[s.modal, isPhone && s.modalCompact]}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>Asistencia de la pasantía</Text>
+            <TouchableOpacity
+              style={[s.iconBtn, { width: 38, height: 38 }]}
+              onPress={() => setAsistenciaAdminOpen(false)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={20} color={C.text} />
+            </TouchableOpacity>
+          </View>
+          {ctx ? (
+            <Text style={[s.textMuted, { marginBottom: 6 }]} numberOfLines={1}>
+              {ctx.estudianteNombre || "Estudiante"} · {ctx.empresaNombre || "Empresa"}
+            </Text>
+          ) : null}
+
+          {asistenciaAdminLoading ? (
+            <View style={{ paddingVertical: 24, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : !d || !d.encontrada ? (
+            <Text style={[s.textMuted, { paddingVertical: 8, fontStyle: "italic" }]}>
+              No se encontró una pasantía de cupo entre este estudiante y esta empresa.
+            </Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator>
+              <Text style={s.textMuted}>Pasantía</Text>
+              <Text style={[s.itemTitle, { marginTop: 4 }]} numberOfLines={2}>
+                {d.vacanteTitulo || "Sin título"}
+              </Text>
+              <Text style={[s.itemSub, { marginTop: 4 }]}>
+                {d.fechaPresentacion ? `Día 1: ${d.fechaPresentacion}` : "Aún sin día de presentación"}
+                {typeof d.horasCumplidas === "number" ? ` · ${d.horasCumplidas} h acumuladas` : ""}
+              </Text>
+
+              {d.terminacionAnticipada ? (
+                <View style={[s.listItem, { marginTop: 14, alignItems: "flex-start", borderColor: C.red + "55" }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.itemTitle, { color: C.red }]}>
+                      {d.finPor === "empresa" ? "Terminada por la empresa" : "El estudiante renunció"}
+                    </Text>
+                    {d.gravedad ? (
+                      <Text style={[s.itemSub, { marginTop: 4 }]}>Gravedad: {labelGravedad[d.gravedad] ?? d.gravedad}</Text>
+                    ) : null}
+                    {d.motivoFin ? (
+                      <Text style={[s.itemSub, { marginTop: 4 }]}>{d.motivoFin}</Text>
+                    ) : null}
+                  </View>
+                </View>
+              ) : (
+                <Text style={[s.itemSub, { marginTop: 10 }]}>
+                  {d.finalizada ? "Terminada al cumplir sus horas." : "Pasantía en curso."}
+                </Text>
+              )}
+
+              <Text style={[s.textMuted, { marginTop: 18 }]}>
+                Días no computados ({d.diasNoComputados.length})
+              </Text>
+              {d.diasNoComputados.length === 0 ? (
+                <Text style={[s.itemSub, { marginTop: 4, fontStyle: "italic" }]}>Ninguno marcado.</Text>
+              ) : (
+                d.diasNoComputados.map((dia, i) => (
+                  <View key={`${dia.fecha}-${i}`} style={[s.listItem, { marginTop: 8 }]}>
+                    <View style={{ flex: 1 }}>
+                      <View style={[s.row, { justifyContent: "space-between", gap: 10, flexWrap: "wrap" }]}>
+                        <Text style={s.itemTitle}>{dia.fecha}</Text>
+                        <Text style={s.itemSub}>{labelCategoriaAjuste[dia.categoria] ?? dia.categoria}</Text>
+                      </View>
+                      {dia.motivo ? <Text style={[s.itemSub, { marginTop: 4 }]}>{dia.motivo}</Text> : null}
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    );
+  };
+
   // ReportDetailModal: detalle de un ReportCase — motivo/descripción,
   // gestión del caso (mover a investigación/resolver con resolución
   // obligatoria), y si el usuario reportado existe, un atajo para abrir su
@@ -6937,6 +7068,12 @@ export default function AdminPreview() {
       selectedReport?.reportante_id
         ? users.find((u) => u.id === selectedReport.reportante_id) ?? null
         : null;
+
+    // Si el reporte enfrenta a un estudiante con una empresa (en cualquier
+    // dirección), puede haber una pasantía de cupo detrás — el mismo gancho
+    // de contexto que en Incidencias.
+    const estudianteDelPar = reportedUser?.role === "estudiante" ? reportedUser : reporterUser?.role === "estudiante" ? reporterUser : null;
+    const empresaDelPar = reportedUser?.role === "empresa" ? reportedUser : reporterUser?.role === "empresa" ? reporterUser : null;
 
     return (
       <Modal
@@ -6989,6 +7126,16 @@ export default function AdminPreview() {
                   <Text style={[s.textMuted, { marginTop: 6 }]}>
                     Reportante: {reporterUser?.nombre || reporterUser?.email || selectedReport.reportante_id || "No disponible"}
                   </Text>
+
+                  {estudianteDelPar && empresaDelPar ? (
+                    <TouchableOpacity
+                      style={[s.btnOutline, { marginTop: 14, alignSelf: "flex-start" }]}
+                      onPress={() => void abrirAsistenciaAdmin(estudianteDelPar.id, empresaDelPar.id, estudianteDelPar.nombre, empresaDelPar.nombre)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={s.btnOutlineText}>Ver asistencia de esta pasantía</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </Card>
 
                 <Card style={{ marginTop: 12 }}>
@@ -7104,6 +7251,7 @@ export default function AdminPreview() {
           </View>
           {ConfirmOverlay()}
           {AvisoOverlay()}
+          {AsistenciaAdminOverlay()}
         </View>
       </Modal>
     );
@@ -7173,6 +7321,16 @@ export default function AdminPreview() {
                   <Text style={[s.textMuted, { marginTop: 14 }]}>
                     {`Reportada el ${new Date(vivo.created_at || Date.now()).toLocaleString()}`}
                   </Text>
+
+                  {vivo.empresa_id ? (
+                    <TouchableOpacity
+                      style={[s.btnOutline, { marginTop: 14, alignSelf: "flex-start" }]}
+                      onPress={() => void abrirAsistenciaAdmin(vivo.estudiante_id, vivo.empresa_id, vivo.estudiante_nombre, vivo.empresa_nombre)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={s.btnOutlineText}>Ver asistencia de esta pasantía</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </Card>
 
                 {vivo.seguimiento.length > 0 ? (
@@ -7273,6 +7431,7 @@ export default function AdminPreview() {
           </View>
           {ConfirmOverlay()}
           {AvisoOverlay()}
+          {AsistenciaAdminOverlay()}
         </View>
       </Modal>
     );

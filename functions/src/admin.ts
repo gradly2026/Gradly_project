@@ -823,6 +823,77 @@ export const obtenerSaludAsistencia = onCall({ region: REGION }, async (req) => 
 });
 
 /**
+ * Gancho de contexto para Reportes/Incidencias: dado un estudiante y una
+ * empresa involucrados en un caso escalado, trae un resumen de solo lectura
+ * de SU pasantía de cupo (días no computados, fin anticipado) para que el
+ * admin no tenga que pedirle los datos a nadie. No es una sección de
+ * navegación libre — solo se llama desde el detalle de un caso puntual ya
+ * abierto, igual que decide `obtenerSaludAsistencia` arriba.
+ *
+ * Por Cloud Function por el mismo motivo que `obtenerSaludAsistencia`: la
+ * única igualdad segura para consultar `asignaciones_cupo` desde el admin es
+ * `estudianteId` (una de las ramas del OR de sus reglas) — pero el VALOR que
+ * necesitamos filtrar es el estudiante del caso, no el uid del admin, así que
+ * ni siquiera esa igualdad sirve desde el cliente. Admin SDK bypasa esto.
+ */
+export const obtenerAsistenciaPasantiaAdmin = onCall({ region: REGION }, async (req) => {
+  try {
+    await requireAdmin(req.auth);
+    const estudianteId = asString(req.data?.estudianteId);
+    const empresaId = asString(req.data?.empresaId);
+
+    if (!estudianteId || !empresaId) {
+      throw new HttpsError("invalid-argument", "Falta estudianteId o empresaId.");
+    }
+
+    const snap = await db
+      .collection("asignaciones_cupo")
+      .where("estudianteId", "==", estudianteId)
+      .get();
+
+    const todas: Record<string, any>[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, any>) }));
+    const candidatas = todas.filter((a) => a.empresaId === empresaId);
+
+    if (candidatas.length === 0) {
+      return { encontrada: false };
+    }
+
+    const millis = (ts: any): number =>
+      typeof ts?.toMillis === "function" ? ts.toMillis() : 0;
+    candidatas.sort((a, b) => millis(b.fechaTomado) - millis(a.fechaTomado));
+    const asignacion = candidatas.find((a) => a.estado !== "cancelado") ?? candidatas[0];
+
+    const ajustesSnap = await db.collection("ajustes_asistencia").doc(asignacion.id).get();
+    const dias = ajustesSnap.exists ? (ajustesSnap.data()?.dias ?? []) : [];
+
+    return {
+      encontrada: true,
+      asignacionId: asignacion.id,
+      vacanteTitulo: asString(asignacion.vacanteTitulo),
+      estado: asignacion.estado ?? "tomado",
+      finalizada: asignacion.finalizada === true,
+      fechaPresentacion: asignacion.fechaPresentacion ?? null,
+      horasCumplidas: typeof asignacion.horasCumplidas === "number" ? asignacion.horasCumplidas : null,
+      terminacionAnticipada: asignacion.terminacionAnticipada === true,
+      finPor: asignacion.finPor ?? null,
+      gravedad: asignacion.gravedad ?? null,
+      motivoFin: asNullableString(asignacion.motivoFin),
+      diasNoComputados: (Array.isArray(dias) ? dias : []).map((d: any) => ({
+        fecha: asString(d?.fecha),
+        categoria: asString(d?.categoria),
+        motivo: asString(d?.motivo),
+      })),
+    };
+  } catch (error: any) {
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError(
+      "internal",
+      `Error interno en obtenerAsistenciaPasantiaAdmin: ${String(error?.message ?? error)}`,
+    );
+  }
+});
+
+/**
  * Deshabilita una vacante/pasantía por decisión administrativa (motivo
  * obligatorio). NO es un `toggleVacante` común: además de `activa:false`,
  * marca `estado_moderacion:'deshabilitada'` para que la empresa dueña (a
