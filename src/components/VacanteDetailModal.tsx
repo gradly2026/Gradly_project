@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { db } from "../config/firebaseConfig";
 import { AutoText, AutoText as Text } from "./AutoText";
+import ComoLlegarBoton from "./ComoLlegarBoton";
 import MapViewer from "./MapViewer";
 import ProfileViewerModal from "./ProfileViewerModal";
 import { cuposDisponibles, hayCupos, textoCupos, textoSalario } from "../utils/cupos";
@@ -443,6 +444,12 @@ export default function VacanteDetailModal({
                   <MapViewer
                     mapRegion={{ ...vacante.ubicacion_coords, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
                     markerPos={vacante.ubicacion_coords}
+                  />
+                </View>
+                <View style={{ marginTop: 12 }}>
+                  <ComoLlegarBoton
+                    lat={vacante.ubicacion_coords.latitude}
+                    lng={vacante.ubicacion_coords.longitude}
                   />
                 </View>
               </View>

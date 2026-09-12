@@ -115,6 +115,10 @@ export interface PerfilMasterDetailProps {
   onAcerca: () => void;
   onLogout: () => void;
   labels?: Partial<PerfilMasterDetailLabels>;
+  /** Abre directo en esta sección al montar (en vez del menú maestro) — para
+   *  llegar desde otra pantalla ya sabiendo a dónde ir (p. ej. "Ir a Mi
+   *  ubicación" desde el aviso de Crear vacante). Solo se lee al montar. */
+  initialSectionId?: string | null;
 }
 
 const PREFS_ID = '__prefs__';
@@ -123,7 +127,7 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
   const {
     name, subtitle, avatarUrl, avatarStoragePath, fallbackIcon = 'person',
     onEditPhoto, uploadingPhoto, sections, includePreferencias = true,
-    onAyuda, onAcerca, onLogout,
+    onAyuda, onAcerca, onLogout, initialSectionId,
   } = props;
 
   const { colors, isDark, setTheme } = useTheme();
@@ -132,7 +136,7 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
   const scrollStyle = webScrollStyle(colors);
   const labels = { ...LABELS_ES, ...(props.labels ?? {}) };
 
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(initialSectionId ?? null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});

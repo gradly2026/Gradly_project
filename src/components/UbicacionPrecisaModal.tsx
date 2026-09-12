@@ -7,7 +7,8 @@
 //    Guardar solo se habilita si el punto cae DENTRO del distrito
 //    (`puntoEnDistrito`).
 //  · Con punto guardado (se vuelve a pulsar el botón) → mismo mapa pero en
-//    SOLO LECTURA, mostrando el marcador guardado.
+//    SOLO LECTURA, mostrando el marcador guardado, con un botón "Editar
+//    ubicación" que reactiva el mapa interactivo sin salir del modal.
 // ════════════════════════════════════════════════════════════════════════
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -49,6 +50,9 @@ export default function UbicacionPrecisaModal({
   // Encuadre del mapa: por defecto el del distrito; tras una captura GPS se
   // acerca al punto capturado para que se vea claramente.
   const [vista, setVista] = useState<typeof REGION_SV | null>(null);
+  // Con punto guardado, el modal nace en solo lectura; "Editar ubicación"
+  // reactiva el mapa interactivo SIN salir del modal ni perder el punto.
+  const [editando, setEditando] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -57,10 +61,11 @@ export default function UbicacionPrecisaModal({
       setCapturando(false);
       setErr('');
       setVista(null);
+      setEditando(false);
     }
   }, [visible, puntoGuardado]);
 
-  const editable = !soloLectura && !!onGuardar;
+  const editable = (!soloLectura || editando) && !!onGuardar;
   const dentro = marker ? puntoEnDistrito(marker.longitude, marker.latitude, geo) : false;
   const puedeGuardar = editable && !!marker && dentro && !guardando && !capturando;
 
@@ -107,7 +112,7 @@ export default function UbicacionPrecisaModal({
       <View style={s.overlay}>
         <View style={s.card}>
           <View style={s.header}>
-            <Text style={s.title}>{soloLectura ? 'Tu ubicación registrada' : 'Registra tu ubicación'}</Text>
+            <Text style={s.title}>{editable ? (soloLectura ? 'Editar ubicación' : 'Registra tu ubicación') : 'Tu ubicación registrada'}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={10} accessibilityLabel="Cerrar">
               <Ionicons name="close" size={22} color={colors.textMuted} />
             </TouchableOpacity>
@@ -133,7 +138,7 @@ export default function UbicacionPrecisaModal({
                 />
               </View>
 
-              {soloLectura ? (
+              {!editable ? (
                 <Text style={s.hint}>Este es el punto exacto que registraste dentro de tu distrito.</Text>
               ) : (
                 <>
@@ -181,9 +186,30 @@ export default function UbicacionPrecisaModal({
 
               {!!err && <Text style={s.err}>{err}</Text>}
 
+              {soloLectura && !editando && !!onGuardar && (
+                <TouchableOpacity style={s.btnCaptura} onPress={() => setEditando(true)} activeOpacity={0.75}>
+                  <Ionicons name="create-outline" size={16} color={colors.primaryLight} />
+                  <Text style={s.btnCapturaTxt}>Editar ubicación</Text>
+                </TouchableOpacity>
+              )}
+
               <View style={s.botones}>
-                <TouchableOpacity style={s.btnGhost} onPress={onClose} disabled={guardando}>
-                  <Text style={s.btnGhostTxt}>{soloLectura ? 'Cerrar' : 'Cancelar'}</Text>
+                <TouchableOpacity
+                  style={s.btnGhost}
+                  onPress={() => {
+                    if (editando) {
+                      // Vuelve a solo lectura sin perder el punto ya guardado.
+                      setMarker(puntoGuardado ? { latitude: puntoGuardado.lat, longitude: puntoGuardado.lng } : null);
+                      setVista(null);
+                      setErr('');
+                      setEditando(false);
+                    } else {
+                      onClose();
+                    }
+                  }}
+                  disabled={guardando}
+                >
+                  <Text style={s.btnGhostTxt}>{editando ? 'Cancelar' : soloLectura ? 'Cerrar' : 'Cancelar'}</Text>
                 </TouchableOpacity>
                 {editable && (
                   <TouchableOpacity

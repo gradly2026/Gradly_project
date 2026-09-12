@@ -127,6 +127,7 @@ import MapViewer from '../src/components/MapViewer';
 import UbicacionCardSV from '../src/components/UbicacionCardSV';
 import UbicacionPrecisaModal from '../src/components/UbicacionPrecisaModal';
 import UbicacionSelector from '../src/components/UbicacionSelector';
+import UsarUbicacionGuardadaModal from '../src/components/UsarUbicacionGuardadaModal';
 import { getDistritoGeo } from '../src/utils/distritoGeo';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
@@ -230,6 +231,11 @@ interface Vacante {
   aplicantes_count: number;
   ubicacion_coords?: { latitude: number; longitude: number } | null;
   ubicacion_texto?: { direccion: string; municipio: string; departamento: string; pais: string } | null;
+  /** 'mi_ubicacion' = este punto vino de "Mi ubicación" (perfil) y sigue sin
+   *  tocarse a mano; 'manual' = se marcó por GPS o toque en el mapa. Decide
+   *  qué publicaciones puede corregir solo el barrido automático cuando la
+   *  empresa actualiza "Mi ubicación" (ver guardarUbicEmpresa/onGuardar más abajo). */
+  ubicacion_origen?: 'manual' | 'mi_ubicacion' | null;
   /** Presente solo si un admin deshabilitó/eliminó esta publicación (ver ModeracionVacanteGate). */
   estado_moderacion?: 'deshabilitada' | 'eliminada' | null;
   motivo_moderacion?: string | null;
@@ -362,6 +368,15 @@ const makeMapStyles = (c: GradlyColors) => StyleSheet.create({
     marginBottom: 12,
   },
   primaryBtnText: { color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 14 },
+  secondaryBtn: {
+    borderWidth: 1,
+    borderColor: c.primary,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  secondaryBtnText: { color: c.primaryLight, fontFamily: FONTS.interSemiBold, fontSize: 14 },
   mapContainer: {
     height: 300,
     borderRadius: 12,
@@ -854,6 +869,24 @@ export default function DashboardEmpresa() {
   const [procesandoUbicacion, setProcesandoUbicacion] = useState(false);
   const [savingVac,  setSavingVac]  = useState(false);
 
+  // De dónde viene el punto actual del mapa: 'mi_ubicacion' SOLO mientras
+  // siga siendo, sin tocar, el punto registrado en el perfil (ver "Mi
+  // ubicación") — capturar GPS o tocar el mapa lo vuelve 'manual' de
+  // inmediato. Así el barrido automático de más abajo (cuando la empresa
+  // actualiza "Mi ubicación") sabe con certeza cuáles publicaciones puede
+  // tocar sin pisar una corrección manual.
+  const [ubicacionOrigen, setUbicacionOrigen] = useState<'manual' | 'mi_ubicacion'>('manual');
+  const [usarUbicGuardadaInfoOpen, setUsarUbicGuardadaInfoOpen] = useState(false);
+  // A qué sección de "Mi Perfil" saltar la próxima vez que se monte (ver
+  // "Ir a Mi ubicación" del aviso de arriba). Se limpia al SALIR de la
+  // pestaña "perfil" (no al entrar): limpiarlo de una vez causaría un
+  // remount inmediato de PerfilMasterDetail que regresaría al menú justo
+  // después de saltar a la sección — el usuario vería un parpadeo de vuelta.
+  const [perfilSeccionInicial, setPerfilSeccionInicial] = useState<string | null>(null);
+  useEffect(() => {
+    if (seccion !== 'perfil' && perfilSeccionInicial) setPerfilSeccionInicial(null);
+  }, [seccion, perfilSeccionInicial]);
+
   // Estado del modal dinámico (Liquid Glass) para el guardado de la vacante
   const [estadoGuardado, setEstadoGuardado] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [mensajeErrorGuardado, setMensajeErrorGuardado] = useState('');
@@ -1159,9 +1192,14 @@ export default function DashboardEmpresa() {
   // ── Punto único de aplicación de coordenadas (precedencia: la última acción manda) ─
   // Los métodos (GPS, toque en mapa) llaman aquí y sobreescriben los estados compartidos.
   // Geocodificación inversa gratuita vía Nominatim (OpenStreetMap), sin API key.
-  const aplicarCoordenadas = async (lat: number, lng: number) => {
+  const aplicarCoordenadas = async (
+    lat: number,
+    lng: number,
+    origen: 'manual' | 'mi_ubicacion' = 'manual',
+  ) => {
     // 1) Sincronización visual inmediata: pin + región enfocada.
     setMarkerPos({ latitude: lat, longitude: lng });
+    setUbicacionOrigen(origen);
     setMapRegion(prev => ({ ...prev, latitude: lat, longitude: lng, latitudeDelta: 0.01, longitudeDelta: 0.01 }));
     setProcesandoUbicacion(true);
 
@@ -1217,6 +1255,89 @@ export default function DashboardEmpresa() {
     }
   };
 
+  // ── Geocodificación silenciosa (sin tocar estado de UI) ──────────
+  // Mismo servicio (Nominatim) que aplicarCoordenadas, pero como función pura
+  // que solo DEVUELVE el detalle — la usa el barrido automático de más abajo,
+  // que necesita geocodificar el nuevo punto UNA sola vez y aplicar el mismo
+  // resultado a varias publicaciones (no una por cada una).
+  const geocodificarPuntoSilencioso = async (lat: number, lng: number) => {
+    try {
+      const headersPeticion: Record<string, string> = Platform.OS === 'web'
+        ? { 'Accept-Language': 'es' }
+        : { 'User-Agent': 'MiAppExpo/1.0', 'Accept-Language': 'es' };
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+        { headers: headersPeticion },
+      );
+      const data = await response.json();
+      if (data && data.address) {
+        return {
+          direccion: data.display_name || '',
+          municipio: data.address.city || data.address.town || data.address.village || data.address.municipality || '',
+          departamento: data.address.state || '',
+          pais: data.address.country || 'El Salvador',
+        };
+      }
+    } catch (error) {
+      console.error('Error Nominatim (barrido de ubicación):', error);
+    }
+    return { direccion: 'Ubicación seleccionada', municipio: '', departamento: '', pais: 'El Salvador' };
+  };
+
+  // ── Barrido automático al actualizar "Mi ubicación" ──────────────
+  // Cuando la empresa cambia su punto registrado, las pasantías/vacantes que
+  // usan ESE punto (ubicacion_origen:'mi_ubicacion' — Método C de arriba)
+  // quedan con la dirección vieja a menos que se corrijan. Se ofrece
+  // corregirlas todas de un jalón; si la empresa prefiere no hacerlo ahora,
+  // no se toca nada (puede editarlas una por una cuando quiera).
+  type FaseCascadaUbic = 'confirmar' | 'progreso' | 'exito' | 'parcial';
+  const [cascadaUbicOpen, setCascadaUbicOpen] = useState(false);
+  const [cascadaUbicFase, setCascadaUbicFase] = useState<FaseCascadaUbic>('confirmar');
+  const [cascadaUbicMatches, setCascadaUbicMatches] = useState<Vacante[]>([]);
+  const [cascadaUbicHecho, setCascadaUbicHecho] = useState(0);
+  const [cascadaUbicFallidas, setCascadaUbicFallidas] = useState<Vacante[]>([]);
+  // El punto nuevo viaja en un ref (no en estado): no afecta ningún render,
+  // solo hace falta cuando la empresa pulsa "Automáticamente" más abajo.
+  const cascadaUbicPuntoRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  const verificarCascadaUbicacion = (lat: number, lng: number, matches: Vacante[]) => {
+    if (matches.length === 0) return;
+    cascadaUbicPuntoRef.current = { lat, lng };
+    setCascadaUbicMatches(matches);
+    setCascadaUbicHecho(0);
+    setCascadaUbicFallidas([]);
+    setCascadaUbicFase('confirmar');
+    setCascadaUbicOpen(true);
+  };
+
+  const ejecutarCascadaUbicacion = async () => {
+    const punto = cascadaUbicPuntoRef.current;
+    if (!punto) return;
+    setCascadaUbicFase('progreso');
+    const detalle = await geocodificarPuntoSilencioso(punto.lat, punto.lng);
+    const fallidas: Vacante[] = [];
+    for (let i = 0; i < cascadaUbicMatches.length; i++) {
+      const v = cascadaUbicMatches[i];
+      try {
+        await updateDoc(doc(db, 'vacantes', v.id), {
+          ubicacion_coords: { latitude: punto.lat, longitude: punto.lng },
+          ubicacion_texto: detalle,
+        });
+      } catch (e) {
+        console.error('No se pudo actualizar la ubicación de la vacante', v.id, e);
+        fallidas.push(v);
+      }
+      setCascadaUbicHecho(i + 1);
+    }
+    setCascadaUbicFallidas(fallidas);
+    setCascadaUbicFase(fallidas.length === 0 ? 'exito' : 'parcial');
+  };
+
+  const editarDesdeCascada = (v: Vacante) => {
+    setCascadaUbicOpen(false);
+    abrirEditarVacante(v);
+  };
+
   // ── Método A: capturar ubicación GPS actual (web + móvil) ───────
   const capturarUbicacion = async () => {
     try {
@@ -1239,6 +1360,27 @@ export default function DashboardEmpresa() {
   // ── Método B: toque directo en el mapa ──────────────────────────
   const marcarDesdeMapa = (coord: { latitude: number; longitude: number }) => {
     aplicarCoordenadas(coord.latitude, coord.longitude);
+  };
+
+  // ── Método C: usar el punto ya registrado en "Mi ubicación" ─────
+  // Es una publicación MÁS de precisión, no un reemplazo de los otros dos
+  // métodos: quien publica no siempre está físicamente en la empresa (p. ej.
+  // RRHH trabajando remoto ese día), así que "mi ubicación actual" (GPS) y
+  // "mi ubicación registrada" (perfil) son cosas distintas.
+  const usarUbicacionGuardada = () => {
+    const guardada = (perfil as any)?.ubicacion_precisa as { lat: number; lng: number } | null | undefined;
+    if (guardada) {
+      aplicarCoordenadas(guardada.lat, guardada.lng, 'mi_ubicacion');
+    } else {
+      setUsarUbicGuardadaInfoOpen(true);
+    }
+  };
+
+  const irAMiUbicacionDesdeAviso = () => {
+    setUsarUbicGuardadaInfoOpen(false);
+    setShowNuevaVacante(false);
+    setPerfilSeccionInicial('ubicacion');
+    setSeccion('perfil');
   };
 
   // ── Validación en tiempo real (onChange por campo) ───────────────
@@ -1471,6 +1613,7 @@ export default function DashboardEmpresa() {
       departamento: v.ubicacion_texto?.departamento ?? '',
       pais:         v.ubicacion_texto?.pais ?? '',
     });
+    setUbicacionOrigen(v.ubicacion_origen === 'mi_ubicacion' ? 'mi_ubicacion' : 'manual');
     setShowNuevaVacante(true);
   };
 
@@ -1582,6 +1725,7 @@ export default function DashboardEmpresa() {
           departamento: ubicacionDetalle.departamento || '',
           pais:         ubicacionDetalle.pais || '',
         } : null,
+        ubicacion_origen:   markerPos ? ubicacionOrigen : null,
       };
 
       // Sanitización extrema: elimina cualquier campo undefined que reviente el addDoc.
@@ -1671,6 +1815,7 @@ export default function DashboardEmpresa() {
     setNvAreaOtra(''); setNvErrors({});
     setMarkerPos(null);
     setUbicacionDetalle({ direccion: '', municipio: '', departamento: '', pais: '' });
+    setUbicacionOrigen('manual');
   };
 
   // Auto-cierre de los modales de mensaje final (éxito/error) tras mostrarse.
@@ -1692,6 +1837,7 @@ export default function DashboardEmpresa() {
         setNvAreaOtra(''); setNvErrors({});
         setMarkerPos(null);
         setUbicacionDetalle({ direccion: '', municipio: '', departamento: '', pais: '' });
+        setUbicacionOrigen('manual');
       }, 2500);
       return () => clearTimeout(t);
     }
@@ -1836,7 +1982,7 @@ export default function DashboardEmpresa() {
   const renderSeccion = () => {
     switch (seccion) {
       case 'inicio':   return <SeccionInicio metricas={metricas} apps={apps} perfil={perfil} empresaId={user!.uid} vacantes={vacantes} solicitudesGrupo={solicitudesGrupo} asignacionesCupo={asignacionesCupoEmpresa} />;
-      case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => { setVacanteEditando(null); setShowNuevaVacante(true); }} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} onEditar={abrirEditarVacante} onEliminar={handleEliminarVacante} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
+      case 'vacantes': return <SeccionVacantes vacantes={vacantes} onNueva={() => { setVacanteEditando(null); setUbicacionOrigen('manual'); setShowNuevaVacante(true); }} onToggle={toggleVacante} onVerDetalles={setVacanteSeleccionada} onEditar={abrirEditarVacante} onEliminar={handleEliminarVacante} puedeCrear={puedeCrearVacante} limiteVacantes={limiteVacantes} vacantesRestantes={vacantesRestantes} plan={perfil?.plan} onMejorarPlan={() => setShowPlanUpgradeModal(true)} />;
       case 'kanban':   return (
         <SeccionReclutamiento
           empresaId={user!.uid}
@@ -1877,6 +2023,7 @@ export default function DashboardEmpresa() {
     return (
       <>
       <PerfilMasterDetail
+        initialSectionId={perfilSeccionInicial}
         name={nombreEmpresa}
         subtitle={`${perfil?.industria ?? 'Empresa'} · ${planBadgeLabel}`}
         avatarUrl={perfil?.logo_url}
@@ -2150,7 +2297,7 @@ export default function DashboardEmpresa() {
         ]}
       />
       <UbicacionPrecisaModal
-        visible={ubicModalOpen}
+        visible={ubicModalOpen && !cascadaUbicOpen}
         onClose={() => setUbicModalOpen(false)}
         departamento={ubicDep}
         distrito={ubicDist}
@@ -2158,6 +2305,8 @@ export default function DashboardEmpresa() {
         soloLectura={!!ubicPrecisa}
         onGuardar={async ({ lat, lng }) => {
           await updateDoc(doc(db, 'perfiles_empresas', user!.uid), { ubicacion_precisa: { lat, lng } });
+          const matches = vacantes.filter(v => v.ubicacion_origen === 'mi_ubicacion');
+          verificarCascadaUbicacion(lat, lng, matches);
         }}
       />
       </>
@@ -2501,6 +2650,13 @@ export default function DashboardEmpresa() {
                   {/* a) Capturar ubicación actual */}
                   <TouchableOpacity style={mapStyles.primaryBtn} onPress={capturarUbicacion} disabled={procesandoUbicacion}>
                     <Text style={mapStyles.primaryBtnText}>📍  Capturar mi Ubicación Actual</Text>
+                  </TouchableOpacity>
+
+                  {/* b) Usar el punto ya registrado en "Mi ubicación" (más confianza:
+                      es la dirección verificada de la empresa, no dónde esté
+                      físicamente quien está publicando ahora mismo). */}
+                  <TouchableOpacity style={mapStyles.secondaryBtn} onPress={usarUbicacionGuardada} disabled={procesandoUbicacion}>
+                    <Text style={mapStyles.secondaryBtnText}>📌  Usar mi ubicación registrada</Text>
                   </TouchableOpacity>
 
                   {procesandoUbicacion && (
@@ -2878,6 +3034,12 @@ export default function DashboardEmpresa() {
         onCancel={cancelLogout}
       />
 
+      <UsarUbicacionGuardadaModal
+        visible={usarUbicGuardadaInfoOpen}
+        onClose={() => setUsarUbicGuardadaInfoOpen(false)}
+        onIrAMiUbicacion={irAMiUbicacionDesdeAviso}
+      />
+
       {/* MODAL DINÁMICO DE ESTADO DE GUARDADO */}
       <Modal transparent visible={estadoGuardado !== 'idle'} animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
@@ -2924,6 +3086,106 @@ export default function DashboardEmpresa() {
                   onPress={() => setEstadoGuardado('idle')}
                 >
                   <Text style={{ color: '#ef4444', fontFamily: FONTS.interSemiBold, fontSize: 16 }}>Revisar Formulario</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Barrido automático al actualizar "Mi ubicación" (ver
+          verificarCascadaUbicacion/ejecutarCascadaUbicacion arriba) — mismo
+          estilo morado oscuro que el modal dinámico de guardado de vacante,
+          por consistencia con el resto de este flujo. */}
+      <Modal transparent visible={cascadaUbicOpen} animationType="none">
+        <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 380, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)', shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 15 }}>
+
+            {cascadaUbicFase === 'confirmar' && (
+              <>
+                <Ionicons name="location" size={56} color="#8b5cf6" style={{ marginBottom: 16 }} />
+                <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 8, textAlign: 'center' }}>
+                  Actualizaste tu ubicación
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.interRegular, textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+                  Tienes {cascadaUbicMatches.length} publicación{cascadaUbicMatches.length === 1 ? '' : 'es'} usando tu ubicación anterior. ¿Cómo quieres actualizarla{cascadaUbicMatches.length === 1 ? '' : 's'}?
+                </Text>
+                <TouchableOpacity
+                  style={{ backgroundColor: '#8b5cf6', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center', marginBottom: 10 }}
+                  onPress={ejecutarCascadaUbicacion}
+                >
+                  <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 15 }}>Actualizarlas automáticamente</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
+                  onPress={() => setCascadaUbicOpen(false)}
+                >
+                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontFamily: FONTS.interSemiBold, fontSize: 15 }}>Las editaré yo mismo</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {cascadaUbicFase === 'progreso' && (
+              <>
+                <ActivityIndicator size="large" color="#8b5cf6" style={{ transform: [{ scale: 1.5 }], marginBottom: 24 }} />
+                <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 12 }}>Actualizando ubicaciones…</Text>
+                <View style={{ width: '100%', height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden', marginBottom: 10 }}>
+                  <View style={{
+                    height: '100%',
+                    borderRadius: 4,
+                    backgroundColor: '#8b5cf6',
+                    width: `${cascadaUbicMatches.length ? Math.round((cascadaUbicHecho / cascadaUbicMatches.length) * 100) : 0}%` as any,
+                  }} />
+                </View>
+                <Text style={{ color: 'rgba(255,255,255,0.6)', fontFamily: FONTS.interRegular }}>
+                  {cascadaUbicHecho} de {cascadaUbicMatches.length}
+                </Text>
+              </>
+            )}
+
+            {cascadaUbicFase === 'exito' && (
+              <>
+                <Ionicons name="checkmark-circle" size={80} color="#10b981" style={{ marginBottom: 16 }} />
+                <Text style={{ color: '#fff', fontSize: 20, fontFamily: FONTS.soraBold, marginBottom: 8 }}>¡Listo!</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.interRegular, textAlign: 'center', marginBottom: 24 }}>
+                  Se actualizó la ubicación de {cascadaUbicMatches.length} publicación{cascadaUbicMatches.length === 1 ? '' : 'es'}.
+                </Text>
+                <TouchableOpacity
+                  style={{ backgroundColor: '#8b5cf6', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
+                  onPress={() => setCascadaUbicOpen(false)}
+                >
+                  <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 16 }}>Aceptar</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {cascadaUbicFase === 'parcial' && (
+              <>
+                <Ionicons name="alert-circle" size={56} color="#f59e0b" style={{ marginBottom: 12 }} />
+                <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 8, textAlign: 'center' }}>
+                  {cascadaUbicMatches.length - cascadaUbicFallidas.length} de {cascadaUbicMatches.length} actualizadas
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.interRegular, textAlign: 'center', marginBottom: 16, lineHeight: 20 }}>
+                  Estas quedaron pendientes. Toca el nombre para corregir su ubicación a mano:
+                </Text>
+                <View style={{ width: '100%', gap: 8, marginBottom: 20 }}>
+                  {cascadaUbicFallidas.map(v => (
+                    <TouchableOpacity
+                      key={v.id}
+                      style={{ borderWidth: 1, borderColor: 'rgba(245,158,11,0.4)', backgroundColor: 'rgba(245,158,11,0.1)', borderRadius: 12, padding: 12 }}
+                      onPress={() => editarDesdeCascada(v)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 13.5 }} numberOfLines={1}>{v.titulo}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TouchableOpacity
+                  style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
+                  onPress={() => setCascadaUbicOpen(false)}
+                >
+                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontFamily: FONTS.interSemiBold, fontSize: 15 }}>Cerrar</Text>
                 </TouchableOpacity>
               </>
             )}

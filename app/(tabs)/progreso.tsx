@@ -17,7 +17,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -44,6 +44,7 @@ import { progresoPorFechas } from '../../src/utils/progresoPasantia';
 // porcentaje transcurrido, días transcurridos/totales/restantes. Se usa
 // para dibujar la "línea de tiempo" de la tarjeta "Mi pasantía".
 import AsistenciaCodigoModal from '../../src/components/AsistenciaCodigoModal';
+import ComoLlegarBoton from '../../src/components/ComoLlegarBoton';
 import CalendarioEventos from '../../src/components/CalendarioEventos';
 import TableroCupos from '../../src/components/TableroCupos';
 import MiInstitucionCard from '../../src/components/MiInstitucionCard';
@@ -356,6 +357,23 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
     const unsub = suscribirRegistroDeHoy(asignacion.id, setRegistroHoy);
     return unsub;
   }, [asignacion.id]);
+
+  // Ubicación de la plaza para "Cómo llegar" — se lee de la vacante (no vive
+  // en la asignación) con una sola lectura: no cambia seguido y, si la
+  // empresa la corrige después, basta con reabrir/refrescar esta pantalla.
+  const [ubicacionVacante, setUbicacionVacante] = useState<{ latitude: number; longitude: number } | null>(null);
+  useEffect(() => {
+    if (!asignacion.vacanteId) return;
+    let vivo = true;
+    getDoc(doc(db, 'vacantes', asignacion.vacanteId))
+      .then(snap => {
+        if (!vivo) return;
+        const coords = snap.exists() ? (snap.data() as any)?.ubicacion_coords : null;
+        setUbicacionVacante(coords ?? null);
+      })
+      .catch(() => { if (vivo) setUbicacionVacante(null); });
+    return () => { vivo = false; };
+  }, [asignacion.vacanteId]);
   const hoyEsDiaProgramado = useMemo(() => {
     if (!asignacion.fechaPresentacion) return false;
     const dias: string[] = Array.isArray(asignacion.horario?.dias) ? asignacion.horario!.dias : [];
@@ -459,6 +477,10 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
             {ledger?.fechaFin ? `  ·  último ~${ledger.fechaFin.toISOString().slice(0, 10)}` : ''}
           </Text>
         </View>
+      )}
+
+      {ubicacionVacante && (
+        <ComoLlegarBoton lat={ubicacionVacante.latitude} lng={ubicacionVacante.longitude} />
       )}
 
       {/* Código de asistencia de hoy (Fase 2 de "asistencia real"). */}

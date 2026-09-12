@@ -1466,6 +1466,22 @@ export const UBICACION_SEED_EN: Record<string, string> = {
   "No se pudo guardar la ubicación.": "Couldn't save the location.",
   "No pudimos ubicar el mapa de tu distrito. Revisa que tu departamento y distrito estén bien escritos en \"Datos\".":
     "We couldn't load your district's map. Check that your department and district are spelled correctly in \"Details\".",
+  // ── Editar "Mi ubicación" ya guardada + "usar mi ubicación registrada" al
+  //    publicar + barrido automático de vacantes/pasantías afectadas (v155) ──
+  "Editar ubicación": "Edit location",
+  "📌  Usar mi ubicación registrada": "📌  Use my registered location",
+  "Aún no tienes una ubicación registrada": "You don't have a registered location yet",
+  "Guarda el punto exacto de tu empresa una sola vez en “Mi ubicación” y desde ahí podrás cargarlo con un toque cada vez que publiques una pasantía o vacante — más rápido, y le da al estudiante un dato verificado de a dónde va a llegar.":
+    "Save your company's exact spot once in “My location” and load it with one tap every time you post a job or internship — faster, and it gives the student a verified fact about where they're headed.",
+  "Ir a Mi ubicación": "Go to My location",
+  "Actualizaste tu ubicación": "You updated your location",
+  "Actualizarlas automáticamente": "Update them automatically",
+  "Las editaré yo mismo": "I'll edit them myself",
+  "Actualizando ubicaciones…": "Updating locations…",
+  "Estas quedaron pendientes. Toca el nombre para corregir su ubicación a mano:":
+    "These are still pending. Tap the name to fix its location by hand:",
+  // ── "Cómo llegar" (Google Maps / Waze) — estudiante, v155 ──
+  "Cómo llegar": "How to get there",
 };
 
 // ── Eliminar vacante/grupo/estudiante (empresa y universidad deshacen su
