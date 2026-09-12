@@ -5853,11 +5853,7 @@ export default function AdminPreview() {
         </TouchableOpacity>
       </Card>
 
-      {/* ── Asistente Gradly (burbuja del chatbot de ayuda) ──
-          OCULTO TEMPORALMENTE a pedido del usuario (2026-09-10). El interruptor
-          sigue funcionando; solo no se muestra la tarjeta. Para restaurarlo,
-          cambia `false &&` por `true &&` (o quítalo). */}
-      {false && (
+      {/* ── Asistente Gradly (burbuja del chatbot de ayuda) ── */}
       <Card style={{ marginBottom: 14 }}>
         <Text style={s.cardTitle}>Asistente Gradly</Text>
         <Text style={[s.textMuted, { marginTop: 6 }]}>
@@ -5883,7 +5879,6 @@ export default function AdminPreview() {
           </Text>
         </TouchableOpacity>
       </Card>
-      )}
 
       {/* ── FAQ que usa el asistente (config/faq) ──
           OCULTO TEMPORALMENTE junto con la tarjeta del interruptor (2026-09-10);
