@@ -1993,12 +1993,15 @@ export default function DashboardEmpresa() {
               } catch { Alert.alert('Error', 'No se pudo guardar.'); }
             },
           },
-          {
+          // "Mi rango" (id: 'rango') OCULTA temporalmente a pedido del usuario
+          // (2026-09-12) — no borrada. Para reactivarla, cambia `false` por
+          // `true` en la línea de abajo.
+          ...(false ? [{
             id: 'rango',
             title: 'Mi rango',
             subtitle: 'Nivel y experiencia',
-            icon: 'ribbon-outline',
-            tone: 'orange',
+            icon: 'ribbon-outline' as const,
+            tone: 'orange' as const,
             render: () => (
               <RangoCard
                 xp={Number((perfil as any)?.puntos_experiencia ?? 0)}
@@ -2008,7 +2011,7 @@ export default function DashboardEmpresa() {
                 theme={isDark ? 'dark' : 'light'}
               />
             ),
-          },
+          }] : []),
           {
             id: 'resenas',
             title: 'Reseñas',
