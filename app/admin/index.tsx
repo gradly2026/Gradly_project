@@ -5880,11 +5880,6 @@ export default function AdminPreview() {
         </TouchableOpacity>
       </Card>
 
-      {/* ── FAQ que usa el asistente (config/faq) ──
-          OCULTO TEMPORALMENTE junto con la tarjeta del interruptor (2026-09-10);
-          restaurar cambiando `false &&` por `true &&`. */}
-      {false && (
-      <>
       {/* ── FAQ que usa el asistente (config/faq) ── */}
       <Card style={{ marginBottom: 14 }}>
         <Text style={s.cardTitle}>Preguntas frecuentes del asistente</Text>
@@ -5951,8 +5946,6 @@ export default function AdminPreview() {
           </View>
         )}
       </Card>
-      </>
-      )}
 
       <Card style={{ marginBottom: 14 }}>
         <Text style={s.cardTitle}>Mantenimiento</Text>
