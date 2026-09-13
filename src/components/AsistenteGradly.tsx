@@ -136,7 +136,7 @@ export default function AsistenteGradly({ bottom = 158 }: Props) {
         activeOpacity={0.85}
         accessibilityLabel="Abrir el asistente de Gradly"
       >
-        <Ionicons name="sparkles" size={22} color="#fff" />
+        <Ionicons name="chatbubble-ellipses" size={22} color="#fff" />
       </TouchableOpacity>
 
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
@@ -147,7 +147,7 @@ export default function AsistenteGradly({ bottom = 158 }: Props) {
           >
             <View style={s.header}>
               <View style={s.headerIcon}>
-                <Ionicons name="sparkles" size={16} color={colors.primaryLight} />
+                <Ionicons name="chatbubble-ellipses" size={16} color={colors.primaryLight} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.headerTitle}>Asistente Gradly</Text>

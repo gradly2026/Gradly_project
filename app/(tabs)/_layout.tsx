@@ -117,7 +117,7 @@ const TOUR_PASOS: Record<TabKey, { titulo: string; texto: string }> = {
   },
   perfil: {
     titulo: 'Mi Perfil',
-    texto: 'Consulta tu certificación, tu CV, tus habilidades y ajusta tus preferencias.',
+    texto: 'Consulta tu certificación, tu CV, tus habilidades y ajusta tus preferencias. Si tienes dudas de cómo usar Gradly, toca la burbuja del Asistente Gradly que flota en tus pantallas.',
   },
 };
 // El TEXTO real (título + explicación) que se muestra en cada "parada"

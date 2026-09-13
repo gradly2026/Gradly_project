@@ -31,7 +31,7 @@ const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const db = admin.firestore();
 
 const REGION = "us-central1";
-const MODELO = "gemini-2.5-flash"; // rápido y barato; cambiar aquí si hiciera falta
+const MODELO = "gemini-3.6-flash"; // gemini-2.5-flash quedó deprecado para keys nuevas (404 en producción, 2026-09-12); cambiar aquí si vuelve a hacer falta
 const LIMITE_DIARIO = 40; // consultas por usuario por día
 const MAX_MENSAJES = 20; // turnos de historial que aceptamos
 const MAX_LARGO_MSG = 2000; // caracteres por mensaje

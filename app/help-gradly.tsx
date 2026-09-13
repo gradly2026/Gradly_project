@@ -61,6 +61,54 @@ function useSoporte() {
   return soporte;
 }
 
+/** FAQ del Asistente Gradly (`config/faq`, campo `entradas: {p,r}[]`), en
+ *  solo lectura — el admin la edita en Config → "Preguntas frecuentes del
+ *  asistente" (ver app/admin/index.tsx). Misma regla `config`: lectura para
+ *  cualquier autenticado, sin regla nueva. */
+function useFaqPublico(): { p: string; r: string }[] {
+  const [entradas, setEntradas] = useState<{ p: string; r: string }[]>([]);
+  useEffect(() => {
+    let cancel = false;
+    getDoc(doc(db, 'config', 'faq'))
+      .then((s) => {
+        if (cancel) return;
+        const arr = s.exists() ? (s.data() as any)?.entradas : null;
+        setEntradas(
+          Array.isArray(arr)
+            ? arr
+                .map((e: any) => ({ p: String(e?.p ?? '').trim(), r: String(e?.r ?? '').trim() }))
+                .filter((e) => e.p && e.r)
+            : [],
+        );
+      })
+      .catch(() => {});
+    return () => { cancel = true; };
+  }, []);
+  return entradas;
+}
+
+function FaqAccordionItem({ p, r }: { p: string; r: string }) {
+  const { colors, styles } = useThemedStyles();
+  const [abierta, setAbierta] = useState(false);
+  return (
+    <GlassCard contentStyle={styles.faqItemContent}>
+      <TouchableOpacity
+        style={styles.faqQuestionRow}
+        onPress={() => setAbierta((v) => !v)}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.faqQuestion}>{p}</Text>
+        <Ionicons
+          name={abierta ? 'chevron-up' : 'chevron-down'}
+          size={18}
+          color={colors.primaryLight}
+        />
+      </TouchableOpacity>
+      {abierta && <Text style={styles.faqAnswer}>{r}</Text>}
+    </GlassCard>
+  );
+}
+
 function ContactItem({
   icon,
   label,
@@ -98,6 +146,7 @@ export default function HelpGradlyScreen() {
   const { styles, colors } = useThemedStyles();
   const { t } = useTranslation();
   const soporte = useSoporte();
+  const faqEntradas = useFaqPublico();
   const { user, rol } = useAuth();
 
   // ── Mensajes de soporte (tickets 1-a-1 con el equipo de Gradly) ──────
@@ -272,6 +321,17 @@ export default function HelpGradlyScreen() {
                 </View>
               )}
             </GlassCard>
+          )}
+
+          {/* ── Preguntas frecuentes (config/faq, la misma que usa el
+              Asistente Gradly) — solo lectura, en acordeón. ── */}
+          {faqEntradas.length > 0 && (
+            <View style={styles.faqSection}>
+              <Text style={styles.sectionTitle}>Preguntas frecuentes</Text>
+              {faqEntradas.map((e, i) => (
+                <FaqAccordionItem key={i} p={e.p} r={e.r} />
+              ))}
+            </View>
           )}
         </ScrollView>
 
@@ -465,5 +525,32 @@ const makeStyles = (COLORS: GradlyColors) =>
     ticketPillText: {
       fontSize: 10,
       fontFamily: FONTS.interSemiBold,
+    },
+    faqSection: {
+      gap: 10,
+    },
+    faqItemContent: {
+      padding: 0,
+    },
+    faqQuestionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      padding: 16,
+    },
+    faqQuestion: {
+      flex: 1,
+      fontSize: 14,
+      fontFamily: FONTS.interSemiBold,
+      color: COLORS.textPrimary,
+    },
+    faqAnswer: {
+      fontSize: 13.5,
+      lineHeight: 20,
+      fontFamily: FONTS.interRegular,
+      color: COLORS.textMuted,
+      paddingHorizontal: 16,
+      paddingBottom: 16,
+      marginTop: -6,
     },
   });

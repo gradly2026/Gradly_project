@@ -1825,6 +1825,11 @@ export default function AdminPreview() {
   const [faqEntradas, setFaqEntradas] = useState<{ p: string; r: string }[]>([]);
   const [faqCargado, setFaqCargado] = useState(false);
   const [faqGuardando, setFaqGuardando] = useState(false);
+  // "Guardar" solo tiene sentido si hay al menos un par con AMBOS campos
+  // llenos — antes se podía guardar con la lista vacía o con preguntas a
+  // medio llenar, que `guardarFaq` filtra en silencio (guardaba "0
+  // preguntas" sin avisar por qué).
+  const faqHayValidas = faqEntradas.some((e) => e.p.trim() && e.r.trim());
   const fetchFaq = useCallback(async () => {
     try {
       const snap = await getDoc(doc(db, "config", "faq"));
@@ -6032,9 +6037,9 @@ export default function AdminPreview() {
               <Text style={s.btnOutlineText}>+ Agregar pregunta</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[s.btnPrimary, { marginTop: 4, opacity: faqGuardando ? 0.6 : 1 }]}
+              style={[s.btnPrimary, { marginTop: 4, opacity: faqGuardando || !faqHayValidas ? 0.6 : 1 }]}
               onPress={() => void guardarFaq()}
-              disabled={faqGuardando}
+              disabled={faqGuardando || !faqHayValidas}
               activeOpacity={0.85}
             >
               <Text style={s.btnPrimaryText}>{faqGuardando ? "Guardando…" : "Guardar preguntas frecuentes"}</Text>

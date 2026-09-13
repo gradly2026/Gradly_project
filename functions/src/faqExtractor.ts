@@ -26,7 +26,7 @@ if (admin.apps.length === 0) admin.initializeApp();
 
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const REGION = "us-central1";
-const MODELO = "gemini-2.5-flash";
+const MODELO = "gemini-3.6-flash"; // mismo modelo que chatbot.ts — gemini-2.5-flash quedó deprecado para keys nuevas
 // Recorte de seguridad antes de mandar el texto a Gemini: un documento de
 // preguntas frecuentes no necesita más que esto para que el modelo capte
 // todo el contenido relevante, y evita facturas sorpresa con un archivo

@@ -336,7 +336,7 @@ const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
   perfil: {
     titulo: 'Mi Perfil',
     texto:
-      'Consulta tu rango, tu plan, tu método de pago y tus estadísticas, y ajusta tus preferencias.',
+      'Consulta tu rango, tu plan, tu método de pago y tus estadísticas, y ajusta tus preferencias. Si tienes dudas de cómo usar Gradly, toca la burbuja del Asistente Gradly que flota en tus pantallas.',
   },
   mensajes: {
     titulo: 'Mensajes',

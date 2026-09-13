@@ -1695,6 +1695,8 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   "Adjuntar imágenes (opcional)": "Attach images (optional)",
   "Enviar mensaje": "Send message",
   "Enviar respuesta": "Send reply",
+  // Acordeón de preguntas frecuentes (config/faq) al final de help-gradly.tsx
+  "Preguntas frecuentes": "Frequently asked questions",
   "No pudimos cargar esta conversación.": "We couldn't load this conversation.",
   "El equipo marcó esta conversación como resuelta.":
     "The team marked this conversation as resolved.",

@@ -482,7 +482,7 @@ const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
   perfil: {
     titulo: 'Mi Perfil',
     texto:
-      'Consulta y edita los datos de tu institución, revisa tus estadísticas y ajusta tus preferencias.',
+      'Consulta y edita los datos de tu institución, revisa tus estadísticas y ajusta tus preferencias. Si tienes dudas de cómo usar Gradly, toca la burbuja del Asistente Gradly que flota en tus pantallas.',
   },
   mensajes: {
     titulo: 'Mensajes',
