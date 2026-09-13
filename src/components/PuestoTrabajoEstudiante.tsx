@@ -14,7 +14,7 @@
 // muestra un estado vacío hasta que vuelva a ser contratado.
 // ════════════════════════════════════════════════════════════════════════
 import { Ionicons } from '@expo/vector-icons';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -30,6 +30,7 @@ import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import CalendarioEventos from './CalendarioEventos';
+import ComoLlegarBoton from './ComoLlegarBoton';
 import { textoHorario } from '../data/disponibilidad';
 import {
   COL_CONTRATOS,
@@ -95,6 +96,23 @@ export default function PuestoTrabajoEstudiante({
     return unsub;
   }, [uid]);
 
+  // Ubicación de la plaza para "Cómo llegar" — igual que en MiInscripcionCard
+  // de progreso.tsx: no vive en el contrato, se lee de la vacante con una
+  // sola lectura puntual.
+  const [ubicacionVacante, setUbicacionVacante] = useState<{ latitude: number; longitude: number } | null>(null);
+  useEffect(() => {
+    if (!contrato?.vacanteId) { setUbicacionVacante(null); return; }
+    let vivo = true;
+    getDoc(doc(db, 'vacantes', contrato.vacanteId))
+      .then((snap) => {
+        if (!vivo) return;
+        const coords = snap.exists() ? (snap.data() as any)?.ubicacion_coords : null;
+        setUbicacionVacante(coords ?? null);
+      })
+      .catch(() => { if (vivo) setUbicacionVacante(null); });
+    return () => { vivo = false; };
+  }, [contrato?.vacanteId]);
+
   // El empleo no tiene fecha de fin: se pinta una ventana móvil de ~6 meses
   // para que CalendarioEventos marque los días laborales del mes en curso.
   // Va antes de los early return para no romper el orden de los hooks.
@@ -152,6 +170,9 @@ export default function PuestoTrabajoEstudiante({
         <Dato icono="business-outline" label="Empresa que me contrató" valor={contrato.empresaNombre} colors={colors} s={s} />
         <Dato icono="briefcase-outline" label="Puesto de trabajo" valor={contrato.vacanteTitulo} colors={colors} s={s} />
         <Dato icono="calendar-outline" label="Fecha de inicio" valor={fechaLegible(contrato.fechaInicio) || '—'} colors={colors} s={s} />
+        {ubicacionVacante && (
+          <ComoLlegarBoton lat={ubicacionVacante.latitude} lng={ubicacionVacante.longitude} />
+        )}
         <View>
           <View style={s.datoFila}>
             <Ionicons name="people-outline" size={16} color={colors.primaryLight} style={{ width: 22 }} />

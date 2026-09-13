@@ -225,10 +225,14 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
                 items.push({ id: d.id, tipo: 'vacante', titulo: x.titulo ?? 'Pasantía', subtitulo: x.nombre_empresa ?? '', carrera: x.area, categoria: x.categoria ?? 'pasantia' });
               });
             } else if (estado === 'culminado') {
-              // Vacantes de empleo (graduados).
+              // Vacantes de empleo (graduados). `activa` sigue en true aunque
+              // la empresa ya haya cubierto la vacante (contratoService.ts
+              // marca `cerrada:true` aparte) — se excluye para no ofrecerla
+              // como si aún aceptara postulantes.
               vacActivas.docs.forEach((d: any) => {
                 const x = d.data();
                 if (x.categoria !== 'vacante') return;
+                if (x.cerrada === true) return;
                 items.push({ id: d.id, tipo: 'vacante', titulo: x.titulo ?? 'Vacante', subtitulo: x.nombre_empresa ?? '', carrera: x.area, categoria: 'vacante' });
               });
             }

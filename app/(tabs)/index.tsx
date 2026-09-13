@@ -160,6 +160,11 @@ interface Vacante {
   cupos?: number | null;
   cupos_reclamados?: number | null;
   contratados_count?: number | null;
+  /** true = la empresa ya cubrió esta vacante (todos los cupos contratados,
+   *  o la cerró manualmente con al menos un contratado) — ver contratoService.ts.
+   *  A diferencia de `activa`, esto NO lo toca el admin ni el propio
+   *  pausar/reactivar de la empresa. */
+  cerrada?: boolean;
 }
 
 // ─────────────────────────────────────────────
@@ -553,7 +558,15 @@ export default function FeedVacantes() {
     if (!user) return;
     const q = query(collection(db, 'vacantes'), where('activa', '==', true));
     const unsub = onSnapshot(q, snap => {
-      setVacantes(snap.docs.map(d => ({ id: d.id, ...d.data() } as Vacante)));
+      // `activa` sigue en true aunque la empresa ya haya cubierto la vacante
+      // (contratoService.ts marca `cerrada:true` aparte, sin tocar `activa`)
+      // — se excluye aquí para que no le siga apareciendo al estudiante como
+      // disponible cuando ya no acepta más postulantes.
+      setVacantes(
+        snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as Vacante))
+          .filter(v => v.cerrada !== true),
+      );
       setCargando(false);
     });
     return unsub;

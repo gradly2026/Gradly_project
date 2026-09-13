@@ -60,7 +60,18 @@ export default function UbicacionPrecisaModal({
       setGuardando(false);
       setCapturando(false);
       setErr('');
-      setVista(null);
+      // Se re-centra explícitamente en el punto guardado (en vez de dejar
+      // `null` y caer al encuadre ancho del distrito) para forzar que
+      // MapViewer.web (Leaflet) vuelva a esa posición exacta cada vez que el
+      // modal se abre. Sin esto, si el mapa quedó paneado/zoomeado a mano
+      // durante una edición anterior (el mapa de Leaflet no se destruye entre
+      // aperturas del modal), la vista de "solo lectura" mostraba donde había
+      // quedado el mapa la última vez, no el punto realmente registrado.
+      setVista(
+        puntoGuardado
+          ? { latitude: puntoGuardado.lat, longitude: puntoGuardado.lng, latitudeDelta: 0.01, longitudeDelta: 0.01 }
+          : null,
+      );
       setEditando(false);
     }
   }, [visible, puntoGuardado]);
@@ -199,8 +210,15 @@ export default function UbicacionPrecisaModal({
                   onPress={() => {
                     if (editando) {
                       // Vuelve a solo lectura sin perder el punto ya guardado.
+                      // Re-centra en ese punto (mismo motivo que el efecto de
+                      // arriba): si se panéo/zoomeó el mapa mientras se editaba,
+                      // que no se quede ahí al salir del modo edición.
                       setMarker(puntoGuardado ? { latitude: puntoGuardado.lat, longitude: puntoGuardado.lng } : null);
-                      setVista(null);
+                      setVista(
+                        puntoGuardado
+                          ? { latitude: puntoGuardado.lat, longitude: puntoGuardado.lng, latitudeDelta: 0.01, longitudeDelta: 0.01 }
+                          : null,
+                      );
                       setErr('');
                       setEditando(false);
                     } else {
