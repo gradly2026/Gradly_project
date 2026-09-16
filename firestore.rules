@@ -233,6 +233,29 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
+    // ⭐ CALIFICACIÓN DE LA PLATAFORMA (distinto de `feedback_pasantias`, que
+    //    califica a una PERSONA/empresa tras una pasantía real — esto
+    //    califica a Gradly como tal). Una sola calificación por usuario,
+    //    editable: el id del doc ES su uid. Pública para cualquier
+    //    autenticado (lista filtrable por rol en "Mi Perfil → Calificar la
+    //    plataforma"); solo el dueño puede crear/editar la suya.
+    match /calificaciones_plataforma/{uid} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if esAdmin();
+    }
+
+    // El "reportar un problema/corrección" de esa misma calificación vive en
+    // un doc APARTE a propósito: una regla de Firestore no puede ocultar un
+    // campo dentro de un documento que ya es público por otro lado, así que
+    // la única forma real de que SOLO el admin lo vea es que tenga su propio
+    // documento con su propia regla de lectura restringida.
+    match /calificaciones_plataforma_privado/{uid} {
+      allow read: if esAdmin();
+      allow create, update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if esAdmin();
+    }
+
     // 💼 VACANTES
     match /vacantes/{vacanteId} {
       allow read: if request.auth != null;

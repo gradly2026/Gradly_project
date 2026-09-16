@@ -928,6 +928,7 @@ export default function DashboardUniversidad() {
           uploadingPhoto={uploadingLogo}
           onAyuda={handleAyuda}
           onAcerca={handleAcerca}
+          onCalificarPlataforma={() => router.push('/calificar-plataforma' as any)}
           onLogout={() => setLogoutModalVisible(true)}
           sections={[
             {

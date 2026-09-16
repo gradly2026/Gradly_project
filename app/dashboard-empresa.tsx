@@ -2033,6 +2033,7 @@ export default function DashboardEmpresa() {
         uploadingPhoto={uploadingLogo}
         onAyuda={handleAyuda}
         onAcerca={handleAcerca}
+        onCalificarPlataforma={() => router.push('/calificar-plataforma' as any)}
         onLogout={() => setLogoutModalVisible(true)}
         sections={[
           {

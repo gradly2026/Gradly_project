@@ -81,6 +81,7 @@ export interface PerfilMasterDetailLabels {
   idioma: string;
   ayuda: string;
   acerca: string;
+  calificarPlataforma: string;
   cerrarSesion: string;
   cuenta: string;
 }
@@ -97,6 +98,7 @@ const LABELS_ES: PerfilMasterDetailLabels = {
   idioma: 'Idioma',
   ayuda: 'Ayuda',
   acerca: 'Acerca de Gradly',
+  calificarPlataforma: 'Calificar la plataforma',
   cerrarSesion: 'Cerrar sesión',
   cuenta: 'Cuenta',
 };
@@ -113,6 +115,7 @@ export interface PerfilMasterDetailProps {
   includePreferencias?: boolean;
   onAyuda: () => void;
   onAcerca: () => void;
+  onCalificarPlataforma: () => void;
   onLogout: () => void;
   labels?: Partial<PerfilMasterDetailLabels>;
   /** Abre directo en esta sección al montar (en vez del menú maestro) — para
@@ -127,7 +130,7 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
   const {
     name, subtitle, avatarUrl, avatarStoragePath, fallbackIcon = 'person',
     onEditPhoto, uploadingPhoto, sections, includePreferencias = true,
-    onAyuda, onAcerca, onLogout, initialSectionId,
+    onAyuda, onAcerca, onCalificarPlataforma, onLogout, initialSectionId,
   } = props;
 
   const { colors, isDark, setTheme } = useTheme();
@@ -421,6 +424,13 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
               <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} />
             </View>
             <Text style={[styles.menuTitle, { flex: 1 }]}>{labels.acerca}</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuBox} activeOpacity={0.8} onPress={onCalificarPlataforma}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.primaryLight + '1f', borderColor: colors.primaryLight + '55' }]}>
+              <Ionicons name="star-outline" size={18} color={colors.primaryLight} />
+            </View>
+            <Text style={[styles.menuTitle, { flex: 1 }]}>{labels.calificarPlataforma}</Text>
             <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
           </TouchableOpacity>
           <TouchableOpacity style={[styles.menuBox, styles.logoutBox]} activeOpacity={0.8} onPress={onLogout}>

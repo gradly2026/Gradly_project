@@ -76,6 +76,13 @@ import {
   labelRolSoporte,
   type TicketSoporte,
 } from "../../src/services/soporteService";
+import {
+  COLECCION_CALIFICACIONES,
+  COLECCION_CALIFICACIONES_PRIVADO,
+  promedioCalificacion,
+  type CalificacionPlataforma,
+  type CorreccionPlataforma,
+} from "../../src/services/calificacionPlataformaService";
 
 const tsToIso = (v: any): string => {
   if (!v) return "";
@@ -106,6 +113,7 @@ type AdminPage =
   | "carreras"
   | "alianzas"
   | "soporte"
+  | "calificaciones"
   | "vacantes"
   | "suscripciones"
   | "notificaciones"
@@ -283,6 +291,7 @@ type DataIssueKey =
   | "alianzas"
   | "comunicados"
   | "soporte"
+  | "calificaciones"
   | "logs"
   | "notificaciones"
   | "permisos"
@@ -1972,6 +1981,47 @@ export default function AdminPreview() {
     }
   }, [setDataIssue]);
 
+  // ── Calificaciones de la plataforma (`calificaciones_plataforma` +
+  //    su contraparte solo-admin `calificaciones_plataforma_privado` —
+  //    ver el porqué de los dos documentos en
+  //    calificacionPlataformaService.ts). Se unen por id (el uid del
+  //    usuario) al mostrarlas: cada tarjeta de calificación le agrega su
+  //    "corrección" si existe una.
+  const [calificaciones, setCalificaciones] = useState<CalificacionPlataforma[]>([]);
+  const [correcciones, setCorrecciones] = useState<CorreccionPlataforma[]>([]);
+  const [calificacionesLoading, setCalificacionesLoading] = useState(false);
+  const [calificacionesAttempted, setCalificacionesAttempted] = useState(false);
+  type CalificacionesFiltro = "todas" | "estudiante" | "empresa" | "universidad";
+  const [calificacionesFiltro, setCalificacionesFiltro] = useState<CalificacionesFiltro>("todas");
+
+  const fetchCalificaciones = useCallback(async () => {
+    setCalificacionesLoading(true);
+    try {
+      const [calSnap, corrSnap] = await Promise.all([
+        getDocs(query(collection(db, COLECCION_CALIFICACIONES), limit(300))),
+        getDocs(query(collection(db, COLECCION_CALIFICACIONES_PRIVADO), limit(300))),
+      ]);
+      setCalificaciones(
+        calSnap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) } as CalificacionPlataforma))
+          .sort(
+            (a, b) => (b.actualizadoAt?.toMillis?.() ?? 0) - (a.actualizadoAt?.toMillis?.() ?? 0),
+          ),
+      );
+      setCorrecciones(
+        corrSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as CorreccionPlataforma)),
+      );
+      setDataIssue("calificaciones", null);
+    } catch (error) {
+      setCalificaciones([]);
+      setCorrecciones([]);
+      setDataIssue("calificaciones", adminDataErrorMessage(error, "las calificaciones de la plataforma"));
+    } finally {
+      setCalificacionesLoading(false);
+      setCalificacionesAttempted(true);
+    }
+  }, [setDataIssue]);
+
   const fetchPermissionsOverview = useCallback(async () => {
     setPermissionsLoading(true);
     try {
@@ -2795,6 +2845,7 @@ export default function AdminPreview() {
     if (page === "carreras" && !carrerasAttempted && !carrerasLoading) fetchCarreras();
     if (page === "alianzas" && !alianzasAttempted && !alianzasLoading) fetchAlianzas();
     if (page === "soporte" && !soporteAttempted && !soporteLoading) fetchTicketsSoporte();
+    if (page === "calificaciones" && !calificacionesAttempted && !calificacionesLoading) fetchCalificaciones();
     if (page === "config" && !comunicadosCargado) { void fetchComunicados(); }
     if (page === "config" && !mantCargado) { void fetchMantenimiento(); }
     if (page === "config" && !asisCargado) { void fetchAsistente(); }
@@ -2813,6 +2864,9 @@ export default function AdminPreview() {
     fetchTicketsSoporte,
     soporteAttempted,
     soporteLoading,
+    fetchCalificaciones,
+    calificacionesAttempted,
+    calificacionesLoading,
     fetchComunicados,
     fetchMantenimiento,
     fetchAsistente,
@@ -3056,6 +3110,7 @@ export default function AdminPreview() {
     { key: "carreras", label: "Carreras", icon: "book-outline" },
     { key: "alianzas", label: "Alianzas", icon: "git-network-outline" },
     { key: "soporte", label: "Soporte", icon: "help-buoy-outline" },
+    { key: "calificaciones", label: "Calificaciones", icon: "star-outline" },
     { key: "notificaciones", label: "Inbox", icon: "notifications-outline" },
     { key: "roles", label: "Permisos", icon: "key-outline" },
     { key: "config", label: "Config", icon: "settings-outline" },
@@ -5775,6 +5830,149 @@ export default function AdminPreview() {
     );
   };
 
+  // renderCalificaciones: lo que opinan los usuarios de LA PLATAFORMA (no de
+  // otra persona ni de una pasantía — ver calificacionPlataformaService.ts),
+  // enviado desde "Mi perfil → Calificar la plataforma" en los 3 roles. Une
+  // `calificaciones` (público) con `correcciones` (solo-admin) por id, así
+  // cada tarjeta puede mostrar su "problema reportado" si lo tiene, sin que
+  // ese campo exista nunca en la lista pública que ve el usuario.
+  const renderCalificaciones = () => {
+    const FILTROS_ROL: { key: CalificacionesFiltro; label: string }[] = [
+      { key: "todas", label: "Todas" },
+      { key: "estudiante", label: "Estudiantes" },
+      { key: "universidad", label: "Universidades" },
+      { key: "empresa", label: "Empresas" },
+    ];
+    const correccionPorId = new Map(correcciones.map((c) => [c.id, c]));
+    const filtradas = calificaciones.filter(
+      (c) => calificacionesFiltro === "todas" || c.usuarioRol === calificacionesFiltro,
+    );
+    const totalCount = calificaciones.length;
+    const promedioGeneral = totalCount
+      ? calificaciones.reduce((sum, c) => sum + promedioCalificacion(c), 0) / totalCount
+      : 0;
+    const conCorreccionCount = calificaciones.filter((c) => correccionPorId.has(c.id)).length;
+
+    const iconoRol = (r?: string): keyof typeof Ionicons.glyphMap =>
+      r === "estudiante" ? "school-outline" : r === "universidad" ? "business-outline" : "briefcase-outline";
+
+    return (
+      <ScrollView
+        {...pageScrollProps}
+        showsVerticalScrollIndicator
+        refreshControl={
+          <RefreshControl refreshing={calificacionesLoading} onRefresh={fetchCalificaciones} tintColor={C.accent70} />
+        }
+      >
+        <View style={s.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.kicker}>Comunidad</Text>
+            <Text style={s.pageTitle}>Calificaciones</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>
+              Lo que opinan los usuarios de la plataforma, desde "Mi perfil → Calificar la
+              plataforma". Los problemas/correcciones que reportan junto a su calificación solo
+              los ves tú — nunca aparecen en la lista pública que ven los usuarios.
+            </Text>
+          </View>
+          <TouchableOpacity style={s.btnOutline} onPress={fetchCalificaciones} activeOpacity={0.8}>
+            <Text style={s.btnOutlineText}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[s.grid2, { marginBottom: 14 }]}>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Total</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Calificaciones registradas.</Text>
+            <Text style={[s.heroMetricValue, { color: C.accent70, marginTop: 12 }]}>{totalCount}</Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Promedio general</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>De las 4 categorías, todos los roles.</Text>
+            <Text style={[s.heroMetricValue, { color: C.green, marginTop: 12 }]}>
+              {totalCount ? promedioGeneral.toFixed(1) : "—"}
+            </Text>
+          </View>
+          <View style={[s.card, { flex: 1, minWidth: isDesktop ? "32%" : width >= 700 ? "48%" : "100%", padding: 14 }]}>
+            <Text style={s.itemTitle}>Con problema reportado</Text>
+            <Text style={[s.textMuted, { marginTop: 6 }]}>Escribieron una corrección.</Text>
+            <Text style={[s.heroMetricValue, { color: C.yellow, marginTop: 12 }]}>{conCorreccionCount}</Text>
+          </View>
+        </View>
+
+        <Card style={{ marginBottom: 14 }}>
+          <View style={s.chipRow}>
+            {FILTROS_ROL.map((f) => (
+              <Chip
+                key={f.key}
+                label={f.label}
+                active={calificacionesFiltro === f.key}
+                onPress={() => setCalificacionesFiltro(f.key)}
+              />
+            ))}
+          </View>
+        </Card>
+
+        <Card style={{ marginBottom: 24 }}>
+          <View style={[s.row, { justifyContent: "space-between", marginBottom: 10 }]}>
+            <Text style={s.cardTitle}>Calificaciones</Text>
+            <Text style={s.textMuted}>{filtradas.length}</Text>
+          </View>
+
+          {calificacionesLoading && calificaciones.length === 0 ? (
+            <View style={{ paddingVertical: 26, alignItems: "center" }}>
+              <ActivityIndicator color={C.accent70} />
+            </View>
+          ) : filtradas.length === 0 ? (
+            <EmptyResultsState
+              icon="star-outline"
+              title="No hay calificaciones para mostrar"
+              message="Todavía nadie calificó la plataforma con este filtro."
+              actionLabel={calificacionesFiltro !== "todas" ? "Ver todas" : undefined}
+              onAction={calificacionesFiltro !== "todas" ? () => setCalificacionesFiltro("todas") : undefined}
+            />
+          ) : (
+            <View style={{ gap: 10 }}>
+              {filtradas.map((c) => {
+                const correccion = correccionPorId.get(c.id);
+                const fecha = c.actualizadoAt?.toDate?.() ? c.actualizadoAt.toDate().toLocaleDateString() : "";
+                return (
+                  <View key={c.id} style={[s.listItem, isPhone && s.listItemStack]}>
+                    <View style={s.avatar}>
+                      <Ionicons name={iconoRol(c.usuarioRol)} size={18} color={C.accent70} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.itemTitle}>{labelRolSoporte(c.usuarioRol)}</Text>
+                          <Text style={[s.itemSub, { marginTop: 4 }]}>
+                            Promedio {promedioCalificacion(c).toFixed(1)}/5{fecha ? ` · ${fecha}` : ""}
+                          </Text>
+                          <Text style={[s.itemSub, { marginTop: 2 }]}>
+                            Uso {c.facilidadUso} · Diseño {c.diseno} · Rendimiento {c.rendimiento} · Utilidad {c.utilidadGeneral}
+                          </Text>
+                          {!!c.comentario && (
+                            <Text style={[s.itemSub, { marginTop: 6 }]}>{c.comentario}</Text>
+                          )}
+                        </View>
+                        {!!correccion && <Badge label="Reportó un problema" type="pending" />}
+                      </View>
+                      {!!correccion && (
+                        <View style={[s.card, { marginTop: 10, borderColor: "rgba(245,158,11,0.30)", padding: 12 }]}>
+                          <Text style={[s.itemSub, { color: C.yellow }]}>Corrección reportada (solo admin)</Text>
+                          <Text style={[s.itemSub, { marginTop: 6 }]}>{correccion.correccion}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </Card>
+      </ScrollView>
+    );
+  };
+
   // renderConfig: accesos rápidos a otras páginas, el botón de
   // "Recalcular alianzas y calificaciones" (runBackfillAlianzas, con su
   // propio modal de confirmación RecalcularConfirmModal) y cerrar sesión.
@@ -7893,6 +8091,8 @@ export default function AdminPreview() {
         return renderAlianzas();
       case "soporte":
         return renderSoporte();
+      case "calificaciones":
+        return renderCalificaciones();
       case "vacantes":
         return renderVacantes();
       case "suscripciones":

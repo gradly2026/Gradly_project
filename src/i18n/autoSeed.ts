@@ -2376,3 +2376,39 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
   "Política de privacidad": "Privacy policy",
   "Contacto": "Contact",
 };
+
+// app/calificar-plataforma.tsx — "Mi perfil → Calificar la plataforma",
+// en los 3 roles.
+export const CALIFICAR_PLATAFORMA_SEED_EN: Record<string, string> = {
+  "Calificar la plataforma": "Rate the platform",
+  "Tu calificación": "Your rating",
+  "¿Qué te parece Gradly?": "What do you think of Gradly?",
+  "Tu opinión nos ayuda a mejorar la plataforma. Califica estos aspectos, deja un comentario si quieres, y si algo no funcionó como debía, cuéntanoslo abajo.":
+    "Your feedback helps us improve the platform. Rate these aspects, leave a comment if you'd like, and if something didn't work as it should, tell us below.",
+  "Facilidad de uso": "Ease of use",
+  "Diseño e interfaz": "Design and interface",
+  "Rendimiento y velocidad": "Performance and speed",
+  "Utilidad general": "Overall usefulness",
+  "Comentario (opcional)": "Comment (optional)",
+  "¿Qué te gusta o qué mejorarías?": "What do you like, or what would you improve?",
+  "¿Algo que corregir? (opcional)": "Anything to fix? (optional)",
+  "Cuéntanos un error o problema puntual que hayas tenido con la plataforma. Esto solo lo ve el equipo de Gradly, no aparece en la lista pública de abajo.":
+    "Tell us about a specific bug or problem you ran into with the platform. Only the Gradly team sees this — it doesn't show up in the public list below.",
+  "Describe el problema (opcional)": "Describe the problem (optional)",
+  "Completa las 4 estrellas antes de enviar.": "Fill in all 4 star ratings before submitting.",
+  "Sesión no válida.": "Invalid session.",
+  "No se pudo enviar. Intenta de nuevo.": "Couldn't submit. Please try again.",
+  "¡Gracias por tu calificación!": "Thanks for your rating!",
+  "Enviando…": "Submitting…",
+  "Actualizar calificación": "Update rating",
+  "Enviar calificación": "Submit rating",
+  "Lo que opina la comunidad": "What the community thinks",
+  "Todas": "All",
+  "Estudiantes": "Students",
+  "Universidades": "Universities",
+  "Todavía no hay calificaciones en esta categoría.": "There aren't any ratings in this category yet.",
+  "De un estudiante": "From a student",
+  "De una empresa": "From a company",
+  "De una universidad": "From a university",
+  "De un usuario": "From a user",
+};

@@ -554,6 +554,7 @@ export default function PerfilTab() {
         uploadingPhoto={uploadingFoto}
         onAyuda={handleAyuda}
         onAcerca={handleAcerca}
+        onCalificarPlataforma={() => router.push('/calificar-plataforma' as any)}
         onLogout={() => setLogoutModalVisible(true)}
         labels={{
           // Como PerfilMasterDetail es un componente reutilizado también
@@ -572,6 +573,7 @@ export default function PerfilTab() {
           idioma: t('perfil_idioma'),
           ayuda: t('perfil_ayuda'),
           acerca: t('acerca_titulo'),
+          calificarPlataforma: t('perfil_calificar_plataforma'),
           cerrarSesion: t('cerrar_sesion'),
           cuenta: t('perfil_cuenta'),
         }}
