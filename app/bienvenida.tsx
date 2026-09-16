@@ -386,7 +386,17 @@ export default function BienvenidaScreen() {
 
       <ScrollView
         ref={scrollRef}
-        style={[styles.scrollView, scrollStyle]}
+        style={[
+          styles.scrollView,
+          scrollStyle,
+          // El scrollbar propio de este ScrollView (visible en web) le resta
+          // ancho SOLO del lado derecho a su caja de contenido; como las
+          // secciones se centran con maxWidth+alignSelf:'center' dentro de
+          // esa caja, quedaban ~10px más pegadas a la izquierda que a la
+          // derecha (el "no llega bien al ancho" reportado). Reservar el
+          // espacio del scrollbar de forma simétrica arregla el centrado.
+          Platform.OS === 'web' && ({ scrollbarGutter: 'stable both-edges' } as any),
+        ]}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator
       >
