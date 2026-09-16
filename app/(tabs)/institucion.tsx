@@ -159,6 +159,20 @@ export default function InstitucionTab() {
   // (Fase D). Mismo hook y mismo número que la pestaña Progreso.
   const { asignacion: inscripcion, progreso: ledger } = useProgresoInscripcion(user?.uid);
 
+  // La empresa para "Reportar un problema" (más abajo) también debe poder
+  // salir de la inscripción de cupo: el useEffect de arriba solo mira las
+  // dos vías más antiguas (`solicitudes_practicas` / `aplicaciones`) y nunca
+  // supo de `asignaciones_cupo`, así que un estudiante con pasantía activa
+  // por cupo (como la que muestra "Mi progreso") nunca veía la categoría
+  // "La empresa" aunque sí tuviera una asignada. Cuando hay una inscripción
+  // de cupo vigente (no finalizada) manda ella, por ser la más actual.
+  const empresaParaReporte = useMemo(() => {
+    if (inscripcion?.empresaId && !inscripcion.finalizada) {
+      return { id: inscripcion.empresaId, nombre: inscripcion.empresaNombre ?? '' };
+    }
+    return empresa;
+  }, [inscripcion, empresa]);
+
   // Estudiante ya "Certificado" (culminó su práctica o está graduado): el botón
   // "Reportar un problema" queda opaco e inaccesible. Las incidencias que ya
   // existían siguen visibles (BandejaIncidencias); si nunca hubo ninguna, la
@@ -399,8 +413,8 @@ export default function InstitucionTab() {
           onClose={() => setReportando(false)}
           estudianteNombre={(userProfile as any)?.nombre_completo ?? ''}
           universidadId={universidadId}
-          empresaId={empresa?.id}
-          empresaNombre={empresa?.nombre}
+          empresaId={empresaParaReporte?.id}
+          empresaNombre={empresaParaReporte?.nombre}
         />
       </View>
     </LiquidBackground>
