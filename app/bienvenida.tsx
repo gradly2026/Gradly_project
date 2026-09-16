@@ -12,7 +12,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Platform,
@@ -28,6 +28,11 @@ import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
 import { useTranslation } from '../src/context/TranslationContext';
+import {
+  promedioCalificacion,
+  suscribirCalificacionesPlataforma,
+  type CalificacionPlataforma,
+} from '../src/services/calificacionPlataformaService';
 
 const LOGO = require('../assets/images/LogoGradly.png');
 // Foto de fondo de la portada — va empotrada en base64 (no `require()`) a
@@ -143,23 +148,18 @@ const CASOS_SUB: Record<Rol, string> = {
   universidad: 'Así acompañan las universidades a sus estudiantes de principio a fin.',
 };
 
-type Testi = { icon: IconName; texto: string; nombre: string; rol: string };
-const TESTIMONIOS: Record<Rol, Testi[]> = {
-  estudiante: [
-    { icon: 'person-outline', texto: 'Conseguí mi pasantía sin depender de conocidos — todo el proceso fue claro desde la app, desde postular hasta certificarme.', nombre: 'Estudiante', rol: 'Ingeniería, universidad participante' },
-    { icon: 'person-outline', texto: 'Marco mi asistencia con un código todos los días y veo mis horas avanzar en tiempo real, sin tener que preguntar cómo voy.', nombre: 'Estudiante', rol: 'Administración, universidad participante' },
-    { icon: 'person-outline', texto: 'Cuando terminé mi pasantía, la empresa me ofreció mi primer empleo real desde la misma app.', nombre: 'Estudiante', rol: 'Mercadotecnia, universidad participante' },
-  ],
-  empresa: [
-    { icon: 'business-outline', texto: 'Recibimos candidatos que ya vienen validados por su universidad — nos ahorra tiempo de selección y coordinación.', nombre: 'Empresa aliada', rol: 'Recursos Humanos' },
-    { icon: 'business-outline', texto: 'Publicamos cupos por carrera y la universidad nos asigna directo a los estudiantes que califican.', nombre: 'Empresa aliada', rol: 'Reclutamiento' },
-    { icon: 'business-outline', texto: 'El código diario de asistencia nos quitó el problema de llevar el control manual de cada pasante.', nombre: 'Empresa aliada', rol: 'Supervisión de pasantes' },
-  ],
-  universidad: [
-    { icon: 'school-outline', texto: 'Por fin tenemos visibilidad real de las horas y pasantías de nuestros estudiantes, sin depender de reportes por correo.', nombre: 'Universidad', rol: 'Coordinación académica' },
-    { icon: 'school-outline', texto: 'Repartir los cupos entre nuestros grupos ya no es un proceso manual — la plataforma nos ayuda a organizarlo por carrera.', nombre: 'Universidad', rol: 'Vinculación empresarial' },
-    { icon: 'school-outline', texto: 'Validamos el comprobante final de cada estudiante desde el mismo panel, sin papeleo adicional.', nombre: 'Universidad', rol: 'Coordinación académica' },
-  ],
+// Ícono + nombre en singular por rol, para las tarjetas de "Lo que podrían
+// decir en Gradly" (más abajo) — a diferencia de ROLES (arriba), que es para
+// las pestañas y va en plural.
+const ROL_ICONO: Record<Rol, IconName> = {
+  estudiante: 'person-outline',
+  empresa: 'business-outline',
+  universidad: 'school-outline',
+};
+const ROL_SINGULAR: Record<Rol, string> = {
+  estudiante: 'Estudiante',
+  empresa: 'Empresa',
+  universidad: 'Universidad',
 };
 
 const FEATURES: { icon: IconName; title: string; desc: string }[] = [
@@ -295,6 +295,21 @@ function SectionHeader({ kicker, title, sub, colors, styles }: { kicker: string;
   );
 }
 
+// Estrellas de solo lectura (soporta medias estrellas) — mismo patrón ya
+// duplicado en ResenasFeedback/RangoCard/CertificadoGradly/
+// calificar-plataforma.tsx; una copia local más sigue ese mismo precedente
+// del proyecto en vez de centralizarlo.
+function Estrellas({ valor, size = 13 }: { valor: number; size?: number }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 2 }}>
+      {[1, 2, 3, 4, 5].map((n) => {
+        const name = valor >= n ? 'star' : valor >= n - 0.5 ? 'star-half' : 'star-outline';
+        return <Ionicons key={n} name={name as IconName} size={size} color="#f5b50a" />;
+      })}
+    </View>
+  );
+}
+
 export default function BienvenidaScreen() {
   const router = useRouter();
   const { colors, isDark } = useTheme();
@@ -312,6 +327,27 @@ export default function BienvenidaScreen() {
   const [rolOportunidades, setRolOportunidades] = useState<Rol>('estudiante');
   const [rolCasos, setRolCasos] = useState<Rol>('estudiante');
   const [rolTesti, setRolTesti] = useState<Rol>('estudiante');
+
+  // ── "Lo que podrían decir en Gradly" — calificaciones REALES de la
+  // plataforma (calificaciones_plataforma), no ejemplos inventados. Solo se
+  // muestran las que tienen comentario (una tarjeta de cita no puede quedar
+  // vacía); se navegan de a `cols` con las flechas, sin apilar todas.
+  const [calificaciones, setCalificaciones] = useState<CalificacionPlataforma[]>([]);
+  useEffect(() => {
+    const unsub = suscribirCalificacionesPlataforma(setCalificaciones);
+    return unsub;
+  }, []);
+  const testimoniosReales = calificaciones.filter(
+    (c) => c.usuarioRol === rolTesti && c.comentario?.trim(),
+  );
+  const [paginaTesti, setPaginaTesti] = useState(0);
+  useEffect(() => { setPaginaTesti(0); }, [rolTesti]);
+  const totalPaginasTesti = Math.max(1, Math.ceil(testimoniosReales.length / cols));
+  const paginaTestiSegura = Math.min(paginaTesti, totalPaginasTesti - 1);
+  const testimoniosVisibles = testimoniosReales.slice(
+    paginaTestiSegura * cols,
+    paginaTestiSegura * cols + cols,
+  );
 
   const irALogin = () => router.push('/auth/iniciosesion' as any);
   const irARegistro = () => router.push('/auth/registro' as any);
@@ -575,29 +611,63 @@ export default function BienvenidaScreen() {
           ))}
         </View>
 
-        {/* ── Testimonios (por rol) ── */}
+        {/* ── Testimonios (por rol) — calificaciones REALES de la plataforma ── */}
         <View style={styles.section}>
           <SectionHeader kicker="Comunidad" title="Lo que podrían decir en Gradly" colors={colors} styles={styles} />
           <RoleTabs value={rolTesti} onChange={setRolTesti} colors={colors} styles={styles} />
-          {chunk(TESTIMONIOS[rolTesti], cols).map((row, i) => (
-            <View key={i} style={styles.cardRow}>
-              {row.map((t) => (
-                <GlassCard key={t.texto} style={{ flex: 1 }} contentStyle={styles.testiCardContent}>
-                  <Text style={[styles.testiQuote, { color: colors.primaryLight }]}>&ldquo;</Text>
-                  <Text style={[styles.testiText, { color: colors.textSecondary }]}>{t.texto}</Text>
-                  <View style={[styles.testiAuthor, { borderTopColor: colors.border }]}>
-                    <View style={[styles.testiAvatar, { backgroundColor: colors.backgroundSurface }]}>
-                      <Ionicons name={t.icon} size={16} color={colors.primaryLight} />
+          {testimoniosReales.length === 0 ? (
+            <GlassCard contentStyle={styles.testiVacioCard}>
+              <Text style={[styles.testiVacioText, { color: colors.textMuted }]}>
+                Todavía no hay calificaciones de este rol con comentario.
+              </Text>
+            </GlassCard>
+          ) : (
+            <View style={styles.testiCarouselRow}>
+              <Pressable
+                onPress={() => setPaginaTesti((p) => Math.max(0, p - 1))}
+                disabled={paginaTestiSegura === 0}
+                style={[
+                  styles.testiArrowBtn,
+                  { borderColor: colors.border, backgroundColor: colors.backgroundCard },
+                  paginaTestiSegura === 0 && styles.testiArrowBtnDisabled,
+                ]}
+                accessibilityLabel="Ver calificaciones anteriores"
+              >
+                <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
+              </Pressable>
+
+              <View style={[styles.cardRow, { flex: 1 }]}>
+                {testimoniosVisibles.map((c) => (
+                  <GlassCard key={c.id} style={{ flex: 1 }} contentStyle={styles.testiCardContent}>
+                    <Text style={[styles.testiQuote, { color: colors.primaryLight }]}>&ldquo;</Text>
+                    <Text style={[styles.testiText, { color: colors.textSecondary }]}>{c.comentario}</Text>
+                    <View style={[styles.testiAuthor, { borderTopColor: colors.border }]}>
+                      <View style={[styles.testiAvatar, { backgroundColor: colors.backgroundSurface }]}>
+                        <Ionicons name={ROL_ICONO[c.usuarioRol]} size={16} color={colors.primaryLight} />
+                      </View>
+                      <View>
+                        <Text style={[styles.testiName, { color: colors.textPrimary }]}>{ROL_SINGULAR[c.usuarioRol]}</Text>
+                        <Estrellas valor={promedioCalificacion(c)} />
+                      </View>
                     </View>
-                    <View>
-                      <Text style={[styles.testiName, { color: colors.textPrimary }]}>{t.nombre}</Text>
-                      <Text style={[styles.testiRole, { color: colors.textMuted }]}>{t.rol}</Text>
-                    </View>
-                  </View>
-                </GlassCard>
-              ))}
+                  </GlassCard>
+                ))}
+              </View>
+
+              <Pressable
+                onPress={() => setPaginaTesti((p) => Math.min(totalPaginasTesti - 1, p + 1))}
+                disabled={paginaTestiSegura >= totalPaginasTesti - 1}
+                style={[
+                  styles.testiArrowBtn,
+                  { borderColor: colors.border, backgroundColor: colors.backgroundCard },
+                  paginaTestiSegura >= totalPaginasTesti - 1 && styles.testiArrowBtnDisabled,
+                ]}
+                accessibilityLabel="Ver más calificaciones"
+              >
+                <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
+              </Pressable>
             </View>
-          ))}
+          )}
         </View>
 
         {/* ── Empresas aliadas ── */}
@@ -826,6 +896,19 @@ const makeStyles = (COLORS: GradlyColors) =>
     testiAvatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
     testiName: { fontSize: 13, fontFamily: FONTS.interSemiBold },
     testiRole: { fontSize: 11, fontFamily: FONTS.interRegular },
+    testiCarouselRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    testiArrowBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    testiArrowBtnDisabled: { opacity: 0.35 },
+    testiVacioCard: { padding: 24, alignItems: 'center' },
+    testiVacioText: { fontSize: 13.5, fontFamily: FONTS.interRegular, textAlign: 'center' },
 
     aliadosWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center' },
     aliadoChip: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999, borderWidth: 1 },

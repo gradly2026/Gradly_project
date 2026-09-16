@@ -236,11 +236,17 @@ service cloud.firestore {
     // ⭐ CALIFICACIÓN DE LA PLATAFORMA (distinto de `feedback_pasantias`, que
     //    califica a una PERSONA/empresa tras una pasantía real — esto
     //    califica a Gradly como tal). Una sola calificación por usuario,
-    //    editable: el id del doc ES su uid. Pública para cualquier
-    //    autenticado (lista filtrable por rol en "Mi Perfil → Calificar la
-    //    plataforma"); solo el dueño puede crear/editar la suya.
+    //    editable: el id del doc ES su uid.
+    //    Lectura PÚBLICA a propósito (única colección del proyecto sin
+    //    exigir sesión): además de la lista filtrable en "Mi Perfil →
+    //    Calificar la plataforma" (usuarios autenticados), estos mismos
+    //    testimonios se muestran en /bienvenida, la landing pública SIN
+    //    guard de sesión — un visitante sin cuenta también debe poder
+    //    verlos. El documento solo guarda rol + estrellas + comentario
+    //    (nunca nombre ni ningún dato privado), así que exponerlo sin login
+    //    no filtra nada sensible. Solo el dueño puede crear/editar la suya.
     match /calificaciones_plataforma/{uid} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create, update: if request.auth != null && request.auth.uid == uid;
       allow delete: if esAdmin();
     }

@@ -123,9 +123,14 @@ export default function CalificarPlataformaScreen() {
   const [comentario, setComentario] = useState('');
   const [correccion, setCorreccion] = useState('');
   const [yaCalifico, setYaCalifico] = useState(false);
+  // Con una calificación ya guardada, el formulario queda colapsado detrás
+  // de una confirmación compacta ("¡Gracias!" + botón) — recién se vuelve a
+  // mostrar si el usuario toca ese botón para editarla. Antes de tener
+  // ninguna calificación, no hay nada que colapsar: se ve el formulario de
+  // una vez.
+  const [editando, setEditando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState('');
-  const [exito, setExito] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -152,7 +157,6 @@ export default function CalificarPlataformaScreen() {
 
   const handleEnviar = async () => {
     if (enviando) return;
-    setExito(false);
     if (!facilidadUso || !diseno || !rendimiento || !utilidadGeneral) {
       setError('Completa las 4 estrellas antes de enviar.');
       return;
@@ -175,7 +179,7 @@ export default function CalificarPlataformaScreen() {
       });
       setYaCalifico(true);
       setCorreccion('');
-      setExito(true);
+      setEditando(false);
     } catch (e: any) {
       setError(e?.message || 'No se pudo enviar. Intenta de nuevo.');
     } finally {
@@ -223,69 +227,77 @@ export default function CalificarPlataformaScreen() {
             </Text>
           </GlassCard>
 
-          <GlassCard contentStyle={styles.formCard}>
-            {CATEGORIAS.map((c) => (
-              <View key={c.key} style={styles.estrellaFila}>
-                <View style={styles.estrellaLabelRow}>
-                  <Ionicons name={c.icon} size={16} color={colors.textSecondary} />
-                  <Text style={styles.estrellaLabel}>{c.label}</Text>
+          {yaCalifico && !editando ? (
+            <GlassCard contentStyle={styles.confirmacionCard}>
+              <Text style={styles.exito}>¡Gracias por tu calificación!</Text>
+              <TouchableOpacity style={styles.actualizarBtn} onPress={() => setEditando(true)} activeOpacity={0.85}>
+                <Text style={styles.actualizarBtnText}>Actualizar calificación</Text>
+              </TouchableOpacity>
+            </GlassCard>
+          ) : (
+            <GlassCard contentStyle={styles.formCard}>
+              {CATEGORIAS.map((c) => (
+                <View key={c.key} style={styles.estrellaFila}>
+                  <View style={styles.estrellaLabelRow}>
+                    <Ionicons name={c.icon} size={16} color={colors.textSecondary} />
+                    <Text style={styles.estrellaLabel}>{c.label}</Text>
+                  </View>
+                  <EstrellasInput
+                    valor={{ facilidadUso, diseno, rendimiento, utilidadGeneral }[c.key]}
+                    onChange={{ facilidadUso: setFacilidadUso, diseno: setDiseno, rendimiento: setRendimiento, utilidadGeneral: setUtilidadGeneral }[c.key]}
+                  />
                 </View>
-                <EstrellasInput
-                  valor={{ facilidadUso, diseno, rendimiento, utilidadGeneral }[c.key]}
-                  onChange={{ facilidadUso: setFacilidadUso, diseno: setDiseno, rendimiento: setRendimiento, utilidadGeneral: setUtilidadGeneral }[c.key]}
+              ))}
+
+              <View style={styles.campo}>
+                <Text style={styles.campoLabel}>Comentario (opcional)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={comentario}
+                  onChangeText={setComentario}
+                  placeholder="¿Qué te gusta o qué mejorarías?"
+                  placeholderTextColor={colors.textMuted}
+                  multiline
+                  numberOfLines={3}
                 />
               </View>
-            ))}
 
-            <View style={styles.campo}>
-              <Text style={styles.campoLabel}>Comentario (opcional)</Text>
-              <TextInput
-                style={styles.input}
-                value={comentario}
-                onChangeText={setComentario}
-                placeholder="¿Qué te gusta o qué mejorarías?"
-                placeholderTextColor={colors.textMuted}
-                multiline
-                numberOfLines={3}
-              />
-            </View>
+              <View style={styles.divider} />
 
-            <View style={styles.divider} />
-
-            <View style={styles.campo}>
-              <View style={styles.correccionLabelRow}>
-                <Ionicons name="bug-outline" size={16} color={colors.accent} />
-                <Text style={styles.correccionLabel}>¿Algo que corregir? (opcional)</Text>
+              <View style={styles.campo}>
+                <View style={styles.correccionLabelRow}>
+                  <Ionicons name="bug-outline" size={16} color={colors.accent} />
+                  <Text style={styles.correccionLabel}>¿Algo que corregir? (opcional)</Text>
+                </View>
+                <Text style={styles.correccionAyuda}>
+                  Cuéntanos un error o problema puntual que hayas tenido con la plataforma. Esto
+                  solo lo ve el equipo de Gradly, no aparece en la lista pública de abajo.
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={correccion}
+                  onChangeText={setCorreccion}
+                  placeholder="Describe el problema (opcional)"
+                  placeholderTextColor={colors.textMuted}
+                  multiline
+                  numberOfLines={3}
+                />
               </View>
-              <Text style={styles.correccionAyuda}>
-                Cuéntanos un error o problema puntual que hayas tenido con la plataforma. Esto
-                solo lo ve el equipo de Gradly, no aparece en la lista pública de abajo.
-              </Text>
-              <TextInput
-                style={styles.input}
-                value={correccion}
-                onChangeText={setCorreccion}
-                placeholder="Describe el problema (opcional)"
-                placeholderTextColor={colors.textMuted}
-                multiline
-                numberOfLines={3}
-              />
-            </View>
 
-            {!!error && <Text style={styles.error}>{error}</Text>}
-            {exito && !error && <Text style={styles.exito}>¡Gracias por tu calificación!</Text>}
+              {!!error && <Text style={styles.error}>{error}</Text>}
 
-            <TouchableOpacity
-              style={[styles.enviarBtn, { backgroundColor: colors.primary }, enviando && { opacity: 0.6 }]}
-              onPress={handleEnviar}
-              disabled={enviando}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.enviarBtnText}>
-                {enviando ? 'Enviando…' : yaCalifico ? 'Actualizar calificación' : 'Enviar calificación'}
-              </Text>
-            </TouchableOpacity>
-          </GlassCard>
+              <TouchableOpacity
+                style={[styles.enviarBtn, { backgroundColor: colors.primary }, enviando && { opacity: 0.6 }]}
+                onPress={handleEnviar}
+                disabled={enviando}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.enviarBtnText}>
+                  {enviando ? 'Enviando…' : yaCalifico ? 'Actualizar calificación' : 'Enviar calificación'}
+                </Text>
+              </TouchableOpacity>
+            </GlassCard>
+          )}
 
           <View style={styles.listaHeadRow}>
             <Text style={styles.sectionTitle}>Lo que opina la comunidad</Text>
@@ -414,10 +426,28 @@ const makeStyles = (COLORS: GradlyColors) =>
     correccionAyuda: { fontSize: 12.5, lineHeight: 18, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
 
     error: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.error },
-    exito: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.success },
+    exito: { flex: 1, fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.success },
 
     enviarBtn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
     enviarBtnText: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: '#fff' },
+
+    confirmacionCard: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      padding: 20,
+    },
+    actualizarBtn: {
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 11,
+      backgroundColor: COLORS.primary12,
+      borderWidth: 1,
+      borderColor: COLORS.primary35,
+    },
+    actualizarBtnText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
 
     listaHeadRow: { marginTop: 4 },
     filtrosRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

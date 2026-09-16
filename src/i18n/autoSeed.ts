@@ -2375,6 +2375,10 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
   "Términos de uso": "Terms of use",
   "Política de privacidad": "Privacy policy",
   "Contacto": "Contact",
+
+  // Testimonios (calificaciones reales de la plataforma)
+  "Todavía no hay calificaciones de este rol con comentario.":
+    "There aren't any ratings with a comment from this role yet.",
 };
 
 // app/calificar-plataforma.tsx — "Mi perfil → Calificar la plataforma",
