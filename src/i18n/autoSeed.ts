@@ -2346,9 +2346,9 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
 
   // Empresas aliadas
   "Alianzas": "Partnerships",
-  "Así se vería tu red de empresas": "This is what your company network would look like",
-  "Aquí aparecerán los nombres de las empresas reales registradas en Gradly.":
-    "The real names of companies registered on Gradly will appear here.",
+  "Empresas de distintos sectores": "Companies from different sectors",
+  "Estos son algunos de los sectores con empresas registradas en Gradly.":
+    "These are some of the sectors with companies registered on Gradly.",
   "Empresa de Retail": "Retail Company",
   "Empresa de Construcción": "Construction Company",
   "Empresa de Logística": "Logistics Company",

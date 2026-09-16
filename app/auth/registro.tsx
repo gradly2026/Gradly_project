@@ -2952,10 +2952,19 @@ export default function Registro() {
           <View style={s.header}>
             <TouchableOpacity
               style={s.backBtn}
-              onPress={() => (step === 0 ? router.back() : goBack())}
-              // En el paso 0 (selector), "atrás" sale de la pantalla de
-              // registro por completo (router.back()); en cualquier otro
-              // paso, retrocede DENTRO del wizard (goBack()).
+              onPress={() => {
+                if (step !== 0) { goBack(); return; }
+                // En el paso 0 (selector), "atrás" sale de la pantalla de
+                // registro por completo. En web, router.back() no sirve
+                // aquí: useLoginBackGuard (mode:'block', a propósito para
+                // no reabrir login/registro por error) intercepta CUALQUIER
+                // "atrás" del navegador, incluido el que dispara
+                // router.back() por debajo — así que se navega directo a
+                // la pública "/bienvenida" en vez de depender del historial.
+                // En nativo el guard no aplica, así que ahí sigue igual.
+                if (Platform.OS === "web") router.push("/bienvenida" as any);
+                else router.back();
+              }}
             >
               <Ionicons name="arrow-back" size={20} color={C.accent70} />
             </TouchableOpacity>

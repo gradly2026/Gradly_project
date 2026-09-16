@@ -5,9 +5,11 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React from "react";
 import {
   Image,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -27,24 +29,37 @@ interface AppHeaderProps {
 export default function AppHeader({ hideLogo = false, style }: AppHeaderProps) {
   const { isDark, toggleTheme } = useThemeContext();
   const { language, toggleLanguage } = useTranslationContext();
+  const router = useRouter();
 
   const C = isDark ? dark : light;
 
   // Alterna Español ⇄ Inglés. La etiqueta muestra el idioma activo.
   const handleLangToggle = () => toggleLanguage();
 
+  // Este header es el único que usan login y registro — ambas pantallas
+  // bloquean a propósito el botón "atrás" del navegador (useLoginBackGuard,
+  // mode:'block', para no reabrir login/registro por accidente después de
+  // iniciar sesión). Eso las dejaba sin ninguna salida en web: ni "atrás"
+  // ni ningún link a la landing pública. El logo ahora sirve de escape,
+  // solo en web (en nativo no hay "/bienvenida" en el flujo todavía).
+  const irABienvenida = () => {
+    if (Platform.OS === "web") router.push("/bienvenida" as any);
+  };
+  const Logo = Platform.OS === "web" ? TouchableOpacity : View;
+  const logoProps = Platform.OS === "web" ? { onPress: irABienvenida, accessibilityLabel: "Ir a la página de bienvenida" } : {};
+
   return (
     <View style={[styles.bar, { backgroundColor: C.bg, borderBottomColor: C.border }, style]}>
       {/* Izquierda: logo opcional */}
       {!hideLogo ? (
-        <View style={styles.left}>
+        <Logo style={styles.left} {...logoProps}>
           <Image
             source={require("../assets/images/LogoGradly.png")}
             style={styles.logo}
             resizeMode="contain"
           />
           <Text style={[styles.brand, { color: C.text }]}>Gradly</Text>
-        </View>
+        </Logo>
       ) : (
         <View style={styles.left} />
       )}

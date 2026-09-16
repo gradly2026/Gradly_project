@@ -195,18 +195,25 @@ const SECTORES_ALIADOS = [
 // Solo web: dependen de `background` (radial-gradient) y `filter: blur`,
 // que RN nativo no soporta sin una librería aparte, y aquí no hacen falta
 // en nativo porque esta pantalla todavía es web-only en la práctica.
+// Los stops intermedios (antes solo "color 0%, transparent 70%" + un
+// filter:blur(6px) aparte) reemplazan al blur: un `filter` compuesto sobre
+// una capa `position:absolute` grande es un patrón conocido por pintarse
+// mal (recortado/desalineado) en algunos navegadores hasta el próximo
+// repintado — que un cambio de zoom fuerza, por eso "se arreglaba solo" al
+// hacer zoom. Sin `filter`, no hay esa capa compuesta aparte que se pueda
+// desincronizar.
 const HALO_POS: Record<'tl' | 'tr' | 'bl' | 'br', any> = {
-  tl: { top: -220, left: -180, width: 640, height: 640, background: 'radial-gradient(circle, rgba(124,58,237,.40) 0%, transparent 70%)' },
-  br: { bottom: -240, right: -200, width: 620, height: 620, background: 'radial-gradient(circle, rgba(167,139,250,.24) 0%, transparent 70%)' },
-  tr: { top: -180, right: -160, width: 520, height: 520, background: 'radial-gradient(circle, rgba(124,58,237,.30) 0%, transparent 70%)' },
-  bl: { bottom: -180, left: -140, width: 520, height: 520, background: 'radial-gradient(circle, rgba(167,139,250,.20) 0%, transparent 70%)' },
+  tl: { top: -220, left: -180, width: 640, height: 640, background: 'radial-gradient(circle, rgba(124,58,237,.34) 0%, rgba(124,58,237,.18) 35%, transparent 70%)' },
+  br: { bottom: -240, right: -200, width: 620, height: 620, background: 'radial-gradient(circle, rgba(167,139,250,.20) 0%, rgba(167,139,250,.10) 35%, transparent 70%)' },
+  tr: { top: -180, right: -160, width: 520, height: 520, background: 'radial-gradient(circle, rgba(124,58,237,.26) 0%, rgba(124,58,237,.13) 35%, transparent 70%)' },
+  bl: { bottom: -180, left: -140, width: 520, height: 520, background: 'radial-gradient(circle, rgba(167,139,250,.17) 0%, rgba(167,139,250,.08) 35%, transparent 70%)' },
 };
 
 function Halo({ corner }: { corner: 'tl' | 'tr' | 'bl' | 'br' }) {
   if (Platform.OS !== 'web') return null;
   return (
     <View
-      style={{ position: 'absolute', borderRadius: 9999, filter: 'blur(6px)', zIndex: 0, pointerEvents: 'none', ...HALO_POS[corner] } as any}
+      style={{ position: 'absolute', borderRadius: 9999, zIndex: 0, pointerEvents: 'none', ...HALO_POS[corner] } as any}
     />
   );
 }
@@ -296,6 +303,7 @@ export default function BienvenidaScreen() {
   const { width } = useWindowDimensions();
   const wide = width > BREAKPOINT_ANCHO;
   const cols = wide ? 3 : 1;
+  const stepCols = wide ? 2 : 1; // "Cómo funciona" son 4 pasos: 2x2, no 3+1
   const teamCols = wide ? 4 : 1;
   const scrollStyle = webScrollStyle(colors);
 
@@ -428,7 +436,7 @@ export default function BienvenidaScreen() {
           <Halo corner="tl" />
           <Halo corner="br" />
           <SectionHeader kicker="La plataforma" title="¿Qué es Gradly?" colors={colors} styles={styles} />
-          <GlassCard contentStyle={styles.aboutLead}>
+          <GlassCard style={styles.fullWidthCard} contentStyle={styles.aboutLead}>
             <View>
               <Text style={[styles.paragraphLabel, { color: colors.textPrimary }]}>Misión</Text>
               <Text style={[styles.paragraph, { color: colors.textSecondary }]}>
@@ -484,7 +492,7 @@ export default function BienvenidaScreen() {
         <View style={styles.section} onLayout={registrarSeccion('como-funciona')}>
           <SectionHeader kicker="El proceso" title="¿Cómo funciona Gradly?" sub={PASOS_SUB[rolPasos]} colors={colors} styles={styles} />
           <RoleTabs value={rolPasos} onChange={setRolPasos} colors={colors} styles={styles} />
-          {chunk(PASOS[rolPasos], cols).map((row, i) => (
+          {chunk(PASOS[rolPasos], stepCols).map((row, i) => (
             <View key={i} style={styles.cardRow}>
               {row.map((p, idx) => (
                 <View key={p.title} style={styles.stepCard}>
@@ -493,7 +501,7 @@ export default function BienvenidaScreen() {
                       <Ionicons name={p.icon} size={22} color={colors.primaryLight} />
                     </View>
                     <View style={[styles.stepNumber, { backgroundColor: colors.primary, borderColor: colors.backgroundDark }]}>
-                      <Text style={styles.stepNumberText}>{i * cols + idx + 1}</Text>
+                      <Text style={styles.stepNumberText}>{i * stepCols + idx + 1}</Text>
                     </View>
                   </View>
                   <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>{p.title}</Text>
@@ -596,8 +604,8 @@ export default function BienvenidaScreen() {
         <View style={[styles.section, styles.sectionSurface]}>
           <SectionHeader
             kicker="Alianzas"
-            title="Así se vería tu red de empresas"
-            sub="Aquí aparecerán los nombres de las empresas reales registradas en Gradly."
+            title="Empresas de distintos sectores"
+            sub="Estos son algunos de los sectores con empresas registradas en Gradly."
             colors={colors}
             styles={styles}
           />
@@ -636,7 +644,7 @@ export default function BienvenidaScreen() {
               ))}
             </View>
           ))}
-          <GlassCard contentStyle={styles.quoteCard}>
+          <GlassCard style={styles.fullWidthCard} contentStyle={styles.quoteCard}>
             <Text style={[styles.quoteText, { color: colors.textSecondary }]}>
               &ldquo;Somos cuatro estudiantes que creen que el talento salvadoreño no debería buscar oportunidades, las oportunidades deberían encontrar al talento. Eso es Gradly.&rdquo;
             </Text>
@@ -754,6 +762,11 @@ const makeStyles = (COLORS: GradlyColors) =>
     sectionSub: { fontSize: 16, lineHeight: 26, textAlign: 'center', fontFamily: FONTS.interRegular, maxWidth: 480 },
 
     cardRow: { flexDirection: 'row', gap: 20 },
+    // Tarjetas sueltas (no dentro de un cardRow con flex:1 en cada hijo):
+    // sin esto, react-native-web las encoge al ancho "natural" de su texto
+    // más largo en vez de estirarlas al ancho disponible — se nota sobre
+    // todo con párrafos que envuelven distinto según el zoom del navegador.
+    fullWidthCard: { width: '100%' },
 
     aboutLead: { gap: 18, padding: 26 },
     paragraphLabel: { fontSize: 13, fontFamily: FONTS.interSemiBold, marginBottom: 4 },
