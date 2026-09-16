@@ -15,7 +15,6 @@ import { StatusBar } from 'expo-status-bar';
 import { useMemo, useState } from 'react';
 import {
   Image,
-  ImageBackground,
   Platform,
   Pressable,
   ScrollView,
@@ -36,7 +35,26 @@ const HERO_BG = require('../assets/images/bienvenida-hero.jpg');
 // prototipo original, pensado para visitantes de escritorio/navegador). En
 // nativo esta pantalla no está enganchada a ningún flujo todavía, así que
 // de momento cae aquí solo un fondo liso — sin pedir la imagen de más.
-const HeroWrapper: typeof View = Platform.OS === 'web' ? (ImageBackground as any) : View;
+//
+// Se aplica como CSS `backgroundImage` (no <ImageBackground>) a propósito:
+// ImageBackground en react-native-web puede colapsar su alto hasta que la
+// imagen termina de decodificar, y aquí eso dejaba el hero en blanco en la
+// primera carga real (se "arreglaba solo" con cualquier repintado, como
+// tocar el botón de idioma). `backgroundImage` nunca afecta el tamaño de
+// la caja, así que el alto queda estable desde el primer frame.
+//
+// OJO: `Image.resolveAssetSource` no existe en el render del servidor que
+// hace expo-router (Node, sin runtime de React Native) — llamarlo a nivel
+// de módulo tumbaba CUALQUIER ruta que tocara este archivo, incluida "/".
+// Por eso se calcula adentro del componente (ya en el navegador) y con
+// verificación de que la función exista.
+function useHeroUri(): string {
+  return useMemo(() => {
+    if (Platform.OS !== 'web') return '';
+    if (typeof Image.resolveAssetSource !== 'function') return '';
+    return Image.resolveAssetSource(HERO_BG)?.uri ?? '';
+  }, []);
+}
 
 // Mismo umbral que SeccionMensajes.tsx / AsistenteGradly.tsx para el
 // patrón "vistaAncha" — una sola bandera ancho/angosto, sin niveles
@@ -188,6 +206,28 @@ const SECTORES_ALIADOS = [
   'Empresa de Telecomunicaciones', 'Laboratorio Clínico',
 ];
 
+// Manchas de luz violeta en las esquinas de algunas secciones — decoración
+// pura, tomada tal cual del prototipo HTML (mismos radios/colores/blur).
+// Solo web: dependen de `background` (radial-gradient) y `filter: blur`,
+// que RN nativo no soporta sin una librería aparte, y aquí no hacen falta
+// en nativo porque esta pantalla todavía es web-only en la práctica.
+const HALO_POS: Record<'tl' | 'tr' | 'bl' | 'br', any> = {
+  tl: { top: -220, left: -180, width: 640, height: 640, background: 'radial-gradient(circle, rgba(124,58,237,.40) 0%, transparent 70%)' },
+  br: { bottom: -240, right: -200, width: 620, height: 620, background: 'radial-gradient(circle, rgba(167,139,250,.24) 0%, transparent 70%)' },
+  tr: { top: -180, right: -160, width: 520, height: 520, background: 'radial-gradient(circle, rgba(124,58,237,.30) 0%, transparent 70%)' },
+  bl: { bottom: -180, left: -140, width: 520, height: 520, background: 'radial-gradient(circle, rgba(167,139,250,.20) 0%, transparent 70%)' },
+};
+
+function Halo({ corner }: { corner: 'tl' | 'tr' | 'bl' | 'br' }) {
+  if (Platform.OS !== 'web') return null;
+  return (
+    <View
+      pointerEvents="none"
+      style={{ position: 'absolute', borderRadius: 9999, filter: 'blur(6px)', zIndex: 0, ...HALO_POS[corner] } as any}
+    />
+  );
+}
+
 // ── Componentes reutilizados por las 4 secciones con pestañas de rol ────
 
 function RoleTabs({ value, onChange, colors, styles }: { value: Rol; onChange: (r: Rol) => void; colors: GradlyColors; styles: ReturnType<typeof makeStyles> }) {
@@ -225,6 +265,7 @@ export default function BienvenidaScreen() {
   const { styles } = useThemedStyles();
   const { language, toggleLanguage } = useTranslation();
   const { width } = useWindowDimensions();
+  const heroUri = useHeroUri();
   const wide = width > BREAKPOINT_ANCHO;
   const cols = wide ? 3 : 1;
   const teamCols = wide ? 4 : 1;
@@ -270,12 +311,19 @@ export default function BienvenidaScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator
       >
-        {/* ── Hero (foto de fondo solo en web — ver HeroWrapper arriba) ── */}
-        <HeroWrapper
-          {...(Platform.OS === 'web' ? { source: HERO_BG, imageStyle: styles.heroImage } : {})}
-          style={[styles.hero, Platform.OS !== 'web' && { backgroundColor: colors.backgroundCard }]}
+        {/* ── Hero (foto de fondo solo en web — ver HERO_URI arriba) ── */}
+        <View
+          style={[
+            styles.hero,
+            Platform.OS === 'web'
+              ? ({
+                  backgroundImage: `linear-gradient(180deg, rgba(15,10,30,.25) 0%, rgba(15,10,30,.72) 60%, ${colors.backgroundDark} 100%), url("${heroUri}")`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center 30%',
+                } as any)
+              : { backgroundColor: colors.backgroundCard },
+          ]}
         >
-          {Platform.OS === 'web' && <View style={styles.heroOverlay} />}
           <View style={[styles.badge, { backgroundColor: colors.primary12, borderColor: colors.primary35 }]}>
             <Text style={[styles.badgeText, { color: colors.accent }]}>Pasantías y empleo, en tus manos</Text>
           </View>
@@ -307,10 +355,12 @@ export default function BienvenidaScreen() {
               </View>
             ))}
           </View>
-        </HeroWrapper>
+        </View>
 
         {/* ── ¿Qué es Gradly? ── */}
-        <View style={styles.section}>
+        <View style={[styles.section, styles.sectionSurface]}>
+          <Halo corner="tl" />
+          <Halo corner="br" />
           <SectionHeader kicker="La plataforma" title="¿Qué es Gradly?" colors={colors} styles={styles} />
           <GlassCard contentStyle={styles.aboutLead}>
             <View>
@@ -431,7 +481,9 @@ export default function BienvenidaScreen() {
         </View>
 
         {/* ── Casos de éxito (por rol) ── */}
-        <View style={styles.section}>
+        <View style={[styles.section, styles.sectionSurface]}>
+          <Halo corner="tl" />
+          <Halo corner="br" />
           <SectionHeader kicker="Resultados" title="Casos de éxito" sub={CASOS_SUB[rolCasos]} colors={colors} styles={styles} />
           <RoleTabs value={rolCasos} onChange={setRolCasos} colors={colors} styles={styles} />
           {chunk(CASOS[rolCasos], cols).map((row, i) => (
@@ -475,7 +527,7 @@ export default function BienvenidaScreen() {
         </View>
 
         {/* ── Empresas aliadas ── */}
-        <View style={styles.section}>
+        <View style={[styles.section, styles.sectionSurface]}>
           <SectionHeader
             kicker="Alianzas"
             title="Así se vería tu red de empresas"
@@ -495,6 +547,8 @@ export default function BienvenidaScreen() {
 
         {/* ── Nosotros ── */}
         <View style={styles.section}>
+          <Halo corner="tr" />
+          <Halo corner="bl" />
           <SectionHeader
             kicker="El equipo"
             title="El equipo detrás de Gradly"
@@ -581,9 +635,7 @@ const makeStyles = (COLORS: GradlyColors) =>
     scrollView: { flex: 1, minHeight: 0, width: '100%' },
     scroll: { paddingBottom: 60, width: '100%', maxWidth: 1240, alignSelf: 'center' },
 
-    hero: { minHeight: 520, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 48, gap: 20, overflow: 'hidden' },
-    heroImage: { opacity: 0.5 },
-    heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(10,5,25,0.55)' },
+    hero: { minHeight: 560, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 56, gap: 20, overflow: 'hidden' },
     badge: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
     badgeText: { fontSize: 13, fontFamily: FONTS.interSemiBold },
     heroTitle: { fontSize: 34, lineHeight: 40, textAlign: 'center', fontFamily: FONTS.soraExtraBold, color: '#fff', maxWidth: 640 },
@@ -599,24 +651,25 @@ const makeStyles = (COLORS: GradlyColors) =>
     ecoTitle: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: '#fff' },
     ecoDesc: { fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,.75)', fontFamily: FONTS.interRegular, marginTop: 2 },
 
-    section: { paddingHorizontal: 20, paddingVertical: 44, gap: 18 },
-    sectionHeader: { alignItems: 'center', gap: 8, marginBottom: 6 },
-    kicker: { fontSize: 12, fontFamily: FONTS.interBold, letterSpacing: 1 },
-    sectionTitle: { fontSize: 24, textAlign: 'center', fontFamily: FONTS.soraExtraBold },
-    sectionSub: { fontSize: 15, textAlign: 'center', fontFamily: FONTS.interRegular, maxWidth: 460 },
+    section: { paddingHorizontal: 20, paddingVertical: 72, gap: 22, position: 'relative', overflow: 'hidden' },
+    sectionSurface: { backgroundColor: 'rgba(26,16,48,.55)' },
+    sectionHeader: { alignItems: 'center', gap: 10, marginBottom: 8, maxWidth: 700, alignSelf: 'center' },
+    kicker: { fontSize: 13, fontFamily: FONTS.soraSemiBold, letterSpacing: 2, textTransform: 'uppercase' },
+    sectionTitle: { fontSize: 32, textAlign: 'center', fontFamily: FONTS.soraExtraBold },
+    sectionSub: { fontSize: 16, lineHeight: 26, textAlign: 'center', fontFamily: FONTS.interRegular, maxWidth: 480 },
 
-    cardRow: { flexDirection: 'row', gap: 16 },
+    cardRow: { flexDirection: 'row', gap: 20 },
 
-    aboutLead: { gap: 16, padding: 20 },
+    aboutLead: { gap: 18, padding: 26 },
     paragraphLabel: { fontSize: 13, fontFamily: FONTS.interSemiBold, marginBottom: 4 },
     paragraph: { fontSize: 14.5, lineHeight: 22, fontFamily: FONTS.interRegular },
 
     iconBadge: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-    featureCardContent: { padding: 18, gap: 4 },
+    featureCardContent: { padding: 26, gap: 4 },
     featureTitle: { fontSize: 15, fontFamily: FONTS.soraSemiBold, marginBottom: 4 },
     featureDesc: { fontSize: 13, lineHeight: 19, fontFamily: FONTS.interRegular },
 
-    benefitCardContent: { padding: 18, gap: 10 },
+    benefitCardContent: { padding: 26, gap: 10 },
     benefitTitle: { fontSize: 16, fontFamily: FONTS.soraSemiBold, marginBottom: 4 },
     benefitItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
     benefitItemText: { flex: 1, fontSize: 13, lineHeight: 19, fontFamily: FONTS.interRegular },
@@ -634,7 +687,7 @@ const makeStyles = (COLORS: GradlyColors) =>
     stepDesc: { fontSize: 12.5, lineHeight: 18, textAlign: 'center', fontFamily: FONTS.interRegular },
 
     vacNote: { fontSize: 13, textAlign: 'center', fontFamily: FONTS.interRegular, marginTop: -8 },
-    vacanteCardContent: { padding: 16, gap: 10 },
+    vacanteCardContent: { padding: 26, gap: 10 },
     vacanteLogo: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
     vacantePuesto: { fontSize: 14.5, fontFamily: FONTS.soraSemiBold },
     vacanteEmpresa: { fontSize: 13, fontFamily: FONTS.interRegular },
@@ -648,13 +701,13 @@ const makeStyles = (COLORS: GradlyColors) =>
     btnSmall: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
     btnSmallText: { color: '#fff', fontSize: 12, fontFamily: FONTS.interSemiBold },
 
-    caseCardContent: { padding: 18, gap: 10 },
+    caseCardContent: { padding: 26, gap: 10 },
     caseBadge: { alignSelf: 'flex-start', paddingHorizontal: 11, paddingVertical: 4, borderRadius: 999 },
     caseBadgeText: { fontSize: 11, fontFamily: FONTS.interBold },
     caseText: { fontSize: 13.5, lineHeight: 20, fontFamily: FONTS.interRegular },
     caseMeta: { fontSize: 12, borderTopWidth: 1, paddingTop: 10, fontFamily: FONTS.interRegular },
 
-    testiCardContent: { padding: 18, gap: 12 },
+    testiCardContent: { padding: 26, gap: 12 },
     testiQuote: { fontSize: 30, fontFamily: FONTS.soraBold, opacity: 0.5, lineHeight: 30 },
     testiText: { fontSize: 13.5, lineHeight: 20, fontFamily: FONTS.interRegular },
     testiAuthor: { flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, paddingTop: 12 },
@@ -666,7 +719,7 @@ const makeStyles = (COLORS: GradlyColors) =>
     aliadoChip: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999, borderWidth: 1 },
     aliadoChipText: { fontSize: 12.5, fontFamily: FONTS.interSemiBold },
 
-    teamCardContent: { padding: 18, alignItems: 'center', gap: 4 },
+    teamCardContent: { padding: 26, alignItems: 'center', gap: 4 },
     teamAvatar: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', borderWidth: 2, marginBottom: 8 },
     teamName: { fontSize: 13.5, fontFamily: FONTS.soraSemiBold, textAlign: 'center' },
     teamRole: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, textAlign: 'center' },

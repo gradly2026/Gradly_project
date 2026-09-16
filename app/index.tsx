@@ -182,10 +182,13 @@ export default function Index() {
     // Mientras AuthContext no haya determinado ni siquiera si hay sesión
     // o no, no se toma ninguna decisión — se sigue mostrando el logo.
 
-    // Sin sesión → al login.
+    // Sin sesión → al login (en web, primero a la bienvenida pública; ahí
+    // sus propios botones llevan a iniciar sesión o crear cuenta. En
+    // nativo se mantiene el comportamiento de siempre: directo al login).
     if (!user) {
+      const destino = Platform.OS === 'web' ? '/bienvenida' : '/auth/iniciosesion';
       const timer = setTimeout(() => {
-        router.replace('/auth/iniciosesion' as any);
+        router.replace(destino as any);
       }, 1800);
       // Se espera 1.8 segundos ANTES de navegar — a propósito, para que
       // el usuario alcance a ver la animación del logo (si se navegara
