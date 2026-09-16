@@ -47,9 +47,18 @@ export function useAuthBackGuard<S extends string = string>(
 }
 
 /**
- * Guardia de "atrás" para las pantallas de login/registro: bloquea la
- * navegación hacia atrás por completo (el usuario se queda en login/registro).
+ * Guardia de "atrás" para las pantallas de login/registro: mientras `armado`
+ * sea true, bloquea la navegación hacia atrás por completo (el usuario se
+ * queda en login/registro). Pensado para armarse recién cuando arranca un
+ * intento real de iniciar sesión/registrarse (no desde que la pantalla
+ * monta) — así, mientras el usuario solo está mirando el formulario, el
+ * "atrás" del navegador lo regresa con normalidad a de dónde vino (p. ej.
+ * /bienvenida), y el bloqueo de siempre sigue protegiendo el momento
+ * delicado justo después de un login/registro exitoso.
+ *
+ * `armado` por defecto es `true` para no cambiar el comportamiento de quien
+ * todavía no pase este parámetro.
  */
-export function useLoginBackGuard(): void {
-  useBackNavigationGuard({ mode: 'block' });
+export function useLoginBackGuard(armado: boolean = true): void {
+  useBackNavigationGuard({ mode: 'block', armado });
 }

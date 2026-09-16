@@ -1539,7 +1539,6 @@ function CarrerasModal({
 // ══════════════════════════════════════════════════════════════════
 export default function Registro() {
   const router = useRouter();
-  useLoginBackGuard();
   const { C, s, isDark } = useRegistroTheme();
   const scrollRef = React.useRef<React.ElementRef<typeof ScrollView>>(null);
   const scrollTop = () => scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -1552,6 +1551,13 @@ export default function Registro() {
   const [step, setStep] = useState(0); // 0 = selector, 1..4 pasos, 99 = éxito
   const [submitting, setSubmitting] = useState(false);
   const [registerError, setRegisterError] = useState("");
+
+  // El "atrás" del navegador solo se bloquea mientras se está creando la
+  // cuenta (submitting) o ya se creó y se espera el paso a su dashboard
+  // (step 99, con redirección automática a los 3s — ver el useEffect más
+  // abajo). Antes de eso (pasos 0-4, todavía llenando el formulario), se
+  // deja volver con normalidad a /bienvenida.
+  useLoginBackGuard(submitting || step === 99);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const setErr = (k: string, m: string) => setErrors((e) => ({ ...e, [k]: m }));

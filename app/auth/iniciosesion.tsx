@@ -199,7 +199,6 @@ function mapOtpError(code: string): string {
 // ══════════════════════════════════════════════════════════════════
 export default function InicioSesion() {
   const router = useRouter();
-  useLoginBackGuard();
 
   // Tema dinámico: tokens + estilos memorizados que reaccionan a claro/oscuro.
   const { colors, isDark } = useTheme();
@@ -255,6 +254,15 @@ export default function InicioSesion() {
 
   // ── Estado mientras se completa el enlace entrante ──
   const [completingLink, setCompletingLink] = useState(false);
+
+  // El "atrás" del navegador solo se bloquea mientras hay un intento real de
+  // sesión en curso (cualquiera de las 4 vías: contraseña, enlace mágico,
+  // OTP sin contraseña, o el paso final de "olvidé mi contraseña" que
+  // también inicia sesión) — antes de eso, se deja volver con normalidad
+  // (p. ej. a /bienvenida). Cubre las 4 vías porque las 4 ya usan esta
+  // bandera para su propio spinner/deshabilitar botón, así que arma en el
+  // mismo instante en que cada una arranca.
+  useLoginBackGuard(loading || otpVerifying || resetVerifying || completingLink);
 
   // ── Cuenta baneada/inactiva: bloquea el acceso tras un login exitoso ──
   const [bloqueoCuenta, setBloqueoCuenta] = useState<BloqueoCuenta | null>(null);

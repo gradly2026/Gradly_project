@@ -30,6 +30,15 @@ interface BackNavigationGuardOptions<S extends string = string> {
   /** Se invoca cuando el "atrás" del navegador debe volver a una sección
    * interna anterior — típicamente el setter de esa sección (setSeccion). */
   onSectionBack?: (previous: S) => void;
+  /**
+   * Si el guard debe estar activo ahora mismo. Por defecto `true` (el
+   * comportamiento de siempre: activo desde que la pantalla monta). Pensado
+   * para `mode:'block'`, donde SÍ tiene sentido dejar pasar el "atrás" con
+   * total normalidad mientras el usuario todavía no intentó iniciar
+   * sesión/registrarse (p. ej. para poder volver a /bienvenida) y recién
+   * bloquearlo justo cuando arranca ese intento — ver useLoginBackGuard.
+   */
+  armado?: boolean;
 }
 
 interface BackNavigationGuardResult {
@@ -60,7 +69,11 @@ interface BackNavigationGuardResult {
  *     sesión es el botón "Cerrar sesión" de la sección "Mi Perfil" de cada
  *     panel. (`showLogoutConfirm` sigue en el retorno por compatibilidad con
  *     los llamadores, pero ya nunca se pone en true.)
- * - mode 'block': igual — tampoco deja salir de login/registro.
+ * - mode 'block': igual — tampoco deja salir de login/registro, pero SOLO
+ *   mientras `armado` sea true (ver la opción `armado` más abajo). Antes de
+ *   armar, este hook no hace nada: el "atrás" se deja pasar con normalidad
+ *   (p. ej. para volver a /bienvenida desde login/registro antes de intentar
+ *   entrar).
  *
  * En NATIVO (Android/gesto iOS) la regla es DISTINTA a propósito: ahí SÍ se
  * deja salir de la app (nunca al login, nunca cerrar sesión) una vez
@@ -73,6 +86,7 @@ export function useBackNavigationGuard<S extends string = string>({
   onConfirmLogout,
   section,
   onSectionBack,
+  armado = true,
 }: BackNavigationGuardOptions<S>): BackNavigationGuardResult {
   // Se leen por ref dentro del listener para no tener que reinstalar el
   // listener (ni re-apilar el historial) cada vez que el componente vuelve a
@@ -134,6 +148,10 @@ export function useBackNavigationGuard<S extends string = string>({
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    // Sin armar: no se apila ancla ni se intercepta "atrás" — se deja
+    // navegar con total normalidad (p. ej. de vuelta a /bienvenida). Nada
+    // que limpiar todavía, así que no hace falta cleanup en este caso.
+    if (!armado) return;
 
     // Entrada ancla: da un "colchón" en el historial para poder interceptar
     // el primer "atrás" sin dejar salir de la pantalla actual.
@@ -185,7 +203,7 @@ export function useBackNavigationGuard<S extends string = string>({
       clearTimeout(refuerzo);
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [mode]);
+  }, [mode, armado]);
 
   // Re-anclar ante cualquier cambio REAL de URL mientras esta pantalla está
   // enfocada — más allá de lo que `section` ya cubre. Caso concreto: los
