@@ -2124,3 +2124,255 @@ export const TOP_ESTUDIANTES_SEED_EN: Record<string, string> = {
   "La empresa revisará tu perfil. Te avisaremos por notificación.":
     "The company will review your profile. We'll notify you.",
 };
+
+// ── Pantalla pública "Bienvenida" (app/bienvenida.tsx) — landing page para
+// visitantes sin cuenta. Cubre las 4 secciones con pestañas por rol
+// (Cómo funciona, Oportunidades, Casos de éxito, Testimonios) y el resto
+// de la pantalla (hero, "Qué es Gradly", Beneficios, Empresas aliadas,
+// Nosotros, footer). Los nombres del equipo van con `noTranslate` en el
+// componente, no aquí. ──
+export const BIENVENIDA_SEED_EN: Record<string, string> = {
+  // Header
+  "Iniciar sesión": "Log in",
+  "Crear cuenta": "Create account",
+
+  // Hero
+  "Pasantías y empleo, en tus manos": "Internships and jobs, in your hands",
+  "Conecta tu talento con oportunidades reales.": "Connect your talent with real opportunities.",
+  "Gradly une a estudiantes universitarios, universidades y empresas en un solo lugar: tu pasantía durante la carrera, y tu primer empleo al graduarte.":
+    "Gradly brings together university students, universities, and companies in one place: your internship during your degree, and your first job after you graduate.",
+  "Crear mi cuenta": "Create my account",
+  "Ya tengo cuenta": "I already have an account",
+  "Haz tu pasantía y consigue tu primer empleo": "Do your internship and land your first job",
+  "Universidades": "Universities",
+  "Acompaña y certifica a tus estudiantes": "Support and certify your students",
+  "Empresas": "Companies",
+  "Encuentra y forma a tu próximo talento": "Find and train your next talent",
+
+  // ¿Qué es Gradly?
+  "La plataforma": "The platform",
+  "¿Qué es Gradly?": "What is Gradly?",
+  "Misión": "Mission",
+  "Eliminar la distancia entre estudiar y trabajar — que cualquier estudiante universitario en El Salvador pueda hacer una pasantía real durante su carrera, sin depender de contactos.":
+    "Close the gap between studying and working — so any university student in El Salvador can do a real internship during their degree, without depending on connections.",
+  "Visión": "Vision",
+  "Ser la forma en que universidades y empresas coordinan pasantías y primeras contrataciones — horas, comprobantes y seguimiento en un solo lugar, empezando en El Salvador.":
+    "Be the way universities and companies coordinate internships and first hires — hours, proof documents, and tracking in one place, starting in El Salvador.",
+  "Cupos por lote": "Batch spots",
+  "Tu universidad reparte cupos de pasantía entre su alumnado — o aplicás directo a una pasantía.":
+    "Your university distributes internship spots among its students — or you apply directly to an internship.",
+  "Asistencia y horas": "Attendance and hours",
+  "Marcas tu código de asistencia cada día que te toca. Tus horas avanzan según el horario acordado y se ajustan solas si faltas con permiso.":
+    "You mark your attendance code every day you're scheduled. Your hours advance according to the agreed schedule and adjust automatically if you miss with permission.",
+  "Chat integrado": "Built-in chat",
+  "Coordina con la empresa sin salir de la app — todo el historial queda en un solo lugar.":
+    "Coordinate with the company without leaving the app — the whole history stays in one place.",
+  "Certificación digital": "Digital certification",
+  "Al terminar, la empresa emite el comprobante y tu universidad lo valida.":
+    "When you finish, the company issues the proof document and your university validates it.",
+  "Asistente Gradly": "Gradly Assistant",
+  "Un asistente dentro de la app resuelve tus dudas sobre cómo funciona todo.":
+    "An assistant inside the app answers your questions about how everything works.",
+  "Reportes e incidencias": "Reports and incidents",
+  "Un canal directo para reportar problemas durante la pasantía, con seguimiento de tu universidad.":
+    "A direct channel to report problems during the internship, with follow-up from your university.",
+
+  // Beneficios
+  "Ventajas": "Advantages",
+  "¿Por qué elegir Gradly?": "Why choose Gradly?",
+  "Para Estudiantes": "For Students",
+  "Perfil validado por tu universidad": "Profile validated by your university",
+  "Pasantías y vacantes reales, no simulacros": "Real internships and job posts, not simulations",
+  "Certificación digital de tus horas": "Digital certification of your hours",
+  "Para Empresas": "For Companies",
+  "Candidatos ya verificados por su universidad": "Candidates already verified by their university",
+  "Panel para dar seguimiento a tus pasantes": "A dashboard to track your interns",
+  "Reclutamiento directo cuando se gradúen": "Direct recruiting when they graduate",
+  "Para Universidades": "For Universities",
+  "Seguimiento en tiempo real de tus estudiantes": "Real-time tracking of your students",
+  "Validación de horas y comprobantes sin papeleo": "Hour and proof-document validation without paperwork",
+  "Vínculo directo con empresas aliadas": "Direct link with partner companies",
+
+  // Cómo funciona
+  "El proceso": "The process",
+  "¿Cómo funciona Gradly?": "How does Gradly work?",
+  "Cuatro pasos para tu próxima oportunidad": "Four steps to your next opportunity",
+  "Cuatro pasos para encontrar a tu próximo talento": "Four steps to find your next talent",
+  "Cuatro pasos para acompañar a tus estudiantes": "Four steps to support your students",
+  "Accede a tu cuenta": "Access your account",
+  "Tu universidad ya registró tu perfil y te entrega tus datos de acceso; solo inicia sesión y completa tus datos de contacto.":
+    "Your university already registered your profile and gives you your access details; just log in and complete your contact details.",
+  "Consigue tu cupo o aplica": "Get your spot or apply",
+  "Tu universidad te asigna un cupo, o aplicás directo a una pasantía.":
+    "Your university assigns you a spot, or you apply directly to an internship.",
+  "Trabaja y coordina": "Work and coordinate",
+  "Todo el contacto pasa por el chat; marca tu asistencia y tus horas avanzan según tu horario.":
+    "All contact goes through chat; mark your attendance and your hours advance according to your schedule.",
+  "Certifícate": "Get certified",
+  "La empresa emite tu comprobante y tu universidad lo valida.":
+    "The company issues your proof document and your university validates it.",
+  "Crea tu perfil": "Create your profile",
+  "Regístrate y verifica tu empresa para empezar a publicar.": "Sign up and verify your company to start posting.",
+  "Publica tu oportunidad": "Post your opportunity",
+  "Publica pasantías por cupos o vacantes abiertas, y recibe aplicantes o cupos asignados por la universidad.":
+    "Post internships by spots or open job listings, and receive applicants or spots assigned by the university.",
+  "Gestiona y coordina": "Manage and coordinate",
+  "Marca la asistencia con el código diario del estudiante y da seguimiento por chat.":
+    "Mark attendance with the student's daily code and follow up by chat.",
+  "Certifica y contrata": "Certify and hire",
+  "Emite el comprobante al finalizar, y si el desempeño fue bueno, ofrécele empleo real.":
+    "Issue the proof document when finished, and if performance was good, offer them a real job.",
+  "Regístrate y crea el perfil de tu universidad para empezar a gestionar cupos.":
+    "Sign up and create your university's profile to start managing spots.",
+  "Carga tus estudiantes": "Upload your students",
+  "Sube tus grupos por Excel y reparte los cupos disponibles según carrera.":
+    "Upload your groups via Excel and distribute available spots by major.",
+  "Da seguimiento": "Follow up",
+  "Supervisa el progreso y la asistencia de cada estudiante en tiempo real.":
+    "Monitor each student's progress and attendance in real time.",
+  "Valida certificados": "Validate certificates",
+  "Revisa y valida el comprobante que emite la empresa al finalizar cada pasantía.":
+    "Review and validate the proof document the company issues when each internship ends.",
+
+  // Oportunidades
+  "Vacantes": "Job posts",
+  "Así se ven las oportunidades en Gradly": "This is what opportunities look like on Gradly",
+  "Tarjetas ilustrativas — al crear tu cuenta verás las vacantes reales de tu carrera.":
+    "Illustrative cards — once you create your account you'll see the real job posts for your major.",
+  "Talento": "Talent",
+  "Así ves a tus candidatos en Gradly": "This is how you see your candidates on Gradly",
+  "Tarjetas ilustrativas — al publicar tu pasantía o vacante verás tus propios aplicantes.":
+    "Illustrative cards — once you post your internship or job listing you'll see your own applicants.",
+  "Cupos": "Spots",
+  "Así ves tus cupos y alianzas en Gradly": "This is how you see your spots and partnerships on Gradly",
+  "Tarjetas ilustrativas — al registrar a tus estudiantes verás tus cupos y empresas aliadas reales.":
+    "Illustrative cards — once you register your students you'll see your real spots and partner companies.",
+  "Analista de Datos Jr. (Pasantía)": "Jr. Data Analyst (Internship)",
+  "Empresa de Tecnología": "Technology Company",
+  "Empresa de Tecnología · 3 cupos": "Technology Company · 3 spots",
+  "Soporte de Sistemas (Pasantía)": "Systems Support (Internship)",
+  "Empresa Financiera": "Financial Company",
+  "Empresa Financiera · 2 cupos": "Financial Company · 2 spots",
+  "Asistente de Marketing (Pasantía)": "Marketing Assistant (Internship)",
+  "Agencia de Marketing": "Marketing Agency",
+  "Agencia de Marketing · 4 cupos": "Marketing Agency · 4 spots",
+  "Presencial": "On-site",
+  "Híbrido": "Hybrid",
+  "Remoto": "Remote",
+  "20 hrs/sem": "20 hrs/week",
+  "25 hrs/sem": "25 hrs/week",
+  "15 hrs/sem": "15 hrs/week",
+  "Vacante activa": "Active job post",
+  "Aplicar": "Apply",
+  "Estudiante de Ingeniería en Sistemas": "Systems Engineering student",
+  "Disponible para pasantía": "Available for internship",
+  "Estudiante de Administración de Empresas": "Business Administration student",
+  "Estudiante de Mercadotecnia": "Marketing student",
+  "Aplicante activo": "Active applicant",
+  "Ver perfil": "View profile",
+  "Cupo abierto": "Open spot",
+  "Ver postulantes": "View applicants",
+
+  // Casos de éxito
+  "Resultados": "Results",
+  "Casos de éxito": "Success stories",
+  "Así se ve cuando una pasantía en Gradly se convierte en experiencia real.":
+    "This is what it looks like when an internship on Gradly turns into real experience.",
+  "Así encuentran las empresas talento real a través de Gradly.": "This is how companies find real talent through Gradly.",
+  "Así acompañan las universidades a sus estudiantes de principio a fin.":
+    "This is how universities support their students from start to finish.",
+  "Certificado": "Certified",
+  "Empleo real": "Real job",
+  "Talento formado": "Talent developed",
+  "Contratación real": "Real hire",
+  "Empleabilidad": "Employability",
+  "Un estudiante de Ingeniería en Sistemas hizo su pasantía en el área de tecnología de una empresa de retail y completó sus 200 horas.":
+    "A Systems Engineering student did their internship in the technology area of a retail company and completed their 200 hours.",
+  "Una estudiante de Administración de Empresas hizo su pasantía en el área financiera de un banco y fue contratada para su primer empleo real.":
+    "A Business Administration student did her internship in a bank's finance area and was hired for her first real job.",
+  "Un estudiante de Mercadotecnia hizo su pasantía en una agencia de marketing y completó 180 horas certificadas por su universidad.":
+    "A Marketing student did their internship at a marketing agency and completed 180 hours certified by their university.",
+  "Una empresa de tecnología encontró una pasante de Ingeniería en Sistemas para su área de datos, filtrando directo por carrera y universidad.":
+    "A technology company found a Systems Engineering intern for its data area, filtering directly by major and university.",
+  "Un banco certificó a una pasante de Administración de Empresas en su área financiera y terminó contratándola para su primer empleo real.":
+    "A bank certified a Business Administration intern in its finance area and ended up hiring her for her first real job.",
+  "Una agencia de marketing certificó a un pasante de Mercadotecnia tras 180 horas de trabajo real dentro de sus campañas.":
+    "A marketing agency certified a Marketing intern after 180 hours of real work within its campaigns.",
+  "Una universidad dio seguimiento a un estudiante de Ingeniería en Sistemas durante toda su pasantía y validó sus 200 horas sin papeleo manual.":
+    "A university tracked a Systems Engineering student throughout their internship and validated their 200 hours without manual paperwork.",
+  "Una universidad acompañó a una estudiante de Administración de Empresas hasta su contratación real, fortaleciendo su alianza con la empresa.":
+    "A university supported a Business Administration student all the way to her real hire, strengthening its partnership with the company.",
+  "Una universidad certificó a un estudiante de Mercadotecnia tras completar sus horas de pasantía, validadas desde el propio panel institucional.":
+    "A university certified a Marketing student after completing their internship hours, validated from its own institutional dashboard.",
+  "Ingeniería en Sistemas": "Systems Engineering",
+  "Administración de Empresas": "Business Administration",
+  "Mercadotecnia": "Marketing",
+  "Área de Tecnología": "Technology Area",
+  "Área Financiera": "Finance Area",
+  "Área de Marketing": "Marketing Area",
+
+  // Testimonios
+  "Comunidad": "Community",
+  "Lo que podrían decir en Gradly": "What people might say on Gradly",
+  "Conseguí mi pasantía sin depender de conocidos — todo el proceso fue claro desde la app, desde postular hasta certificarme.":
+    "I got my internship without relying on connections — the whole process was clear from the app, from applying to getting certified.",
+  "Marco mi asistencia con un código todos los días y veo mis horas avanzar en tiempo real, sin tener que preguntar cómo voy.":
+    "I mark my attendance with a code every day and see my hours progress in real time, without having to ask how I'm doing.",
+  "Cuando terminé mi pasantía, la empresa me ofreció mi primer empleo real desde la misma app.":
+    "When I finished my internship, the company offered me my first real job from the same app.",
+  "Recibimos candidatos que ya vienen validados por su universidad — nos ahorra tiempo de selección y coordinación.":
+    "We receive candidates who already come validated by their university — it saves us selection and coordination time.",
+  "Publicamos cupos por carrera y la universidad nos asigna directo a los estudiantes que califican.":
+    "We post spots by major and the university assigns us the qualifying students directly.",
+  "El código diario de asistencia nos quitó el problema de llevar el control manual de cada pasante.":
+    "The daily attendance code took away the hassle of manually tracking each intern.",
+  "Por fin tenemos visibilidad real de las horas y pasantías de nuestros estudiantes, sin depender de reportes por correo.":
+    "We finally have real visibility into our students' hours and internships, without depending on email reports.",
+  "Repartir los cupos entre nuestros grupos ya no es un proceso manual — la plataforma nos ayuda a organizarlo por carrera.":
+    "Distributing spots among our groups is no longer a manual process — the platform helps us organize it by major.",
+  "Validamos el comprobante final de cada estudiante desde el mismo panel, sin papeleo adicional.":
+    "We validate each student's final proof document from the same dashboard, without extra paperwork.",
+  "Estudiante": "Student",
+  "Ingeniería, universidad participante": "Engineering, participating university",
+  "Administración, universidad participante": "Administration, participating university",
+  "Mercadotecnia, universidad participante": "Marketing, participating university",
+  "Empresa aliada": "Partner company",
+  "Recursos Humanos": "Human Resources",
+  "Reclutamiento": "Recruiting",
+  "Supervisión de pasantes": "Intern supervision",
+  "Universidad": "University",
+  "Coordinación académica": "Academic coordination",
+  "Vinculación empresarial": "Business liaison",
+
+  // Empresas aliadas
+  "Alianzas": "Partnerships",
+  "Así se vería tu red de empresas": "This is what your company network would look like",
+  "Aquí aparecerán los nombres de las empresas reales registradas en Gradly.":
+    "The real names of companies registered on Gradly will appear here.",
+  "Empresa de Retail": "Retail Company",
+  "Empresa de Construcción": "Construction Company",
+  "Empresa de Logística": "Logistics Company",
+  "Empresa de Telecomunicaciones": "Telecommunications Company",
+  "Laboratorio Clínico": "Clinical Laboratory",
+
+  // Nosotros
+  "El equipo": "The team",
+  "El equipo detrás de Gradly": "The team behind Gradly",
+  "Desarrollado por estudiantes de la Universidad Don Bosco, El Salvador":
+    "Built by students from Universidad Don Bosco, El Salvador",
+  "Backend Developer & Arquitecto": "Backend Developer & Architect",
+  "Ingeniería en Sistemas, UDB": "Systems Engineering, UDB",
+  "“Somos cuatro estudiantes que creen que el talento salvadoreño no debería buscar oportunidades, las oportunidades deberían encontrar al talento. Eso es Gradly.”":
+    "“We are four students who believe Salvadoran talent shouldn't have to look for opportunities — opportunities should find the talent. That's Gradly.”",
+  "— Equipo Gradly, Soyapango, El Salvador": "— Gradly Team, Soyapango, El Salvador",
+
+  // Footer
+  "La plataforma que conecta estudiantes universitarios, universidades y empresas en El Salvador para hacer pasantías reales.":
+    "The platform that connects university students, universities, and companies in El Salvador to make real internships happen.",
+  "Plataforma": "Platform",
+  "Oportunidades": "Opportunities",
+  "Empresa": "Company",
+  "Términos de uso": "Terms of use",
+  "Política de privacidad": "Privacy policy",
+  "Contacto": "Contact",
+};

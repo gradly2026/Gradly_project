@@ -200,6 +200,9 @@ export default function RootLayout() {
                       nivel superior "oficiales" del proyecto. */}
                   <Stack.Screen name="index" />
                   {/* app/index.tsx — pantalla de entrada/splash de React */}
+                  <Stack.Screen name="bienvenida" />
+                  {/* app/bienvenida.tsx — landing page pública para
+                      visitantes sin cuenta (/bienvenida) */}
                   <Stack.Screen name="(tabs)" />
                   {/* El grupo completo de pestañas del estudiante */}
                   <Stack.Screen name="auth" />
