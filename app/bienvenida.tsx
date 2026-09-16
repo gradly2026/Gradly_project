@@ -12,7 +12,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Image,
   Platform,
@@ -222,8 +222,30 @@ function Halo({ corner }: { corner: 'tl' | 'tr' | 'bl' | 'br' }) {
   if (Platform.OS !== 'web') return null;
   return (
     <View
-      pointerEvents="none"
-      style={{ position: 'absolute', borderRadius: 9999, filter: 'blur(6px)', zIndex: 0, ...HALO_POS[corner] } as any}
+      style={{ position: 'absolute', borderRadius: 9999, filter: 'blur(6px)', zIndex: 0, pointerEvents: 'none', ...HALO_POS[corner] } as any}
+    />
+  );
+}
+
+// Textura de puntitos detrás de toda la pantalla — igual a `.bg-dots` del
+// HTML (mismo color/tamaño de grilla). Un solo `View` absolutamente
+// posicionado, sembrado como primer hijo de `root` (antes del header y del
+// ScrollView) para que quede DETRÁS de todo sin moverse con el scroll,
+// igual que el `position:fixed` del prototipo. Solo web, mismo motivo que
+// los halos: depende de `backgroundImage`/`backgroundSize` en CSS.
+function DotsTexture() {
+  if (Platform.OS !== 'web') return null;
+  return (
+    <View
+      style={
+        {
+          ...StyleSheet.absoluteFillObject,
+          zIndex: 0,
+          pointerEvents: 'none',
+          backgroundImage: 'radial-gradient(circle, rgba(167,139,250,0.14) 1px, transparent 1px)',
+          backgroundSize: '26px 26px',
+        } as any
+      }
     />
   );
 }
@@ -279,17 +301,46 @@ export default function BienvenidaScreen() {
   const irALogin = () => router.push('/auth/iniciosesion' as any);
   const irARegistro = () => router.push('/auth/registro' as any);
 
+  // ── Links de navegación con scroll a sección (como los <a href="#..."> del
+  // HTML). Cada sección "ancla" guarda su posición Y real vía onLayout; el
+  // link solo pide al ScrollView moverse ahí. "Inicio" no necesita medir
+  // nada, siempre es y:0. ──
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionY = useRef<Record<string, number>>({});
+  const registrarSeccion = (key: string) => (e: { nativeEvent: { layout: { y: number } } }) => {
+    sectionY.current[key] = e.nativeEvent.layout.y;
+  };
+  const irASeccion = (key: string) => {
+    scrollRef.current?.scrollTo({ y: key === 'top' ? 0 : (sectionY.current[key] ?? 0), animated: true });
+  };
+  const NAV_LINKS: { key: string; label: string }[] = [
+    { key: 'top', label: 'Inicio' },
+    { key: 'como-funciona', label: 'Cómo funciona' },
+    { key: 'oportunidades', label: 'Oportunidades' },
+    { key: 'nosotros', label: 'Nosotros' },
+  ];
+
   return (
     <LiquidBackground>
       <View style={styles.root}>
+      <DotsTexture />
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* ── Header fijo: logo, idioma, iniciar sesión, crear cuenta ── */}
+      {/* ── Header fijo: logo, links de navegación, idioma, iniciar sesión, crear cuenta ── */}
       <View style={[styles.header, { backgroundColor: colors.backgroundCard, borderBottomColor: colors.border }]}>
         <View style={styles.brand}>
           <Image source={LOGO} style={styles.brandLogo} resizeMode="contain" />
           <Text style={[styles.brandText, { color: colors.textPrimary }]} noTranslate>Gradly</Text>
         </View>
+        {wide && (
+          <View style={styles.navLinks}>
+            {NAV_LINKS.map((l) => (
+              <Pressable key={l.key} onPress={() => irASeccion(l.key)}>
+                <Text style={[styles.navLinkText, { color: colors.textSecondary }]}>{l.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
         <View style={styles.headerActions}>
           <Pressable onPress={toggleLanguage} style={[styles.langPill, { borderColor: colors.border, backgroundColor: colors.backgroundSurface }]}>
             <Ionicons name="globe-outline" size={14} color={colors.textSecondary} />
@@ -307,6 +358,7 @@ export default function BienvenidaScreen() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         style={[styles.scrollView, scrollStyle]}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator
@@ -415,7 +467,7 @@ export default function BienvenidaScreen() {
         </View>
 
         {/* ── Cómo funciona (por rol) ── */}
-        <View style={styles.section}>
+        <View style={styles.section} onLayout={registrarSeccion('como-funciona')}>
           <SectionHeader kicker="El proceso" title="¿Cómo funciona Gradly?" sub={PASOS_SUB[rolPasos]} colors={colors} styles={styles} />
           <RoleTabs value={rolPasos} onChange={setRolPasos} colors={colors} styles={styles} />
           {chunk(PASOS[rolPasos], cols).map((row, i) => (
@@ -439,7 +491,7 @@ export default function BienvenidaScreen() {
         </View>
 
         {/* ── Oportunidades (por rol) ── */}
-        <View style={styles.section}>
+        <View style={styles.section} onLayout={registrarSeccion('oportunidades')}>
           <SectionHeader
             kicker={OPORTUNIDADES_HEADER[rolOportunidades].kicker}
             title={OPORTUNIDADES_HEADER[rolOportunidades].titulo}
@@ -546,7 +598,7 @@ export default function BienvenidaScreen() {
         </View>
 
         {/* ── Nosotros ── */}
-        <View style={styles.section}>
+        <View style={styles.section} onLayout={registrarSeccion('nosotros')}>
           <Halo corner="tr" />
           <Halo corner="bl" />
           <SectionHeader
@@ -625,6 +677,8 @@ const makeStyles = (COLORS: GradlyColors) =>
     brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     brandLogo: { width: 28, height: 33 },
     brandText: { fontSize: 18, fontFamily: FONTS.soraBold },
+    navLinks: { flexDirection: 'row', alignItems: 'center', gap: 28 },
+    navLinkText: { fontSize: 14, fontFamily: FONTS.interSemiBold },
     headerActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
     langPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1 },
     langPillText: { fontSize: 12, fontFamily: FONTS.interSemiBold },
