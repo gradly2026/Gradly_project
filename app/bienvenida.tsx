@@ -293,6 +293,7 @@ export default function BienvenidaScreen() {
   const teamCols = wide ? 4 : 1;
   const scrollStyle = webScrollStyle(colors);
 
+  const [menuOpen, setMenuOpen] = useState(false);
   const [rolPasos, setRolPasos] = useState<Rol>('estudiante');
   const [rolOportunidades, setRolOportunidades] = useState<Rol>('estudiante');
   const [rolCasos, setRolCasos] = useState<Rol>('estudiante');
@@ -312,6 +313,10 @@ export default function BienvenidaScreen() {
   };
   const irASeccion = (key: string) => {
     scrollRef.current?.scrollTo({ y: key === 'top' ? 0 : (sectionY.current[key] ?? 0), animated: true });
+  };
+  const irASeccionYCerrar = (key: string) => {
+    setMenuOpen(false);
+    irASeccion(key);
   };
   const NAV_LINKS: { key: string; label: string }[] = [
     { key: 'top', label: 'Inicio' },
@@ -351,9 +356,16 @@ export default function BienvenidaScreen() {
               <Text style={[styles.loginLink, { color: colors.textSecondary }]}>Iniciar sesión</Text>
             </Pressable>
           )}
-          <Pressable onPress={irARegistro} style={[styles.headerCta, { backgroundColor: colors.primary }]}>
-            <Text style={styles.headerCtaText}>Crear cuenta</Text>
-          </Pressable>
+          {wide && (
+            <Pressable onPress={irARegistro} style={[styles.headerCta, { backgroundColor: colors.primary }]}>
+              <Text style={styles.headerCtaText}>Crear cuenta</Text>
+            </Pressable>
+          )}
+          {!wide && (
+            <Pressable onPress={() => setMenuOpen(true)} style={styles.hamburger} accessibilityLabel="Abrir menú">
+              <Ionicons name="menu-outline" size={26} color={colors.textPrimary} />
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -657,6 +669,26 @@ export default function BienvenidaScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* ── Menú móvil: mismo overlay de pantalla completa del HTML,
+          incluye los 4 links + "Iniciar sesión" (en angosto el header ya no
+          trae ni ese link ni "Crear cuenta" — el hamburguesa los reemplaza a
+          todos, igual que en el prototipo). ── */}
+      {menuOpen && !wide && (
+        <View style={[styles.mobileMenu, { backgroundColor: colors.backgroundDark }]}>
+          <Pressable onPress={() => setMenuOpen(false)} style={styles.mobileClose} accessibilityLabel="Cerrar menú">
+            <Ionicons name="close-outline" size={30} color={colors.textPrimary} />
+          </Pressable>
+          {NAV_LINKS.map((l) => (
+            <Pressable key={l.key} onPress={() => irASeccionYCerrar(l.key)}>
+              <Text style={[styles.mobileMenuLink, { color: colors.textPrimary }]}>{l.label}</Text>
+            </Pressable>
+          ))}
+          <Pressable onPress={() => { setMenuOpen(false); irALogin(); }}>
+            <Text style={[styles.mobileMenuLink, { color: colors.textPrimary }]}>Iniciar sesión</Text>
+          </Pressable>
+        </View>
+      )}
       </View>
     </LiquidBackground>
   );
@@ -685,6 +717,13 @@ const makeStyles = (COLORS: GradlyColors) =>
     loginLink: { fontSize: 14, fontFamily: FONTS.interSemiBold },
     headerCta: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999 },
     headerCtaText: { color: '#fff', fontSize: 13, fontFamily: FONTS.interSemiBold },
+    hamburger: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+    mobileMenu: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50,
+      alignItems: 'center', justifyContent: 'center', gap: 28,
+    },
+    mobileClose: { position: 'absolute', top: 22, right: 24, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    mobileMenuLink: { fontSize: 22, fontFamily: FONTS.soraBold },
 
     scrollView: { flex: 1, minHeight: 0, width: '100%' },
     scroll: { paddingBottom: 60, width: '100%', maxWidth: 1240, alignSelf: 'center' },
