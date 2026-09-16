@@ -386,17 +386,7 @@ export default function BienvenidaScreen() {
 
       <ScrollView
         ref={scrollRef}
-        style={[
-          styles.scrollView,
-          scrollStyle,
-          // El scrollbar propio de este ScrollView (visible en web) le resta
-          // ancho SOLO del lado derecho a su caja de contenido; como las
-          // secciones se centran con maxWidth+alignSelf:'center' dentro de
-          // esa caja, quedaban ~10px más pegadas a la izquierda que a la
-          // derecha (el "no llega bien al ancho" reportado). Reservar el
-          // espacio del scrollbar de forma simétrica arregla el centrado.
-          Platform.OS === 'web' && ({ scrollbarGutter: 'stable both-edges' } as any),
-        ]}
+        style={[styles.scrollView, scrollStyle]}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator
       >
@@ -746,7 +736,11 @@ const makeStyles = (COLORS: GradlyColors) =>
     mobileMenuLink: { fontSize: 22, fontFamily: FONTS.soraBold },
 
     scrollView: { flex: 1, minHeight: 0, width: '100%' },
-    scroll: { paddingBottom: 60, width: '100%', maxWidth: 1240, alignSelf: 'center' },
+    // Sin maxWidth a propósito: el fondo de las secciones debe quedar
+    // pegado a los bordes del navegador siempre, no solo cuando la ventana
+    // es angosta (antes, con maxWidth:1240, en pantallas anchas quedaba un
+    // marco vacío a los lados que no se veía "pegado" — lo pedido).
+    scroll: { paddingBottom: 60, width: '100%' },
 
     hero: { minHeight: 560, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 56, gap: 20, overflow: 'hidden' },
     badge: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
