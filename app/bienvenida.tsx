@@ -16,6 +16,7 @@ import { useMemo, useState } from 'react';
 import {
   Image,
   ImageBackground,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -31,6 +32,11 @@ import { useTranslation } from '../src/context/TranslationContext';
 
 const LOGO = require('../assets/images/LogoGradly.png');
 const HERO_BG = require('../assets/images/bienvenida-hero.jpg');
+// La foto de fondo del hero queda reservada para web (coincide con el
+// prototipo original, pensado para visitantes de escritorio/navegador). En
+// nativo esta pantalla no está enganchada a ningún flujo todavía, así que
+// de momento cae aquí solo un fondo liso — sin pedir la imagen de más.
+const HeroWrapper: typeof View = Platform.OS === 'web' ? (ImageBackground as any) : View;
 
 // Mismo umbral que SeccionMensajes.tsx / AsistenteGradly.tsx para el
 // patrón "vistaAncha" — una sola bandera ancho/angosto, sin niveles
@@ -264,9 +270,12 @@ export default function BienvenidaScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator
       >
-        {/* ── Hero ── */}
-        <ImageBackground source={HERO_BG} style={styles.hero} imageStyle={styles.heroImage}>
-          <View style={styles.heroOverlay} />
+        {/* ── Hero (foto de fondo solo en web — ver HeroWrapper arriba) ── */}
+        <HeroWrapper
+          {...(Platform.OS === 'web' ? { source: HERO_BG, imageStyle: styles.heroImage } : {})}
+          style={[styles.hero, Platform.OS !== 'web' && { backgroundColor: colors.backgroundCard }]}
+        >
+          {Platform.OS === 'web' && <View style={styles.heroOverlay} />}
           <View style={[styles.badge, { backgroundColor: colors.primary12, borderColor: colors.primary35 }]}>
             <Text style={[styles.badgeText, { color: colors.accent }]}>Pasantías y empleo, en tus manos</Text>
           </View>
@@ -298,7 +307,7 @@ export default function BienvenidaScreen() {
               </View>
             ))}
           </View>
-        </ImageBackground>
+        </HeroWrapper>
 
         {/* ── ¿Qué es Gradly? ── */}
         <View style={styles.section}>
