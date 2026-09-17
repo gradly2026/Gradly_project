@@ -43,6 +43,7 @@ import {
 import { AutoText as Text } from "../src/components/AutoText";
 import { useAuth } from '../src/context/AuthContext';
 import { FONTS, useTheme, type GradlyColors } from '../src/context/ThemeContext';
+import { debeMostrarOnboardingInicial } from '../src/services/onboardingInicialService';
 import { rutaPorRol } from '../src/utils/roleRouting';
 // Función utilitaria que, dado el `rol` de un usuario ('estudiante',
 // 'empresa', 'universidad', 'admin'), devuelve la RUTA de navegación
@@ -184,19 +185,37 @@ export default function Index() {
 
     // Sin sesión → al login (en web, primero a la bienvenida pública; ahí
     // sus propios botones llevan a iniciar sesión o crear cuenta. En
-    // nativo se mantiene el comportamiento de siempre: directo al login).
+    // nativo, directo al login — EXCEPTO la primerísima vez que se abre
+    // la app en ese dispositivo, donde antes se muestra el carrusel de
+    // bienvenida con idioma/tema, ver onboardingInicialService.ts).
     if (!user) {
-      const destino = Platform.OS === 'web' ? '/bienvenida' : '/auth/iniciosesion';
-      const timer = setTimeout(() => {
-        router.replace(destino as any);
-      }, 1800);
-      // Se espera 1.8 segundos ANTES de navegar — a propósito, para que
-      // el usuario alcance a ver la animación del logo (si se navegara
-      // instantáneamente, la pantalla de bienvenida ni se notaría).
-      return () => clearTimeout(timer);
-      // Si el efecto se vuelve a ejecutar antes de que pasen los 1.8s
-      // (por ejemplo, porque `user` cambió durante ese lapso), se cancela
-      // este temporizador para no navegar dos veces.
+      if (Platform.OS === 'web') {
+        const timer = setTimeout(() => {
+          router.replace('/bienvenida' as any);
+        }, 1800);
+        return () => clearTimeout(timer);
+      }
+
+      // En nativo, la decisión de a dónde ir depende de una lectura async
+      // de AsyncStorage, así que no puede resolverse de forma síncrona
+      // como el caso web de arriba — `cancelado` evita navegar si el
+      // efecto se vuelve a ejecutar (o el componente se desmonta) antes
+      // de que termine de resolverse.
+      let cancelado = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      debeMostrarOnboardingInicial().then((mostrarOnboarding) => {
+        if (cancelado) return;
+        const destino = mostrarOnboarding ? '/onboarding-inicial' : '/auth/iniciosesion';
+        timer = setTimeout(() => {
+          router.replace(destino as any);
+        }, 1800);
+        // Mismo delay de 1.8s que el caso web, para que el usuario
+        // alcance a ver la animación del logo antes de navegar.
+      });
+      return () => {
+        cancelado = true;
+        if (timer) clearTimeout(timer);
+      };
     }
 
     // Hay sesión: resolver la ruta a partir del rol de Firestore.

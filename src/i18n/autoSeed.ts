@@ -2416,3 +2416,59 @@ export const CALIFICAR_PLATAFORMA_SEED_EN: Record<string, string> = {
   "De una universidad": "From a university",
   "De un usuario": "From a user",
 };
+
+export const ONBOARDING_INICIAL_SEED_EN: Record<string, string> = {
+  "Omitir": "Skip",
+  "Siguiente": "Next",
+  "Comenzar": "Get started",
+
+  // Diapositiva 0 — idioma/tema
+  "Antes de empezar": "Before we start",
+  "Elige cómo quieres ver Gradly. Puedes cambiarlo cuando quieras desde tu perfil.":
+    "Choose how you want to see Gradly. You can change this anytime from your profile.",
+  "Idioma": "Language",
+  "Tema": "Theme",
+  "Claro": "Light",
+  "Oscuro": "Dark",
+
+  // Diapositiva 1 — rol
+  "¿Cómo vas a usar Gradly?": "How will you use Gradly?",
+  "Así te mostramos lo que más te importa. Puedes cambiarlo cuando quieras.":
+    "This helps us show you what matters most. You can change it anytime.",
+  "Estudiante": "Student",
+  "Empresa": "Company",
+  "Universidad": "University",
+
+  // Diapositivas 2-4 — contenido por rol (estudiante)
+  "Pasantías reales, sin depender de contactos": "Real internships, without needing connections",
+  "Tu universidad te asigna un cupo de pasantía, o aplicás directo a una pasantía — todo desde la app.":
+    "Your university assigns you an internship spot, or apply directly to an internship — all from the app.",
+  "Tus horas de pasantía avanzan solas": "Your internship hours track themselves",
+  "Marca tu código de asistencia cada día y coordina tu pasantía por chat, sin salir de Gradly.":
+    "Mark your attendance code every day and coordinate your internship by chat, without leaving Gradly.",
+  "Certifica tu pasantía y da el siguiente paso": "Certify your internship, take the next step",
+  "Al terminar tu pasantía, tu empresa emite el comprobante y tu universidad lo valida.":
+    "When your internship ends, your company issues the certificate and your university validates it.",
+
+  // Diapositivas 2-4 — contenido por rol (empresa)
+  "Encuentra pasantes ya verificados": "Find interns who are already verified",
+  "Publica pasantías por carrera y recibe postulantes ya validados por su universidad.":
+    "Post internships by major and get applicants already validated by their university.",
+  "Da seguimiento a cada pasantía sin papeleo": "Track every internship without paperwork",
+  "Revisa asistencia y avance de tus pasantes desde un panel, sin hojas de cálculo.":
+    "Review attendance and progress for your interns from one panel, no spreadsheets.",
+  "Recluta cuando terminen su pasantía": "Recruit when their internship ends",
+  "Convierte una pasantía exitosa en tu próxima contratación, directo desde la app.":
+    "Turn a successful internship into your next hire, right from the app.",
+
+  // Diapositivas 2-4 — contenido por rol (universidad)
+  "Acompaña las pasantías de tus estudiantes": "Support your students' internships",
+  "Reparte cupos de pasantía por carrera y conecta a tus estudiantes con empresas aliadas.":
+    "Distribute internship spots by major and connect your students with partner companies.",
+  "Valida horas de pasantía sin papeleo": "Validate internship hours without paperwork",
+  "Aprueba comprobantes y asistencia de cada pasantía desde un panel, sin reportes por correo.":
+    "Approve certificates and attendance for every internship from one panel, no email reports.",
+  "Certifica pasantías, fortalece alianzas": "Certify internships, strengthen partnerships",
+  "Construye relaciones directas con empresas que ya confían en las pasantías de tus egresados.":
+    "Build direct relationships with companies that already trust your graduates' internships.",
+};
