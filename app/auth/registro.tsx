@@ -57,6 +57,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
 
 import AppHeader from "../../components/AppHeader";
@@ -1540,6 +1541,10 @@ function CarrerasModal({
 export default function Registro() {
   const router = useRouter();
   const { C, s, isDark } = useRegistroTheme();
+  // insets.bottom: mismo criterio que en iniciosesion.tsx — se suma al
+  // paddingBottom fijo del scroll para que el botón final nunca quede tapado
+  // por la barra/gestos del sistema al pie del dispositivo.
+  const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<React.ElementRef<typeof ScrollView>>(null);
   const scrollTop = () => scrollRef.current?.scrollTo({ y: 0, animated: true });
   // Se llama cada vez que se cambia de paso, para que el usuario siempre
@@ -2948,7 +2953,7 @@ export default function Registro() {
       >
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={s.scrollContent}
+          contentContainerStyle={[s.scrollContent, { paddingBottom: 60 + insets.bottom }]}
           showsVerticalScrollIndicator={Platform.OS === "web"}
           keyboardShouldPersistTaps="handled"
         >

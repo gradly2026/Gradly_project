@@ -52,6 +52,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
 
 import AppHeader from "../../components/AppHeader";
@@ -210,6 +211,11 @@ export default function InicioSesion() {
   // paneles lado a lado dentro de una "tarjeta"; en móvil se apilan.
   const { width } = useWindowDimensions();
   const isDesktopWeb = Platform.OS === "web" && width >= 1100;
+  // insets.bottom: alto real de la barra/gestos del sistema al pie del
+  // dispositivo (0 en web y en Android sin edge-to-edge) — se suma al
+  // paddingBottom fijo del scroll para que el botón final del formulario
+  // nunca quede tapado por esa barra, sin cambiar nada donde el inset es 0.
+  const insets = useSafeAreaInsets();
   // Un segundo criterio de "responsive" además del breakpoint de 768 que
   // vimos en mensajes/index.tsx — aquí, 1100px, y ADEMÁS solo aplica en
   // web (Platform.OS === "web"): en un tablet nativo grande, por ejemplo,
@@ -753,6 +759,7 @@ export default function InicioSesion() {
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
+            { paddingBottom: 48 + insets.bottom },
             isDesktopWeb && styles.scrollContentDesktop,
           ]}
           showsVerticalScrollIndicator={false}

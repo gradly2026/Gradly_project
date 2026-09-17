@@ -16,6 +16,7 @@ import {
   View,
   ViewStyle,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemeToggleIcon } from "../src/components/ThemeToggleButton";
 import { useThemeContext } from "../src/context/ThemeContext";
 import { useTranslationContext } from "../src/context/TranslationContext";
@@ -30,6 +31,12 @@ export default function AppHeader({ hideLogo = false, style }: AppHeaderProps) {
   const { isDark, toggleTheme } = useThemeContext();
   const { language, toggleLanguage } = useTranslationContext();
   const router = useRouter();
+  // insets.top: alto real de la barra de estado/notch del dispositivo (0 en
+  // web y en Android sin edge-to-edge). Se SUMA al paddingTop fijo de la
+  // barra (en vez de reemplazarlo) para que los botones de idioma/tema
+  // nunca queden pegados a la barra de iconos del sistema, sin cambiar
+  // nada en las plataformas donde el inset ya es 0.
+  const insets = useSafeAreaInsets();
 
   const C = isDark ? dark : light;
 
@@ -49,7 +56,13 @@ export default function AppHeader({ hideLogo = false, style }: AppHeaderProps) {
   const logoProps = Platform.OS === "web" ? { onPress: irABienvenida, accessibilityLabel: "Ir a la página de bienvenida" } : {};
 
   return (
-    <View style={[styles.bar, { backgroundColor: C.bg, borderBottomColor: C.border }, style]}>
+    <View
+      style={[
+        styles.bar,
+        { backgroundColor: C.bg, borderBottomColor: C.border, paddingTop: insets.top + 12 },
+        style,
+      ]}
+    >
       {/* Izquierda: logo opcional */}
       {!hideLogo ? (
         <Logo style={styles.left} {...logoProps}>
