@@ -2,10 +2,18 @@ import React from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Canvas, LinearGradient, vec, Circle, Blur } from '@shopify/react-native-skia';
 import { useSharedValue, useFrameCallback } from 'react-native-reanimated';
-import { useTheme } from '../../../src/context/ThemeContext';
+import { DARK, useTheme } from '../../../src/context/ThemeContext';
 
 interface LiquidBackgroundProps {
   children: React.ReactNode;
+  /**
+   * Ignora el tema global activo y siempre pinta el fondo oscuro (usado por
+   * /bienvenida: esa pantalla debe verse siempre igual sin importar el modo
+   * claro/oscuro que el usuario haya guardado en su cuenta). El resto de
+   * pantallas que usan LiquidBackground (Mensajes, etc.) no pasan esta prop,
+   * así que siguen reaccionando al tema real exactamente como antes.
+   */
+  forceDark?: boolean;
 }
 
 const PARTICLE_COUNT = 12;
@@ -24,8 +32,9 @@ const LIGHT_PARTICLE = 'rgba(124, 58, 237, 0.18)';
 // fondo CSS equivalente (gradiente lineal + color sólido de respaldo)
 // sin tocar Skia ni los hooks de la simulación de partículas.
 // ─────────────────────────────────────────────────────────────
-const LiquidBackgroundWeb: React.FC<LiquidBackgroundProps> = ({ children }) => {
-  const { isDark, colors } = useTheme();
+const LiquidBackgroundWeb: React.FC<LiquidBackgroundProps> = ({ children, forceDark }) => {
+  const { isDark: temaOscuroActivo, colors } = useTheme();
+  const isDark = forceDark || temaOscuroActivo;
 
   const stops = isDark ? DARK_GRADIENT : LIGHT_GRADIENT;
   const webGradient: any = {
@@ -42,9 +51,10 @@ const LiquidBackgroundWeb: React.FC<LiquidBackgroundProps> = ({ children }) => {
 // ─────────────────────────────────────────────────────────────
 // NATIVO (iOS / Android): canvas Skia + simulación de partículas.
 // ─────────────────────────────────────────────────────────────
-const LiquidBackgroundNative: React.FC<LiquidBackgroundProps> = ({ children }) => {
+const LiquidBackgroundNative: React.FC<LiquidBackgroundProps> = ({ children, forceDark }) => {
   const { width, height } = useWindowDimensions();
-  const { isDark, colors } = useTheme();
+  const { isDark: temaOscuroActivo, colors } = useTheme();
+  const isDark = forceDark || temaOscuroActivo;
 
   const gradient = isDark ? DARK_GRADIENT : LIGHT_GRADIENT;
   const particleColor = isDark ? DARK_PARTICLE : LIGHT_PARTICLE;
@@ -75,7 +85,7 @@ const LiquidBackgroundNative: React.FC<LiquidBackgroundProps> = ({ children }) =
   });
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.backgroundDark }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? DARK.backgroundDark : colors.backgroundDark }]}>
       <Canvas style={StyleSheet.absoluteFill}>
         <LinearGradient
           start={vec(0, 0)}

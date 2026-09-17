@@ -26,7 +26,7 @@ import {
 import { AutoText as Text } from '../src/components/AutoText';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
-import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
+import { COLORS, FONTS, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
 import { useTranslation } from '../src/context/TranslationContext';
 import {
   promedioCalificacion,
@@ -68,7 +68,10 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 function useThemedStyles() {
-  const { colors } = useTheme();
+  // COLORS fijo (no useTheme().colors): ver nota junto a `const colors = COLORS`
+  // más abajo, en el componente principal — /bienvenida siempre se ve en
+  // modo oscuro, sin importar el tema real guardado por el usuario.
+  const colors = COLORS;
   return useMemo(() => ({ colors, styles: makeStyles(colors) }), [colors]);
 }
 
@@ -312,7 +315,13 @@ function Estrellas({ valor, size = 13 }: { valor: number; size?: number }) {
 
 export default function BienvenidaScreen() {
   const router = useRouter();
-  const { colors, isDark } = useTheme();
+  // Fijo en modo oscuro a propósito, sin importar el tema real que el
+  // usuario tenga guardado en su cuenta (ni siquiera si no hay sesión
+  // iniciada): /bienvenida es la única pantalla pública de la app y su
+  // diseño (fotos, degradados) solo se ve bien en oscuro — en claro se ve
+  // mal. No usa useTheme() aquí para no heredar el modo claro guardado.
+  const colors = COLORS;
+  const isDark = true;
   const { styles } = useThemedStyles();
   const { language, toggleLanguage } = useTranslation();
   const { width } = useWindowDimensions();
@@ -376,7 +385,7 @@ export default function BienvenidaScreen() {
   ];
 
   return (
-    <LiquidBackground>
+    <LiquidBackground forceDark>
       <View style={styles.root}>
       <BgPhoto bg={colors.backgroundDark} />
       <DotsTexture />
