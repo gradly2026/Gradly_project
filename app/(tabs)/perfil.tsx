@@ -556,6 +556,7 @@ export default function PerfilTab() {
         onAcerca={handleAcerca}
         onCalificarPlataforma={() => router.push('/calificar-plataforma' as any)}
         onLogout={() => setLogoutModalVisible(true)}
+        detailAtScreenTop
         labels={{
           // Como PerfilMasterDetail es un componente reutilizado también
           // por empresa/universidad (con textos distintos), este

@@ -24,6 +24,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AutoText as Text, AutoTextInput as TextInput } from "./AutoText";
 import StorageAvatar from './StorageAvatar';
 import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
@@ -122,6 +123,13 @@ export interface PerfilMasterDetailProps {
    *  llegar desde otra pantalla ya sabiendo a dónde ir (p. ej. "Ir a Mi
    *  ubicación" desde el aviso de Crear vacante). Solo se lee al montar. */
   initialSectionId?: string | null;
+  /** El detalle se dibuja pegado al borde superior de la pantalla (Mi Perfil
+   *  del estudiante): su encabezado ("‹ atrás" + título) toma el mismo estilo y
+   *  espacio superior que Ayuda / Acerca de Gradly, sin quedar bajo la barra de
+   *  estado, y deja libre a la derecha el hueco de la píldora flotante de
+   *  notificaciones/idioma/tema. Empresa y universidad ya lo ponen debajo de su
+   *  propio encabezado y no lo pasan (por defecto: sin cambios). */
+  detailAtScreenTop?: boolean;
 }
 
 const PREFS_ID = '__prefs__';
@@ -131,8 +139,13 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
     name, subtitle, avatarUrl, avatarStoragePath, fallbackIcon = 'person',
     onEditPhoto, uploadingPhoto, sections, includePreferencias = true,
     onAyuda, onAcerca, onCalificarPlataforma, onLogout, initialSectionId,
+    detailAtScreenTop = false,
   } = props;
 
+  const insets = useSafeAreaInsets();
+  // Mismo espacio superior que Ayuda / Acerca de Gradly (56) y nunca menos que
+  // la barra de estado + 14; sin barra que despejar (web) queda en 14, como antes.
+  const detailTopPad = insets.top > 0 ? Math.max(insets.top + 14, 56) : 14;
   const { colors, isDark, setTheme } = useTheme();
   const { language, setLanguage } = useAppLanguage();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -215,11 +228,24 @@ export default function PerfilMasterDetail(props: PerfilMasterDetailProps) {
   if (active || isPrefs) {
     return (
       <View style={styles.container}>
-        <View style={styles.detailHeader}>
-          <TouchableOpacity style={styles.backBtn} onPress={cerrar}>
-            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+        <View
+          style={[
+            styles.detailHeader,
+            detailAtScreenTop && styles.detailHeaderTop,
+            detailAtScreenTop && { paddingTop: detailTopPad },
+          ]}
+        >
+          <TouchableOpacity style={[styles.backBtn, detailAtScreenTop && styles.backBtnTop]} onPress={cerrar}>
+            <Ionicons
+              name={detailAtScreenTop ? 'chevron-back' : 'arrow-back'}
+              size={detailAtScreenTop ? 22 : 20}
+              color={colors.textPrimary}
+            />
           </TouchableOpacity>
-          <Text style={styles.detailTitle} numberOfLines={1}>
+          <Text
+            style={[styles.detailTitle, detailAtScreenTop && styles.detailTitleTop]}
+            numberOfLines={detailAtScreenTop ? 2 : 1}
+          >
             {isPrefs ? labels.preferencias : active?.title}
           </Text>
         </View>
@@ -499,6 +525,12 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     backgroundColor: COLORS.backgroundSurface, borderWidth: 1, borderColor: COLORS.border,
   },
   detailTitle: { flex: 1, fontSize: 18, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  // Variante "a pantalla completa" (detailAtScreenTop): mismas medidas que el
+  // encabezado de Ayuda; paddingRight = ancho de la píldora flotante (~145) +
+  // su margen (15) + un respiro, para que el título no quede debajo de ella.
+  detailHeaderTop: { paddingRight: 170 },
+  backBtnTop: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.white8 },
+  detailTitleTop: { fontSize: 20 },
   detailDesc: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 18, flex: 1 },
 
   sectionActions: {

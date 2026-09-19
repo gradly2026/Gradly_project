@@ -24,6 +24,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AutoText as Text } from './AutoText';
 import { db } from '../config/firebaseConfig';
 import { useAuth } from '../context/AuthContext';
@@ -57,17 +58,24 @@ function etiquetaPantalla(path: string | null): string {
 interface Props {
   /**
    * Distancia al borde inferior (px). Por defecto queda APILADO encima del
-   * botón flotante de búsqueda (que vive a ~90px). Súbela si tapa algo.
+   * botón flotante de búsqueda, siguiendo su misma posición (que depende del
+   * área segura inferior del dispositivo). Súbela si tapa algo.
    */
   bottom?: number;
 }
 
-export default function AsistenteGradly({ bottom = 158 }: Props) {
+export default function AsistenteGradly({ bottom }: Props) {
   const { user, rol } = useAuth();
   const { colors } = useTheme();
   const { language } = useTranslationContext();
   const router = useRouter();
   const pathname = usePathname();
+  // Mismo cálculo que FloatingSearchButton (barra 64 + 3 + botón 52) más 27px
+  // de separación: en un dispositivo con barra de navegación/gestos el botón de
+  // búsqueda sube con el inset inferior, y este debe subir junto con él para no
+  // encimarse. Con inset 0 (web) da 158, igual que el valor fijo de antes.
+  const insets = useSafeAreaInsets();
+  const fabBottom = bottom ?? Math.max(insets.bottom, 12) + 146;
   const s = makeStyles(colors);
   const pantalla = useMemo(() => etiquetaPantalla(pathname), [pathname]);
 
@@ -131,7 +139,7 @@ export default function AsistenteGradly({ bottom = 158 }: Props) {
   return (
     <>
       <TouchableOpacity
-        style={[s.fab, { bottom, backgroundColor: colors.primary }]}
+        style={[s.fab, { bottom: fabBottom, backgroundColor: colors.primary }]}
         onPress={() => setOpen(true)}
         activeOpacity={0.85}
         accessibilityLabel="Abrir el asistente de Gradly"

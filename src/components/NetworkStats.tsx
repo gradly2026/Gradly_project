@@ -89,6 +89,11 @@ export function RedGradlyBanner() {
   const [topEst, setTopEst] = useState<TopEstudianteEntry[]>([]);
   // Perfil (empresa / universidad / estudiante) abierto desde un ranking.
   const [verPerfil, setVerPerfil] = useState<{ rol: PerfilRol; id: string } | null>(null);
+  // Ancho real del contenedor (en los dashboards: la pantalla menos el padding de
+  // 16 a cada lado). Se mide en vez de restarle a la pantalla una cifra fija, para
+  // que cada tarjeta ocupe exactamente ese ancho —sin que se asome un pedazo de la
+  // siguiente— en cualquier tamaño de pantalla. Arranca con esa misma estimación.
+  const [anchoContenedor, setAnchoContenedor] = useState(SCREEN_W - 32);
 
   useEffect(() => {
     // No ejecutar consultas a Firestore sin sesión activa.
@@ -198,7 +203,7 @@ export function RedGradlyBanner() {
     return () => { cancel = true; };
   }, [user?.uid, rol]);
 
-  const cardWidth = SCREEN_W - 64;
+  const cardWidth = anchoContenedor;
 
   const RankCard = ({ titulo, icon, color, data, perfilRol }: {
     titulo: string; icon: keyof typeof Ionicons.glyphMap; color: string;
@@ -240,14 +245,20 @@ export function RedGradlyBanner() {
   );
 
   return (
-    <View style={{ marginBottom: 16 }}>
+    <View
+      style={{ marginBottom: 16 }}
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width;
+        if (w > 0 && Math.abs(w - anchoContenedor) > 0.5) setAnchoContenedor(w);
+      }}
+    >
       <Text style={styles.bannerHeading}>🌐 Estadísticas de la Red Gradly</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         snapToInterval={cardWidth + 12}
         decelerationRate="fast"
-        contentContainerStyle={{ gap: 12, paddingRight: 16 }}
+        contentContainerStyle={{ gap: 12 }}
       >
         <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} perfilRol="empresa" />
         <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} perfilRol="universidad" />
@@ -257,7 +268,7 @@ export function RedGradlyBanner() {
           carrusel, a lo ancho (no dentro del scroll horizontal). Solo empresa /
           universidad / admin (no se arma para 'estudiante'). */}
       {rol !== 'estudiante' && topEst.length > 0 && (
-        <View style={{ marginTop: 12, paddingRight: 16 }}>
+        <View style={{ marginTop: 12 }}>
           <TopEstudiantesCard
             titulo="Top Estudiantes"
             entries={topEst}
