@@ -15,6 +15,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -76,6 +77,21 @@ export default function AsistenteGradly({ bottom }: Props) {
   // encimarse. Con inset 0 (web) da 158, igual que el valor fijo de antes.
   const insets = useSafeAreaInsets();
   const fabBottom = bottom ?? Math.max(insets.bottom, 12) + 146;
+  // ¿Hay teclado abierto? La hoja de chat llega hasta debajo de la barra de
+  // navegación del sistema (edge-to-edge): con el teclado cerrado hay que
+  // reservar ese espacio bajo la barra de escritura; con el teclado abierto ya
+  // lo cubre el propio teclado (KeyboardAvoidingView sube la hoja hasta él).
+  const [tecladoVisible, setTecladoVisible] = useState(false);
+  useEffect(() => {
+    const evMostrar = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const evOcultar = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const subMostrar = Keyboard.addListener(evMostrar, () => setTecladoVisible(true));
+    const subOcultar = Keyboard.addListener(evOcultar, () => setTecladoVisible(false));
+    return () => {
+      subMostrar.remove();
+      subOcultar.remove();
+    };
+  }, []);
   const s = makeStyles(colors);
   const pantalla = useMemo(() => etiquetaPantalla(pathname), [pathname]);
 
@@ -149,8 +165,13 @@ export default function AsistenteGradly({ bottom }: Props) {
 
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={s.backdrop}>
+          {/* 'padding' también en Android: con edge-to-edge el sistema ya no
+              encoge la ventana al abrir el teclado, así que si no se sube la
+              hoja a mano la barra de escritura queda tapada por el teclado.
+              Si la ventana sí se encoge (otras versiones), KeyboardAvoidingView
+              mide su propio alto y no agrega nada de más. */}
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior="padding"
             style={s.sheet}
           >
             <View style={s.header}>
@@ -215,7 +236,7 @@ export default function AsistenteGradly({ bottom }: Props) {
               {err ? <Text style={[s.err, { color: colors.error }]}>{err}</Text> : null}
             </ScrollView>
 
-            <View style={s.inputRow}>
+            <View style={[s.inputRow, { paddingBottom: 10 + (tecladoVisible ? 0 : insets.bottom) }]}>
               <TextInput
                 style={s.input}
                 value={input}
