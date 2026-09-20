@@ -28,10 +28,16 @@ import * as admin from "firebase-admin";
 if (admin.apps.length === 0) admin.initializeApp();
 
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+const GROQ_API_KEY = defineSecret("GROQ_API_KEY");
 const db = admin.firestore();
 
 const REGION = "us-central1";
 const MODELO = "gemini-3.6-flash"; // gemini-2.5-flash quedó deprecado para keys nuevas (404 en producción, 2026-09-12); cambiar aquí si vuelve a hacer falta
+// Proveedor de IA en uso: Groq, y así debe quedarse. El camino de Gemini
+// (`llamarGemini` + `MODELO`) se conserva sin usar, solo como respaldo manual:
+// no cambiar este valor a "gemini" salvo que se decida expresamente.
+const PROVEEDOR_IA: "gemini" | "groq" = "groq";
+const MODELO_GROQ = "openai/gpt-oss-120b"; // Groq, gratis, soporta function calling (llama-3.3-70b-versatile fue descontinuado el 2026-08-16)
 const LIMITE_DIARIO = 40; // consultas por usuario por día
 const MAX_MENSAJES = 20; // turnos de historial que aceptamos
 const MAX_LARGO_MSG = 2000; // caracteres por mensaje
@@ -149,8 +155,198 @@ async function consumirCuota(uid: string): Promise<void> {
   });
 }
 
+interface RespuestaIA {
+  texto: string;
+  accion: { tipo: "irA"; destino: string } | null;
+  vacio: boolean;
+}
+
+/** Llama a Gemini (comportamiento original, sin cambios de contrato). */
+async function llamarGemini(
+  prompt: string,
+  mensajes: MensajeEntrada[],
+  destinosValidos: string[],
+): Promise<RespuestaIA> {
+  const tools = destinosValidos.length
+    ? [
+        {
+          functionDeclarations: [
+            {
+              name: "irA",
+              description:
+                "Ofrece llevar a la persona a una sección de la app. El usuario verá un botón y decide.",
+              parameters: {
+                type: "object",
+                properties: {
+                  destino: { type: "string", enum: destinosValidos },
+                },
+                required: ["destino"],
+              },
+            },
+          ],
+        },
+      ]
+    : undefined;
+
+  const body: Record<string, unknown> = {
+    systemInstruction: { parts: [{ text: prompt }] },
+    contents: mensajes.map((m) => ({ role: m.rol, parts: [{ text: m.texto }] })),
+    generationConfig: { temperature: 0.3, topP: 0.9, maxOutputTokens: 800 },
+  };
+  if (tools) {
+    body.tools = tools;
+    body.toolConfig = { functionCallingConfig: { mode: "AUTO" } };
+  }
+
+  let resp: Response;
+  try {
+    resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY.value(),
+        },
+        body: JSON.stringify(body),
+      },
+    );
+  } catch (e) {
+    logger.error("chatbotGradly: fallo de red hacia Gemini", e);
+    throw new HttpsError("unavailable", "El asistente no está disponible ahora. Intenta de nuevo.");
+  }
+
+  if (!resp.ok) {
+    const detalle = await resp.text().catch(() => "");
+    logger.error("chatbotGradly: Gemini respondió con error", {
+      status: resp.status,
+      detalle: detalle.slice(0, 500),
+    });
+    throw new HttpsError("internal", "El asistente no pudo responder. Intenta de nuevo.");
+  }
+
+  const json: any = await resp.json().catch(() => null);
+  const parts: any[] = json?.candidates?.[0]?.content?.parts ?? [];
+  const texto = parts
+    .map((p) => p?.text ?? "")
+    .join("")
+    .trim();
+
+  let accion: { tipo: "irA"; destino: string } | null = null;
+  for (const p of parts) {
+    const fc = p?.functionCall;
+    if (fc?.name === "irA" && typeof fc?.args?.destino === "string") {
+      const d = fc.args.destino;
+      if (destinosValidos.includes(d)) {
+        accion = { tipo: "irA", destino: d };
+        break;
+      }
+    }
+  }
+
+  if (!texto && !accion) {
+    const motivo = json?.promptFeedback?.blockReason ?? json?.candidates?.[0]?.finishReason;
+    logger.warn("chatbotGradly: respuesta vacía de Gemini", { motivo });
+  }
+
+  return { texto, accion, vacio: !texto && !accion };
+}
+
+/** Llama a Groq (API compatible con OpenAI) — misma forma de salida que llamarGemini. */
+async function llamarGroq(
+  prompt: string,
+  mensajes: MensajeEntrada[],
+  destinosValidos: string[],
+): Promise<RespuestaIA> {
+  const tools = destinosValidos.length
+    ? [
+        {
+          type: "function",
+          function: {
+            name: "irA",
+            description:
+              "Ofrece llevar a la persona a una sección de la app. El usuario verá un botón y decide.",
+            parameters: {
+              type: "object",
+              properties: {
+                destino: { type: "string", enum: destinosValidos },
+              },
+              required: ["destino"],
+            },
+          },
+        },
+      ]
+    : undefined;
+
+  const body: Record<string, unknown> = {
+    model: MODELO_GROQ,
+    messages: [
+      { role: "system", content: prompt },
+      ...mensajes.map((m) => ({ role: m.rol === "model" ? "assistant" : "user", content: m.texto })),
+    ],
+    temperature: 0.3,
+    max_tokens: 800,
+  };
+  if (tools) {
+    body.tools = tools;
+    body.tool_choice = "auto";
+  }
+
+  let resp: Response;
+  try {
+    resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${GROQ_API_KEY.value()}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    logger.error("chatbotGradly: fallo de red hacia Groq", e);
+    throw new HttpsError("unavailable", "El asistente no está disponible ahora. Intenta de nuevo.");
+  }
+
+  if (!resp.ok) {
+    const detalle = await resp.text().catch(() => "");
+    logger.error("chatbotGradly: Groq respondió con error", {
+      status: resp.status,
+      detalle: detalle.slice(0, 500),
+    });
+    throw new HttpsError("internal", "El asistente no pudo responder. Intenta de nuevo.");
+  }
+
+  const json: any = await resp.json().catch(() => null);
+  const msg = json?.choices?.[0]?.message;
+  const texto = String(msg?.content ?? "").trim();
+
+  let accion: { tipo: "irA"; destino: string } | null = null;
+  const toolCalls: any[] = msg?.tool_calls ?? [];
+  for (const tc of toolCalls) {
+    if (tc?.function?.name === "irA") {
+      try {
+        const args = JSON.parse(tc.function.arguments ?? "{}");
+        if (typeof args?.destino === "string" && destinosValidos.includes(args.destino)) {
+          accion = { tipo: "irA", destino: args.destino };
+          break;
+        }
+      } catch {
+        // argumentos mal formados: se ignora la acción, el texto igual se devuelve
+      }
+    }
+  }
+
+  if (!texto && !accion) {
+    logger.warn("chatbotGradly: respuesta vacía de Groq", {
+      motivo: json?.choices?.[0]?.finish_reason,
+    });
+  }
+
+  return { texto, accion, vacio: !texto && !accion };
+}
+
 export const chatbotGradly = onCall(
-  { secrets: [GEMINI_API_KEY], region: REGION },
+  { secrets: [GEMINI_API_KEY, GROQ_API_KEY], region: REGION },
   async (req) => {
     if (!req.auth?.uid) {
       throw new HttpsError("unauthenticated", "Inicia sesión para usar el asistente.");
@@ -181,87 +377,14 @@ export const chatbotGradly = onCall(
     const faq = await leerFaq();
 
     const destinosValidos = destinosDeRol(rolUsuario);
-    const tools = destinosValidos.length
-      ? [
-          {
-            functionDeclarations: [
-              {
-                name: "irA",
-                description:
-                  "Ofrece llevar a la persona a una sección de la app. El usuario verá un botón y decide.",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    destino: { type: "string", enum: destinosValidos },
-                  },
-                  required: ["destino"],
-                },
-              },
-            ],
-          },
-        ]
-      : undefined;
+    const prompt = systemPrompt(idioma, rolUsuario, pantalla, faq);
 
-    const body: Record<string, unknown> = {
-      systemInstruction: { parts: [{ text: systemPrompt(idioma, rolUsuario, pantalla, faq) }] },
-      contents: mensajes.map((m) => ({ role: m.rol, parts: [{ text: m.texto }] })),
-      generationConfig: { temperature: 0.3, topP: 0.9, maxOutputTokens: 800 },
-    };
-    if (tools) {
-      body.tools = tools;
-      body.toolConfig = { functionCallingConfig: { mode: "AUTO" } };
-    }
+    const resultado =
+      PROVEEDOR_IA === "groq"
+        ? await llamarGroq(prompt, mensajes, destinosValidos)
+        : await llamarGemini(prompt, mensajes, destinosValidos);
 
-    let resp: Response;
-    try {
-      resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": GEMINI_API_KEY.value(),
-          },
-          body: JSON.stringify(body),
-        },
-      );
-    } catch (e) {
-      logger.error("chatbotGradly: fallo de red hacia Gemini", e);
-      throw new HttpsError("unavailable", "El asistente no está disponible ahora. Intenta de nuevo.");
-    }
-
-    if (!resp.ok) {
-      const detalle = await resp.text().catch(() => "");
-      logger.error("chatbotGradly: Gemini respondió con error", {
-        status: resp.status,
-        detalle: detalle.slice(0, 500),
-      });
-      throw new HttpsError("internal", "El asistente no pudo responder. Intenta de nuevo.");
-    }
-
-    const json: any = await resp.json().catch(() => null);
-    const parts: any[] = json?.candidates?.[0]?.content?.parts ?? [];
-    const texto = parts
-      .map((p) => p?.text ?? "")
-      .join("")
-      .trim();
-
-    // Tool call `irA` → acción de navegación para el cliente (una sola).
-    let accion: { tipo: "irA"; destino: string } | null = null;
-    for (const p of parts) {
-      const fc = p?.functionCall;
-      if (fc?.name === "irA" && typeof fc?.args?.destino === "string") {
-        const d = fc.args.destino;
-        if (destinosValidos.includes(d)) {
-          accion = { tipo: "irA", destino: d };
-          break;
-        }
-      }
-    }
-
-    if (!texto && !accion) {
-      const motivo = json?.promptFeedback?.blockReason ?? json?.candidates?.[0]?.finishReason;
-      logger.warn("chatbotGradly: respuesta vacía de Gemini", { motivo });
+    if (resultado.vacio) {
       return {
         respuesta:
           idioma === "en"
@@ -273,11 +396,11 @@ export const chatbotGradly = onCall(
 
     // Si solo vino la acción (sin texto), sintetiza una frase corta.
     const respuesta =
-      texto ||
+      resultado.texto ||
       (idioma === "en"
-        ? `Sure — I can take you to "${DESTINOS[accion!.destino]?.label ?? ""}".`
-        : `Claro, te puedo llevar a "${DESTINOS[accion!.destino]?.label ?? ""}".`);
+        ? `Sure — I can take you to "${DESTINOS[resultado.accion!.destino]?.label ?? ""}".`
+        : `Claro, te puedo llevar a "${DESTINOS[resultado.accion!.destino]?.label ?? ""}".`);
 
-    return { respuesta, accion };
+    return { respuesta, accion: resultado.accion };
   },
 );

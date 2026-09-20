@@ -83,11 +83,25 @@ function horaActualEnMinutos(): number {
 }
 
 /** Medianoche de MAÑANA en El Salvador, como instante UTC real — el límite
- *  de vigencia de un código minteado hoy (equivale a "hoy 23:59:59 SV"). */
+ *  de vigencia de un código minteado hoy (equivale a "hoy 23:59:59 SV").
+ *  Se usa como respaldo cuando no hay `horaFin` parseable. */
 function finDeHoyEnSV(): Date {
   const iso = hoyISO();
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + 1, 6, 0, 0));
+}
+
+/** Instante real (UTC) en que termina el turno de HOY en El Salvador, según
+ *  `horaFin` del horario ("05:00 PM") — el código de asistencia deja de
+ *  poder usarse ahí, no hasta medianoche. Sin `horaFin` parseable, cae a
+ *  `finDeHoyEnSV()` (comportamiento anterior) para no dejar códigos sin
+ *  vencimiento. */
+function finDeTurnoEnSV(horaFin?: string | null): Date {
+  const minFin = parseHora12(horaFin);
+  if (minFin == null) return finDeHoyEnSV();
+  const iso = hoyISO();
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 0, 0, 0) + minFin * 60 * 1000 - OFFSET_MS);
 }
 
 /** "08:00 AM" → minutos desde medianoche (o null si no parsea). */
@@ -200,6 +214,18 @@ export const generarCodigoAsistencia = onCall({ region: REGION }, async (req) =>
       "Tu empresa marcó hoy como día no computado. No necesitas marcar asistencia.",
     );
   }
+  // Ya pasó la hora de salida programada de hoy sin marcar: el código de hoy
+  // se acaba, no se mintean códigos "tarde" después del propio turno. La
+  // empresa (o el estudiante por chat) sigue pudiendo resolverlo por la vía
+  // ya existente de "día no computado" si hay una justificación.
+  const horaFinMin = parseHora12(horario.horaFin);
+  if (horaFinMin != null && horaActualEnMinutos() > horaFinMin) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Ya pasó tu horario de hoy. Si no pudiste marcar por un motivo justificado, tu empresa puede registrar el día como no computado.",
+    );
+  }
+
   const diaN = contarDiaN(diasSet, activa.fechaPresentacion, fecha, excluidas);
 
   // Idempotencia: si ya hay un código vigente sin usar para HOY, se reutiliza
@@ -228,7 +254,7 @@ export const generarCodigoAsistencia = onCall({ region: REGION }, async (req) =>
       if (!(await ref.get()).exists) break;
       if (++intentos > 5) throw new HttpsError("internal", "No se pudo generar el código. Intenta de nuevo.");
     }
-    const expira = finDeHoyEnSV();
+    const expira = finDeTurnoEnSV(horario.horaFin);
     expiraAtMs = expira.getTime();
     await ref!.set({
       asignacionId: activa.id,

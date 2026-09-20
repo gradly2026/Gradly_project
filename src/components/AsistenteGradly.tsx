@@ -23,6 +23,7 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,6 +42,11 @@ import { shadow } from '../utils/shadow';
 
 /** Un turno del chat (los `model` pueden traer una acción de navegación). */
 type Turno = MensajeAsistente & { accion?: AccionAsistente | null };
+
+// A partir de este ancho de pantalla, la hoja de chat se ve como panel
+// angosto anclado a la derecha en vez de ocupar todo el ancho (mismo criterio
+// que SeccionMensajes.tsx para distinguir vista de escritorio de móvil).
+const BREAKPOINT_ANCHO = 768;
 
 /** Etiqueta legible de la pantalla actual, para el contexto del bot. */
 function etiquetaPantalla(path: string | null): string {
@@ -71,6 +77,8 @@ export default function AsistenteGradly({ bottom }: Props) {
   const { language } = useTranslationContext();
   const router = useRouter();
   const pathname = usePathname();
+  const { width: anchoPantalla } = useWindowDimensions();
+  const vistaAncha = anchoPantalla > BREAKPOINT_ANCHO;
   // Mismo cálculo que FloatingSearchButton (barra 64 + 3 + botón 52) más 27px
   // de separación: en un dispositivo con barra de navegación/gestos el botón de
   // búsqueda sube con el inset inferior, y este debe subir junto con él para no
@@ -164,7 +172,7 @@ export default function AsistenteGradly({ bottom }: Props) {
       </TouchableOpacity>
 
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
-        <View style={s.backdrop}>
+        <View style={[s.backdrop, vistaAncha && s.backdropAncho]}>
           {/* 'padding' también en Android: con edge-to-edge el sistema ya no
               encoge la ventana al abrir el teclado, así que si no se sube la
               hoja a mano la barra de escritura queda tapada por el teclado.
@@ -172,7 +180,7 @@ export default function AsistenteGradly({ bottom }: Props) {
               mide su propio alto y no agrega nada de más. */}
           <KeyboardAvoidingView
             behavior="padding"
-            style={s.sheet}
+            style={[s.sheet, vistaAncha && s.sheetAncho]}
           >
             <View style={s.header}>
               <View style={s.headerIcon}>
@@ -277,6 +285,7 @@ const makeStyles = (C: GradlyColors) =>
       ...shadow({ color: '#000', y: 3, blur: 12, opacity: 0.32, elevation: 8 }),
     },
     backdrop: { flex: 1, backgroundColor: 'rgba(7,5,15,0.55)', justifyContent: 'flex-end' },
+    backdropAncho: { alignItems: 'flex-end' },
     sheet: {
       height: '82%',
       backgroundColor: C.backgroundDark,
@@ -286,6 +295,9 @@ const makeStyles = (C: GradlyColors) =>
       borderColor: C.border,
       overflow: 'hidden',
     },
+    // Vista ancha (web/escritorio): panel angosto anclado a la derecha en
+    // vez del ancho completo de la pantalla.
+    sheetAncho: { width: '50%' },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
