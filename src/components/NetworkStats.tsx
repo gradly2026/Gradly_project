@@ -83,8 +83,9 @@ export function RedGradlyBanner() {
   const [topUnis, setTopUnis] = useState<RankEntry[]>([]);
   // Top 3 de estudiantes destacados — agregado de los `top_estudiantes`
   // auto-reportados en cada perfil de empresa/universidad (topEstudiantesService).
-  // Solo entran los que YA tienen calificación en reseñas (`stars > 0`); un
-  // estudiante sin reseñas no aparece. Solo se muestra a quien puede leer datos
+  // Solo entran los que YA tienen calificación en reseñas (`stars > 0`) Y horas
+  // certificadas por su universidad (`horasCertificadas > 0`); un estudiante sin
+  // reseñas o sin certificar no aparece. Solo se muestra a quien puede leer datos
   // de estudiantes: NO se arma ni se pinta para el rol 'estudiante'.
   const [topEst, setTopEst] = useState<TopEstudianteEntry[]>([]);
   // Perfil (empresa / universidad / estudiante) abierto desde un ranking.
@@ -157,7 +158,8 @@ export function RedGradlyBanner() {
         // ── Top 3 estudiantes: agrega los `top_estudiantes` de todos los
         // perfiles leídos, dedup por id (se prefiere la entrada con datos de
         // empleo — la de la empresa), descarta a los que aún no tienen
-        // calificación en reseñas (`stars > 0`) y ordena por estrellas. ──
+        // horas certificadas ni calificación en reseñas (`stars > 0`) y ordena
+        // por estrellas. ──
         if (rol !== 'estudiante') {
           const porId = new Map<string, TopEstudianteEntry>();
           const absorber = (arr: any) => {
@@ -168,6 +170,12 @@ export function RedGradlyBanner() {
               // auto-reporte corrió de último en cada perfil.
               const id: string | undefined = e?.id ?? e?.uid;
               if (!id) return;
+              // Solo con horas CERTIFICADAS por la universidad (`horasCertificadas`
+              // > 0). Las reseñas llegan al finalizar la pasantía, ANTES de que la
+              // universidad valide el comprobante, así que `stars > 0` solo no
+              // basta. Las entradas viejas (sin el campo) se descartan hasta que
+              // su institución abra el dashboard y las recalcule.
+              if (!((Number(e?.horasCertificadas) || 0) > 0)) return;
               const norm = {
                 ...e,
                 id,

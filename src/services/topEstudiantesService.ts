@@ -14,6 +14,10 @@
 //                    si trabajan en un puesto/pasantía de una empresa bien
 //                    calificada. Escribe `perfiles_universidades/{id}.top_estudiantes`.
 //
+// Cada fila lleva además `horasCertificadas` (las `horas_aprobadas` del
+// estudiante): el "Top Estudiantes" de la Red Gradly (NetworkStats.tsx) solo
+// muestra a quien ya tiene horas certificadas por su universidad.
+//
 // El dueño puede escribir cualquier campo de su propio perfil → sin cambio de
 // reglas. Todo va en try/catch: es un dato informativo, nunca bloquea.
 // ════════════════════════════════════════════════════════════════════════
@@ -49,6 +53,12 @@ export interface TopEstudianteEntry {
   salarioTxt: string | null;
   /** true = puesto de empleo (`contratos_laborales`); false = pasantía. */
   contratado: boolean;
+  /** Horas de práctica ya CERTIFICADAS por la universidad (`horas_aprobadas` del
+   *  perfil del estudiante: solo suben cuando la universidad valida el
+   *  comprobante o certifica la pasantía). El "Top Estudiantes" de la Red Gradly
+   *  solo incluye a quien tiene más de 0. Opcional porque las entradas
+   *  auto-reportadas antes de este campo no lo traen. */
+  horasCertificadas?: number;
 }
 
 /** Umbral de "calificación alta" (de la institución vinculada): aporta el
@@ -165,6 +175,7 @@ export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promis
         let stars = 0;
         let rango = '';
         let uniId = '';
+        let horasCertificadas = 0;
         let foto = b.foto || null;
         try {
           const e = await getDoc(doc(db, 'perfiles_estudiantes', b.estudianteId));
@@ -173,6 +184,7 @@ export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promis
             stars = numOr0(x.calificacion_promedio);
             rango = x.rango_nivel ?? '';
             uniId = x.universidad_id ?? '';
+            horasCertificadas = numOr0(x.horas_aprobadas);
             if (!foto) foto = x.foto_url ?? null;
           }
         } catch { /* best-effort */ }
@@ -188,6 +200,7 @@ export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promis
           puesto: b.puesto,
           salarioTxt: b.salarioTxt,
           contratado: b.contratado,
+          horasCertificadas,
         };
         return { entry, score: stars + (uni.alta ? 1 : 0) };
       }),
@@ -255,6 +268,7 @@ export async function recomputarTopEstudiantesUniversidad(universidadId: string)
           puesto,
           salarioTxt: null,
           contratado: false,
+          horasCertificadas: numOr0(x.horas_aprobadas),
         };
         return { entry, score: stars + (empAlta ? 1 : 0) };
       }),

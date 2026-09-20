@@ -267,6 +267,10 @@ export default function PerfilPublicoModal({
       perfil.nombre ??
       perfil.nombre_completo ??
       perfil.nombre_empresa ??
+      // Las universidades guardan su nombre en `nombre_universidad`; sin esto el
+      // perfil público de una universidad (p. ej. abierta desde "Top
+      // Universidades") mostraba "Sin nombre".
+      perfil.nombre_universidad ??
       ""
     );
   };
