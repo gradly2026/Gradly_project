@@ -1475,6 +1475,12 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "La hora de llegada no puede ser posterior a la hora actual.":
     "The arrival time can't be later than the current time.",
   "Ya hay asistencia registrada ese día.": "Attendance was already recorded for that day.",
+
+  // ── Mi institución → "Tus horas de práctica": primer día y último día
+  //    probable de la pasantía (app/(tabs)/institucion.tsx). ──
+  "Primer día:": "First day:",
+  "Último día probable:": "Probable last day:",
+  "Último día:": "Last day:",
 };
 
 // ── Onboarding de dirección del estudiante (UbicacionSelector,

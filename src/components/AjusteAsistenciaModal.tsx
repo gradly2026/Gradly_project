@@ -15,6 +15,7 @@ import {
   type CategoriaAjuste,
 } from '../services/ajusteAsistenciaService';
 import type { AsignacionCupo } from '../services/reclamoCuposService';
+import { progresoPorMeta } from '../utils/horasPasantia';
 
 // ════════════════════════════════════════════════════════════════════
 //  AjusteAsistenciaModal — "días no computados" de una pasantía de cupo.
@@ -25,8 +26,12 @@ import type { AsignacionCupo } from '../services/reclamoCuposService';
 //  programado más. Es el arreglo al hueco de "un día de enfermedad igual
 //  cuenta" del cálculo 100% por calendario (ver horasPasantia.ts).
 //
-//  Solo se pueden ajustar días de HOY hacia atrás (no tiene sentido excusar
-//  un día que todavía no llega) y que caigan dentro del horario declarado.
+//  Se puede ajustar cualquier día programado del horario, pasado o futuro (el
+//  estudiante puede avisar con anticipación), desde el Día 1 y HASTA el último
+//  día probable de la pasantía: después de esa fecha el estudiante ya habría
+//  terminado y el calendario no marca nada. Ese último día sale del mismo
+//  libro de horas del resto de la app (ver `fechaFinProbable`), así que se
+//  corre solo al marcar un día no computado.
 // ════════════════════════════════════════════════════════════════════
 
 interface Props {
@@ -35,6 +40,10 @@ interface Props {
   /** uid de quien marca (la empresa o la universidad dueñas de la asignación). */
   marcadoPorUid: string;
   marcadoPorRol: 'empresa' | 'universidad';
+  /** Meta de horas del grupo. Con ella se calcula el último día probable de la
+   *  pasantía y el calendario no marca días después de esa fecha. Sin ella (o
+   *  sin Día 1 / horario) no se limita nada. */
+  metaHoras?: number | null;
   onClose: () => void;
 }
 
@@ -60,7 +69,7 @@ const fechaLarga = (d: Date) =>
   d.toLocaleDateString('es-SV', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
 export default function AjusteAsistenciaModal({
-  visible, asignacion, marcadoPorUid, marcadoPorRol, onClose,
+  visible, asignacion, marcadoPorUid, marcadoPorRol, metaHoras, onClose,
 }: Props) {
   const { colors: C } = useTheme();
   const s = useMemo(() => makeStyles(C), [C]);
@@ -90,11 +99,32 @@ export default function AjusteAsistenciaModal({
     return unsub;
   }, [visible, asignacion?.id]);
 
+  // Último día PROBABLE de la pasantía: el mismo cálculo del libro de horas que
+  // muestran las demás pantallas (con los días no computados y la asistencia
+  // registrada), así que se recalcula solo al marcar o reactivar un día. null =
+  // no se puede saber (sin meta de horas, sin Día 1 o sin horario).
+  const fechaFinProbable = useMemo(() => {
+    if (!asignacion || !metaHoras || metaHoras <= 0) return null;
+    return progresoPorMeta(
+      asignacion.horario, asignacion.fechaPresentacion, metaHoras,
+      undefined, ajustes.map(a => a.fecha), asignacion.asistencias ?? {},
+    ).fechaFin;
+  }, [asignacion, metaHoras, ajustes]);
+
   if (!visible || !asignacion) return null;
 
   const dias: DiaLaboral[] = Array.isArray(asignacion.horario?.dias) ? (asignacion.horario!.dias as DiaLaboral[]) : [];
   const diasSet = new Set(dias.map(d => DIA_A_JS[d]).filter(n => n !== undefined));
   const ajustesPorFecha = new Map(ajustes.map(a => [a.fecha, a]));
+
+  // ¿Se puede ajustar este día (recibe el inicio del día)? Es un día del horario,
+  // desde el Día 1 y hasta el último día probable de la pasantía. Un día YA marcado
+  // como no computado se sigue mostrando aunque quede después de esa fecha (p. ej.
+  // si se reactivó otro día y el fin se adelantó), para poder reactivarlo.
+  const limite = fechaFinProbable ? startOfDay(fechaFinProbable) : null;
+  const esProgramadoDia = (d: Date) =>
+    diasSet.has(d.getDay()) && d.getTime() >= inicio.getTime()
+    && (!limite || d.getTime() <= limite.getTime() || ajustesPorFecha.has(toISO(d)));
 
   const y = mesVisible.getFullYear();
   const mth = mesVisible.getMonth();
@@ -105,7 +135,13 @@ export default function AjusteAsistenciaModal({
   for (let d = 1; d <= diasEnMes; d++) celdas.push(new Date(y, mth, d));
 
   const minMonth = new Date(inicio.getFullYear(), inicio.getMonth(), 1);
-  const maxMonth = new Date(hoy.getFullYear(), hoy.getMonth() + 3, 1); // un poco de contexto a futuro, informativo
+  // Hasta el mes del último día probable (más allá el calendario estaría vacío);
+  // sin ese dato, un poco de contexto a futuro, informativo.
+  const mesDeHoy = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const mesDelLimite = limite ? new Date(limite.getFullYear(), limite.getMonth(), 1) : null;
+  const maxMonth = mesDelLimite
+    ? (mesDelLimite.getTime() > mesDeHoy.getTime() ? mesDelLimite : mesDeHoy)
+    : new Date(hoy.getFullYear(), hoy.getMonth() + 3, 1);
   const monthStart = new Date(y, mth, 1);
   const puedeAnterior = monthStart.getTime() > minMonth.getTime();
   const puedeSiguiente = monthStart.getTime() < maxMonth.getTime();
@@ -121,8 +157,7 @@ export default function AjusteAsistenciaModal({
     // Cualquier día programado se puede ajustar — pasado (corrige/reporta lo
     // que ya pasó) o futuro (el estudiante avisa CON ANTICIPACIÓN que ese día
     // no podrá presentarse, p. ej. una cita médica la próxima semana).
-    const esProgramado = diasSet.has(d.getDay()) && d.getTime() >= inicio.getTime();
-    if (!esProgramado) return;
+    if (!esProgramadoDia(d)) return;
     setDiaSel(sameDay(d, diaSel ?? new Date(0)) ? null : d);
     setCategoria(null);
     setMotivo('');
@@ -207,7 +242,7 @@ export default function AjusteAsistenciaModal({
             {celdas.map((d, i) => {
               if (!d) return <View key={i} style={s.cell} />;
               const day = startOfDay(d);
-              const esProgramado = diasSet.has(day.getDay()) && day.getTime() >= inicio.getTime();
+              const esProgramado = esProgramadoDia(day);
               const esFutura = day.getTime() > hoy.getTime();
               const noComputado = esProgramado && ajustesPorFecha.has(toISO(day));
               const esSel = diaSel && sameDay(day, diaSel);

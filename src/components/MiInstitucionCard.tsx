@@ -14,7 +14,8 @@
 //   - 'compacta' → una sola línea (logo + "UES · Grupo 2026-A"), pensada
 //     para ir en la cabecera del feed sin robarle espacio.
 //   - 'completa' → una tarjeta con todo: carrera, docente, cuántos
-//     compañeros hay en el grupo, horas requeridas y período de prácticas.
+//     compañeros hay en el grupo, horas requeridas y la fecha en que el
+//     estudiante se registró en la plataforma ("Mi registro").
 //
 // PERMISOS (importante): las reglas de Firestore dejan que CUALQUIER
 // usuario autenticado lea `perfiles_universidades` y `grupos`, así que
@@ -34,6 +35,7 @@ import { AutoText as Text } from './AutoText';
 import StorageAvatar from './StorageAvatar';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { db } from '../config/firebaseConfig';
+import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 
@@ -82,6 +84,36 @@ export function fechaCorta(iso: string | null | undefined, locale: string): stri
     month: 'short',
     year: 'numeric',
   });
+}
+
+/**
+ * Igual que `fechaCorta`, pero a partir de un `Date` que ya está en hora local
+ * (un Timestamp de Firestore convertido, o el "último día probable" del libro
+ * de horas): "5 sep 2026". Devuelve '' si no hay una fecha válida.
+ */
+export function fechaCortaDate(d: Date | null | undefined, locale: string): string {
+  if (!d || Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(locale, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+/**
+ * `usuarios/{uid}.fecha_registro` (el día en que la cuenta se dio de alta) llega
+ * como Timestamp de Firestore; por si algún perfil viejo lo trae como texto ISO,
+ * también se acepta. Misma conversión que usa CalendarioEventos.
+ */
+function fechaDeRegistro(v: unknown): Date | null {
+  const x = v as any;
+  if (!x) return null;
+  if (typeof x.toDate === 'function') return x.toDate();
+  if (typeof x === 'string') {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(x);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  return null;
 }
 
 /**
@@ -136,6 +168,7 @@ export default function MiInstitucionCard({
 }) {
   const { colors } = useTheme();
   const { t, language } = useTranslation();
+  const { userProfile } = useAuth();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const locale = language === 'en' ? 'en-US' : 'es-SV';
   const { uni, grupo } = useInstitucion(universidadId, grupoId);
@@ -165,9 +198,12 @@ export default function MiInstitucionCard({
 
   // ── Variante completa ───────────────────────────────────────────────
   const companeros = grupo?.estudiantes_registrados ?? 0;
-  const periodo = [fechaCorta(grupo?.fecha_inicio, locale), fechaCorta(grupo?.fecha_fin, locale)]
-    .filter(Boolean)
-    .join(' → ');
+  // "Mi registro": el día en que ESTE estudiante se dio de alta en la plataforma
+  // (`usuarios/{uid}.fecha_registro`). Antes esta fila mostraba el período del
+  // grupo (`fecha_inicio` → `fecha_fin`), que es otra cosa: el período con su
+  // barra de avance sigue en la pestaña "Mi institución" cuando el grupo tiene
+  // fecha de fin.
+  const miRegistro = fechaCortaDate(fechaDeRegistro(userProfile?.fecha_registro), locale);
 
   return (
     <GlassCard style={s.card} contentStyle={{ padding: 16, gap: 14 }}>
@@ -212,7 +248,7 @@ export default function MiInstitucionCard({
           s={s}
           colors={colors}
         />
-        <Fila icon="calendar-outline" label={t('inst_periodo')} value={periodo} s={s} colors={colors} propio />
+        <Fila icon="calendar-outline" label={t('inst_registro')} value={miRegistro} s={s} colors={colors} propio />
       </View>
     </GlassCard>
   );

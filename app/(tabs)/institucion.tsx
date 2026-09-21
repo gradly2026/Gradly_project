@@ -22,7 +22,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from '../../src/components/AutoText';
-import MiInstitucionCard, { useInstitucion, fechaCorta } from '../../src/components/MiInstitucionCard';
+import MiInstitucionCard, { useInstitucion, fechaCorta, fechaCortaDate } from '../../src/components/MiInstitucionCard';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import { db } from '../../src/config/firebaseConfig';
@@ -267,6 +267,26 @@ export default function InstitucionTab() {
                     {!!textoHorario(inscripcion.horario) && (
                       <Text style={styles.periodoFecha} noTranslate>{textoHorario(inscripcion.horario)}</Text>
                     )}
+                    {/* Primer día y último día PROBABLE: el mismo cálculo que la
+                        tarjeta "Tu pasantía activa" de Progreso (`ledger.fechaFin`),
+                        así que se corre solo si hay días no computados o sin
+                        asistencia. Sin Día 1 (`ledger` null) no hay nada que mostrar. */}
+                    {!!ledger && (
+                      <View style={styles.fechasPractica}>
+                        {!!inscripcion.fechaPresentacion && (
+                          <View style={styles.fechaFila}>
+                            <Text style={styles.periodoFecha}>Primer día:</Text>
+                            <Text style={styles.fechaValor} noTranslate>{fechaCorta(inscripcion.fechaPresentacion, locale)}</Text>
+                          </View>
+                        )}
+                        {!!ledger.fechaFin && (
+                          <View style={styles.fechaFila}>
+                            <Text style={styles.periodoFecha}>{ledger.completado ? 'Último día:' : 'Último día probable:'}</Text>
+                            <Text style={styles.fechaValor} noTranslate>{fechaCortaDate(ledger.fechaFin, locale)}</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </GlassCard>
                 </>
               )}
@@ -468,6 +488,9 @@ const makeStyles = (COLORS: GradlyColors) =>
     barraLlena: { height: '100%', borderRadius: 4, backgroundColor: COLORS.primary },
     periodoPie: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
     periodoFecha: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
+    fechasPractica: { gap: 4 },
+    fechaFila: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    fechaValor: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
     periodoRestante: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: COLORS.warning },
 
     // Carrera

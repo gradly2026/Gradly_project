@@ -475,6 +475,7 @@
   "inst_horas": "Required hours",
   "inst_horas_valor": "{{n}} hours",
   "inst_periodo": "Term",
+  "inst_registro": "My registration",
   "inst_egresado": "Graduated",
 
   "inst_sin_universidad_titulo": "You are not linked to a university",

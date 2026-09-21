@@ -475,6 +475,7 @@
   "inst_horas": "Horas requeridas",
   "inst_horas_valor": "{{n}} horas",
   "inst_periodo": "Período",
+  "inst_registro": "Mi registro",
   "inst_egresado": "Egresado",
 
   "inst_sin_universidad_titulo": "No estás vinculado a una universidad",

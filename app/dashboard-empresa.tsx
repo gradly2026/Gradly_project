@@ -4077,6 +4077,7 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
         asignacion={ajusteSel}
         marcadoPorUid={empresaId}
         marcadoPorRol="empresa"
+        metaHoras={ajusteSel ? (progresoDeCupo(ajusteSel.id)?.meta ?? null) : null}
         onClose={() => setAjusteSel(null)}
       />
 

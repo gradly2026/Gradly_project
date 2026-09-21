@@ -288,6 +288,7 @@ export default function CandidatosVacante({
         asignacion={ajusteSel}
         marcadoPorUid={empresaId}
         marcadoPorRol="empresa"
+        metaHoras={ajusteSel ? (candidatos.find(c => c.asignacion?.id === ajusteSel.id)?.metaHoras ?? null) : null}
         onClose={() => setAjusteSel(null)}
       />
 
