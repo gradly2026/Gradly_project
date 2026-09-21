@@ -317,6 +317,18 @@ export default function PerfilPublicoModal({
   // pasantía por cupo en curso (`progVal`) el estudiante, por definición, aún
   // no está certificado — salvo que el expediente ya certificó por otra vía.
   const esGraduado = esEstudiante && (horasCertificadasCompletas || (!progVal && horasPct >= 100));
+  // El estudiante ya cumplió sus horas cuando alcanza la meta, o cuando el
+  // sistema marcó su pasantía como 'finalizada' (lo pone
+  // `finalizarInscripcionPorHoras` al cumplir la meta del cupo) aunque la
+  // universidad todavía no haya certificado las horas: la barra va llena y dice
+  // "Completó sus horas", igual que en ProfileViewerModal. Solo afecta a la barra
+  // y a su texto: `horasPct` y la insignia "Certificado" (`esGraduado`) siguen
+  // dependiendo únicamente de las horas certificadas.
+  const horasCompletas =
+    esEstudiante &&
+    (perfil?.estado_pasantia === "finalizada" ||
+      horasCertificadasCompletas ||
+      (progVal ? progresoLibro!.completado : horasAprob >= horasObj));
   const esAltoNivel =
     esEstudiante &&
     Number(perfil?.calificaciones_recibidas ?? 0) > 0 &&
@@ -477,10 +489,12 @@ export default function PerfilPublicoModal({
                   <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
                     <Text style={[styles.sectionLabel, { color: C.muted }]}>Horas de avance</Text>
                     <View style={{ height: 8, borderRadius: 4, backgroundColor: C.purpleDim, overflow: "hidden" }}>
-                      <View style={{ height: "100%", width: `${horasPct}%`, backgroundColor: C.purple, borderRadius: 4 }} />
+                      <View style={{ height: "100%", width: `${horasCompletas ? 100 : horasPct}%`, backgroundColor: C.purple, borderRadius: 4 }} />
                     </View>
                     <Text style={{ color: C.textSub, fontSize: 12, marginTop: 6 }}>
-                      {horasAprob} / {horasObj} horas · {horasPct}%
+                      {horasCompletas
+                        ? `${Math.max(horasAprob, horasObj)} / ${horasObj} horas · 100% · Completó sus horas`
+                        : `${horasAprob} / ${horasObj} horas · ${horasPct}%`}
                     </Text>
                   </View>
                 )}
