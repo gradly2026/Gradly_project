@@ -7,12 +7,16 @@
 // ya usa `calificacion_estudiantes_promedio`): cada institución calcula SU
 // propio top y lo escribe en su propio perfil; el resto solo lo lee.
 //
-//   · Empresa      → hasta 3 estudiantes contratados en sus puestos, con
-//                    bono si su universidad está bien calificada.
+//   · Empresa      → hasta 3 estudiantes que ya culminaron con ella (pasantía
+//                    terminada o puesto de empleo), con bono si su universidad
+//                    está bien calificada.
 //                    Escribe `perfiles_empresas/{id}.top_estudiantes`.
 //   · Universidad  → hasta 5 de sus estudiantes mejor calificados, con bono
 //                    si trabajan en un puesto/pasantía de una empresa bien
 //                    calificada. Escribe `perfiles_universidades/{id}.top_estudiantes`.
+//
+// En ambas SOLO entra quien ya culminó, fue CERTIFICADO por su universidad y
+// tiene calificación por reseñas — ver `esElegibleTopEstudiante`.
 //
 // Estas listas por perfil son las que se ven DENTRO del perfil público de cada
 // empresa/universidad. NO alimentan el "Top 3 estudiantes" de la Red Gradly
@@ -67,8 +71,8 @@ export interface TopEstudianteEntry {
 }
 
 /** Umbral de "calificación alta" (de la institución vinculada): aporta el
- *  bono de prioridad en el score. NO filtra estudiantes — el cuadro siempre
- *  muestra los mejores N, con su calificación real (aunque sea 0.0). */
+ *  bono de prioridad en el score. NO filtra estudiantes (eso lo hace
+ *  `esElegibleTopEstudiante`): solo influye en el orden. */
 export const UMBRAL_DESTACADO = 3.5;
 
 const MAX_EMPRESA = 3;
@@ -78,6 +82,26 @@ const numOr0 = (v: any): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
+
+/**
+ * ¿Entra una fila en la lista de "mejores estudiantes" de un perfil? Solo quien
+ * ya CULMINÓ y fue CERTIFICADO por su universidad (`horasCertificadas` > 0: las
+ * `horas_aprobadas` solo suben cuando la universidad valida el comprobante o
+ * certifica la pasantía) y tiene calificación por reseñas (`stars` > 0). Acepta
+ * también la forma vieja de la fila (`calificacion_promedio`). Las filas
+ * guardadas antes de que existiera `horasCertificadas` no lo traen y quedan
+ * fuera hasta que su institución abra su panel y se recalculen.
+ *
+ * La usan el cálculo (abajo) Y los modales que muestran la lista, para que una
+ * lista vieja ya guardada en un perfil no siga enseñando estudiantes sin
+ * certificar o sin reseña.
+ */
+export function esElegibleTopEstudiante(
+  e: { stars?: unknown; calificacion_promedio?: unknown; horasCertificadas?: unknown } | null | undefined,
+): boolean {
+  if (!e) return false;
+  return numOr0(e.calificacion_promedio ?? e.stars) > 0 && numOr0(e.horasCertificadas) > 0;
+}
 
 /** Lee nombre + "está bien calificada" de una universidad, con caché local. */
 async function infoUni(
@@ -141,7 +165,10 @@ export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promis
       getDocs(query(collection(db, 'asignaciones_cupo'), where('empresaId', '==', empresaId))),
     ]);
 
-    const porEst = new Map<string, { estudianteId: string; nombre: string; foto: string; puesto: string; salarioTxt: string | null; contratado: boolean }>();
+    // `culminada`: el estudiante YA terminó con esta empresa — un puesto de
+    // empleo cuenta siempre; una pasantía solo si se cerró por cumplir sus
+    // horas (`finalizada`, no por despido/renuncia: `terminacionAnticipada`).
+    const porEst = new Map<string, { estudianteId: string; nombre: string; foto: string; puesto: string; salarioTxt: string | null; contratado: boolean; culminada: boolean }>();
     contrSnap.docs.forEach(d => {
       const c: any = d.data();
       if (c.estado !== 'activo' || !c.estudianteId) return;
@@ -152,12 +179,16 @@ export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promis
         puesto: c.vacanteTitulo || 'Puesto',
         salarioTxt: textoSalario(c.salario_min, c.salario_max),
         contratado: true,
+        culminada: true,
       });
     });
     cupoSnap.docs.forEach(d => {
       const a: any = d.data();
       if (a.estado === 'cancelado' || !a.estudianteId) return;
-      if (porEst.has(a.estudianteId)) return; // ya cuenta como contratado
+      const culminada = a.finalizada === true && a.terminacionAnticipada !== true;
+      const previo = porEst.get(a.estudianteId);
+      // Ya cuenta como contratado, o ya hay una pasantía culminada, o esta no lo está.
+      if (previo && (previo.contratado || previo.culminada || !culminada)) return;
       porEst.set(a.estudianteId, {
         estudianteId: a.estudianteId,
         nombre: a.estudianteNombre || 'Estudiante',
@@ -165,6 +196,7 @@ export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promis
         puesto: a.vacanteTitulo || 'Pasantía',
         salarioTxt: null,
         contratado: false,
+        culminada,
       });
     });
 
@@ -207,13 +239,16 @@ export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promis
           contratado: b.contratado,
           horasCertificadas,
         };
-        return { entry, score: stars + (uni.alta ? 1 : 0) };
+        return { entry, score: stars + (uni.alta ? 1 : 0), culminada: b.culminada };
       }),
     );
 
-    // Se muestran los mejores por score aunque aún no tengan calificación (0.0);
-    // el bono de "institución bien calificada" ya usa UMBRAL_DESTACADO.
+    // Solo quien ya culminó con esta empresa, está certificado y tiene reseña
+    // (`esElegibleTopEstudiante`); entre ellos, los mejores por score. El bono de
+    // "institución bien calificada" ya usa UMBRAL_DESTACADO. Si no hay ninguno,
+    // se guarda [] (así se limpia una lista vieja).
     const top = filas
+      .filter(f => f.culminada && esElegibleTopEstudiante(f.entry))
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_EMPRESA)
       .map(f => f.entry);
@@ -279,9 +314,12 @@ export async function recomputarTopEstudiantesUniversidad(universidadId: string)
       }),
     );
 
-    // Los mejores por score aunque aún no tengan calificación (0.0); el bono de
-    // "empresa bien calificada" ya usa UMBRAL_DESTACADO.
+    // Solo estudiantes certificados y con reseña (`esElegibleTopEstudiante`);
+    // entre ellos, los mejores por score. El bono de "empresa bien calificada"
+    // ya usa UMBRAL_DESTACADO. Si no hay ninguno, se guarda [] (así se limpia
+    // una lista vieja).
     const top = filas
+      .filter(f => esElegibleTopEstudiante(f.entry))
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_UNI)
       .map(f => f.entry);

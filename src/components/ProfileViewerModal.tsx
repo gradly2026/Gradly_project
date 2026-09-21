@@ -45,7 +45,7 @@ import UbicacionPrecisaModal from './UbicacionPrecisaModal';
 import TopEstudiantesCard from './TopEstudiantesCard';
 import HistorialPuestos from './HistorialPuestos';
 import CalendarioEventos from './CalendarioEventos';
-import type { TopEstudianteEntry } from '../services/topEstudiantesService';
+import { esElegibleTopEstudiante, type TopEstudianteEntry } from '../services/topEstudiantesService';
 import { progresoPorMeta, type ProgresoMeta } from '../utils/horasPasantia';
 
 export type ProfileTipo = 'estudiante' | 'empresa' | 'universidad';
@@ -138,7 +138,10 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId, 
   // se muestran a quien ya puede leer datos de estudiantes: empresa / universidad
   // / admin. Ver topEstudiantesService.
   const puedeVerTopEst = rol === 'empresa' || rol === 'universidad' || rol === 'admin';
-  const topEstudiantes: TopEstudianteEntry[] = Array.isArray(data?.top_estudiantes) ? data.top_estudiantes : [];
+  // Solo los que ya culminaron, están certificados y tienen reseña: la lista
+  // guardada en el perfil puede ser vieja, así que se vuelve a filtrar aquí.
+  const topEstudiantes: TopEstudianteEntry[] = (Array.isArray(data?.top_estudiantes) ? data.top_estudiantes : [])
+    .filter(esElegibleTopEstudiante);
 
   // Paleta suelta para <TrabajaParaCard> (trae su propio StyleSheet y espera
   // tokens individuales, no el objeto `colors` completo del tema).

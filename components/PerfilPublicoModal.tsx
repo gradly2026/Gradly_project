@@ -20,7 +20,7 @@ import TrabajaParaCard from "../src/components/TrabajaParaCard";
 import UbicacionCardSV from "../src/components/UbicacionCardSV";
 import UbicacionPrecisaModal from "../src/components/UbicacionPrecisaModal";
 import TopEstudiantesCard from "../src/components/TopEstudiantesCard";
-import type { TopEstudianteEntry } from "../src/services/topEstudiantesService";
+import { esElegibleTopEstudiante, type TopEstudianteEntry } from "../src/services/topEstudiantesService";
 import { progresoPorMeta, type ProgresoMeta } from "../src/utils/horasPasantia";
 import ReportarModal from "./ReportarModal";
 import { DARK as TEMA_DARK, LIGHT as TEMA_LIGHT, webScrollStyle } from "../src/context/ThemeContext";
@@ -158,7 +158,11 @@ export default function PerfilPublicoModal({
   // la pasantía las horas viven aquí, no en `horas_aprobadas` (que solo se
   // acredita al certificar).
   const [progresoLibro, setProgresoLibro] = useState<ProgresoMeta | null>(null);
-  const topEstudiantes: TopEstudianteEntry[] = Array.isArray(perfil?.top_estudiantes) ? perfil!.top_estudiantes : [];
+  // Solo se muestran los que ya culminaron, están certificados y tienen reseña:
+  // la lista guardada en el perfil puede ser vieja (se recalcula cuando la
+  // institución abre su panel), así que se vuelve a filtrar aquí.
+  const topEstudiantes: TopEstudianteEntry[] = (Array.isArray(perfil?.top_estudiantes) ? perfil!.top_estudiantes : [])
+    .filter(esElegibleTopEstudiante);
 
   useEffect(() => {
     if (visible && userId) loadPerfil();
@@ -664,16 +668,16 @@ export default function PerfilPublicoModal({
                   </View>
                 )}
 
-                {/* Top 5 estudiantes con mejor calificación que trabajaron con esta
-                    empresa/universidad — dato ya autoreportado en el propio perfil
-                    (dashboard-empresa.tsx/dashboard-universidad.tsx), sin query nueva aquí. */}
-                {(rol === "empresa" || rol === "universidad") && Array.isArray(perfil.top_estudiantes) && perfil.top_estudiantes.length > 0 && (
+                {/* Mejores estudiantes (culminados, certificados y con reseña) que
+                    trabajaron con esta empresa/universidad — dato ya autoreportado
+                    en el propio perfil (topEstudiantesService), sin query nueva aquí. */}
+                {(rol === "empresa" || rol === "universidad") && topEstudiantes.length > 0 && (
                   <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
                     <Text style={[styles.sectionLabel, { color: C.muted }]}>
                       {rol === "empresa" ? "Mejores estudiantes que trabajaron aquí" : "Mejores estudiantes de esta universidad"}
                     </Text>
                     <View style={{ gap: 8, marginTop: 4 }}>
-                      {perfil.top_estudiantes.map((e: any, i: number) => {
+                      {topEstudiantes.map((e: any, i: number) => {
                         const estId = e.uid ?? e.id ?? null;
                         return (
                           <TouchableOpacity
