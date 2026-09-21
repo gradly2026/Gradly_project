@@ -2026,9 +2026,11 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
         </TouchableOpacity>
       </View>
 
-      {/* ── Contenido de la pestaña activa: lista de grupos o de estudiantes,
-          cada fila con su barra de progreso (progresoPorGrupo) y botones de
-          acción (chat/egresar/eliminar). ── */}
+      {/* ── Contenido de la pestaña activa: lista de grupos o de estudiantes.
+          Los grupos muestran solo las horas a cumplir (el avance es de cada
+          estudiante, no del grupo); los estudiantes, su barra de progreso
+          (progresoPorEstudiante / progresoPorGrupo). Ambos con sus botones de
+          acción (chat/eliminar). ── */}
       {tab === 'grupos' ? (
         <FlatList
           data={gruposFiltrados}
@@ -2036,7 +2038,12 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
           style={webScrollStyle(colors)}
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 110, gap: 8 }}
           renderItem={({ item }) => {
-            const progreso = progresoPorGrupo[item.id];
+            // `docente` guarda el literal 'Sin asignar' cuando no se indicó (ver
+            // el alta del grupo y el listener de arriba): no se muestra.
+            const docenteTxt = item.docente?.trim();
+            const subtitulo = [item.carrera, docenteTxt && docenteTxt !== 'Sin asignar' ? docenteTxt : '']
+              .filter(Boolean)
+              .join(' · ');
             return (
             <TouchableOpacity activeOpacity={0.85} onPress={() => setGrupoModalId(item.id)}>
             <GlassCard contentStyle={{ padding: 14, gap: 10 }}>
@@ -2053,7 +2060,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
                       </View>
                     )}
                   </View>
-                  <Text style={s.estudianteMeta} numberOfLines={1}>{item.carrera} · {item.docente}</Text>
+                  <Text style={s.estudianteMeta} numberOfLines={1}>{subtitulo}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={s.estudianteMeta}>{item.estudiantes_registrados} est.</Text>
@@ -2088,15 +2095,10 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
                   )}
                 </TouchableOpacity>
               </View>
-              {progreso?.visible && (
-                <View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <Text style={s.estudianteMeta}>Progreso de la pasantía</Text>
-                    <Text style={s.estudianteHoras}>{progreso.label}</Text>
-                  </View>
-                  <View style={s.progresoTrack}>
-                    <View style={[s.progresoFill, { width: `${progreso.pct}%` as any }]} />
-                  </View>
+              {item.horasRequeridas > 0 && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={s.estudianteMeta}>Horas a cumplir</Text>
+                  <Text style={s.estudianteHoras} noTranslate>{item.horasRequeridas} h</Text>
                 </View>
               )}
             </GlassCard>
