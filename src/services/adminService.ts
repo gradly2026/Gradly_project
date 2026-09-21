@@ -182,6 +182,10 @@ const _recalcularTopEstudiantes = httpsCallable<void, RecalcularTopEstudiantesOu
   functions,
   "recalcularTopEstudiantes",
 );
+const _recalcularListasPerfiles = httpsCallable<void, unknown>(
+  functions,
+  "recalcularListasPerfiles",
+);
 const _obtenerAsistenciaPasantiaAdmin = httpsCallable<
   ObtenerAsistenciaPasantiaAdminInput,
   AsistenciaPasantiaAdminOutput
@@ -249,9 +253,14 @@ export async function obtenerSaludAsistencia(): Promise<SaludAsistenciaOutput> {
 }
 
 /** Fuerza ya el recálculo del Top 3 estudiantes de la plataforma (normalmente se
- * actualiza solo cada 3 días). Solo admin. Ver `functions/src/topEstudiantes.ts`. */
+ * actualiza solo cada 3 días). Solo admin. Ver `functions/src/topEstudiantes.ts`.
+ * De paso pide, aparte y sin esperarla, el refresco de las listas "mejores
+ * estudiantes" de los perfiles de empresas y universidades
+ * (`functions/src/topPerfiles.ts`): si esa function aún no está desplegada o
+ * falla, no afecta al Top 3 ni a este botón. */
 export async function recalcularTopEstudiantes(): Promise<RecalcularTopEstudiantesOutput> {
   const res = await _recalcularTopEstudiantes();
+  void _recalcularListasPerfiles().catch(() => { /* best-effort */ });
   return res.data;
 }
 

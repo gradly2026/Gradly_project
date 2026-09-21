@@ -84,7 +84,7 @@ const str = (v: unknown): string => String(v ?? "").trim();
 
 /** "$400 - $600" — mismo formato que `textoSalario` del cliente (src/utils/cupos.ts),
  *  duplicado aquí porque functions/ no puede importar código de src/. */
-function textoSalario(min: unknown, max: unknown): string | null {
+export function textoSalario(min: unknown, max: unknown): string | null {
   const mn = typeof min === "number" && min > 0 ? min : null;
   const mx = typeof max === "number" && max > 0 ? max : null;
   if (mn === null && mx === null) return null;
@@ -95,7 +95,7 @@ function textoSalario(min: unknown, max: unknown): string | null {
 /** Mismo criterio que `requireAdmin` de admin.ts, reimplementado aquí a
  *  propósito (mismo criterio de duplicar helpers chicos en vez de crear un
  *  import cruzado entre módulos, como hace faqExtractor.ts). */
-async function exigirAdmin(auth: { uid?: string; token?: Record<string, unknown> } | null | undefined): Promise<void> {
+export async function exigirAdmin(auth: { uid?: string; token?: Record<string, unknown> } | null | undefined): Promise<void> {
   const uid = str(auth?.uid);
   if (!uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
   if (str(auth?.token?.role) === "admin") return;

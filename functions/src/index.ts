@@ -68,6 +68,12 @@
  *    documento, `ranking_plataforma/top_estudiantes`, que leen empresas,
  *    universidades y admin en el banner de la Red Gradly (topEstudiantes.ts).
  *    Sin secretos nuevos; el job crea su Cloud Scheduler al desplegar.
+ *  · actualizarListasPerfiles / recalcularListasPerfiles → las listas "mejores
+ *    estudiantes" del perfil público de CADA empresa y universidad
+ *    (`top_estudiantes`): job diario (03:30 América/El_Salvador) y callable solo
+ *    admin (lo dispara, sin esperar, el botón "Recalcular Top 3 ahora"). Mismo
+ *    criterio y orden que el cliente (topEstudiantesService.ts); solo reescribe
+ *    los perfiles cuya lista cambió (topPerfiles.ts).
  *
  * Nota: el antiguo patrón "traducir al escribir" (triggers translate_*) se
  * retiró — se reemplazó por la traducción al vuelo con caché, que cubre también
@@ -99,6 +105,7 @@ export { eliminarEstudiante, eliminarGrupo } from "./universidad";
 export { chatbotGradly } from "./chatbot";
 export { extraerFaqDeDocumento } from "./faqExtractor";
 export { actualizarTopEstudiantes, recalcularTopEstudiantes } from "./topEstudiantes";
+export { actualizarListasPerfiles, recalcularListasPerfiles } from "./topPerfiles";
 export {
   generarCodigoAsistencia,
   registrarAsistenciaPorCodigo,
