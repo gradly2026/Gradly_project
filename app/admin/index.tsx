@@ -1944,7 +1944,7 @@ export default function AdminPreview() {
         );
       }
     } catch (error) {
-      mostrarAviso("error", "No se pudo procesar el documento", "Intenta de nuevo.", translateSync(adminDataErrorMessage(error, "el documento del FAQ")));
+      mostrarAviso("error", "No se pudo procesar el documento", "Intenta de nuevo.", translateSync(adminDetailedErrorMessage(error, "el documento del FAQ")));
     } finally {
       setFaqSubidaFase("idle");
       // Limpieza extra por si la Cloud Function no llegó a correr (p. ej. la
@@ -8100,7 +8100,7 @@ export default function AdminPreview() {
   );
 
   // Progreso de "Subir documento" del FAQ (subirDocumentoFaq) — 2 etapas
-  // reales (subida a Storage, luego extracción vía Gemini), sin barra de
+  // reales (subida a Storage, luego extracción vía Groq), sin barra de
   // porcentaje inventada: no hay una señal granular de avance dentro de una
   // sola llamada a la Cloud Function.
   const FaqSubidaModal = () => (

@@ -44,10 +44,10 @@
  *  · eliminarEstudiante / eliminarGrupo → una universidad deshace su propia
  *    carga por Excel (estudiante o grupo completo) antes de que quede ligada
  *    a una pasantía real (universidad.ts). Borran también la cuenta de Auth.
- *  · chatbotGradly → "Asistente Gradly": bot de ayuda (Q&A) que llama a Gemini
+ *  · chatbotGradly → "Asistente Gradly": bot de ayuda (Q&A) que llama a Groq
  *    con la API key como secreto (chatbot.ts). Requiere sesión; tope diario por
  *    usuario en `chatbot_uso/{uid}`. Necesita: firebase functions:secrets:set
- *    GEMINI_API_KEY  +  firebase deploy --only functions:chatbotGradly.
+ *    GROQ_API_KEY  +  firebase deploy --only functions:chatbotGradly.
  *  · generarCodigoAsistencia / registrarAsistenciaPorCodigo → código diario
  *    de 8 dígitos para marcar asistencia real de una pasantía de cupo
  *    (asistencia.ts, Fase 2 de "asistencia real" — ver ajusteAsistenciaService.ts
@@ -56,9 +56,9 @@
  *    que avisa a la empresa si tiene pasantes que hoy les tocaba marcar
  *    asistencia y aún no lo han hecho (asistencia.ts).
  *  · extraerFaqDeDocumento → el admin sube un .pdf/.docx/.txt a Storage y
- *    esta function extrae el texto y le pide a Gemini pares pregunta/
+ *    esta function extrae el texto y le pide a Groq pares pregunta/
  *    respuesta en JSON, para precargar el FAQ del Asistente Gradly
- *    (faqExtractor.ts). Solo admin; usa el mismo GEMINI_API_KEY que
+ *    (faqExtractor.ts). Solo admin; usa el mismo GROQ_API_KEY que
  *    chatbotGradly, sin secretos nuevos.
  *  · actualizarTopEstudiantes / recalcularTopEstudiantes → "Top 3 estudiantes"
  *    de TODA la plataforma: job diario (03:00 América/El_Salvador) que solo

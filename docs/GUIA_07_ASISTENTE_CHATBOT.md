@@ -25,8 +25,9 @@ muestra un botón **"Ir a X →"** — pero **el usuario decide si tocarlo**: el
 nunca navega solo ni hace acciones (no envía mensajes, no acepta acuerdos, no
 borra nada).
 
-El "cerebro" del asistente es **Gemini**, el modelo de IA de Google. Gradly le
-paga a Google por cada consulta (muy poco, ver sección 8).
+El "cerebro" del asistente es **Groq**, un servicio que ejecuta modelos de IA
+(Gradly usa `openai/gpt-oss-120b`). Tiene un nivel gratuito con límites de uso y
+un plan de pago si algún día hace falta más capacidad (ver sección 8).
 
 ---
 
@@ -34,8 +35,8 @@ paga a Google por cada consulta (muy poco, ver sección 8).
 
 ```
 ┌─────────────────────┐   pregunta    ┌──────────────────────┐   pregunta   ┌──────────┐
-│  Burbuja ✨ (la app) │ ────────────▶ │  Cloud Function      │ ───────────▶ │  Gemini  │
-│  AsistenteGradly.tsx │ ◀──────────── │  chatbotGradly       │ ◀─────────── │ (Google) │
+│  Burbuja ✨ (la app) │ ────────────▶ │  Cloud Function      │ ───────────▶ │   Groq   │
+│  AsistenteGradly.tsx │ ◀──────────── │  chatbotGradly       │ ◀─────────── │ (modelo) │
 └─────────────────────┘   respuesta   │  functions/chatbot.ts│   respuesta  └──────────┘
                                       └──────────────────────┘
                                        guarda la API key,
@@ -46,8 +47,8 @@ paga a Google por cada consulta (muy poco, ver sección 8).
 | Pieza | Archivo | Qué hace |
 |---|---|---|
 | **Burbuja** | `src/components/AsistenteGradly.tsx` | El botón ✨ + la hoja de chat. Solo aparece si el admin la habilita. |
-| **Cloud Function** | `functions/src/chatbot.ts` | Recibe la pregunta, le pone contexto de Gradly, llama a Gemini con la API key (que vive **solo aquí**, nunca en la app), limita a 40 consultas/usuario/día. |
-| **Gemini** | — | El modelo de IA. Se paga por uso. |
+| **Cloud Function** | `functions/src/chatbot.ts` | Recibe la pregunta, le pone contexto de Gradly, llama a Groq con la API key (que vive **solo aquí**, nunca en la app), limita a 40 consultas/usuario/día. |
+| **Groq** | — | El servicio de IA (modelo `openai/gpt-oss-120b`). Gratis con límites; de pago si se necesita más. |
 
 > ⚠️ **La API key nunca va en el código de la app.** Si estuviera ahí,
 > cualquiera que abra la web podría copiarla y gastar tu saldo. Por eso vive
@@ -57,27 +58,25 @@ paga a Google por cada consulta (muy poco, ver sección 8).
 
 ## 3. Encenderlo — paso a paso
 
-### 3.1 Conseguir la API key de Gemini
+### 3.1 Conseguir la API key de Groq
 
-1. Entra a **https://aistudio.google.com/apikey** con tu cuenta de Google (la
-   misma del proyecto de Firebase de Gradly).
-2. Si te pide **importar un proyecto**: elige **"Gradly-db"** (id
-   `gradly-db-752c2`) — es el mismo proyecto de Firebase donde corre todo lo
-   demás. Así la facturación, las cuotas y los registros quedan en un solo
-   lugar. (Puedes dejar también "Default Gemini Project" marcado, no estorba,
-   pero **no lo uses**.) → **Importar**.
-3. **Crear clave / "Create API key"** → cuando te pregunte el proyecto, elige
-   **`gradly-db-752c2` (Gradly-db)**, NO "Default Gemini Project".
-4. **Copia la clave.** Es un texto largo que empieza con `AIza…`.
+1. Entra a **https://console.groq.com** e inicia sesión (o crea tu cuenta de
+   Groq).
+2. En el menú abre **API Keys** → **Create API Key**.
+3. Ponle un nombre que te recuerde para qué es (por ejemplo `gradly-asistente`)
+   y confirma.
+4. **Copia la clave** en ese momento (después ya no se puede volver a ver). Es
+   un texto largo que empieza con `gsk_…`.
    - **No la pegues en ningún chat, ni en un archivo, ni en el código.**
    - Si la pierdes no pasa nada: borras esa y creas otra (sección 7).
 
-> **¿Por qué el proyecto de Gradly y no el gratuito?** El "Default Gemini
-> Project" es de nivel gratuito y tiene un límite bajo de peticiones por minuto:
-> con varios usuarios a la vez se topa y el bot empieza a fallar. El proyecto
-> Gradly-db ya tiene facturación activa (de ahí despliegas las Cloud
-> Functions), así que no tiene ese muro — y el costo real sigue siendo de
-> centavos (sección 8).
+> **¿Y los límites del plan gratuito?** Groq no cobra en el nivel gratuito, pero
+> pone topes por minuto y por día (para `openai/gpt-oss-120b`, a septiembre de
+> 2026: 30 peticiones y 8.000 tokens por minuto; 1.000 peticiones y 200.000
+> tokens por día — los valores vigentes están en
+> https://console.groq.com/docs/rate-limits). Para el uso normal del asistente
+> alcanza. Si con varios usuarios a la vez el bot empieza a fallar por límites,
+> se pasa al plan **Developer** (de pago) desde la misma consola (sección 8).
 
 ### 3.2 Guardar la key como secreto
 
@@ -85,10 +84,10 @@ Abre una terminal **en la carpeta del proyecto**
 (`C:\Users\Admin\Desktop\CreaJ2026\Gradly\Movil\Gradly-firestore`) y corre:
 
 ```bash
-firebase functions:secrets:set GEMINI_API_KEY
+firebase functions:secrets:set GROQ_API_KEY
 ```
 
-- Te va a mostrar `? Enter a value for GEMINI_API_KEY:` → **pega la clave** y
+- Te va a mostrar `? Enter a value for GROQ_API_KEY:` → **pega la clave** y
   Enter. (No se verá mientras la pegas, es normal.)
 - Si dice que el **"Secret Manager API" no está habilitado**, te da un enlace →
   ábrelo, dale "Habilitar", y vuelve a correr el comando.
@@ -98,16 +97,24 @@ firebase functions:secrets:set GEMINI_API_KEY
 ### 3.3 Desplegar la función
 
 ```bash
-firebase deploy --only functions:chatbotGradly
+firebase deploy --only functions:chatbotGradly,functions:extraerFaqDeDocumento
 ```
 
+- Son dos funciones que usan la **misma** clave de Groq: el chat del asistente
+  (`chatbotGradly`) y el lector de documentos del FAQ (`extraerFaqDeDocumento`,
+  sección 4). Si solo quieres el chat, basta con `functions:chatbotGradly`.
 - La primera vez tarda 1–3 minutos.
 - Si sale un error diciendo que el secreto no tiene permiso para la cuenta de
   servicio, el propio `firebase` te imprime el comando exacto para arreglarlo
   (cópialo y córrelo). Normalmente no hace falta.
-- **Cada vez que se cambia `functions/src/chatbot.ts` hay que volver a correr
-  este comando** para que el cambio surta efecto. La key guardada NO se pierde
-  al redesplegar.
+- **Cada vez que se cambia `functions/src/chatbot.ts` (o `faqExtractor.ts`) hay
+  que volver a correr este comando** para que el cambio surta efecto. La key
+  guardada NO se pierde al redesplegar.
+- El código todavía declara también el secreto `GEMINI_API_KEY` (el camino de
+  Gemini quedó sin usar, pero sigue declarado). En este proyecto ya existe, así
+  que no tienes que hacer nada; si algún día despliegas en un proyecto nuevo,
+  Firebase te pedirá un valor para ese secreto y puedes escribir cualquier
+  texto.
 
 ### 3.4 Encender la burbuja
 
@@ -155,6 +162,19 @@ Ejemplo:
 > progreso" como "30/100h". Cuando llegas a la meta, la práctica pasa a "por
 > certificar".
 
+### Subir un documento en vez de escribir las preguntas
+
+Si ya las tienes en un archivo, en la misma tarjeta usa **"Subir documento"**
+(`.pdf`, `.docx` o `.txt`, hasta 11 MB). Groq lee el texto y propone pares
+pregunta/respuesta que se **agregan a la lista para que los revises** — no se
+guardan solos: edítalos y presiona **"Guardar preguntas frecuentes"**.
+
+Con el plan gratuito de Groq el documento tiene que ser corto (del orden de 4
+páginas): el límite es de unos 8.000 tokens por minuto entre lo que se envía y
+lo que se pide de vuelta. Si es más largo, el aviso del panel explica que no se
+pudo procesar; divídelo en partes o pasa al plan de pago. La función que lo lee
+es `extraerFaqDeDocumento` (`functions/src/faqExtractor.ts`).
+
 ---
 
 ## 5. Qué puede y qué NO puede hacer el bot (el candado)
@@ -196,10 +216,10 @@ pantalla y se agregarán después.
 
 | Quiero… | Cómo |
 |---|---|
-| **Cambiar la API key** (se filtró, caducó…) | Borra la vieja en https://aistudio.google.com/apikey, crea otra, y repite los pasos **3.2** y **3.3**. |
+| **Cambiar la API key** (se filtró, caducó…) | Borra la vieja en https://console.groq.com/keys, crea otra, y repite los pasos **3.2** y **3.3**. |
 | **Enseñarle respuestas nuevas** | Sección 4 (FAQ). No requiere desplegar. |
 | **Apagar/encender la burbuja** | Panel admin → Config → "Asistente Gradly". |
-| **Cambiar el modelo de IA** | En `functions/src/chatbot.ts`, la constante `MODELO` (hoy `"gemini-2.5-flash"`). Cambia y redespliega (paso 3.3). |
+| **Cambiar el modelo de IA** | En `functions/src/chatbot.ts`, la constante `MODELO_GROQ` (hoy `"openai/gpt-oss-120b"`), y la del mismo nombre en `functions/src/faqExtractor.ts`. Modelos disponibles: https://console.groq.com/docs/models. Cambia y redespliega (paso 3.3). |
 | **Cambiar el tope diario por usuario** | Misma archivo, constante `LIMITE_DIARIO` (hoy `40`). Redespliega. |
 | **Cambiar lo que el bot "sabe" de Gradly** | Misma archivo, la función `systemPrompt(...)`. Redespliega. |
 | **Agregar un destino "Ir a X"** | `src/utils/asistenteDestinos.ts` **y** el `enum` de la tool `irA` en `functions/src/chatbot.ts` (mantener sincronizados). Redespliega la función. |
@@ -208,15 +228,20 @@ pantalla y se agregarán después.
 
 ## 8. Costos y límites
 
-- **Modelo:** `gemini-2.5-flash` — el más barato y rápido de Google.
-- **Tope:** cada usuario puede hacer **40 consultas al día** (contador en el
-  documento `chatbot_uso/{uid}`). Al pasarse, el bot le dice "vuelve mañana".
-- **Costo aproximado:** una conversación de ayuda son fracciones de centavo. Aun
-  con cientos de usuarios activos al día, el gasto mensual es de pocos dólares.
-- **Facturación:** va al proyecto `gradly-db-752c2` (el mismo de Firebase). Lo
-  ves en Google Cloud Console → Facturación.
-- Si quieres un techo duro de gasto, en Google Cloud Console → Facturación →
-  **Presupuestos y alertas** puedes poner un límite y recibir aviso por correo.
+- **Modelo:** `openai/gpt-oss-120b`, servido por Groq.
+- **Tope por usuario:** cada usuario puede hacer **40 consultas al día**
+  (contador en el documento `chatbot_uso/{uid}`). Al pasarse, el bot le dice
+  "vuelve mañana".
+- **Costo:** en el plan gratuito de Groq no se paga nada, pero hay topes por
+  minuto y por día para TODA la app junta (a septiembre de 2026, para este
+  modelo: 30 peticiones y 8.000 tokens por minuto; 1.000 peticiones y 200.000
+  tokens por día — vigentes en https://console.groq.com/docs/rate-limits). Si
+  se topan, el bot responde con error hasta que pase el minuto o el día.
+- **Ojo con los 8.000 tokens por minuto:** cuentan lo que se envía (la
+  pregunta, el historial y el FAQ) más el máximo que se le pide de vuelta. Una
+  conversación muy larga o un FAQ muy extenso pueden acercarse a ese tope.
+- **Si hace falta más capacidad:** plan **Developer** de Groq (de pago, con
+  límites más altos), desde su consola. No hay que cambiar nada en el código.
 
 ---
 
@@ -226,11 +251,14 @@ pantalla y se agregarán después.
 |---|---|---|
 | La burbuja ✨ no aparece | No está habilitada | Panel admin → Config → "Asistente Gradly" → "Mostrar el asistente". |
 | La burbuja aparece pero al enviar dice *"El asistente no está disponible ahora"* | La función no está desplegada, o falta el secreto | Repite pasos **3.2** y **3.3**. Revisa los logs: `firebase functions:log --only chatbotGradly`. |
-| En los logs sale un **404 "model not found"** | El nombre del modelo no aplica a tu key/tier | En `functions/src/chatbot.ts` cambia `MODELO` a `"gemini-2.0-flash"` y redespliega. |
-| En los logs sale **429 / "quota"** | Estás en nivel gratuito y se topó | Crea la key en el proyecto **Gradly-db** (con facturación), no en "Default Gemini Project". Repite 3.1–3.3. |
+| En los logs sale un error de **modelo** (`model_not_found`, `model_decommissioned` o un 404) | Groq retiró o renombró el modelo (pasa con el tiempo: `llama-3.3-70b-versatile` se descontinuó el 2026-08-16) | Mira los modelos vigentes en https://console.groq.com/docs/models, cambia `MODELO_GROQ` en `functions/src/chatbot.ts` (y en `functions/src/faqExtractor.ts`) y redespliega. |
+| En los logs sale **429** ("rate limit") | Se topó el límite por minuto o por día del plan gratuito | Espera un minuto (o al día siguiente si es el límite diario). Si pasa seguido, pasa al plan Developer de Groq (sección 8). |
+| En los logs sale **413** ("Request too large") | La petición (lo que se envía + lo que se pide de vuelta) supera los 8.000 tokens por minuto del plan gratuito | En el chat: conversación muy larga o FAQ muy extenso, recórtalos. Al subir un documento del FAQ: usa uno más corto. |
+| En los logs sale **401** ("Invalid API Key") | La clave está mal, se borró o el secreto quedó vacío | Crea otra clave (3.1) y repite 3.2 y 3.3. |
 | Responde *"Llegaste al límite de consultas… vuelve mañana"* | Ese usuario ya usó sus 40 del día | Es lo esperado. Para subir el tope: constante `LIMITE_DIARIO` + redesplegar. |
 | El botón *"Ir a X →"* no aparece nunca | La función desplegada es una versión vieja (sin fase 2) | Redespliega: `firebase deploy --only functions:chatbotGradly`. |
 | Responde pero **no usa mis FAQ** | La función no se ha redesplegado desde que se agregó el soporte de FAQ, o guardaste el FAQ con la función vieja | Redespliega la función. El FAQ en sí NO necesita desplegar, pero la función que lo lee sí tiene que ser la versión con soporte de FAQ. |
+| Al **subir un documento** del FAQ sale "No se pudo procesar el documento" | El documento es muy largo para el plan gratuito, no tiene texto (es un escaneo de imágenes), o la función no está desplegada | Lee el detalle del aviso y los registros: `firebase functions:log --only extraerFaqDeDocumento`. Usa un documento más corto o redespliega (3.3). |
 
 **Ver los registros de la función** (lo más útil para diagnosticar):
 
@@ -238,13 +266,16 @@ pantalla y se agregarán después.
 firebase functions:log --only chatbotGradly
 ```
 
+Para el lector de documentos del FAQ: `firebase functions:log --only extraerFaqDeDocumento`.
+
 ---
 
 ## 10. Mapa de archivos
 
 | Archivo | Qué es |
 |---|---|
-| `functions/src/chatbot.ts` | La Cloud Function `chatbotGradly`: llama a Gemini, arma el prompt, límite diario, lee el FAQ, tool `irA`. |
+| `functions/src/chatbot.ts` | La Cloud Function `chatbotGradly`: llama a Groq (`llamarGroq`; el camino de Gemini, `llamarGemini`, quedó sin usar y `PROVEEDOR_IA` está fijo en `"groq"`), arma el prompt, límite diario, lee el FAQ, tool `irA`. |
+| `functions/src/faqExtractor.ts` | La Cloud Function `extraerFaqDeDocumento`: lee un .pdf/.docx/.txt que sube el admin y le pide a Groq los pares pregunta/respuesta (JSON estricto). Solo admin. |
 | `functions/src/index.ts` | Exporta `chatbotGradly` (una línea). |
 | `src/services/chatbotService.ts` | El cliente llama a la función desde aquí (`preguntarAlAsistente`). |
 | `src/components/AsistenteGradly.tsx` | La burbuja ✨ + la hoja de chat + el botón "Ir a X →". |

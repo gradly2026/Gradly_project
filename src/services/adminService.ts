@@ -286,7 +286,7 @@ export async function eliminarVacanteAdmin(
 type ExtraerFaqDeDocumentoInput = {
   storagePath: string;
   extension: "pdf" | "docx" | "txt";
-  /** 40 menos las preguntas que ya tiene el FAQ — limita cuánto extrae Gemini. */
+  /** 40 menos las preguntas que ya tiene el FAQ — limita cuánto extrae el modelo. */
   cuposDisponibles: number;
 };
 
