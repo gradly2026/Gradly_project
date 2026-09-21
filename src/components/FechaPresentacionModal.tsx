@@ -60,6 +60,11 @@ export default function FechaPresentacionModal({
   const fechaActual = parseISO(asignacion.fechaPresentacion);
   const hoy = startOfDay(new Date());
   const maxDate = new Date(hoy.getFullYear() + 2, hoy.getMonth(), hoy.getDate());
+  // Desde el propio Día 1 (o después) el primer día ya no se edita: el conteo de
+  // horas arrancó ese día y moverlo cambiaría lo ya contado. También deja de
+  // hacer falta "coordinar" el arranque, así que el atajo del chat pasa a ser un
+  // simple "Contacta al estudiante".
+  const primerDiaLlego = !!fechaActual && fechaActual.getTime() <= hoy.getTime();
 
   const guardar = async (dia: Date) => {
     setCalAbierto(false);
@@ -135,9 +140,10 @@ export default function FechaPresentacionModal({
             </View>
 
             <TouchableOpacity
-              style={[s.btnPrimary, guardando && { opacity: 0.6 }]}
+              style={[s.btnPrimary, (guardando || primerDiaLlego) && { opacity: primerDiaLlego ? 0.4 : 0.6 }]}
               activeOpacity={0.85}
-              disabled={guardando}
+              disabled={guardando || primerDiaLlego}
+              accessibilityState={{ disabled: guardando || primerDiaLlego }}
               onPress={() => setCalAbierto(true)}
             >
               {guardando
@@ -156,7 +162,9 @@ export default function FechaPresentacionModal({
               onPress={chatearConEstudiante}
             >
               <Ionicons name="chatbubbles-outline" size={16} color={colors.primaryLight} />
-              <Text style={s.btnSecundarioTxt}>Coordinar por chat con el estudiante</Text>
+              <Text style={s.btnSecundarioTxt}>
+                {primerDiaLlego ? 'Contacta al estudiante' : 'Coordinar por chat con el estudiante'}
+              </Text>
             </TouchableOpacity>
 
             {/* Días no computados: solo tiene sentido una vez que hay Día 1

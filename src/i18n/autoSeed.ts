@@ -1082,6 +1082,7 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Establecer primer día": "Set first day",
   "Editar primer día": "Edit first day",
   "Coordinar por chat con el estudiante": "Coordinate by chat with the student",
+  "Contacta al estudiante": "Contact the student",
   "Ver perfil del estudiante": "View student profile",
   "Primer día del estudiante": "Student's first day",
   "Primer día guardado": "First day saved",
