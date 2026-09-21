@@ -563,6 +563,20 @@ export async function tomarCupo(params: {
     };
   });
 
+  // El grupo del estudiante fija la meta de horas de su libro de horas
+  // (`useProgresoInscripcion` la lee de `grupos/{grupoId}`). Las reservas hechas
+  // antes de que el grupo fuera obligatorio (v54) no lo traen, y sin él la
+  // inscripción queda sin libro de horas para siempre. Si falta, se toma el del
+  // propio perfil del estudiante (lo puede leer); si tampoco hay, queda null como antes.
+  let grupoIdAsignacion = datos.grupoId;
+  if (!grupoIdAsignacion) {
+    try {
+      const perfilSnap = await getDoc(doc(db, 'perfiles_estudiantes', estudianteId));
+      const g = perfilSnap.exists() ? (perfilSnap.data() as any).grupo_id : null;
+      if (typeof g === 'string' && g) grupoIdAsignacion = g;
+    } catch { /* best-effort: nunca debe bloquear la toma del cupo */ }
+  }
+
   const ref = await addDoc(collection(db, COLECCION_ASIGNACIONES), {
     // CREATE: el documento de la asignación individual del estudiante,
     // creado FUERA de la transacción (mismo razonamiento que con
@@ -578,6 +592,7 @@ export async function tomarCupo(params: {
     // transacción (universidadId, empresaId, vacanteId, etc.) directo
     // dentro de este nuevo documento — evita tener que escribir cada
     // propiedad a mano de nuevo.
+    grupoId: grupoIdAsignacion,
     estado: 'tomado' as const,
     fechaTomado: serverTimestamp(),
   });
