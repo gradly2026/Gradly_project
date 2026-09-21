@@ -259,19 +259,24 @@ export default function InstitucionTab() {
                           <Text style={styles.periodoRestante}>Te faltan {ledger.restantes} h</Text>
                         )}
                       </>
-                    ) : (
+                    ) : !inscripcion.fechaPresentacion ? (
+                      // Solo cuando de verdad falta el Día 1. `ledger` también es
+                      // null si no se pudo resolver la meta de horas del grupo, y
+                      // entonces el primer día SÍ está fijado (Progreso lo muestra):
+                      // no hay que decirle al estudiante que lo coordine.
                       <Text style={styles.periodoRestante}>
                         Coordina con la empresa tu primer día: el conteo de horas arranca ese día.
                       </Text>
-                    )}
+                    ) : null}
                     {!!textoHorario(inscripcion.horario) && (
                       <Text style={styles.periodoFecha} noTranslate>{textoHorario(inscripcion.horario)}</Text>
                     )}
                     {/* Primer día y último día PROBABLE: el mismo cálculo que la
                         tarjeta "Tu pasantía activa" de Progreso (`ledger.fechaFin`),
                         así que se corre solo si hay días no computados o sin
-                        asistencia. Sin Día 1 (`ledger` null) no hay nada que mostrar. */}
-                    {!!ledger && (
+                        asistencia. El primer día sale en cuanto la empresa lo fija;
+                        el último, solo si hay libro de horas (`ledger`). */}
+                    {(!!inscripcion.fechaPresentacion || !!ledger?.fechaFin) && (
                       <View style={styles.fechasPractica}>
                         {!!inscripcion.fechaPresentacion && (
                           <View style={styles.fechaFila}>
@@ -279,7 +284,7 @@ export default function InstitucionTab() {
                             <Text style={styles.fechaValor} noTranslate>{fechaCorta(inscripcion.fechaPresentacion, locale)}</Text>
                           </View>
                         )}
-                        {!!ledger.fechaFin && (
+                        {!!ledger?.fechaFin && (
                           <View style={styles.fechaFila}>
                             <Text style={styles.periodoFecha}>{ledger.completado ? 'Último día:' : 'Último día probable:'}</Text>
                             <Text style={styles.fechaValor} noTranslate>{fechaCortaDate(ledger.fechaFin, locale)}</Text>

@@ -8,7 +8,7 @@
 // propio top y lo escribe en su propio perfil; el resto solo lo lee.
 //
 //   · Empresa      → hasta 3 estudiantes que ya culminaron con ella (pasantía
-//                    terminada o puesto de empleo), con bono si su universidad
+//                    por cupo o de grupo terminada, o puesto de empleo), con bono si su universidad
 //                    está bien calificada.
 //                    Escribe `perfiles_empresas/{id}.top_estudiantes`.
 //   · Universidad  → hasta 5 de sus estudiantes mejor calificados, con bono
@@ -156,18 +156,24 @@ async function infoEmp(
 export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promise<void> {
   if (!empresaId) return;
   try {
-    // Dos vías por las que un estudiante "está" en una empresa: un contrato de
-    // empleo activo (`contratos_laborales`) o una pasantía por cupo
-    // (`asignaciones_cupo`). La empresa puede leer ambas colecciones por su
-    // propio id. Se combinan y se deduplican por estudiante (gana el contrato).
-    const [contrSnap, cupoSnap] = await Promise.all([
+    // Tres vías por las que un estudiante "está" en una empresa: un contrato de
+    // empleo activo (`contratos_laborales`), una pasantía por cupo
+    // (`asignaciones_cupo`) o una pasantía de GRUPO (`solicitudes_practicas`, el
+    // flujo donde la universidad ofrece un grupo entero; ahí no hay cupo por
+    // estudiante). La empresa puede leer las tres colecciones por su propio id.
+    // Se combinan y se deduplican por estudiante (gana el contrato). La de
+    // grupo es la única que puede fallar sin tumbar a las demás: si no se puede
+    // leer, el resultado es el de siempre (contratos + cupos).
+    const [contrSnap, cupoSnap, grupoSnap] = await Promise.all([
       getDocs(query(collection(db, 'contratos_laborales'), where('empresaId', '==', empresaId))),
       getDocs(query(collection(db, 'asignaciones_cupo'), where('empresaId', '==', empresaId))),
+      getDocs(query(collection(db, 'solicitudes_practicas'), where('empresaId', '==', empresaId))).catch(() => null),
     ]);
 
     // `culminada`: el estudiante YA terminó con esta empresa — un puesto de
-    // empleo cuenta siempre; una pasantía solo si se cerró por cumplir sus
-    // horas (`finalizada`, no por despido/renuncia: `terminacionAnticipada`).
+    // empleo cuenta siempre; una pasantía de cupo solo si se cerró por cumplir
+    // sus horas (`finalizada`, no por despido/renuncia: `terminacionAnticipada`);
+    // una de grupo, si la solicitud quedó `finalizado` (la finaliza la empresa).
     const porEst = new Map<string, { estudianteId: string; nombre: string; foto: string; puesto: string; salarioTxt: string | null; contratado: boolean; culminada: boolean }>();
     contrSnap.docs.forEach(d => {
       const c: any = d.data();
@@ -199,6 +205,29 @@ export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promis
         culminada,
       });
     });
+    // Pasantías de grupo ya finalizadas: cada alumno real de la solicitud
+    // (`estudianteIds`, los uids de Auth). Solo suman quien aún no está como
+    // contrato o como cupo culminado; el nombre lo pone el perfil más abajo (la
+    // solicitud no lo trae por uid de forma fiable) y el puesto se queda genérico.
+    grupoSnap?.docs.forEach(d => {
+      const s: any = d.data();
+      if (s.estado !== 'finalizado') return;
+      const ids: unknown[] = Array.isArray(s.estudianteIds) ? s.estudianteIds : [];
+      ids.forEach(id => {
+        if (typeof id !== 'string' || !id) return;
+        const previo = porEst.get(id);
+        if (previo && (previo.contratado || previo.culminada)) return;
+        porEst.set(id, {
+          estudianteId: id,
+          nombre: '',
+          foto: '',
+          puesto: 'Pasantía',
+          salarioTxt: null,
+          contratado: false,
+          culminada: true,
+        });
+      });
+    });
 
     const base = Array.from(porEst.values());
     if (base.length === 0) {
@@ -214,10 +243,12 @@ export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promis
         let uniId = '';
         let horasCertificadas = 0;
         let foto = b.foto || null;
+        let nombre = b.nombre;
         try {
           const e = await getDoc(doc(db, 'perfiles_estudiantes', b.estudianteId));
           if (e.exists()) {
             const x: any = e.data();
+            if (!nombre) nombre = x.nombre_completo || '';
             stars = numOr0(x.calificacion_promedio);
             rango = x.rango_nivel ?? '';
             uniId = x.universidad_id ?? '';
@@ -228,7 +259,7 @@ export async function recomputarTopEstudiantesEmpresa(empresaId: string): Promis
         const uni = await infoUni(uniId, uniCache);
         const entry: TopEstudianteEntry = {
           id: b.estudianteId,
-          nombre: b.nombre,
+          nombre: nombre || 'Estudiante',
           foto,
           stars,
           rango,

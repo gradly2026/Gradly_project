@@ -50,6 +50,14 @@ export class AsistenciaCodigoError extends Error {
   }
 }
 
+/** Mensaje de un error de callable listo para mostrar. El SDK de Firebase le pega
+ *  al final el estado HTTP (`... [400]`), un dato técnico que al usuario no le
+ *  dice nada: se quita, sin tocar el resto del texto que escribe el servidor. */
+function mensajeDeCallable(e: any, porDefecto: string): string {
+  const msg = String(e?.message ?? '').replace(/\s*\[\d{3}\]\s*$/, '').trim();
+  return msg || porDefecto;
+}
+
 const _generarCodigoAsistencia = httpsCallable<Record<string, never>, CodigoAsistencia>(
   functions, 'generarCodigoAsistencia',
 );
@@ -83,7 +91,7 @@ export async function registrarAsistenciaManual(params: {
     const res = await _registrarAsistenciaManual(params);
     return res.data;
   } catch (e: any) {
-    throw new Error(String(e?.message ?? '') || 'No se pudo registrar la asistencia. Intenta de nuevo.');
+    throw new Error(mensajeDeCallable(e, 'No se pudo registrar la asistencia. Intenta de nuevo.'));
   }
 }
 
@@ -93,7 +101,7 @@ export async function generarCodigoDeHoy(): Promise<CodigoAsistencia> {
     const res = await _generarCodigoAsistencia({});
     return res.data;
   } catch (e: any) {
-    throw new Error(String(e?.message ?? '') || 'No se pudo generar tu código. Intenta de nuevo.');
+    throw new Error(mensajeDeCallable(e, 'No se pudo generar tu código. Intenta de nuevo.'));
   }
 }
 
@@ -110,7 +118,7 @@ export async function registrarAsistenciaConCodigo(codigo: string): Promise<Conf
     else if (code.includes('already-exists')) tipo = 'usado';
     else if (code.includes('deadline-exceeded')) tipo = 'caducado';
     throw new AsistenciaCodigoError(
-      tipo, String(e?.message ?? '') || 'No se pudo registrar la asistencia. Intenta de nuevo.',
+      tipo, mensajeDeCallable(e, 'No se pudo registrar la asistencia. Intenta de nuevo.'),
     );
   }
 }
