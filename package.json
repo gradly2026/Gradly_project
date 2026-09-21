@@ -8,7 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "node --max-old-space-size=6144 ./node_modules/expo/bin/cli start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test:rules": "node tests/rules/run.js"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
