@@ -313,7 +313,11 @@ const makeStyles = (C: GradlyColors) =>
     weekRow: { flexDirection: 'row', marginBottom: 4 },
     weekday: { flex: 1, textAlign: 'center', fontSize: 11, fontFamily: FONTS.interSemiBold, color: C.textMuted },
     grid: { flexDirection: 'row', flexWrap: 'wrap' },
-    cell: { width: `${100 / 7}%` as any, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+    // 14.28% y NO `100 / 7`: siete celdas de 14.2857…% suman un pelo MÁS del 100%
+    // en float32 (Yoga) y, en ciertos anchos de pantalla (p. ej. 384 dp), la 7.ª
+    // celda salta a la fila siguiente: el sábado queda sin fechas y todas las
+    // filas se corren. Con 14.28% sobra un margen y la fila nunca se desborda.
+    cell: { width: '14.28%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
     dia: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
     diaProgramadaPasada: { backgroundColor: C.warning + '33', borderWidth: 1, borderColor: C.warning + '88' },
     diaProgramadaFutura: { borderWidth: 1, borderColor: C.border },

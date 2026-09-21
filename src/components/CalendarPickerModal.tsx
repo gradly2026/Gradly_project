@@ -154,7 +154,10 @@ const makeStyles = (C: GradlyColors) =>
     weekRow: { flexDirection: "row", marginBottom: 6 },
     weekday: { flex: 1, textAlign: "center", color: C.textMuted, fontSize: 12, fontWeight: "600" },
     grid: { flexDirection: "row", flexWrap: "wrap" },
-    cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: "center", justifyContent: "center" },
+    // 14.28% y NO `100 / 7`: siete celdas de 14.2857…% suman un pelo MÁS del 100%
+    // en float32 (Yoga) y, en ciertos anchos de pantalla, la 7.ª celda salta a la
+    // fila siguiente: el sábado queda sin fechas y todas las filas se corren.
+    cell: { width: "14.28%", aspectRatio: 1, alignItems: "center", justifyContent: "center" },
     day: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
     daySelected: { backgroundColor: C.primary },
     dayText: { color: C.textPrimary, fontSize: 13 },
