@@ -47,6 +47,7 @@ import {
   extraerFaqDeDocumento,
   obtenerAsistenciaPasantiaAdmin,
   obtenerSaludAsistencia,
+  recalcularTopEstudiantes,
   resolveReport as resolveReportAction,
   setUserApproval as setUserApprovalAction,
   setUserBan as setUserBanAction,
@@ -607,6 +608,8 @@ export default function AdminPreview() {
 
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [recalcularConfirmOpen, setRecalcularConfirmOpen] = useState(false);
+  // Botón "Recalcular Top 3 ahora" (Config → Top 3 estudiantes).
+  const [top3Loading, setTop3Loading] = useState(false);
 
   // ── "Salud operativa" (Config): contadores agregados bajo demanda ──
   const [saludAsistencia, setSaludAsistencia] = useState<SaludAsistenciaOutput | null>(null);
@@ -2673,6 +2676,35 @@ export default function AdminPreview() {
       setBackfillLoading(false);
     }
   }, [t]);
+
+  // Botón "Recalcular Top 3 ahora" de Config: llama a la Cloud Function
+  // recalcularTopEstudiantes (adminService.ts), que vuelve a armar YA el Top 3
+  // estudiantes de toda la plataforma (normalmente se actualiza solo cada 3
+  // días — functions/src/topEstudiantes.ts). Es seguro repetirlo: solo reescribe
+  // ese documento, no toca ningún perfil; por eso va sin diálogo de confirmación.
+  const runRecalcularTop3 = useCallback(async () => {
+    setTop3Loading(true);
+    try {
+      const r = await recalcularTopEstudiantes();
+      mostrarAviso(
+        "exito",
+        "Top 3 actualizado",
+        r.nombres.length > 0
+          ? "Ya está el nuevo Top 3. Lo verán las empresas y universidades cuando abran el Inicio."
+          : "El recálculo terminó, pero todavía no hay estudiantes con horas certificadas y calificación. Cuando los haya, entrarán en la próxima actualización.",
+        r.nombres.length > 0 ? r.nombres.join(", ") : undefined,
+      );
+    } catch (error) {
+      mostrarAviso(
+        "error",
+        "No se pudo actualizar el Top 3",
+        "Los datos quedaron como estaban, no se dañó nada. Puedes volver a intentarlo cuando quieras.",
+        translateSync(adminDetailedErrorMessage(error, "recalcular el Top 3 estudiantes")),
+      );
+    } finally {
+      setTop3Loading(false);
+    }
+  }, [mostrarAviso]);
 
   // Dedicado (no reutiliza `confirmDialog`/`ConfirmOverlay`): esos solo se
   // renderizan DENTRO de DetailModal/ReportDetailModal (para no presentar 2
@@ -6263,6 +6295,26 @@ export default function AdminPreview() {
         >
           <Text style={s.btnOutlineText}>
             {backfillLoading ? "Recalculando…" : "Recalcular alianzas y calificaciones"}
+          </Text>
+        </TouchableOpacity>
+      </Card>
+
+      <Card style={{ marginBottom: 14 }}>
+        <Text style={s.cardTitle}>Top 3 estudiantes</Text>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          Es un solo Top 3 para toda la plataforma y lo ven todas las empresas y universidades en el
+          Inicio. Entran los estudiantes con horas certificadas y calificación, ordenados por
+          promedio. Se actualiza solo cada 3 días (a las 3:00 a. m.). Usa el botón para actualizarlo
+          ya, por ejemplo después de banear a un estudiante que está en la lista.
+        </Text>
+        <TouchableOpacity
+          style={[s.btnOutline, { marginTop: 14, opacity: top3Loading ? 0.6 : 1 }]}
+          disabled={top3Loading}
+          onPress={() => void runRecalcularTop3()}
+          activeOpacity={0.8}
+        >
+          <Text style={s.btnOutlineText}>
+            {top3Loading ? "Recalculando…" : "Recalcular Top 3 ahora"}
           </Text>
         </TouchableOpacity>
       </Card>

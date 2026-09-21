@@ -32,17 +32,25 @@ interface Props {
   relacionEmpresa?: boolean;
   /** Estilo extra del contenedor. */
   style?: any;
+  /** Línea de apoyo bajo el título (p. ej. "Se actualiza cada 3 días"). */
+  subtitulo?: string;
+  /**
+   * Sin filas, por defecto el cuadro no se dibuja (perfiles, panel admin…).
+   * Con este texto se dibuja igual, con el mensaje en lugar de las filas.
+   */
+  textoVacio?: string;
 }
 
 const MEDALLAS = ['🥇', '🥈', '🥉', '4°', '5°'];
 
 export default function TopEstudiantesCard({
-  titulo, entries, onVerEstudiante, detallado, relacionEmpresa, style,
+  titulo, entries, onVerEstudiante, detallado, relacionEmpresa, style, subtitulo, textoVacio,
 }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  if (!entries || entries.length === 0) return null;
+  const sinFilas = !entries || entries.length === 0;
+  if (sinFilas && !textoVacio) return null;
 
   return (
     <View style={[s.card, style]}>
@@ -50,7 +58,9 @@ export default function TopEstudiantesCard({
         <Ionicons name="star" size={16} color={colors.gold} />
         <Text style={s.title}>{titulo}</Text>
       </View>
-      {entries.map((e, i) => (
+      {!!subtitulo && <Text style={s.subtitulo}>{subtitulo}</Text>}
+      {sinFilas && <Text style={s.vacio}>{textoVacio}</Text>}
+      {!sinFilas && entries.map((e, i) => (
         <TouchableOpacity
           key={`${e.id}-${i}`}
           style={s.row}
@@ -120,4 +130,6 @@ const makeStyles = (COLORS: GradlyColors) =>
     sub: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 1 },
     subRelacion: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, marginTop: 1 },
     stars: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.gold },
+    subtitulo: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginBottom: 4 },
+    vacio: { fontSize: 12.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, lineHeight: 18, paddingVertical: 4 },
   });

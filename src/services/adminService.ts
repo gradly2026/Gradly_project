@@ -107,6 +107,13 @@ export type SaludAsistenciaOutput = {
   incidenciasTardanzaAbiertas: number;
 };
 
+export type RecalcularTopEstudiantesOutput = {
+  /** Estudiantes con horas certificadas y calificación que se revisaron. */
+  elegibles: number;
+  /** Nombres del Top 3 resultante (puede venir vacío). */
+  nombres: string[];
+};
+
 type ObtenerAsistenciaPasantiaAdminInput = {
   estudianteId: string;
   empresaId: string;
@@ -171,6 +178,10 @@ const _obtenerSaludAsistencia = httpsCallable<void, SaludAsistenciaOutput>(
   functions,
   "obtenerSaludAsistencia",
 );
+const _recalcularTopEstudiantes = httpsCallable<void, RecalcularTopEstudiantesOutput>(
+  functions,
+  "recalcularTopEstudiantes",
+);
 const _obtenerAsistenciaPasantiaAdmin = httpsCallable<
   ObtenerAsistenciaPasantiaAdminInput,
   AsistenciaPasantiaAdminOutput
@@ -234,6 +245,13 @@ export async function backfillAlianzasCalificaciones(): Promise<BackfillAlianzas
  * Bajo demanda, no automático. Ver `functions/src/admin.ts`. */
 export async function obtenerSaludAsistencia(): Promise<SaludAsistenciaOutput> {
   const res = await _obtenerSaludAsistencia();
+  return res.data;
+}
+
+/** Fuerza ya el recálculo del Top 3 estudiantes de la plataforma (normalmente se
+ * actualiza solo cada 3 días). Solo admin. Ver `functions/src/topEstudiantes.ts`. */
+export async function recalcularTopEstudiantes(): Promise<RecalcularTopEstudiantesOutput> {
+  const res = await _recalcularTopEstudiantes();
   return res.data;
 }
 

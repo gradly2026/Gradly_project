@@ -3,7 +3,8 @@
  *
  * Exporta:
  *  - <RedGradlyBanner />            → carrusel "Estadísticas de la Red Gradly"
- *                                     (Top empresas / universidades) para el Inicio.
+ *                                     (Top empresas / universidades) para el Inicio
+ *                                     y, debajo, el Top 3 estudiantes de la plataforma.
  *  - <PerfilStatsEmpresa empresaId />     → panel de Mi Perfil (Empresa):
  *      listas de universidades aliadas y estudiantes trabajando (datos reales).
  *  - <PerfilStatsUniversidad universidadId /> → panel de Mi Perfil (Universidad):
@@ -81,13 +82,16 @@ export function RedGradlyBanner() {
 
   const [topEmpresas, setTopEmpresas] = useState<RankEntry[]>([]);
   const [topUnis, setTopUnis] = useState<RankEntry[]>([]);
-  // Top 3 de estudiantes destacados — agregado de los `top_estudiantes`
-  // auto-reportados en cada perfil de empresa/universidad (topEstudiantesService).
-  // Solo entran los que YA tienen calificación en reseñas (`stars > 0`) Y horas
-  // certificadas por su universidad (`horasCertificadas > 0`); un estudiante sin
-  // reseñas o sin certificar no aparece. Solo se muestra a quien puede leer datos
-  // de estudiantes: NO se arma ni se pinta para el rol 'estudiante'.
+  // Top 3 estudiantes: UN solo top de TODA la plataforma, calculado en el
+  // servidor cada 3 días (Cloud Function `actualizarTopEstudiantes`, ver
+  // functions/src/topEstudiantes.ts) y guardado en `ranking_plataforma/
+  // top_estudiantes`. Aquí solo se lee ese documento. Lo leen empresas,
+  // universidades y admin (reglas de Firestore); NO se pide ni se pinta para el
+  // rol 'estudiante'. `topEstCargado` distingue "aún no llegó" de "todavía no
+  // hay nadie" (solo en ese caso se muestra el mensaje de vacío).
   const [topEst, setTopEst] = useState<TopEstudianteEntry[]>([]);
+  const [topEstCargado, setTopEstCargado] = useState(false);
+  const puedeVerTop3 = rol === 'empresa' || rol === 'universidad' || rol === 'admin';
   // Perfil (empresa / universidad / estudiante) abierto desde un ranking.
   const [verPerfil, setVerPerfil] = useState<{ rol: PerfilRol; id: string } | null>(null);
   // Ancho real del contenedor (en los dashboards: la pantalla menos el padding de
@@ -98,7 +102,7 @@ export function RedGradlyBanner() {
 
   useEffect(() => {
     // No ejecutar consultas a Firestore sin sesión activa.
-    if (!user?.uid) { setTopEmpresas([]); setTopUnis([]); setTopEst([]); return; }
+    if (!user?.uid) { setTopEmpresas([]); setTopUnis([]); setTopEst([]); setTopEstCargado(false); return; }
     let cancel = false;
     (async () => {
       try {
@@ -155,52 +159,28 @@ export function RedGradlyBanner() {
         setTopEmpresas(construirRanking(empSnap.docs, 'nombre_empresa', 'aliados_universidades_ids'));
         setTopUnis(construirRanking(uniSnap.docs, 'nombre_universidad', 'aliados_empresas_ids'));
 
-        // ── Top 3 estudiantes: agrega los `top_estudiantes` de todos los
-        // perfiles leídos, dedup por id (se prefiere la entrada con datos de
-        // empleo — la de la empresa), descarta a los que aún no tienen
-        // horas certificadas ni calificación en reseñas (`stars > 0`) y ordena
-        // por estrellas. ──
-        if (rol !== 'estudiante') {
-          const porId = new Map<string, TopEstudianteEntry>();
-          const absorber = (arr: any) => {
-            (Array.isArray(arr) ? arr : []).forEach((e: any) => {
-              // `top_estudiantes` lo auto-reportan DOS bloques con formas
-              // distintas (id/stars nuevo · uid/calificacion_promedio legado);
-              // se toleran las dos para que la lista NO cambie según cuál
-              // auto-reporte corrió de último en cada perfil.
-              const id: string | undefined = e?.id ?? e?.uid;
-              if (!id) return;
-              // Solo con horas CERTIFICADAS por la universidad (`horasCertificadas`
-              // > 0). Las reseñas llegan al finalizar la pasantía, ANTES de que la
-              // universidad valide el comprobante, así que `stars > 0` solo no
-              // basta. Las entradas viejas (sin el campo) se descartan hasta que
-              // su institución abra el dashboard y las recalcule.
-              if (!((Number(e?.horasCertificadas) || 0) > 0)) return;
-              const norm = {
-                ...e,
-                id,
-                stars: Number(e?.stars ?? e?.calificacion_promedio) || 0,
-              } as TopEstudianteEntry;
-              const prev = porId.get(id);
-              if (!prev || (norm.contratado && !prev.contratado)) porId.set(id, norm);
-            });
-          };
-          empSnap.docs.forEach(d => absorber((d.data() as any).top_estudiantes));
-          uniSnap.docs.forEach(d => absorber((d.data() as any).top_estudiantes));
-          setTopEst(
-            Array.from(porId.values())
-              .filter(e => (Number(e.stars) || 0) > 0)
-              // Desempate DETERMINISTA (muchos empatan en ★5.0): mismo dato →
-              // mismo top 3 en toda sesión / entorno.
-              .sort((a, b) =>
-                (Number(b.stars) || 0) - (Number(a.stars) || 0) ||
-                String(a.nombre || '').localeCompare(String(b.nombre || '')) ||
-                String(a.id).localeCompare(String(b.id)),
-              )
-              .slice(0, 3),
-          );
+        // ── Top 3 estudiantes: un solo documento calculado en el servidor (ver
+        // el comentario de `topEst`). Va en su propio try/catch: si falla (p. ej.
+        // reglas aún sin desplegar) no debe afectar a Top Empresas/Universidades,
+        // que ya se calcularon arriba; en ese caso la tarjeta simplemente no se
+        // muestra. ──
+        if (rol === 'empresa' || rol === 'universidad' || rol === 'admin') {
+          try {
+            const topSnap = await getDoc(doc(db, 'ranking_plataforma', 'top_estudiantes'));
+            if (cancel) return;
+            const crudas: any[] = topSnap.exists() && Array.isArray(topSnap.data()?.entradas)
+              ? topSnap.data()!.entradas
+              : [];
+            setTopEst(crudas.filter(e => e?.id).slice(0, 3) as TopEstudianteEntry[]);
+            setTopEstCargado(true);
+          } catch (e) {
+            console.warn('[RedGradly] top 3 estudiantes', e);
+            setTopEst([]);
+            setTopEstCargado(false);
+          }
         } else {
           setTopEst([]);
+          setTopEstCargado(false);
         }
       } catch (e) {
         // No crítico (banner informativo) — se registra pero no debe verse
@@ -272,13 +252,15 @@ export function RedGradlyBanner() {
         <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} perfilRol="universidad" />
       </ScrollView>
 
-      {/* Top 3 estudiantes destacados (con calificación en reseñas) — BAJO el
-          carrusel, a lo ancho (no dentro del scroll horizontal). Solo empresa /
-          universidad / admin (no se arma para 'estudiante'). */}
-      {rol !== 'estudiante' && topEst.length > 0 && (
+      {/* Top 3 estudiantes de toda la plataforma — BAJO el carrusel, a lo ancho
+          (no dentro del scroll horizontal). Solo empresa / universidad / admin
+          (no se pide ni se pinta para 'estudiante'). */}
+      {puedeVerTop3 && topEstCargado && (
         <View style={{ marginTop: 12 }}>
           <TopEstudiantesCard
-            titulo="Top Estudiantes"
+            titulo="Top 3 estudiantes"
+            subtitulo="Se actualiza cada 3 días"
+            textoVacio="Aún no hay estudiantes en el Top 3: entran quienes ya tienen horas certificadas y reseñas."
             entries={topEst}
             detallado
             onVerEstudiante={(id) => setVerPerfil({ rol: 'talento', id })}

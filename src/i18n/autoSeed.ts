@@ -521,6 +521,18 @@ export const ADMIN_SEED_EN: Record<string, string> = {
     "This will review ALL internships on the platform and update company/university profiles. It may take a few minutes. Continue?",
   "Recalcula, para todas las empresas y universidades, sus alianzas y el promedio de calificaciones de los estudiantes con los que trabajaron — alimenta \"Top Empresas/Universidades\" del Inicio. Úsalo una vez para que las pasantías aprobadas antes de este cambio también cuenten (las nuevas ya se registran solas); también sirve para recalcular todo si algo queda desincronizado. Es seguro repetirlo.":
     "Recalculates every company's and university's partnerships and the average rating of the students they worked with — this feeds the \"Top Companies/Universities\" section on the home screen. Run it once so internships approved before this change count too (new ones are recorded automatically); it also works to recalculate everything if something drifts out of sync. Safe to run more than once.",
+  // ── Top 3 estudiantes de la plataforma (Configuración → Top 3 estudiantes) ──
+  "Recalcular Top 3 ahora": "Recalculate Top 3 now",
+  "Es un solo Top 3 para toda la plataforma y lo ven todas las empresas y universidades en el Inicio. Entran los estudiantes con horas certificadas y calificación, ordenados por promedio. Se actualiza solo cada 3 días (a las 3:00 a. m.). Usa el botón para actualizarlo ya, por ejemplo después de banear a un estudiante que está en la lista.":
+    "It's a single Top 3 for the whole platform, and every company and university sees it on the home screen. Students with certified hours and a rating get in, ordered by average. It updates on its own every 3 days (at 3:00 a.m.). Use the button to update it right now, for example after banning a student who is on the list.",
+  "Top 3 actualizado": "Top 3 updated",
+  "Ya está el nuevo Top 3. Lo verán las empresas y universidades cuando abran el Inicio.":
+    "The new Top 3 is ready. Companies and universities will see it when they open the home screen.",
+  "El recálculo terminó, pero todavía no hay estudiantes con horas certificadas y calificación. Cuando los haya, entrarán en la próxima actualización.":
+    "The recalculation finished, but there are no students with certified hours and a rating yet. When there are, they will get in on the next update.",
+  "No se pudo actualizar el Top 3": "The Top 3 couldn't be updated",
+  "Los datos quedaron como estaban, no se dañó nada. Puedes volver a intentarlo cuando quieras.":
+    "The data stayed as it was — nothing was damaged. You can try again whenever you want.",
   "Centro de control": "Control center",
   "Administra Gradly con una vista más clara y moderna": "Manage Gradly with a clearer, more modern view",
   "Abierto": "Open",
@@ -2107,6 +2119,12 @@ export const TOP_ESTUDIANTES_SEED_EN: Record<string, string> = {
   "Estudiantes destacados en sus puestos": "Standout students in their roles",
   "Estudiantes más destacados": "Top standout students",
   "Top Estudiantes": "Top Students",
+  // Top 3 estudiantes de TODA la plataforma (banner de la Red Gradly): título,
+  // línea de apoyo y mensaje cuando todavía no hay nadie.
+  "Top 3 estudiantes": "Top 3 students",
+  "Se actualiza cada 3 días": "Updates every 3 days",
+  "Aún no hay estudiantes en el Top 3: entran quienes ya tienen horas certificadas y reseñas.":
+    "There are no students in the Top 3 yet: those who already have certified hours and reviews get in.",
   "Empresa de su pasantía": "Internship company",
   // Vista del cuadro DENTRO del perfil de una empresa: primera línea de cada
   // estudiante, según si tiene contrato de empleo o pasantía por cupo.

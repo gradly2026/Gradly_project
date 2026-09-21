@@ -195,6 +195,20 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
+    // 🏆 RANKING_PLATAFORMA — datos de la Red Gradly que calcula el SERVIDOR.
+    //    `top_estudiantes` = el Top 3 estudiantes de TODA la plataforma: lo
+    //    escriben SOLO las Cloud Functions `actualizarTopEstudiantes` (cada 3
+    //    días) y `recalcularTopEstudiantes` (admin) con Admin SDK, así que desde
+    //    la app nadie escribe. Lo leen únicamente empresas, universidades y
+    //    admin — los estudiantes NO (por eso no vive en `config`, que lee
+    //    cualquier usuario autenticado). Un solo `get()` del rol de quien lee.
+    match /ranking_plataforma/{docId} {
+      allow read: if request.auth != null
+        && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol
+             in ['empresa', 'universidad', 'admin'];
+      allow write: if false;
+    }
+
     // 📚 CATÁLOGO / CONFIG GLOBAL (carreras con estado_soporte, contacto de
     //    soporte, y `config/mantenimiento` = {activo, motivo} del modo
     //    mantenimiento — el gate del cliente lo lee de aquí).

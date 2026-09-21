@@ -95,6 +95,7 @@ pueden) hacerse desde el celular del usuario:
 | `barridoCuposVencidos` | Tarea programada (corre sola, una vez por hora) que libera cupos reservados y no tomados a tiempo |
 | `setUserRole`, `setUserBan`, `resolveReport`, etc. | Operaciones sensibles del panel admin — deben verificar en el SERVIDOR que quien las pide de verdad tiene rol `admin`, algo que no se puede confiar a validar solo del lado del celular |
 | `backfillAlianzasCalificaciones` | Recalcula datos históricos masivos — más rápido y confiable corriendo en un servidor que desde la app |
+| `actualizarTopEstudiantes` / `recalcularTopEstudiantes` | "Top 3 estudiantes" de la Red Gradly: una tarea programada (corre cada día a las 3:00 a. m., pero solo recalcula cuando pasaron 3 días) revisa a todos los estudiantes con horas certificadas, elige a los 3 mejores y los guarda en un solo documento para que empresas y universidades vean la misma lista. La segunda es el botón del panel admin para actualizarlo ya |
 
 **No hace falta tocar ni entender el código de `functions/` para trabajar
 en la app** — la app solo lo "llama" desde lejos, como pedirle un favor a

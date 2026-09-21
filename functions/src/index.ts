@@ -60,6 +60,12 @@
  *    respuesta en JSON, para precargar el FAQ del Asistente Gradly
  *    (faqExtractor.ts). Solo admin; usa el mismo GEMINI_API_KEY que
  *    chatbotGradly, sin secretos nuevos.
+ *  · actualizarTopEstudiantes / recalcularTopEstudiantes → "Top 3 estudiantes"
+ *    de TODA la plataforma: job diario (03:00 América/El_Salvador) que solo
+ *    recalcula cada 3 días, y callable solo admin para forzarlo ya. Guardan UN
+ *    documento, `ranking_plataforma/top_estudiantes`, que leen empresas,
+ *    universidades y admin en el banner de la Red Gradly (topEstudiantes.ts).
+ *    Sin secretos nuevos; el job crea su Cloud Scheduler al desplegar.
  *
  * Nota: el antiguo patrón "traducir al escribir" (triggers translate_*) se
  * retiró — se reemplazó por la traducción al vuelo con caché, que cubre también
@@ -90,6 +96,7 @@ export {
 export { eliminarEstudiante, eliminarGrupo } from "./universidad";
 export { chatbotGradly } from "./chatbot";
 export { extraerFaqDeDocumento } from "./faqExtractor";
+export { actualizarTopEstudiantes, recalcularTopEstudiantes } from "./topEstudiantes";
 export {
   generarCodigoAsistencia,
   registrarAsistenciaPorCodigo,

@@ -14,9 +14,13 @@
 //                    si trabajan en un puesto/pasantía de una empresa bien
 //                    calificada. Escribe `perfiles_universidades/{id}.top_estudiantes`.
 //
+// Estas listas por perfil son las que se ven DENTRO del perfil público de cada
+// empresa/universidad. NO alimentan el "Top 3 estudiantes" de la Red Gradly
+// (NetworkStats.tsx): ese es un top único de toda la plataforma que calcula el
+// servidor cada 3 días — ver functions/src/topEstudiantes.ts.
+//
 // Cada fila lleva además `horasCertificadas` (las `horas_aprobadas` del
-// estudiante): el "Top Estudiantes" de la Red Gradly (NetworkStats.tsx) solo
-// muestra a quien ya tiene horas certificadas por su universidad.
+// estudiante), dato informativo de esa fila.
 //
 // El dueño puede escribir cualquier campo de su propio perfil → sin cambio de
 // reglas. Todo va en try/catch: es un dato informativo, nunca bloquea.
@@ -55,8 +59,9 @@ export interface TopEstudianteEntry {
   contratado: boolean;
   /** Horas de práctica ya CERTIFICADAS por la universidad (`horas_aprobadas` del
    *  perfil del estudiante: solo suben cuando la universidad valida el
-   *  comprobante o certifica la pasantía). El "Top Estudiantes" de la Red Gradly
-   *  solo incluye a quien tiene más de 0. Opcional porque las entradas
+   *  comprobante o certifica la pasantía). El "Top 3 estudiantes" de la Red
+   *  Gradly (calculado en el servidor, functions/src/topEstudiantes.ts) solo
+   *  incluye a quien tiene más de 0. Opcional porque las entradas
    *  auto-reportadas antes de este campo no lo traen. */
   horasCertificadas?: number;
 }
