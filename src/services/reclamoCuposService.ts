@@ -61,6 +61,7 @@ import {
 //     para calcular ese plazo.
 
 import { normalizarHorario, type HorarioPasantia } from '../data/disponibilidad';
+import type { AsistenciasDia } from '../utils/horasPasantia';
 // normalizarHorario(horarioCrudo) → convierte el horario tal como está
 // guardado en la vacante a una forma "limpia" y consistente
 // (HorarioPasantia), por si hubiera variaciones en cómo distintas
@@ -172,6 +173,13 @@ export interface AsignacionCupo {
   fechaPresentacion?: string | null;
   /** Cuándo la empresa fijó/editó `fechaPresentacion` (serverTimestamp). */
   fechaPresentacionAt?: any;
+  /**
+   * Libro de asistencia por día: `yyyy-mm-dd` → minuto del día (desde medianoche)
+   * desde el que cuentan las horas de ese día. Lo escribe SOLO el servidor
+   * (registrarAsistenciaPorCodigo / registrarAsistenciaManual — las reglas lo
+   * cierran a los clientes) y lo lee `progresoPorMeta` (src/utils/horasPasantia.ts).
+   */
+  asistencias?: AsistenciasDia;
   /**
    * true = la pasantía se cerró ANTES de cumplir la meta de horas (despido o
    * renuncia — Fase 5 de "asistencia real"), a diferencia de `finalizada`

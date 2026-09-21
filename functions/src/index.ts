@@ -51,7 +51,9 @@
  *  · generarCodigoAsistencia / registrarAsistenciaPorCodigo → código diario
  *    de 8 dígitos para marcar asistencia real de una pasantía de cupo
  *    (asistencia.ts, Fase 2 de "asistencia real" — ver ajusteAsistenciaService.ts
- *    en el cliente para la Fase 1, "días no computados").
+ *    en el cliente para la Fase 1, "días no computados"). Las horas cuentan por
+ *    asistencia (margen de 20 min); registrarAsistenciaManual deja a la empresa
+ *    registrar después la de un pasante que sí fue (hasta 3 días).
  *  · recordatorioAsistenciaPendiente → job diario (11:00 América/El_Salvador)
  *    que avisa a la empresa si tiene pasantes que hoy les tocaba marcar
  *    asistencia y aún no lo han hecho (asistencia.ts).
@@ -100,5 +102,6 @@ export { actualizarTopEstudiantes, recalcularTopEstudiantes } from "./topEstudia
 export {
   generarCodigoAsistencia,
   registrarAsistenciaPorCodigo,
+  registrarAsistenciaManual,
   recordatorioAsistenciaPendiente,
 } from "./asistencia";

@@ -92,7 +92,7 @@ export function useInscripcionesActivas(
     return {
       asignacion: a,
       progreso: meta
-        ? progresoPorMeta(a.horario, a.fechaPresentacion, meta, new Date(ahora), ajustesPorAsignacion[a.id])
+        ? progresoPorMeta(a.horario, a.fechaPresentacion, meta, new Date(ahora), ajustesPorAsignacion[a.id], a.asistencias ?? {})
         : null,
     };
   });

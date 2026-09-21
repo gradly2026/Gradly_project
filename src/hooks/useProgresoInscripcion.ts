@@ -97,7 +97,7 @@ export function useProgresoInscripcion(estudianteId?: string | null): ProgresoIn
 
   const progreso =
     asignacion && metaHoras
-      ? progresoPorMeta(asignacion.horario, asignacion.fechaPresentacion, metaHoras, new Date(ahora), fechasExcluidas)
+      ? progresoPorMeta(asignacion.horario, asignacion.fechaPresentacion, metaHoras, new Date(ahora), fechasExcluidas, asignacion.asistencias ?? {})
       : null;
 
   // ── Cierre automático al cumplir la meta (Fase E) ──

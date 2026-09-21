@@ -225,7 +225,7 @@ export default function CandidatosVacante({
             // Libro mayor de horas: solo si ya hay fecha de presentación y meta.
             const ledger =
               c.asignacion?.fechaPresentacion && c.metaHoras
-                ? progresoPorMeta(c.asignacion.horario, c.asignacion.fechaPresentacion, c.metaHoras)
+                ? progresoPorMeta(c.asignacion.horario, c.asignacion.fechaPresentacion, c.metaHoras, undefined, undefined, c.asignacion.asistencias ?? {})
                 : null;
             return (
               <TouchableOpacity

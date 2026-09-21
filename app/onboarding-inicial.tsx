@@ -72,7 +72,7 @@ const CONTENIDO: Record<Rol, ItemContenido[]> = {
       credito: { nombre: "Cytonn Photography", url: "https://unsplash.com/photos/n95VMLxqM2I" },
     },
     {
-      titulo: "Tus horas de pasantía avanzan solas",
+      titulo: "Tus horas de pasantía cuentan con tu asistencia",
       sub: "Marca tu código de asistencia cada día y coordina tu pasantía por chat, sin salir de Gradly.",
     },
     {

@@ -362,9 +362,12 @@ service cloud.firestore {
             || request.auth.uid == resource.data.empresaId
             || esAdmin());
       // Solo el propio estudiante toma su cupo, y nace siempre 'tomado'.
+      // 🆕 `asistencias` (libro de asistencia por día, ver `update`) NO puede
+      //    venir en la creación: lo escribe solo el servidor.
       allow create: if request.auth != null
         && request.auth.uid == request.resource.data.estudianteId
-        && request.resource.data.estado == 'tomado';
+        && request.resource.data.estado == 'tomado'
+        && !('asistencias' in request.resource.data);
       // Cancelar: el dueño o su universidad. Nunca se reasigna a otro alumno.
       // 🆕 La EMPRESA dueña puede fijar/editar SOLO el día de presentación del
       //    estudiante (`fechaPresentacion` — el "Día 1" desde el que se cuentan
@@ -376,6 +379,12 @@ service cloud.firestore {
               || request.auth.uid == resource.data.universidadId
               || esAdmin())
             && request.resource.data.estudianteId == resource.data.estudianteId
+            // 🆕 Libro de asistencia por día (`asistencias`): decide cuántas
+            //    horas cuenta cada día, así que NADIE lo escribe desde la app —
+            //    solo las Cloud Functions (Admin SDK, que bypasa estas reglas).
+            //    Sin esto el estudiante (o su universidad) podría acreditarse
+            //    asistencia editando su propio documento.
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['asistencias'])
           )
           || (
             request.auth.uid == resource.data.empresaId

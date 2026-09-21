@@ -12,8 +12,11 @@ import {
   suscribirRegistroDia,
   type RegistroAsistenciaDia,
 } from '../services/asistenciaCodigoService';
+import { suscribirAjustesAsistencia } from '../services/ajusteAsistenciaService';
 import type { AsignacionCupo } from '../services/reclamoCuposService';
 import type { DiaLaboral } from '../types/chat';
+import { VENTANA_CORRECCION_DIAS, diasSinAsistencia } from '../utils/horasPasantia';
+import RegistrarAsistenciaManualForm, { fechaLarga } from './RegistrarAsistenciaManualForm';
 
 // ════════════════════════════════════════════════════════════════════
 //  HistorialAsistenciaModal — Fase 3 de "asistencia real": la empresa ve,
@@ -21,6 +24,11 @@ import type { DiaLaboral } from '../types/chat';
 //  uno (sin registrar / presente / tarde / con salida confirmada), y confirma
 //  la salida con un solo toque — sin código, porque a esa hora ya se validó
 //  que el pasante entró.
+//
+//  "Días anteriores": los días recientes en que el pasante NO tiene asistencia
+//  registrada. Como las horas cuentan por asistencia, si sí fue y se olvidó su
+//  código la empresa lo corrige aquí (hasta VENTANA_CORRECCION_DIAS días
+//  después), indicando la hora de llegada.
 // ════════════════════════════════════════════════════════════════════
 
 interface Props {
@@ -29,7 +37,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Filtro = 'todos' | 'registrada' | 'sinRegistrar' | 'confirmarSalida';
+type Filtro = 'todos' | 'registrada' | 'sinRegistrar' | 'confirmarSalida' | 'anteriores';
 
 const DIA_A_JS: Record<DiaLaboral, number> = {
   Lunes: 1, Martes: 2, Miércoles: 3, Jueves: 4, Viernes: 5,
@@ -50,6 +58,14 @@ export default function HistorialAsistenciaModal({ visible, empresaId, onClose }
   const [registros, setRegistros] = useState<Record<string, RegistroAsistenciaDia | null>>({});
   const [filtro, setFiltro] = useState<Filtro>('todos');
   const [confirmando, setConfirmando] = useState<string | null>(null);
+  // Días anteriores sin asistencia registrada: días no computados por pasante
+  // (no se piden) y el (pasante, día) que se está corrigiendo, si hay uno.
+  const [excluidasPorAsig, setExcluidasPorAsig] = useState<Record<string, string[]>>({});
+  const [manual, setManual] = useState<{ asignacion: AsignacionCupo; fecha: string } | null>(null);
+
+  useEffect(() => {
+    if (!visible) setManual(null);
+  }, [visible]);
 
   useEffect(() => {
     if (!visible || !empresaId) return;
@@ -91,15 +107,44 @@ export default function HistorialAsistenciaModal({ visible, empresaId, onClose }
     [hoyProgramados, registros],
   );
 
+  // Pasantías en curso con su Día 1 fijado: son las que pueden tener días sin
+  // asistencia. Se escuchan sus días no computados para no ofrecer un día que la
+  // empresa ya excusó.
+  const activos = useMemo(
+    () => cupos.filter(c => c.finalizada !== true && c.terminacionAnticipada !== true && !!c.fechaPresentacion),
+    [cupos],
+  );
+  const activosKey = activos.map(c => c.id).sort().join(',');
+  useEffect(() => {
+    if (!visible) return;
+    const ids = activosKey ? activosKey.split(',') : [];
+    const unsubs = ids.map(id => suscribirAjustesAsistencia(id, dias => {
+      setExcluidasPorAsig(prev => ({ ...prev, [id]: dias.map(d => d.fecha) }));
+    }));
+    return () => unsubs.forEach(u => u());
+  }, [visible, activosKey]);
+
+  const faltantes = useMemo(() => {
+    const out: { asignacion: AsignacionCupo; fecha: string }[] = [];
+    activos.forEach(a => {
+      diasSinAsistencia(a.horario, a.fechaPresentacion, a.asistencias ?? {}, excluidasPorAsig[a.id])
+        .forEach(fecha => out.push({ asignacion: a, fecha }));
+    });
+    return out.sort(
+      (x, y) => y.fecha.localeCompare(x.fecha)
+        || String(x.asignacion.estudianteNombre ?? '').localeCompare(String(y.asignacion.estudianteNombre ?? '')),
+    );
+  }, [activos, excluidasPorAsig]);
+
   const porFiltro = (f: Filtro) => filas.filter(fila => {
-    if (f === 'todos') return true;
+    if (f === 'todos' || f === 'anteriores') return true;
     if (f === 'sinRegistrar') return !fila.registro;
     if (f === 'registrada') return !!fila.registro;
     return !!fila.registro && !fila.registro.salidaConfirmada; // confirmarSalida
   });
 
-  const visibles = porFiltro(filtro);
-  const contador = (f: Filtro) => porFiltro(f).length;
+  const visibles = filtro === 'anteriores' ? [] : porFiltro(filtro);
+  const contador = (f: Filtro) => (f === 'anteriores' ? faltantes.length : porFiltro(f).length);
 
   const onConfirmarSalida = async (fila: Fila) => {
     if (confirmando) return;
@@ -135,6 +180,15 @@ export default function HistorialAsistenciaModal({ visible, empresaId, onClose }
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
       <View style={s.overlay}>
         <View style={s.card}>
+         {manual ? (
+          <RegistrarAsistenciaManualForm
+            asignacion={manual.asignacion}
+            fecha={manual.fecha}
+            onVolver={() => setManual(null)}
+            onRegistrada={() => setManual(null)}
+          />
+         ) : (
+         <>
           <View style={s.headerRow}>
             <Text style={s.titulo}>Asistencia de hoy</Text>
             <TouchableOpacity onPress={onClose} hitSlop={10}>
@@ -147,12 +201,36 @@ export default function HistorialAsistenciaModal({ visible, empresaId, onClose }
             <FiltroChip f="registrada" label="Asistencia registrada" />
             <FiltroChip f="sinRegistrar" label="Sin registrar" />
             <FiltroChip f="confirmarSalida" label="Confirmar salida" />
+            <FiltroChip f="anteriores" label="Días anteriores" />
           </ScrollView>
 
           {cargando ? (
             <View style={{ paddingVertical: 24, alignItems: 'center' }}>
               <ActivityIndicator size="small" color={C.primary} />
             </View>
+          ) : filtro === 'anteriores' ? (
+            <>
+              <Text style={s.ayuda}>
+                {`Si un pasante sí asistió pero no se registró su código, registra aquí su asistencia. Puedes hacerlo hasta ${VENTANA_CORRECCION_DIAS} días después.`}
+              </Text>
+              {faltantes.length === 0 ? (
+                <Text style={s.vacio}>No hay días pendientes por registrar.</Text>
+              ) : (
+                <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ gap: 8 }}>
+                  {faltantes.map(f => (
+                    <View key={`${f.asignacion.id}_${f.fecha}`} style={s.fila}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.filaNombre} numberOfLines={1} noTranslate>{f.asignacion.estudianteNombre || 'Estudiante'}</Text>
+                        <Text style={s.filaSub} noTranslate>{fechaLarga(f.fecha)}</Text>
+                      </View>
+                      <TouchableOpacity style={s.btnSalida} activeOpacity={0.85} onPress={() => setManual(f)}>
+                        <Text style={s.btnSalidaTxt}>Registrar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </>
           ) : visibles.length === 0 ? (
             <Text style={s.vacio}>Nadie en esta lista por ahora.</Text>
           ) : (
@@ -190,6 +268,8 @@ export default function HistorialAsistenciaModal({ visible, empresaId, onClose }
               })}
             </ScrollView>
           )}
+         </>
+         )}
         </View>
       </View>
     </Modal>
@@ -218,6 +298,7 @@ const makeStyles = (C: GradlyColors) =>
     chipTxt: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: C.textMuted },
     chipTxtActivo: { color: C.primaryLight },
     vacio: { fontSize: 12.5, fontFamily: FONTS.interRegular, color: C.textMuted, fontStyle: 'italic', paddingVertical: 14 },
+    ayuda: { fontSize: 12, fontFamily: FONTS.interRegular, color: C.textSecondary, lineHeight: 17, marginBottom: 10 },
     fila: {
       flexDirection: 'row', alignItems: 'center', gap: 10,
       borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 12,

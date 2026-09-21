@@ -1534,7 +1534,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
       map[e.id] = progresoDeGrupo(
         g ? { horasRequeridas: g.horasRequeridas, fechaInicio: g.fechaInicio, fechaFin: g.fechaFin } : {},
         e.grupo_id ? acuerdoPorGrupo[e.grupo_id] : null,
-        { horario: asign.horario, fechaPresentacion: asign.fechaPresentacion },
+        { horario: asign.horario, fechaPresentacion: asign.fechaPresentacion, asistencias: asign.asistencias ?? {} },
       );
     });
     return map;

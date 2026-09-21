@@ -16,7 +16,7 @@ const functions = getFunctions(app, 'us-central1');
 
 export interface CodigoAsistencia {
   codigo: string;
-  /** Milisegundos (epoch) hasta que el código deja de ser válido (hoy 23:59 hora SV). */
+  /** Milisegundos (epoch) hasta que el código deja de ser válido (la hora de salida del horario de hoy, hora SV). */
   expiraAt: number;
   fecha: string;
   /** Número de día de práctica (cuenta días programados desde el Día 1). */
@@ -56,6 +56,36 @@ const _generarCodigoAsistencia = httpsCallable<Record<string, never>, CodigoAsis
 const _registrarAsistenciaPorCodigo = httpsCallable<{ codigo: string }, ConfirmacionAsistencia>(
   functions, 'registrarAsistenciaPorCodigo',
 );
+
+export interface ResultadoAsistenciaManual {
+  ok: boolean;
+  estado: 'presente' | 'tarde';
+  tardanzaMin: number;
+}
+const _registrarAsistenciaManual = httpsCallable<
+  { asignacionId: string; fecha: string; llegadaMin: number },
+  ResultadoAsistenciaManual
+>(functions, 'registrarAsistenciaManual');
+
+/**
+ * La empresa registra la asistencia OLVIDADA de un pasante que sí fue (un día
+ * reciente sin registro), indicando su hora de llegada en minutos desde
+ * medianoche. Misma regla de horas que el registro por código: dentro del
+ * margen cuenta desde la hora de entrada; si no, desde la hora indicada. La
+ * validación (empresa dueña, ventana de días, día programado…) es del servidor.
+ */
+export async function registrarAsistenciaManual(params: {
+  asignacionId: string;
+  fecha: string;
+  llegadaMin: number;
+}): Promise<ResultadoAsistenciaManual> {
+  try {
+    const res = await _registrarAsistenciaManual(params);
+    return res.data;
+  } catch (e: any) {
+    throw new Error(String(e?.message ?? '') || 'No se pudo registrar la asistencia. Intenta de nuevo.');
+  }
+}
 
 /** Pide (o recupera, si ya había uno vigente sin usar) el código de hoy del estudiante. */
 export async function generarCodigoDeHoy(): Promise<CodigoAsistencia> {

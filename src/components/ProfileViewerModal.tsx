@@ -247,7 +247,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId, 
         if (cancel) return;
         const gd = g.exists() ? (g.data() as any) : {};
         const meta = Number(gd.horasRequeridas ?? gd.total_horas ?? 0);
-        const p = progresoPorMeta(activa.horario, activa.fechaPresentacion, meta);
+        const p = progresoPorMeta(activa.horario, activa.fechaPresentacion, meta, undefined, undefined, activa.asistencias ?? {});
         if (!cancel) setProgresoLibro(p.valido ? p : null);
       } catch {
         if (!cancel) setProgresoLibro(null);
@@ -284,7 +284,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId, 
           const gd = g.exists() ? (g.data() as any) : {};
           meta = Number(gd.horasRequeridas ?? gd.total_horas ?? 0);
         }
-        const p = a.fechaPresentacion && meta > 0 ? progresoPorMeta(a.horario, a.fechaPresentacion, meta) : null;
+        const p = a.fechaPresentacion && meta > 0 ? progresoPorMeta(a.horario, a.fechaPresentacion, meta, undefined, undefined, a.asistencias ?? {}) : null;
         let uniNom = '';
         if (a.universidadId) {
           const u = await getDoc(doc(db, 'perfiles_universidades', a.universidadId));
@@ -351,7 +351,7 @@ export default function ProfileViewerModal({ visible, onClose, tipo, profileId, 
         const filas: EstEmpresaFila[] = docs
           .map(x => {
             const meta = x.grupoId ? metaPorGrupo[x.grupoId] ?? 0 : 0;
-            const p = x.fechaPresentacion && meta > 0 ? progresoPorMeta(x.horario, x.fechaPresentacion, meta) : null;
+            const p = x.fechaPresentacion && meta > 0 ? progresoPorMeta(x.horario, x.fechaPresentacion, meta, undefined, undefined, x.asistencias ?? {}) : null;
             const completa = x.finalizada === true;
             const metaFinal = completa ? Number(x.horasCumplidas ?? meta) || meta : p?.valido ? p.meta : meta;
             return {

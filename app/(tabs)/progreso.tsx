@@ -28,12 +28,11 @@ import {
   View,
 } from 'react-native';
 import { AutoText as Text } from "../../src/components/AutoText";
-import { showAlert, showConfirm } from "../../src/components/AppAlert";
+import { showAlert } from "../../src/components/AppAlert";
 import { useAuth } from '../../src/context/AuthContext';
 import { useTranslation } from '../../src/context/TranslationContext';
 import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, webScrollStyle, type GradlyColors } from '../../src/context/ThemeContext';
-import { estudianteFinalizaProyecto } from '../../src/services/pasantiaService';
 import { abrirChatDirectoEmpresaEstudiante } from '../../src/services/chatService';
 import { getFeedbackPendiente, type FeedbackPendiente } from '../../src/services/feedbackService';
 import CalificarPasantiaModal from '../../src/components/CalificarPasantiaModal';
@@ -51,19 +50,24 @@ import MiInstitucionCard from '../../src/components/MiInstitucionCard';
 import PuestoTrabajoEstudiante from '../../src/components/PuestoTrabajoEstudiante';
 import { textoHorario } from '../../src/data/disponibilidad';
 import type { AsignacionCupo } from '../../src/services/reclamoCuposService';
-import type { ProgresoMeta } from '../../src/utils/horasPasantia';
+import {
+  ASISTENCIA_HORAS_DESDE,
+  MARGEN_ASISTENCIA_MIN,
+  VENTANA_CORRECCION_DIAS,
+  diasSinAsistencia,
+  minutosAHora12,
+  type ProgresoMeta,
+} from '../../src/utils/horasPasantia';
 import { useProgresoInscripcion } from '../../src/hooks/useProgresoInscripcion';
-import { suscribirRegistroDeHoy, type RegistroAsistenciaDia } from '../../src/services/asistenciaCodigoService';
-// Libro mayor de horas del reparto de cupos: horas que avanzan solas desde la
-// fecha de presentación que fijó la empresa, sobre la meta del grupo (Fase D).
+import { hoyISOLocal, suscribirRegistroDeHoy, type RegistroAsistenciaDia } from '../../src/services/asistenciaCodigoService';
+// Libro mayor de horas del reparto de cupos: horas contadas desde la fecha de
+// presentación que fijó la empresa (por asistencia registrada, desde
+// ASISTENCIA_HORAS_DESDE), sobre la meta del grupo (Fase D).
 // Ficha completa de la universidad y el grupo del estudiante. Va primero
 // en esta pantalla porque es el CONTEXTO de todo lo demás: las horas, el
 // calendario y el período de prácticas los define su grupo.
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
-import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
-// JellyButton: otro componente decorativo del "sistema de diseño" Liquid
-// Glass del proyecto — un botón con una animación elástica al presionarlo.
 
 // Hook que recrea los estilos según el tema activo (claro/oscuro)
 function useThemedStyles() {
@@ -270,7 +274,7 @@ function CircleProgress({ pct, aprobadas, objetivo }: { pct: number; aprobadas: 
 // ─────────────────────────────────────────────
 // TARJETA PASANTÍA ACTIVA
 // ─────────────────────────────────────────────
-function PasantiaActivaCard({ app, onFinalizar }: { app: Aplicacion; onFinalizar: () => void }) {
+function PasantiaActivaCard({ app }: { app: Aplicacion }) {
   const { styles } = useThemedStyles();
   const inicio = app.fecha_inicio?.toDate?.() ?? new Date();
   const ahora  = new Date();
@@ -318,19 +322,15 @@ function PasantiaActivaCard({ app, onFinalizar }: { app: Aplicacion; onFinalizar
       </View>
 
       <Text style={styles.horasText}>Horas completadas: {app.horas_completadas ?? 0}</Text>
-
-      <JellyButton style={styles.finalizarBtn} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6 }} onPress={onFinalizar}>
-        <Ionicons name="flag-outline" size={16} color={COLORS.warning} />
-        <Text style={styles.finalizarText}>Notificar finalización</Text>
-      </JellyButton>
     </GlassCard>
   );
 }
 
 // ─────────────────────────────────────────────
 // TARJETA "MI INSCRIPCIÓN" (pasantía de cupo / autoservicio, Fase D)
-// Muestra el libro mayor de horas: horas que avanzan solas desde el "Día 1"
-// que fijó la empresa, sobre la meta del grupo.
+// Muestra el libro mayor de horas: horas contadas desde el "Día 1" que fijó la
+// empresa (por asistencia registrada, desde ASISTENCIA_HORAS_DESDE), sobre la
+// meta del grupo.
 // ─────────────────────────────────────────────
 /** Nombre de día laboral del horario → getDay() de JS (Lun–Vie). */
 const DIA_A_JS_ASISTENCIA: Record<string, number> = {
@@ -383,6 +383,25 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
     if ((diasExcluidos ?? []).includes(hoyISO)) return false; // día no computado (Fase 1) — nada que marcar.
     return set.has(hoy.getDay()) && hoyISO >= asignacion.fechaPresentacion;
   }, [asignacion.horario, asignacion.fechaPresentacion, diasExcluidos]);
+
+  // ── Horas por ASISTENCIA (desde ASISTENCIA_HORAS_DESDE) ──
+  // Las horas de cada día cuentan desde que se registra la asistencia (con un
+  // margen desde la hora de entrada); antes de esa fecha no se dice nada nuevo.
+  const hoyISOAsist = hoyISOLocal();
+  const reglaActiva = hoyISOAsist >= ASISTENCIA_HORAS_DESDE;
+  // Minuto del día desde el que cuentan las horas de HOY (lo escribe el
+  // servidor al registrar la asistencia).
+  const desdeHoy = asignacion.asistencias?.[hoyISOAsist];
+  // Días recientes sin asistencia registrada: el estudiante puede pedirle a su
+  // empresa que la registre. Se recalcula con cada tick del libro de horas (por
+  // si hoy acaba de terminar el turno).
+  const diasFaltantes = useMemo(
+    () => (reglaActiva
+      ? diasSinAsistencia(asignacion.horario, asignacion.fechaPresentacion, asignacion.asistencias ?? {}, diasExcluidos)
+      : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [reglaActiva, asignacion.horario, asignacion.fechaPresentacion, asignacion.asistencias, diasExcluidos, ledger],
+  );
 
   // Chat directo con la empresa para coordinar el primer día. El helper usa un
   // id determinístico (`direct_{empresaId}_{estudianteId}`): si ya existía la
@@ -486,6 +505,7 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
       {/* Código de asistencia de hoy (Fase 2 de "asistencia real"). */}
       {!completado && hoyEsDiaProgramado && (
         registroHoy ? (
+          <>
           <View style={styles.miPasanRow}>
             <Ionicons
               name={registroHoy.estado === 'tarde' ? 'alert-circle' : 'checkmark-circle'}
@@ -499,7 +519,15 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
               {registroHoy.salidaConfirmada ? ' · salida confirmada' : ''}
             </Text>
           </View>
+          {reglaActiva && typeof desdeHoy === 'number' && (
+            <View style={styles.horasDesdeRow}>
+              <Text style={styles.horasText}>Tus horas de hoy cuentan desde:</Text>
+              <Text style={[styles.horasText, { fontFamily: FONTS.interSemiBold }]} noTranslate>{minutosAHora12(desdeHoy)}</Text>
+            </View>
+          )}
+          </>
         ) : (
+          <>
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => setCodigoOpen(true)}
@@ -514,7 +542,30 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
               Marcar asistencia de hoy
             </Text>
           </TouchableOpacity>
+          {reglaActiva && (
+            <Text style={styles.horasText}>
+              {`Tus horas de hoy cuentan desde que tu empresa registra tu asistencia. Tienes ${MARGEN_ASISTENCIA_MIN} minutos de margen desde la hora de entrada.`}
+            </Text>
+          )}
+          </>
         )
+      )}
+
+      {/* Días recientes sin asistencia registrada: no sumaron horas; si sí asistió,
+          la empresa puede registrarla después (hasta VENTANA_CORRECCION_DIAS días). */}
+      {!completado && diasFaltantes.length > 0 && (
+        <View style={[styles.miPasanRow, { alignItems: 'flex-start' }]}>
+          <Ionicons name="alert-circle" size={15} color={COLORS.warning} style={{ marginTop: 1 }} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[styles.horasText, { color: COLORS.warning, fontFamily: FONTS.interSemiBold }]}>Sin asistencia registrada:</Text>
+            <Text style={[styles.horasText, { color: COLORS.warning }]} noTranslate>
+              {diasFaltantes.map(f => `${f.slice(8, 10)}/${f.slice(5, 7)}`).join(', ')}
+            </Text>
+            <Text style={[styles.horasText, { color: COLORS.warning }]}>
+              {`Si sí asististe, pídele a tu empresa que la registre (puede hacerlo hasta ${VENTANA_CORRECCION_DIAS} días después).`}
+            </Text>
+          </View>
+        </View>
       )}
 
       <AsistenciaCodigoModal visible={codigoOpen} onClose={() => setCodigoOpen(false)} />
@@ -838,31 +889,6 @@ export default function ProgresoTab() {
     return unsub;
   }, [user]);
 
-  const handleFinalizar = async (appId: string) => {
-    // Se ejecuta al tocar "Notificar finalización" en la tarjeta de
-    // pasantía activa. Usa showConfirm (Modal propio) y no Alert.alert:
-    // este último es un no-op en react-native-web y el botón de confirmar
-    // nunca se dispararía en el navegador (memoria "Gotcha Alert.alert en web").
-    const app = apps.find(a => a.id === appId);
-    const ok = await showConfirm({
-      title: 'Confirmar finalización',
-      message: '¿Seguro que quieres notificar que has finalizado esta pasantía? La empresa deberá confirmar.',
-      confirmText: 'Sí, finalicé',
-    });
-    if (!ok) return;
-    try {
-      await estudianteFinalizaProyecto(
-        appId,
-        user!.uid,
-        app?.horas_completadas ?? 0,
-        app?.empresa_id,
-        (userProfile as any)?.nombre_completo,
-      );
-    } catch {
-      void showAlert('Error', 'No se pudo actualizar el estado.');
-    }
-  };
-
   if (cargando) {
     return (
       <View style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -1018,7 +1044,7 @@ export default function ProgresoTab() {
             {inscripcionActiva ? (
               <MiInscripcionCard asignacion={inscripcionActiva} ledger={ledger} diasExcluidos={ajustesAsistencia.map(a => a.fecha)} />
             ) : activa ? (
-              <PasantiaActivaCard app={activa} onFinalizar={() => handleFinalizar(activa.id)} />
+              <PasantiaActivaCard app={activa} />
             ) : acuerdo ? (
               <MiPasantiaCard acuerdo={acuerdo} estadoServidor={pasantiaEstado} />
             ) : (
@@ -1270,14 +1296,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   diasLabel: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
   diasPct: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
   horasText: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
-  finalizarBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'flex-start',
-    backgroundColor: COLORS.warning + '15',
-    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6,
-    borderWidth: 1, borderColor: COLORS.warning + '30',
-  },
-  finalizarText: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.warning },
+  horasDesdeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
 
   // Mi pasantía (acuerdo de grupo)
   miPasanRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

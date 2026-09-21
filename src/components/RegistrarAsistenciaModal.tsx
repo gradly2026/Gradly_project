@@ -26,7 +26,7 @@ const MENSAJE_POR_TIPO: Record<string, string> = {
   'no-encontrado': 'Código no encontrado. Verifica que esté bien escrito.',
   'otra-empresa': 'Este código no pertenece a un pasante de tu empresa.',
   usado: 'Este código ya fue usado.',
-  caducado: 'Este código ya caducó (los códigos son de un solo día).',
+  caducado: 'Este código ya caducó (dura hasta la hora de salida del pasante). Si sí asistió, regístrale la asistencia en Historial de asistencia → Días anteriores.',
   otro: 'No se pudo registrar la asistencia. Intenta de nuevo.',
 };
 

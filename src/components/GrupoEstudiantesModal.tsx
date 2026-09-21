@@ -37,7 +37,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
-import { progresoPorMeta } from '../utils/horasPasantia';
+import { progresoPorMeta, type AsistenciasDia } from '../utils/horasPasantia';
 import {
   abrirChatDirectoUsuarios,
   crearChatGrupoOficial,
@@ -81,6 +81,8 @@ interface AsignInfo {
   horario: any;
   fechaPresentacion: string | null;
   horasCumplidas: number;
+  /** Libro de asistencia de la asignación (lo lee progresoPorMeta). */
+  asistencias?: AsistenciasDia;
 }
 
 const MESES = [
@@ -201,6 +203,7 @@ export default function GrupoEstudiantesModal({
             horario: a.horario ?? null,
             fechaPresentacion: a.fechaPresentacion ?? null,
             horasCumplidas: Number(a.horasCumplidas) || 0,
+            asistencias: a.asistencias ?? {},
           };
         });
         setAsignPorEst(map);
@@ -338,7 +341,7 @@ export default function GrupoEstudiantesModal({
                     const a = asignPorEst[est.id];
                     const meta = grupo.horas ?? 0;
                     const prog = a
-                      ? progresoPorMeta(a.horario, a.fechaPresentacion, meta)
+                      ? progresoPorMeta(a.horario, a.fechaPresentacion, meta, undefined, undefined, a.asistencias ?? {})
                       : null;
                     const cumplidas = a ? Math.max(Math.round(prog?.cumplidas ?? 0), Math.round(a.horasCumplidas)) : 0;
                     const pct = meta > 0 ? Math.min(100, Math.round((cumplidas / meta) * 100)) : 0;

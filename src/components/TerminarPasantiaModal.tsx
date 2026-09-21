@@ -75,7 +75,7 @@ export default function TerminarPasantiaModal({ visible, asignacion, onClose, on
   if (!visible || !asignacion) return null;
 
   const progreso = metaHoras
-    ? progresoPorMeta(asignacion.horario, asignacion.fechaPresentacion, metaHoras, new Date(), fechasExcluidas)
+    ? progresoPorMeta(asignacion.horario, asignacion.fechaPresentacion, metaHoras, new Date(), fechasExcluidas, asignacion.asistencias ?? {})
     : null;
   const horasActuales = progreso?.valido ? progreso.cumplidas : 0;
 

@@ -109,7 +109,7 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
   );
 
   const prog = useMemo(
-    () => progresoPorMeta(asignacion.horario, asignacion.fechaPresentacion ?? '', horas),
+    () => progresoPorMeta(asignacion.horario, asignacion.fechaPresentacion ?? '', horas, undefined, undefined, asignacion.asistencias ?? {}),
     [asignacion, horas],
   );
 

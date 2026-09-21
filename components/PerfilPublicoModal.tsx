@@ -206,7 +206,7 @@ export default function PerfilPublicoModal({
         if (!vivo) return;
         const gd = g.exists() ? (g.data() as any) : {};
         const meta = Number(gd.horasRequeridas ?? gd.total_horas ?? 0);
-        const p = progresoPorMeta(activa.horario, activa.fechaPresentacion, meta);
+        const p = progresoPorMeta(activa.horario, activa.fechaPresentacion, meta, undefined, undefined, activa.asistencias ?? {});
         if (vivo) setProgresoLibro(p.valido ? p : null);
       } catch {
         if (vivo) setProgresoLibro(null);

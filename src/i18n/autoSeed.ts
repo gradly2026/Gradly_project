@@ -248,7 +248,6 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Nombre de la universidad": "University name",
   "Nombre del responsable": "Manager's name",
   "Nombre del titular": "Cardholder name",
-  "Notificar finalización": "Notify completion",
   "Nueva pasantía": "New internship",
   "Número de documento (sin guiones)": "Document number (no dashes)",
   "Número de tarjeta": "Card number",
@@ -1296,10 +1295,6 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Sí, cancelar": "Yes, cancel",
   "Volverá a estar disponible para tus compañeros y tendrás que elegir otro. ¿Continuar?":
     "It'll go back to your classmates and you'll have to pick another one. Continue?",
-  "Confirmar finalización": "Confirm completion",
-  "¿Seguro que quieres notificar que has finalizado esta pasantía? La empresa deberá confirmar.":
-    "Are you sure you want to report that you've finished this internship? The company will have to confirm.",
-  "Sí, finalicé": "Yes, I finished",
   "No se pudo actualizar el estado.": "Couldn't update the status.",
   "Cantidad inválida": "Invalid amount",
   "Indica cuántos cupos necesitas.": "Enter how many spots you need.",
@@ -1391,7 +1386,6 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Código no encontrado. Verifica que esté bien escrito.": "Code not found. Check that it's typed correctly.",
   "Este código no pertenece a un pasante de tu empresa.": "This code doesn't belong to an intern at your company.",
   "Este código ya fue usado.": "This code was already used.",
-  "Este código ya caducó (los códigos son de un solo día).": "This code has expired (codes are valid for one day only).",
   "No se pudo registrar la asistencia. Intenta de nuevo.": "Couldn't record attendance. Try again.",
   "Asistencia sin marcar": "Attendance not marked",
   "Tienes un pasante sin registrar asistencia hoy. Pídele su código.":
@@ -1433,6 +1427,54 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "No se pudo confirmar": "Couldn't confirm it",
   "Tu empresa marcó hoy como día no computado. No necesitas marcar asistencia.":
     "Your company marked today as not counted. You don't need to mark attendance.",
+
+  // ── Horas por asistencia (las horas de cada día cuentan desde que se registra
+  //    la asistencia; 20 min de margen; la empresa corrige hasta 3 días después)
+  //    — RegistrarAsistenciaManualForm, "Días anteriores" en
+  //    HistorialAsistenciaModal, avisos en progreso.tsx y mensajes del servidor
+  //    de registrarAsistenciaManual (functions/src/asistencia.ts). ──
+  "Días anteriores": "Previous days",
+  "Registrar": "Record",
+  "No hay días pendientes por registrar.": "There are no days left to record.",
+  "Si un pasante sí asistió pero no se registró su código, registra aquí su asistencia. Puedes hacerlo hasta 3 días después.":
+    "If an intern did attend but their code wasn't recorded, record their attendance here. You can do it up to 3 days later.",
+  "Esta pasantía no tiene un horario válido, así que no se puede registrar la asistencia.":
+    "This internship doesn't have a valid schedule, so attendance can't be recorded.",
+  "Indica a qué hora llegó. Por defecto queda su hora de entrada; cámbiala solo si llegó tarde.":
+    "Enter what time they arrived. It defaults to their start time; change it only if they arrived late.",
+  "Hora": "Hour",
+  "Minutos": "Minutes",
+  "La hora debe estar dentro del horario del pasante.": "The time must be within the intern's schedule.",
+  "Llegó dentro del margen: el día cuenta completo desde la hora de entrada.":
+    "Arrived within the margin: the day counts in full from the start time.",
+  "Llegada tarde: las horas de ese día cuentan desde la hora de llegada.":
+    "Late arrival: that day's hours count from the arrival time.",
+  "Tus horas de hoy cuentan desde:": "Your hours for today count from:",
+  "Tus horas de hoy cuentan desde que tu empresa registra tu asistencia. Tienes 20 minutos de margen desde la hora de entrada.":
+    "Your hours for today count from when your company records your attendance. You have 20 minutes of margin from your start time.",
+  "Sin asistencia registrada:": "No attendance recorded:",
+  "Si sí asististe, pídele a tu empresa que la registre (puede hacerlo hasta 3 días después).":
+    "If you did attend, ask your company to record it (they can do it up to 3 days later).",
+  "Este código ya caducó (dura hasta la hora de salida del pasante). Si sí asistió, regístrale la asistencia en Historial de asistencia → Días anteriores.":
+    "This code has expired (it lasts until the intern's check-out time). If they did attend, record their attendance in Attendance history → Previous days.",
+  "Sesión requerida.": "Sign-in required.",
+  "Datos inválidos.": "Invalid data.",
+  "La pasantía ya no existe.": "This internship no longer exists.",
+  "Esta pasantía no es de tu empresa.": "This internship doesn't belong to your company.",
+  "Esta pasantía aún no tiene primer día.": "This internship doesn't have a first day yet.",
+  "Esta pasantía no tiene un horario válido.": "This internship doesn't have a valid schedule.",
+  "No puedes registrar la asistencia de un día que aún no llega.":
+    "You can't record attendance for a day that hasn't arrived yet.",
+  "Solo puedes registrar la asistencia de un día hasta 3 días después.":
+    "You can only record a day's attendance up to 3 days later.",
+  "Ese día es anterior al primer día de la pasantía.": "That day is before the internship's first day.",
+  "Ese día no estaba en el horario de la pasantía.": "That day wasn't in the internship's schedule.",
+  "Ese día está marcado como no computado.": "That day is marked as not counted.",
+  "La hora de llegada debe estar dentro del horario de la pasantía.":
+    "The arrival time must be within the internship's schedule.",
+  "La hora de llegada no puede ser posterior a la hora actual.":
+    "The arrival time can't be later than the current time.",
+  "Ya hay asistencia registrada ese día.": "Attendance was already recorded for that day.",
 };
 
 // ── Onboarding de dirección del estudiante (UbicacionSelector,
@@ -2461,7 +2503,7 @@ export const ONBOARDING_INICIAL_SEED_EN: Record<string, string> = {
   "Pasantías reales, sin depender de contactos": "Real internships, without needing connections",
   "Tu universidad te asigna un cupo de pasantía, o aplicás directo a una pasantía — todo desde la app.":
     "Your university assigns you an internship spot, or apply directly to an internship — all from the app.",
-  "Tus horas de pasantía avanzan solas": "Your internship hours track themselves",
+  "Tus horas de pasantía cuentan con tu asistencia": "Your internship hours count when you mark attendance",
   "Marca tu código de asistencia cada día y coordina tu pasantía por chat, sin salir de Gradly.":
     "Mark your attendance code every day and coordinate your internship by chat, without leaving Gradly.",
   "Certifica tu pasantía y da el siguiente paso": "Certify your internship, take the next step",

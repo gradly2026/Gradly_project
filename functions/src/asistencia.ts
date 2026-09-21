@@ -6,18 +6,32 @@
  * FLUJO:
  *   1. El ESTUDIANTE llama generarCodigoAsistencia({}) desde "Mi progreso"
  *      (un día que le toca según su horario) → la function mintea un código
- *      de 8 dígitos de un solo uso, válido hasta la medianoche de hoy (hora
- *      de El Salvador), y lo guarda en `codigos_asistencia/{codigo}`.
+ *      de 8 dígitos de un solo uso, válido hasta la hora de salida del horario
+ *      de hoy (hora de El Salvador), y lo guarda en `codigos_asistencia/{codigo}`.
  *   2. La EMPRESA (o su tutor, desde la misma cuenta) llama
  *      registrarAsistenciaPorCodigo({ codigo }) desde "Pasantes por cupo" →
  *      valida el código (pertenece a un pasante SUYO, no caducó, no se usó),
  *      marca la asistencia del día en `registros_asistencia/{asigId}_{fecha}`
- *      y devuelve los datos del estudiante para la tarjeta de confirmación.
- *   3. Si llega más de UMBRAL_TARDANZA_MIN minutos tarde, el día queda
- *      `estado:'tarde'`; al acumular TARDANZAS_PARA_INCIDENCIA se abre sola
- *      una incidencia (mismo tubo que ya usa la empresa para reportar a un
- *      pasante — ver incidenciaService.ts, `crearIncidenciaEmpresa`).
- *   4. recordatorioAsistenciaPendiente (programada, 1×/día) avisa a la
+ *      y en el libro de asistencia de la asignación
+ *      (`asignaciones_cupo.asistencias[fecha]`), y devuelve los datos del
+ *      estudiante para la tarjeta de confirmación.
+ *   3. Si el registro llega más de UMBRAL_TARDANZA_MIN minutos después de la
+ *      hora de entrada, el día queda `estado:'tarde'`; al acumular
+ *      TARDANZAS_PARA_INCIDENCIA se abre sola una incidencia (mismo tubo que
+ *      ya usa la empresa para reportar a un pasante — ver incidenciaService.ts,
+ *      `crearIncidenciaEmpresa`).
+ *   4. HORAS: las horas de ese día cuentan desde la hora de entrada del
+ *      horario si el registro llegó dentro del margen (la hora que queda es la
+ *      de la EMPRESA al introducir el código; con varios pasantes en fila el
+ *      último puede quedar unos minutos después de haber llegado); si fue
+ *      llegada tarde, cuentan desde la hora del registro; y sin registro ese
+ *      día no suma. `asistencias[fecha]` guarda ese "desde qué minuto cuenta"
+ *      y lo lee progresoPorMeta (src/utils/horasPasantia.ts). Solo el Admin
+ *      SDK escribe ese campo (las reglas lo cierran a los clientes).
+ *   5. registrarAsistenciaManual: si la empresa olvidó registrar a un pasante
+ *      que sí asistió, puede hacerlo después (hasta VENTANA_CORRECCION_DIAS
+ *      días atrás) indicando su hora de llegada — misma regla de horas.
+ *   6. recordatorioAsistenciaPendiente (programada, 1×/día) avisa a la
  *      empresa si tiene pasantes que hoy les tocaba y aún no han marcado.
  *
  * SEGURIDAD:
@@ -48,8 +62,14 @@ const TZ = "America/El_Salvador";
 const OFFSET_MS = -6 * 60 * 60 * 1000;
 
 const LONGITUD_CODIGO = 8;
-/** Minutos de tolerancia antes de marcar el día como "tarde". */
-const UMBRAL_TARDANZA_MIN = 15;
+/** Minutos de margen, desde la hora de entrada, para que se REGISTRE la
+ *  asistencia sin contar como llegada tarde. Es el mismo margen que usan las
+ *  horas (`desdeMinDelDia`): dentro del margen el día cuenta completo desde la
+ *  hora de entrada; pasado el margen, desde la hora del registro. */
+const UMBRAL_TARDANZA_MIN = 20;
+/** Hasta cuántos días DESPUÉS puede la empresa registrar la asistencia de un
+ *  pasante que sí fue pero no se registró (la del lunes, hasta el jueves). */
+const VENTANA_CORRECCION_DIAS = 3;
 /** Al acumular esta cantidad de "tarde" en la misma pasantía, se abre UNA
  *  incidencia automática (no una por cada tardanza — sería spam). */
 const TARDANZAS_PARA_INCIDENCIA = 3;
@@ -170,6 +190,72 @@ async function diasExcluidosDe(asignacionId: string): Promise<Set<string>> {
     return new Set(dias.map((d) => d.fecha));
   } catch {
     return new Set();
+  }
+}
+
+/** Minuto (desde medianoche) desde el que CUENTAN las horas de un día: la hora
+ *  de entrada del horario si el registro llegó dentro del margen, o la hora del
+ *  registro si fue llegada tarde. null si el horario no tiene hora de entrada
+ *  (sin eso no hay desde qué contar). */
+function desdeMinDelDia(horaInicioMin: number | null, registroMin: number): number | null {
+  if (horaInicioMin == null) return null;
+  return registroMin > horaInicioMin + UMBRAL_TARDANZA_MIN ? registroMin : horaInicioMin;
+}
+
+/** ISO `yyyy-mm-dd` menos N días (aritmética UTC pura, sin zona horaria). */
+function restarDiasISO(iso: string, dias: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) - dias * 24 * 60 * 60 * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** ¿Es una fecha real `yyyy-mm-dd`? (rechaza p. ej. 2026-02-30). */
+function esFechaISOValida(iso: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+}
+
+/** Tardanza reiterada → UNA incidencia automática, al cruzar el umbral exacto
+ *  (no en cada tardanza posterior — sería spam). Mismo formato de documento que
+ *  crearIncidenciaEmpresa (incidenciaService.ts). Best-effort: nunca debe
+ *  tumbar el registro de la asistencia. */
+async function avisarTardanzaReiterada(asignacionId: string, a: any, estudianteId: string): Promise<void> {
+  try {
+    const tardesSnap = await db.collection("registros_asistencia")
+      .where("asignacionId", "==", asignacionId)
+      .where("estado", "==", "tarde")
+      .get();
+    if (tardesSnap.size !== TARDANZAS_PARA_INCIDENCIA) return;
+    const ahora = admin.firestore.FieldValue.serverTimestamp();
+    await db.collection("incidencias").add({
+      estudiante_id: a.estudianteId ?? estudianteId,
+      estudiante_nombre: a.estudianteNombre ?? "",
+      universidad_id: a.universidadId ?? "",
+      empresa_id: a.empresaId ?? "",
+      empresa_nombre: a.empresaNombre ?? "",
+      categoria: "estudiante",
+      origen: "empresa",
+      visible_estudiante: false,
+      motivo: "Llegadas tarde reiteradas",
+      descripcion: `El sistema de asistencia registró ${TARDANZAS_PARA_INCIDENCIA} llegadas tarde en esta pasantía.`,
+      estado: "abierta",
+      seguimiento: [],
+      resolucion: "",
+      fecha: ahora,
+      fecha_actualizacion: ahora,
+    });
+    if (a.universidadId) {
+      await notificar(
+        a.universidadId, "Llegadas tarde reiteradas",
+        `${a.estudianteNombre || "Un estudiante"} acumula ${TARDANZAS_PARA_INCIDENCIA} llegadas tarde en su pasantía.`,
+        "warning", "/dashboard-universidad",
+      );
+    }
+  } catch (e) {
+    logger.warn("No se pudo crear la incidencia automática de tardanza", e);
   }
 }
 
@@ -312,6 +398,9 @@ export const registrarAsistenciaPorCodigo = onCall({ region: REGION }, async (re
   }
 
   const regRef = db.collection("registros_asistencia").doc(`${c.asignacionId}_${c.fecha}`);
+  const asigRef = db.collection("asignaciones_cupo").doc(String(c.asignacionId));
+  // Desde qué minuto del día cuentan las horas (ver `desdeMinDelDia`).
+  const desdeMin = desdeMinDelDia(horaInicioMin, ahoraMin);
 
   // El estado autoritativo (usado / ya registrado) se revalida DENTRO de la
   // transacción — los chequeos de arriba son solo para responder con el
@@ -334,48 +423,15 @@ export const registrarAsistenciaPorCodigo = onCall({ region: REGION }, async (re
       marcadoPor: uid,
       creadoAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    // Libro de asistencia de la asignación (lo lee progresoPorMeta): solo el
+    // Admin SDK escribe este campo — las reglas lo cierran a los clientes. Sin
+    // hora de entrada en el horario no hay desde qué contar, así que no se escribe.
+    if (desdeMin != null) {
+      tx.update(asigRef, new admin.firestore.FieldPath("asistencias", String(c.fecha)), desdeMin);
+    }
   });
 
-  // Tardanza reiterada → UNA incidencia automática, al cruzar el umbral
-  // exacto (no en cada tardanza posterior — sería spam). Mismo formato de
-  // documento que crearIncidenciaEmpresa (incidenciaService.ts).
-  if (estado === "tarde") {
-    try {
-      const tardesSnap = await db.collection("registros_asistencia")
-        .where("asignacionId", "==", c.asignacionId)
-        .where("estado", "==", "tarde")
-        .get();
-      if (tardesSnap.size === TARDANZAS_PARA_INCIDENCIA) {
-        const ahora = admin.firestore.FieldValue.serverTimestamp();
-        await db.collection("incidencias").add({
-          estudiante_id: a.estudianteId ?? c.estudianteId,
-          estudiante_nombre: a.estudianteNombre ?? "",
-          universidad_id: a.universidadId ?? "",
-          empresa_id: a.empresaId ?? "",
-          empresa_nombre: a.empresaNombre ?? "",
-          categoria: "estudiante",
-          origen: "empresa",
-          visible_estudiante: false,
-          motivo: "Llegadas tarde reiteradas",
-          descripcion: `El sistema de asistencia registró ${TARDANZAS_PARA_INCIDENCIA} llegadas tarde en esta pasantía.`,
-          estado: "abierta",
-          seguimiento: [],
-          resolucion: "",
-          fecha: ahora,
-          fecha_actualizacion: ahora,
-        });
-        if (a.universidadId) {
-          await notificar(
-            a.universidadId, "Llegadas tarde reiteradas",
-            `${a.estudianteNombre || "Un estudiante"} acumula ${TARDANZAS_PARA_INCIDENCIA} llegadas tarde en su pasantía.`,
-            "warning", "/dashboard-universidad",
-          );
-        }
-      }
-    } catch (e) {
-      logger.warn("No se pudo crear la incidencia automática de tardanza", e);
-    }
-  }
+  if (estado === "tarde") await avisarTardanzaReiterada(String(c.asignacionId), a, c.estudianteId);
 
   try {
     await notificar(
@@ -412,6 +468,119 @@ export const registrarAsistenciaPorCodigo = onCall({ region: REGION }, async (re
       horaFin: horario.horaFin ?? null,
     },
   };
+});
+
+// ── 2b) LA EMPRESA REGISTRA UNA ASISTENCIA OLVIDADA (corrección) ───
+/**
+ * Si la empresa olvidó registrar a un pasante que SÍ fue, puede hacerlo después
+ * indicando su hora de llegada — hasta VENTANA_CORRECCION_DIAS días después del
+ * día olvidado. Misma regla de horas que el registro por código: llegada dentro
+ * del margen → el día cuenta desde la hora de entrada; si no → desde la hora de
+ * llegada indicada. Solo la empresa dueña de la pasantía; no reemplaza un
+ * registro que ya existe ni toca días "no computados".
+ *
+ * Entrada: { asignacionId, fecha: 'yyyy-mm-dd', llegadaMin } (llegadaMin =
+ * minutos desde medianoche, hora de El Salvador).
+ */
+export const registrarAsistenciaManual = onCall({ region: REGION }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sesión requerida.");
+
+  const asignacionId = String(req.data?.asignacionId ?? "").trim();
+  const fecha = String(req.data?.fecha ?? "").trim();
+  const llegadaMin = Number(req.data?.llegadaMin);
+  if (!asignacionId || !esFechaISOValida(fecha) || !Number.isInteger(llegadaMin)) {
+    throw new HttpsError("invalid-argument", "Datos inválidos.");
+  }
+
+  const asigRef = db.collection("asignaciones_cupo").doc(asignacionId);
+  const asigSnap = await asigRef.get();
+  if (!asigSnap.exists) throw new HttpsError("not-found", "La pasantía ya no existe.");
+  const a = asigSnap.data() as any;
+  if (a.empresaId !== uid) throw new HttpsError("permission-denied", "Esta pasantía no es de tu empresa.");
+  if (a.estado !== "tomado" || a.finalizada === true) {
+    throw new HttpsError("failed-precondition", "Esta pasantía ya no está activa.");
+  }
+  if (!a.fechaPresentacion) {
+    throw new HttpsError("failed-precondition", "Esta pasantía aún no tiene primer día.");
+  }
+
+  const horario = a.horario ?? {};
+  const horaInicioMin = parseHora12(horario.horaInicio);
+  const horaFinMin = parseHora12(horario.horaFin);
+  if (horaInicioMin == null || horaFinMin == null || horaFinMin <= horaInicioMin) {
+    throw new HttpsError("failed-precondition", "Esta pasantía no tiene un horario válido.");
+  }
+
+  const hoy = hoyISO();
+  if (fecha > hoy) {
+    throw new HttpsError("invalid-argument", "No puedes registrar la asistencia de un día que aún no llega.");
+  }
+  if (fecha < restarDiasISO(hoy, VENTANA_CORRECCION_DIAS)) {
+    throw new HttpsError(
+      "failed-precondition",
+      `Solo puedes registrar la asistencia de un día hasta ${VENTANA_CORRECCION_DIAS} días después.`,
+    );
+  }
+  if (fecha < a.fechaPresentacion) {
+    throw new HttpsError("failed-precondition", "Ese día es anterior al primer día de la pasantía.");
+  }
+  const diasHorario: string[] = Array.isArray(horario.dias) ? horario.dias : [];
+  const diasSet = new Set(diasHorario.map((d) => DIA_A_JS[d]).filter((n): n is number => n !== undefined));
+  if (!diasSet.has(getDayOfISO(fecha))) {
+    throw new HttpsError("failed-precondition", "Ese día no estaba en el horario de la pasantía.");
+  }
+  if ((await diasExcluidosDe(asignacionId)).has(fecha)) {
+    throw new HttpsError("failed-precondition", "Ese día está marcado como no computado.");
+  }
+  if (llegadaMin < horaInicioMin || llegadaMin >= horaFinMin) {
+    throw new HttpsError("invalid-argument", "La hora de llegada debe estar dentro del horario de la pasantía.");
+  }
+  if (fecha === hoy && llegadaMin > horaActualEnMinutos()) {
+    throw new HttpsError("invalid-argument", "La hora de llegada no puede ser posterior a la hora actual.");
+  }
+
+  const tarde = llegadaMin > horaInicioMin + UMBRAL_TARDANZA_MIN;
+  const estado: "presente" | "tarde" = tarde ? "tarde" : "presente";
+  const tardanzaMin = tarde ? llegadaMin - horaInicioMin : 0;
+  const desdeMin = desdeMinDelDia(horaInicioMin, llegadaMin) as number;
+
+  const regRef = db.collection("registros_asistencia").doc(`${asignacionId}_${fecha}`);
+  const [y, mes, dia] = fecha.split("-").map(Number);
+  const llegadaAt = admin.firestore.Timestamp.fromMillis(
+    Date.UTC(y, mes - 1, dia, 0, 0, 0) + llegadaMin * 60 * 1000 - OFFSET_MS,
+  );
+
+  await db.runTransaction(async (tx) => {
+    const [regTx, asigTx] = await Promise.all([tx.get(regRef), tx.get(asigRef)]);
+    if (!asigTx.exists || asigTx.data()?.finalizada === true) {
+      throw new HttpsError("failed-precondition", "Esta pasantía ya no está activa.");
+    }
+    if (regTx.exists) throw new HttpsError("already-exists", "Ya hay asistencia registrada ese día.");
+    tx.set(regRef, {
+      asignacionId,
+      estudianteId: a.estudianteId,
+      empresaId: a.empresaId,
+      universidadId: a.universidadId ?? "",
+      fecha,
+      estado,
+      tardanzaMin,
+      horaEntrada: llegadaAt,
+      marcadoPor: uid,
+      manual: true,
+      creadoAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    tx.update(asigRef, new admin.firestore.FieldPath("asistencias", fecha), desdeMin);
+  });
+
+  if (estado === "tarde") await avisarTardanzaReiterada(asignacionId, a, a.estudianteId);
+  await notificar(
+    a.estudianteId, "Asistencia registrada",
+    `Tu empresa registró tu asistencia del ${fecha}${tarde ? " (llegada tarde)" : ""}.`,
+    tarde ? "warning" : "success", "/(tabs)/progreso",
+  );
+
+  return { ok: true, estado, tardanzaMin };
 });
 
 // ── 3) RECORDATORIO DIARIO A LA EMPRESA (pasantes sin asistencia marcada) ──
