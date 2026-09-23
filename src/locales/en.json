@@ -192,7 +192,7 @@
   "help_screen_phone_label": "Contact number",
   "help_screen_phone_value": "+503 7000-4545",
   "help_screen_email_label": "Email",
-  "help_screen_email_value": "hello@gradly.app",
+  "help_screen_email_value": "gradlycreaj@gmail.com",
   "help_screen_hours_label": "Support hours",
   "help_screen_hours_value": "Monday to Friday, 8:00 AM to 5:00 PM",
 
@@ -289,7 +289,7 @@
   "perfil_tarjeta_guardada": "Card saved",
   "perfil_tarjeta_guardada_msg": "Your data was saved securely.",
   "perfil_ayuda_titulo": "Help",
-  "perfil_ayuda_msg": "Write to us at soporte@gradly.app and we'll help you with any questions.",
+  "perfil_ayuda_msg": "Write to us at gradlycreaj@gmail.com and we'll help you with any questions.",
   "perfil_acerca_msg": "Gradly connects students, universities and companies to manage internships and social hours.\n\nVersion 1.0.0",
   "err_subir_foto": "Couldn't upload the photo. Please try again.",
   "err_subir_cv": "Couldn't upload the CV.",

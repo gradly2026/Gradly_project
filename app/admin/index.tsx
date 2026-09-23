@@ -6139,7 +6139,7 @@ export default function AdminPreview() {
           style={s.input}
           value={soporteCorreo}
           onChangeText={setSoporteCorreo}
-          placeholder="hola@gradly.app"
+          placeholder="gradlycreaj@gmail.com"
           placeholderTextColor={C.textMuted}
           keyboardType="email-address"
           autoCapitalize="none"

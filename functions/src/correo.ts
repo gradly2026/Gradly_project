@@ -17,8 +17,9 @@ export const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 
 const REMITENTE = "Gradly <notificaciones@send.gradly.website>";
 const URL_LOGIN = "https://gradly.website/auth/iniciosesion";
-// soporte@gradly.app (el que sale en perfil_ayuda_msg de src/locales) no existe
-// como buzón: el usuario pidió usar este, que sí es real y lo lee él.
+// Los @gradly.app que la app tenía como contacto no existen como buzón: el
+// usuario pidió usar este, que sí es real y lo lee él. Es el mismo que ahora
+// traen help_screen_email_value y perfil_ayuda_msg en src/locales.
 const CORREO_SOPORTE = "gradlycreaj@gmail.com";
 
 /** El nombre de la empresa lo escribe el usuario: se escapa antes de ir al HTML. */
