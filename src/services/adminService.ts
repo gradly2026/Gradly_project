@@ -43,6 +43,10 @@ type SetUserApprovalOutput = {
   approvalStatus: ApprovalStatus;
   status: AdminStatus;
   activo: boolean;
+  /** Aviso por correo a la empresa (Fase 4): true = salió, false = tocaba
+   *  mandarlo y falló (o la cuenta no tiene correo), null/ausente = no
+   *  correspondía (universidad, cuenta que ya estaba en ese estado, etc.). */
+  emailEnviado?: boolean | null;
 };
 
 type SetUserBanInput = {

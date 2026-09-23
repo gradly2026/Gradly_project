@@ -297,8 +297,8 @@ export const AUTO_SEED_EN: Record<string, string> = {
 
   // ── Cola de aprobación de empresas al registrarse (paso 99 del wizard,
   //    app/auth/registro.tsx) — universidad sigue sin cambios. ──
-  "Un administrador va a revisar los datos de tu empresa antes de activar la cuenta — normalmente toma entre 24 y 48 horas. Vuelve a iniciar sesión pasado ese tiempo.":
-    "An administrator will review your company's information before activating the account — this usually takes 24 to 48 hours. Try signing in again after that.",
+  "Un administrador va a revisar los datos de tu empresa antes de activar la cuenta — normalmente toma entre 24 y 48 horas. Te avisaremos por correo cuando esté lista.":
+    "An administrator will review your company's information before activating the account — this usually takes 24 to 48 hours. We'll email you when it's ready.",
   "Ir a iniciar sesión": "Go to sign in",
   "Tu cuenta de universidad fue registrada correctamente. Te llevaremos a tu panel en unos segundos…":
     "Your university account was registered successfully. We'll take you to your dashboard in a few seconds…",
@@ -769,8 +769,18 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "Queda otra vez en la lista de pendientes, esperando una decisión.":
     "It's back on the pending list, waiting for a decision.",
   "Cuenta rechazada": "Account rejected",
-  "Le avisamos que su solicitud no fue aprobada. Si fue un error, puedes volver a aprobarla desde esta misma ficha.":
-    "We let them know their request wasn't approved. If that was a mistake, you can approve it again from this same record.",
+  // Fase 4 (correo al aprobar/rechazar una empresa): el mensaje del aviso
+  // lleva al final una frase según si el correo salió o no.
+  "La cuenta queda inactiva. Si fue un error, puedes volver a aprobarla desde esta misma ficha.":
+    "The account is now inactive. If that was a mistake, you can approve it again from this same record.",
+  "La institución ya puede usar Gradly con todas sus funciones. Le enviamos un correo con la decisión.":
+    "The institution can now use Gradly with all of its features. We sent them an email with the decision.",
+  "La institución ya puede usar Gradly con todas sus funciones. Ojo: no pudimos enviarle el correo con la decisión — avísale por otro medio.":
+    "The institution can now use Gradly with all of its features. Heads up: we couldn't send them the email with the decision — let them know another way.",
+  "La cuenta queda inactiva. Si fue un error, puedes volver a aprobarla desde esta misma ficha. Le enviamos un correo con la decisión.":
+    "The account is now inactive. If that was a mistake, you can approve it again from this same record. We sent them an email with the decision.",
+  "La cuenta queda inactiva. Si fue un error, puedes volver a aprobarla desde esta misma ficha. Ojo: no pudimos enviarle el correo con la decisión — avísale por otro medio.":
+    "The account is now inactive. If that was a mistake, you can approve it again from this same record. Heads up: we couldn't send them the email with the decision — let them know another way.",
   "No pudimos actualizar la aprobación": "We couldn't update the approval",
   "La solicitud quedó como estaba, así que puedes intentarlo otra vez sin miedo a duplicar nada.":
     "The request was left as it was, so you can try again without duplicating anything.",

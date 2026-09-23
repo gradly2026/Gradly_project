@@ -343,7 +343,7 @@
   "login_bloqueo_titulo_inactivo": "Cuenta inactiva",
   "login_bloqueo_msg_baneado": "Un administrador suspendió el acceso a esta cuenta.",
   "login_bloqueo_motivo_prefijo": "Motivo:",
-  "login_bloqueo_msg_pendiente": "Estamos revisando los datos de tu empresa. Vuelve a intentar iniciar sesión en 24 a 48 horas — para entonces tu cuenta debería estar aprobada.",
+  "login_bloqueo_msg_pendiente": "Estamos revisando los datos de tu empresa — normalmente toma entre 24 y 48 horas. Te avisaremos por correo apenas tu cuenta esté aprobada.",
   "login_bloqueo_msg_inactivo": "Esta cuenta está inactiva y no es posible iniciar sesión en este momento.",
   "login_bloqueo_contacto": "Si creés que esto es un error, escribinos a",
   "login_bloqueo_boton": "Entendido",

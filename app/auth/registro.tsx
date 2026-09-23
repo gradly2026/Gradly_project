@@ -3325,7 +3325,7 @@ export default function Registro() {
                     <Text style={s.successDesc}>
                       Un administrador va a revisar los datos de tu empresa antes de
                       activar la cuenta — normalmente toma entre 24 y 48 horas.
-                      Vuelve a iniciar sesión pasado ese tiempo.
+                      Te avisaremos por correo cuando esté lista.
                     </Text>
                     <TouchableOpacity
                       style={[s.btnPrimary, { marginTop: 18, alignSelf: "stretch" }]}

@@ -1,5 +1,11 @@
 import * as admin from "firebase-admin";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import {
+  RESEND_API_KEY,
+  correoCuentaAprobada,
+  correoCuentaRechazada,
+  enviarCorreo,
+} from "./correo";
 
 if (admin.apps.length === 0) admin.initializeApp();
 
@@ -306,7 +312,38 @@ export const setUserStatus = onCall({ region: REGION }, async (req) => {
   }
 });
 
-export const setUserApproval = onCall({ region: REGION }, async (req) => {
+/**
+ * ¿Esta decisión de aprobación amerita avisarle a la empresa por correo?
+ * (Fase 4 de la cola de aprobación de empresas.) Solo empresa (universidad se
+ * decidió aparte) y solo ante un cambio REAL de estado:
+ *  · llega a `active` desde `pending` o `inactive`  → "aprobada"
+ *  · llega a `inactive` desde `pending`             → "rechazada"
+ * Suspender una cuenta que ya estaba activa NO es un rechazo de solicitud, y
+ * dejarla en `pending` no es una decisión: ninguno de los dos manda correo.
+ */
+function tipoCorreoDeDecision(
+  role: UserRole | string,
+  from: ApprovalStatus,
+  to: ApprovalStatus,
+): "aprobada" | "rechazada" | null {
+  if (role !== "empresa" || from === to) return null;
+  if (to === "active") return "aprobada";
+  if (to === "inactive" && from === "pending") return "rechazada";
+  return null;
+}
+
+/** Correo de la cuenta: el del documento `usuarios`, o el de Auth si falta. */
+async function correoDeCuenta(uid: string, data: Record<string, unknown>): Promise<string | null> {
+  const guardado = asString(data.correo).toLowerCase();
+  if (guardado) return guardado;
+  try {
+    return (await admin.auth().getUser(uid)).email?.toLowerCase() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export const setUserApproval = onCall({ region: REGION, secrets: [RESEND_API_KEY] }, async (req) => {
   try {
     const actor = await requireAdmin(req.auth);
     const targetUid = asString(req.data?.targetUid);
@@ -406,6 +443,26 @@ export const setUserApproval = onCall({ region: REGION }, async (req) => {
       await syncAuthDisabled(targetUid, false);
     }
 
+    // 🆕 Aviso por correo a la empresa (Fase 4). Va DESPUÉS de guardar la
+    // decisión y enviarCorreo() nunca lanza: si Resend falla, la aprobación
+    // o el rechazo se quedan como están y el panel recibe `emailEnviado:false`
+    // para avisarle al admin que le toca avisar por otro medio. `null` = no
+    // correspondía mandar correo. La nota interna de revisión NO viaja en él.
+    let emailEnviado: boolean | null = null;
+    const tipoCorreo = tipoCorreoDeDecision(targetRole, currentApprovalStatus, nextApprovalStatus);
+    if (tipoCorreo) {
+      const para = await correoDeCuenta(targetUid, targetData);
+      const nombreEmpresa = asString(targetData.nombre_completo);
+      emailEnviado = para
+        ? await enviarCorreo(
+            para,
+            tipoCorreo === "aprobada"
+              ? correoCuentaAprobada(nombreEmpresa)
+              : correoCuentaRechazada(nombreEmpresa),
+          )
+        : false;
+    }
+
     await safeWriteAuditLog({
       actor,
       action: "profile.approval.update",
@@ -417,6 +474,7 @@ export const setUserApproval = onCall({ region: REGION }, async (req) => {
         role: targetRole,
         status: nextStatus,
         activo: nextActivo,
+        correo: tipoCorreo ? { tipo: tipoCorreo, enviado: emailEnviado } : null,
       },
     });
 
@@ -426,6 +484,7 @@ export const setUserApproval = onCall({ region: REGION }, async (req) => {
       approvalStatus: nextApprovalStatus,
       status: nextStatus,
       activo: nextActivo,
+      emailEnviado,
     };
   } catch (error: any) {
     console.error("setUserApproval failed:", error);

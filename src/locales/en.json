@@ -343,7 +343,7 @@
   "login_bloqueo_titulo_inactivo": "Account inactive",
   "login_bloqueo_msg_baneado": "An administrator has suspended access to this account.",
   "login_bloqueo_motivo_prefijo": "Reason:",
-  "login_bloqueo_msg_pendiente": "We're reviewing your company's information. Try signing in again in 24 to 48 hours — your account should be approved by then.",
+  "login_bloqueo_msg_pendiente": "We're reviewing your company's information — this usually takes 24 to 48 hours. We'll email you as soon as your account is approved.",
   "login_bloqueo_msg_inactivo": "This account is inactive and cannot sign in right now.",
   "login_bloqueo_contacto": "If you think this is a mistake, email us at",
   "login_bloqueo_boton": "Got it",

@@ -2298,18 +2298,28 @@ export default function AdminPreview() {
         // reforzaba la sensación de que la nota no se había guardado. Ahora se
         // deja escrita: es exactamente lo que quedó registrado en el usuario.
         await refreshOverview();
+        // Fase 4: para una empresa el backend le manda un correo con la
+        // decisión y responde emailEnviado. `false` = la decisión SÍ quedó
+        // guardada pero el correo no salió: hay que avisarle por otro medio.
+        const correoFallo = res.emailEnviado === false;
+        const correoSalio = res.emailEnviado === true;
         mostrarAviso(
-          nextApprovalStatus === "inactive" ? "advertencia" : "exito",
+          nextApprovalStatus === "inactive" || correoFallo ? "advertencia" : "exito",
           nextApprovalStatus === "active"
             ? "Cuenta aprobada"
             : nextApprovalStatus === "pending"
               ? "Cuenta de vuelta en revisión"
               : "Cuenta rechazada",
-          nextApprovalStatus === "active"
+          (nextApprovalStatus === "active"
             ? "La institución ya puede usar Gradly con todas sus funciones."
             : nextApprovalStatus === "pending"
               ? "Queda otra vez en la lista de pendientes, esperando una decisión."
-              : "Le avisamos que su solicitud no fue aprobada. Si fue un error, puedes volver a aprobarla desde esta misma ficha.",
+              : "La cuenta queda inactiva. Si fue un error, puedes volver a aprobarla desde esta misma ficha.") +
+            (correoSalio
+              ? " Le enviamos un correo con la decisión."
+              : correoFallo
+                ? " Ojo: no pudimos enviarle el correo con la decisión — avísale por otro medio."
+                : ""),
         );
       } catch (error) {
         console.error("Admin:setProfileApproval error", error);
