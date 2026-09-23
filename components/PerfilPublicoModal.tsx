@@ -14,6 +14,7 @@ import {
 import { AutoText as Text } from "../src/components/AutoText";
 import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "../src/config/firebaseConfig";
+import { useAuth } from "../src/context/AuthContext";
 import CertificadoGradly from "../src/components/CertificadoGradly";
 import { ResenasResumen } from "../src/components/ResenasFeedback";
 import TrabajaParaCard from "../src/components/TrabajaParaCard";
@@ -105,6 +106,12 @@ const COLLECTION_MAP: Record<PerfilRol, string> = {
   universidad: "perfiles_universidades",
 };
 
+/** Perfil FILTRADO de los estudiantes destacados (solo logros: sin contacto, ubicación,
+ *  redes, CV ni documento). Lo escribe el servidor; es lo único de otro estudiante que un
+ *  ESTUDIANTE puede leer — las reglas no le dejan abrir `perfiles_estudiantes` ajenos.
+ *  Ver functions/src/perfilesPublicos.ts. */
+const COLLECTION_PERFIL_PUBLICO_ESTUDIANTE = "perfiles_publicos_estudiantes";
+
 const ROL_LABEL: Record<PerfilRol, string> = {
   empresa: "Empresa",
   talento: "Joven Talento",
@@ -139,6 +146,11 @@ export default function PerfilPublicoModal({
 }: Props) {
   const C = theme === "light" ? LIGHT : DARK;
   const scrollStyle = webScrollStyle(theme === "light" ? TEMA_LIGHT : TEMA_DARK);
+  // Un ESTUDIANTE que mira el perfil de otro estudiante: lee la versión filtrada (ver
+  // COLLECTION_PERFIL_PUBLICO_ESTUDIANTE) y no se piden ni se muestran las cosas que solo
+  // ven empresa/universidad (currículum, contrato con la empresa, libro de horas en vivo).
+  const { rol: rolQuienMira } = useAuth();
+  const verFiltrado = rolQuienMira === "estudiante" && (rol === "talento" || rol === "alumno");
 
   const [perfil, setPerfil] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -147,8 +159,8 @@ export default function PerfilPublicoModal({
   const [universidadNombre, setUniversidadNombre] = useState<string | null>(null);
   const [grupoNombre, setGrupoNombre] = useState<string | null>(null);
   const [aliados, setAliados] = useState<{ id: string; nombre: string }[]>([]);
-  // Estudiante destacado abierto desde el cuadro (este modal solo lo abren
-  // empresas/universidades, así que no hay problema de permisos).
+  // Estudiante destacado abierto desde el cuadro. Si quien mira es otro estudiante,
+  // ese perfil viene de `perfiles_publicos_estudiantes` (ver `verFiltrado`).
   const [verEstId, setVerEstId] = useState<string | null>(null);
   // Aliado (universidad o empresa) abierto desde el chip "Universidades/Empresas
   // aliadas". El rol del aliado es el opuesto al del perfil que se está viendo.
@@ -169,7 +181,10 @@ export default function PerfilPublicoModal({
   }, [visible, userId]);
 
   // "En qué empresa hizo su pasantía" — best-effort (reglas de asignaciones_cupo).
+  // Un estudiante que mira NO puede leer esa colección de otro: para él la empresa viene
+  // ya calculada en el perfil filtrado (`empresa_pasantia`, ver loadPerfil).
   useEffect(() => {
+    if (verFiltrado) return;
     if (!visible || !userId || (rol !== "talento" && rol !== "alumno")) { setEmpresaPasantia(null); return; }
     let vivo = true;
     getDocs(query(collection(db, "asignaciones_cupo"), where("estudianteId", "==", userId)))
@@ -180,7 +195,7 @@ export default function PerfilPublicoModal({
       })
       .catch(() => { if (vivo) setEmpresaPasantia(null); });
     return () => { vivo = false; };
-  }, [visible, userId, rol]);
+  }, [visible, userId, rol, verFiltrado]);
 
   // ── Progreso del libro de horas (pasantía por cupo en curso) ──────
   // Best-effort. Sin el rol del que mira, se lanzan las tres consultas posibles
@@ -190,7 +205,7 @@ export default function PerfilPublicoModal({
   // estudiante; para el resto se rechaza y `allSettled` la descarta). El filtro
   // por estudiante/estado se hace en memoria.
   useEffect(() => {
-    if (!visible || !userId || !viewerUserId || (rol !== "talento" && rol !== "alumno")) { setProgresoLibro(null); return; }
+    if (!visible || !userId || !viewerUserId || verFiltrado || (rol !== "talento" && rol !== "alumno")) { setProgresoLibro(null); return; }
     let vivo = true;
     (async () => {
       try {
@@ -217,7 +232,7 @@ export default function PerfilPublicoModal({
       }
     })();
     return () => { vivo = false; };
-  }, [visible, userId, rol, viewerUserId]);
+  }, [visible, userId, rol, viewerUserId, verFiltrado]);
 
   const loadPerfil = async () => {
     setLoading(true);
@@ -225,10 +240,14 @@ export default function PerfilPublicoModal({
     setUniversidadNombre(null);
     setGrupoNombre(null);
     setAliados([]);
+    if (verFiltrado) setEmpresaPasantia(null);
     try {
-      const snap = await getDoc(doc(db, COLLECTION_MAP[rol], userId));
+      const snap = await getDoc(
+        doc(db, verFiltrado ? COLLECTION_PERFIL_PUBLICO_ESTUDIANTE : COLLECTION_MAP[rol], userId),
+      );
       const data = snap.exists() ? (snap.data() as Record<string, any>) : null;
       setPerfil(data);
+      if (verFiltrado) setEmpresaPasantia(String(data?.empresa_pasantia ?? "").trim() || null);
       // Universidad donde estudia — solo aplica a estudiantes, y solo si el
       // perfil trae universidad_id (lo escribe dashboard-universidad.tsx al crearlo).
       if ((rol === "alumno" || rol === "talento") && data?.universidad_id) {
@@ -470,7 +489,7 @@ export default function PerfilPublicoModal({
 
                 {/* Si quien mira es la empresa que tiene contratado a este
                     estudiante: tarjeta "Trabaja para tu empresa" (puesto + fecha). */}
-                {(rol === "talento" || rol === "alumno") && !!viewerUserId && (
+                {(rol === "talento" || rol === "alumno") && !!viewerUserId && !verFiltrado && (
                   <TrabajaParaCard estudianteId={userId} viewerUserId={viewerUserId} C={C} />
                 )}
 
@@ -633,8 +652,8 @@ export default function PerfilPublicoModal({
                   </View>
                 )}
 
-                {/* Currículum del estudiante */}
-                {(rol === "talento" || rol === "alumno") && (
+                {/* Currículum del estudiante (no para otro estudiante: trae sus datos de contacto). */}
+                {(rol === "talento" || rol === "alumno") && !verFiltrado && (
                   <View style={[styles.section, { backgroundColor: C.card, borderColor: C.border }]}>
                     <Text style={[styles.sectionLabel, { color: C.muted }]}>Currículum</Text>
                     {perfil.cv_url ? (

@@ -75,7 +75,14 @@ interface RankEntry {
  * ya usa el resto del proyecto (disponibilidad, afinidad, cupos). */
 const CALIFICACION_NEUTRA = 2.5;
 
-export function RedGradlyBanner() {
+/**
+ * `disposicion`: 'carrusel' (por defecto, como en los dashboards) muestra Top
+ * Empresas / Top Universidades en un carrusel y el Top 3 estudiantes debajo;
+ * 'fila' pone los TRES cuadros lado a lado — para pantallas anchas, donde un
+ * carrusel de tarjetas del ancho de toda la página quedaría desproporcionado
+ * (lo usa la pestaña Vacantes del estudiante en escritorio).
+ */
+export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'carrusel' | 'fila' } = {}) {
   const { colors, isDark } = useTheme();
   const { user, rol } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -85,13 +92,13 @@ export function RedGradlyBanner() {
   // Top 3 estudiantes: UN solo top de TODA la plataforma, calculado en el
   // servidor cada 3 días (Cloud Function `actualizarTopEstudiantes`, ver
   // functions/src/topEstudiantes.ts) y guardado en `ranking_plataforma/
-  // top_estudiantes`. Aquí solo se lee ese documento. Lo leen empresas,
-  // universidades y admin (reglas de Firestore); NO se pide ni se pinta para el
-  // rol 'estudiante'. `topEstCargado` distingue "aún no llegó" de "todavía no
-  // hay nadie" (solo en ese caso se muestra el mensaje de vacío).
+  // top_estudiantes`. Aquí solo se lee ese documento. Lo leen los 4 roles
+  // (reglas de Firestore; el estudiante desde 2026-09-23, para que vea cómo
+  // funciona la plataforma y se motive). `topEstCargado` distingue "aún no
+  // llegó" de "todavía no hay nadie" (solo en ese caso se muestra el mensaje de vacío).
   const [topEst, setTopEst] = useState<TopEstudianteEntry[]>([]);
   const [topEstCargado, setTopEstCargado] = useState(false);
-  const puedeVerTop3 = rol === 'empresa' || rol === 'universidad' || rol === 'admin';
+  const puedeVerTop3 = rol === 'empresa' || rol === 'universidad' || rol === 'admin' || rol === 'estudiante';
   // Perfil (empresa / universidad / estudiante) abierto desde un ranking.
   const [verPerfil, setVerPerfil] = useState<{ rol: PerfilRol; id: string } | null>(null);
   // Ancho real del contenedor (en los dashboards: la pantalla menos el padding de
@@ -164,7 +171,7 @@ export function RedGradlyBanner() {
         // reglas aún sin desplegar) no debe afectar a Top Empresas/Universidades,
         // que ya se calcularon arriba; en ese caso la tarjeta simplemente no se
         // muestra. ──
-        if (rol === 'empresa' || rol === 'universidad' || rol === 'admin') {
+        if (rol === 'empresa' || rol === 'universidad' || rol === 'admin' || rol === 'estudiante') {
           try {
             const topSnap = await getDoc(doc(db, 'ranking_plataforma', 'top_estudiantes'));
             if (cancel) return;
@@ -193,6 +200,8 @@ export function RedGradlyBanner() {
 
   const cardWidth = anchoContenedor;
 
+  const enFila = disposicion === 'fila';
+
   const RankCard = ({ titulo, icon, color, data, perfilRol }: {
     titulo: string; icon: keyof typeof Ionicons.glyphMap; color: string;
     data: RankEntry[]; perfilRol: PerfilRol;
@@ -200,7 +209,8 @@ export function RedGradlyBanner() {
     <BlurView
       intensity={isDark ? 30 : 55}
       tint={isDark ? 'dark' : 'light'}
-      style={[styles.rankCard, { width: cardWidth }]}
+      // En fila, cada cuadro llena su tercio (flex) y no lleva ancho fijo.
+      style={[styles.rankCard, enFila ? { flex: 1 } : { width: cardWidth }]}
     >
       <View style={styles.rankHeader}>
         <Ionicons name={icon} size={18} color={color} />
@@ -232,6 +242,19 @@ export function RedGradlyBanner() {
     </BlurView>
   );
 
+  // Cuadro "Top 3 estudiantes" (igual en las dos disposiciones; solo cambia su estilo).
+  const top3Estudiantes = (estilo?: object) => (
+    <TopEstudiantesCard
+      titulo="Top 3 estudiantes"
+      subtitulo="Se actualiza cada 3 días"
+      textoVacio="Aún no hay estudiantes en el Top 3: entran quienes ya tienen horas certificadas y reseñas."
+      entries={topEst}
+      detallado
+      style={estilo}
+      onVerEstudiante={(id) => setVerPerfil({ rol: 'talento', id })}
+    />
+  );
+
   return (
     <View
       style={{ marginBottom: 16 }}
@@ -241,31 +264,36 @@ export function RedGradlyBanner() {
       }}
     >
       <Text style={styles.bannerHeading}>🌐 Estadísticas de la Red Gradly</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        snapToInterval={cardWidth + 12}
-        decelerationRate="fast"
-        contentContainerStyle={{ gap: 12 }}
-      >
-        <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} perfilRol="empresa" />
-        <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} perfilRol="universidad" />
-      </ScrollView>
 
-      {/* Top 3 estudiantes de toda la plataforma — BAJO el carrusel, a lo ancho
-          (no dentro del scroll horizontal). Solo empresa / universidad / admin
-          (no se pide ni se pinta para 'estudiante'). */}
-      {puedeVerTop3 && topEstCargado && (
-        <View style={{ marginTop: 12 }}>
-          <TopEstudiantesCard
-            titulo="Top 3 estudiantes"
-            subtitulo="Se actualiza cada 3 días"
-            textoVacio="Aún no hay estudiantes en el Top 3: entran quienes ya tienen horas certificadas y reseñas."
-            entries={topEst}
-            detallado
-            onVerEstudiante={(id) => setVerPerfil({ rol: 'talento', id })}
-          />
+      {enFila ? (
+        // Pantalla ancha: los tres cuadros lado a lado, todos del mismo alto.
+        <View style={{ flexDirection: 'row', gap: 12, alignItems: 'stretch' }}>
+          <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} perfilRol="empresa" />
+          <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} perfilRol="universidad" />
+          {puedeVerTop3 && topEstCargado && (
+            <View style={{ flex: 1 }}>{top3Estudiantes({ flex: 1 })}</View>
+          )}
         </View>
+      ) : (
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={cardWidth + 12}
+            decelerationRate="fast"
+            contentContainerStyle={{ gap: 12 }}
+          >
+            <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} perfilRol="empresa" />
+            <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} perfilRol="universidad" />
+          </ScrollView>
+
+          {/* Top 3 estudiantes de toda la plataforma — BAJO el carrusel, a lo ancho
+              (no dentro del scroll horizontal). Lo ven los 4 roles (el estudiante
+              desde 2026-09-23). */}
+          {puedeVerTop3 && topEstCargado && (
+            <View style={{ marginTop: 12 }}>{top3Estudiantes()}</View>
+          )}
+        </>
       )}
 
       {verPerfil && (

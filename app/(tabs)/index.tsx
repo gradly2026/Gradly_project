@@ -102,6 +102,7 @@ import { RADIOS_CERCANIA_KM, filtrarPorCercania, normalizarPunto } from '../../s
 // filtrarPorCercania() los aplica a la lista ya filtrada por lo demás, y
 // normalizarPunto() lee el punto guardado sin importar si viene como
 // {lat,lng} o {latitude,longitude}. Ver src/utils/geo.ts.
+import { RedGradlyBanner } from '../../src/components/NetworkStats';
 import { ANCHO_MIN_GRID_ESCRITORIO, FeedGrid } from '../../src/components/FeedGrid';
 // En web de escritorio (ancho >= ANCHO_MIN_GRID_ESCRITORIO) la barra del
 // encabezado cruza todo el ancho y las tarjetas se reparten de 3 en 3; en
@@ -1203,6 +1204,20 @@ export default function FeedVacantes() {
         {/* Recordatorio de calificaciones pospuestas con "Calificar más tarde"
             — se auto-oculta si no hay ninguna pendiente. */}
         {user?.uid && <RecordatorioCalificacionCard rol="estudiante" uid={user.uid} />}
+
+        {/* Estadísticas de la Red Gradly: Top Empresas, Top Universidades y Top 3
+            estudiantes de la plataforma — los mismos cuadros de los dashboards de
+            empresa y universidad (pedido del usuario, 2026-09-23: que el estudiante
+            vea cómo funciona la plataforma y se motive). Va DEBAJO de la institución
+            y de las alertas pendientes (comprobante / calificación, que piden acción)
+            y ENCIMA del buscador. En escritorio los tres cuadros van en una fila.
+            Al tocar una empresa/universidad/estudiante se abre su perfil público; el
+            de un estudiante es la versión filtrada (solo logros, sin contacto). */}
+        {user?.uid && (
+          <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
+            <RedGradlyBanner disposicion={feedEnGrid ? 'fila' : 'carrusel'} />
+          </View>
+        )}
 
         {/* Búsqueda y filtros: hay algo que buscar en los 3 estados del feed
             (vacantes, vacantes en modo lectura, o pasantías de autoservicio) —

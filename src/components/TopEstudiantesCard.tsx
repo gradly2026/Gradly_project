@@ -7,7 +7,8 @@
 // nombre, la empresa / puesto / salario y la universidad (para la Red Gradly).
 //
 // Quien lo monta ya decidió que el rol del que mira puede ver estos datos
-// (empresa / universidad / admin) — este componente no comprueba permisos.
+// (empresa / universidad / admin y, desde 2026-09-23, estudiante en el Top 3 de la
+// Red Gradly) — este componente no comprueba permisos.
 // ════════════════════════════════════════════════════════════════════════
 
 import { Ionicons } from '@expo/vector-icons';

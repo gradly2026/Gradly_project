@@ -4,9 +4,10 @@
  * Es UN solo top para todos (no uno por institución): cada 3 días se recalcula
  * en el servidor y se guarda en UN documento, `ranking_plataforma/top_estudiantes`,
  * que el banner "Estadísticas de la Red Gradly" (NetworkStats.tsx) solo lee. Lo
- * pueden leer empresas, universidades y admin (reglas de Firestore); los
- * estudiantes no. Nadie lo escribe desde la app: solo estas functions, con
- * Admin SDK.
+ * pueden leer empresas, universidades, admin y (desde 2026-09-23) estudiantes
+ * (reglas de Firestore). Nadie lo escribe desde la app: solo estas functions,
+ * con Admin SDK. Al guardarlo también publican el perfil público filtrado de los
+ * 3 ganadores (perfilesPublicos.ts), que es lo que un estudiante abre al tocarlos.
  *
  *  · actualizarTopEstudiantes → job diario (03:00 América/El_Salvador) que solo
  *    recalcula cuando ya pasaron ~3 días desde la última actualización. Con un
@@ -29,6 +30,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
+import { publicarPerfilesPublicos } from "./perfilesPublicos";
 
 if (admin.apps.length === 0) admin.initializeApp();
 const db = admin.firestore();
@@ -270,6 +272,17 @@ export async function refrescarTopEstudiantes(
     elegibles,
     actualizadoAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+  // Perfil público filtrado de los 3 ganadores, para que otro estudiante pueda
+  // abrirlos (ver perfilesPublicos.ts). Best-effort: si falla, el Top 3 ya quedó
+  // guardado y NO se debe deshacer ni fallar por esto.
+  try {
+    await publicarPerfilesPublicos(
+      entradas.map((e) => e.id),
+      new Map(entradas.filter((e) => e.empresaNombre).map((e) => [e.id, e.empresaNombre] as [string, string])),
+    );
+  } catch (e) {
+    logger.warn("top estudiantes: no se pudieron publicar los perfiles públicos", e);
+  }
   return { actualizado: true, entradas, elegibles };
 }
 

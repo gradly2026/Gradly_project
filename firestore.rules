@@ -218,13 +218,30 @@ service cloud.firestore {
     //    `top_estudiantes` = el Top 3 estudiantes de TODA la plataforma: lo
     //    escriben SOLO las Cloud Functions `actualizarTopEstudiantes` (cada 3
     //    días) y `recalcularTopEstudiantes` (admin) con Admin SDK, así que desde
-    //    la app nadie escribe. Lo leen únicamente empresas, universidades y
-    //    admin — los estudiantes NO (por eso no vive en `config`, que lee
-    //    cualquier usuario autenticado). Un solo `get()` del rol de quien lee.
+    //    la app nadie escribe. Lo leen empresas, universidades, admin y —
+    //    desde 2026-09-23, pedido del usuario: que el estudiante vea cómo
+    //    funciona la plataforma y se motive — también los estudiantes. Sigue sin
+    //    vivir en `config` a propósito (allí lee cualquier autenticado, incluso
+    //    sin `usuarios/{uid}`). Un solo `get()` del rol de quien lee.
     match /ranking_plataforma/{docId} {
       allow read: if request.auth != null
         && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol
-             in ['empresa', 'universidad', 'admin'];
+             in ['empresa', 'universidad', 'admin', 'estudiante'];
+      allow write: if false;
+    }
+
+    // 🌟 PERFILES_PUBLICOS_ESTUDIANTES — versión FILTRADA del perfil de los
+    //    estudiantes DESTACADOS (Top 3 de la plataforma y mejores de cada empresa
+    //    / universidad), para que otro estudiante pueda abrirlos.
+    //    ⚠️ Existe porque las reglas de Firestore leen el documento ENTERO:
+    //    abrir `perfiles_estudiantes` a los estudiantes habría expuesto a TODOS
+    //    (DUI, teléfono, dirección, coordenadas de su casa, URL del CV) a
+    //    cualquier estudiante que consultara la API, aunque la pantalla no lo
+    //    mostrara. Aquí solo hay campos "de logros" (ver perfilesPublicos.ts en
+    //    functions/src): nunca contacto, ubicación, redes, CV ni documento.
+    //    Lo escriben SOLO las Cloud Functions que calculan esos tops (Admin SDK).
+    match /perfiles_publicos_estudiantes/{studentId} {
+      allow read: if request.auth != null;
       allow write: if false;
     }
 

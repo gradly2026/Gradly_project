@@ -63,6 +63,8 @@ const RG = (uid) => doc(dbDe(uid), 'registros_asistencia/A1_2026-09-21');
 const AJ = (uid, id) => doc(dbDe(uid), `ajustes_asistencia/${id}`);
 const TOP = (uid) => doc(dbDe(uid), 'ranking_plataforma/top_estudiantes');
 const VE = (uid, id) => doc(dbDe(uid), `verificaciones_empresa/${id}`);
+const PP = (uid, id) => doc(dbDe(uid), `perfiles_publicos_estudiantes/${id}`);
+const PE = (uid, id) => doc(dbDe(uid), `perfiles_estudiantes/${id}`);
 const diaAsist = (dia) => new FieldPath('asistencias', dia);
 
 const BASE = () => ({
@@ -102,6 +104,7 @@ async function reiniciar() {
     poner('ajustes_asistencia/A1', { empresaId: 'emp1', estudianteId: 'stu1', universidadId: 'uni1', dias: [] }),
     poner('codigos_asistencia/12345678', { asignacionId: 'A1', usado: false }),
     poner('ranking_plataforma/top_estudiantes', { lista: [] }),
+    poner('perfiles_publicos_estudiantes/stu2', { nombre_completo: 'Estudiante Dos', calificacion_promedio: 5 }),
     poner('verificaciones_empresa/emp1', { nit: '0614-010101-101-1', contacto_documento_tipo: 'dui', contacto_documento_numero: '000000000' }),
   ]);
 }
@@ -212,7 +215,7 @@ const CASOS = [
   ['K2', 'códigos: un cliente intenta ESCRIBIR un código', () => setDoc(doc(usuarios.stu1, 'codigos_asistencia/87654321'), { x: 1 }), 'DENY'],
 
   // ── ranking_plataforma/top_estudiantes: lo leen empresa/universidad/admin; nadie escribe desde la app ──
-  ['T1', 'Top 3: NO lo lee un estudiante', () => getDoc(TOP('stu1')), 'DENY'],
+  ['T1', 'Top 3: lo lee un estudiante (desde 2026-09-23 lo ve para motivarse)', () => getDoc(TOP('stu1')), 'ALLOW'],
   ['T2', 'Top 3: lo lee una empresa', () => getDoc(TOP('emp1')), 'ALLOW'],
   ['T3', 'Top 3: lo lee una universidad', () => getDoc(TOP('uni1')), 'ALLOW'],
   ['T4', 'Top 3: lo lee el admin', () => getDoc(TOP('adm1')), 'ALLOW'],
@@ -235,6 +238,23 @@ const CASOS = [
   ['VE11', 'OTRA empresa intenta actualizarlo', () => updateDoc(VE('emp2', 'emp1'), { nit: 'y' }), 'DENY'],
   ['VE12', 'la propia empresa intenta BORRARLO (solo admin puede)', () => deleteDoc(VE('emp1', 'emp1')), 'DENY'],
   ['VE13', 'el admin lo borra', () => deleteDoc(VE('adm1', 'emp1')), 'ALLOW'],
+
+  // ── perfiles_publicos_estudiantes: versión FILTRADA de los estudiantes destacados.
+  // La leen todos los autenticados; la escribe SOLO el servidor. Y el perfil COMPLETO
+  // de otro estudiante (DUI, teléfono, casa…) sigue cerrado para los estudiantes. ──
+  ['PP1', 'un estudiante lee el perfil público de OTRO estudiante', () => getDoc(PP('stu1', 'stu2')), 'ALLOW'],
+  ['PP2', 'una empresa lo lee', () => getDoc(PP('emp1', 'stu2')), 'ALLOW'],
+  ['PP3', 'una universidad lo lee', () => getDoc(PP('uni1', 'stu2')), 'ALLOW'],
+  ['PP4', 'el propio estudiante intenta editar su perfil público', () => setDoc(PP('stu2', 'stu2'), { nombre_completo: 'Otro' }), 'DENY'],
+  ['PP5', 'un estudiante intenta escribir el de otro', () => setDoc(PP('stu1', 'stu2'), { nombre_completo: 'x' }), 'DENY'],
+  ['PP6', 'una empresa intenta escribirlo', () => setDoc(PP('emp1', 'stu2'), { nombre_completo: 'x' }), 'DENY'],
+  ['PP7', 'el admin intenta escribirlo desde el cliente', () => setDoc(PP('adm1', 'stu2'), { nombre_completo: 'x' }), 'DENY'],
+  ['PP8', 'un estudiante intenta borrarlo', () => deleteDoc(PP('stu1', 'stu2')), 'DENY'],
+  ['PP9', 'SERVIDOR (Admin SDK) lo escribe', () => setDoc(PP('owner', 'stu9'), { nombre_completo: 'Nuevo' }), 'ALLOW'],
+  ['PP10', 'SERVIDOR (Admin SDK) lo borra', () => deleteDoc(PP('owner', 'stu2')), 'ALLOW'],
+  ['PE1', 'un estudiante NO puede leer el perfil COMPLETO de otro estudiante', () => getDoc(PE('stu1', 'stu2')), 'DENY'],
+  ['PE2', 'un estudiante SÍ lee el suyo', () => getDoc(PE('stu1', 'stu1')), 'ALLOW'],
+  ['PE3', 'una empresa sigue leyendo el perfil completo (sin cambios)', () => getDoc(PE('emp1', 'stu1')), 'ALLOW'],
 ];
 
 // ── Ejecución ────────────────────────────────────────────────────────────

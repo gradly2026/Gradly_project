@@ -29,6 +29,10 @@
  * Solo escribe el perfil cuya lista CAMBIÓ (comparación por contenido) y nunca toca
  * nada más del perfil. Nadie más que Admin SDK necesita permisos: no hay cambio de reglas.
  *
+ * Además, cada corrida publica el perfil público FILTRADO de todos los estudiantes que
+ * salen en esas listas (más los 3 de la plataforma) y borra el de quien ya no sale en
+ * ninguna — ver perfilesPublicos.ts: es lo que otro estudiante abre al tocarlos.
+ *
  *  · actualizarListasPerfiles → job diario (03:30 América/El_Salvador, media hora
  *    después del Top 3 de la plataforma).
  *  · recalcularListasPerfiles → callable solo admin, para forzarlo ya (lo dispara,
@@ -39,6 +43,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 import { exigirAdmin, textoSalario, type EntradaTop } from "./topEstudiantes";
+import { depurarPerfilesPublicos, publicarPerfilesPublicos } from "./perfilesPublicos";
 
 if (admin.apps.length === 0) admin.initializeApp();
 const db = admin.firestore();
@@ -354,6 +359,8 @@ async function cargarDatos(): Promise<DatosListas> {
 export interface ResumenListas {
   empresas: { revisadas: number; actualizadas: number; fallidas: number };
   universidades: { revisadas: number; actualizadas: number; fallidas: number };
+  /** Perfiles públicos filtrados de los destacados (ver perfilesPublicos.ts). */
+  perfilesPublicos?: { publicados: number; eliminados: number };
 }
 
 /** Recalcula las listas de TODAS las empresas y universidades y guarda solo las que cambiaron. */
@@ -364,16 +371,23 @@ export async function refrescarListasPerfiles(): Promise<ResumenListas> {
     universidades: { revisadas: 0, actualizadas: 0, fallidas: 0 },
   };
 
+  // Estudiante destacado → empresa donde hace/hizo su pasantía o trabajo ("" si no se sabe).
+  const destacados = new Map<string, string>();
+
   const aplicar = async (
     coleccion: "perfiles_empresas" | "perfiles_universidades",
     instituciones: PerfilInstitucion[],
     calcular: (id: string) => EntradaTop[],
     cuenta: ResumenListas["empresas"],
+    empresaDe: (inst: PerfilInstitucion, e: EntradaTop) => string,
   ) => {
     for (const inst of instituciones) {
       cuenta.revisadas++;
       try {
         const nueva = calcular(inst.id);
+        for (const e of nueva) {
+          if (e.id && !destacados.get(e.id)) destacados.set(e.id, empresaDe(inst, e));
+        }
         if (!listaCambio(inst.actual, nueva)) continue;
         await db.collection(coleccion).doc(inst.id).update({ top_estudiantes: nueva });
         cuenta.actualizadas++;
@@ -385,8 +399,28 @@ export async function refrescarListasPerfiles(): Promise<ResumenListas> {
     }
   };
 
-  await aplicar("perfiles_empresas", datos.empresas, (id) => listaEmpresa(id, datos), resumen.empresas);
-  await aplicar("perfiles_universidades", datos.universidades, (id) => listaUniversidad(id, datos), resumen.universidades);
+  // En la lista de una empresa, ella misma es donde trabajaron; en la de una universidad,
+  // la fila trae su empresa.
+  await aplicar("perfiles_empresas", datos.empresas, (id) => listaEmpresa(id, datos), resumen.empresas, (inst) => inst.nombre);
+  await aplicar("perfiles_universidades", datos.universidades, (id) => listaUniversidad(id, datos), resumen.universidades, (_inst, e) => e.empresaNombre);
+
+  // Perfil público filtrado de todos los destacados: los de las listas + los 3 del Top de la
+  // plataforma. Best-effort: si falla, las listas ya quedaron guardadas. Solo se depura (se
+  // borra el de quien ya no sale en ninguna lista) si NINGUNA lista falló: con una lista sin
+  // calcular faltaría gente en `destacados` y se borrarían perfiles que sí corresponden.
+  try {
+    const top = await db.doc("ranking_plataforma/top_estudiantes").get();
+    const entradasTop: any[] = Array.isArray(top.data()?.entradas) ? top.data()!.entradas : [];
+    for (const e of entradasTop) {
+      if (e?.id && !destacados.get(e.id)) destacados.set(e.id, str(e.empresaNombre));
+    }
+    const pub = await publicarPerfilesPublicos(destacados.keys(), destacados);
+    const sinFallas = resumen.empresas.fallidas === 0 && resumen.universidades.fallidas === 0;
+    const eliminados = sinFallas ? await depurarPerfilesPublicos(new Set(destacados.keys())) : 0;
+    resumen.perfilesPublicos = { publicados: pub.publicados, eliminados };
+  } catch (e) {
+    logger.warn("listas de perfil: no se pudieron publicar los perfiles públicos", e);
+  }
   return resumen;
 }
 
@@ -398,7 +432,8 @@ export const actualizarListasPerfiles = onSchedule(
       const r = await refrescarListasPerfiles();
       logger.log(
         `Listas de perfil: empresas ${r.empresas.actualizadas}/${r.empresas.revisadas} actualizadas (${r.empresas.fallidas} fallidas), ` +
-        `universidades ${r.universidades.actualizadas}/${r.universidades.revisadas} actualizadas (${r.universidades.fallidas} fallidas).`,
+        `universidades ${r.universidades.actualizadas}/${r.universidades.revisadas} actualizadas (${r.universidades.fallidas} fallidas). ` +
+        `Perfiles públicos de estudiantes destacados: ${r.perfilesPublicos ? `${r.perfilesPublicos.publicados} publicados, ${r.perfilesPublicos.eliminados} retirados` : "no se pudieron actualizar"}.`,
       );
     } catch (e) {
       logger.error("Listas de perfil: falló la actualización", e);
