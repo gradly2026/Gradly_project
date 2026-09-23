@@ -1417,7 +1417,7 @@ export default function ChatThread({
   );
 
   // ── Composer (campo de texto) ──
-  // Dos correcciones críticas sobre el Composer por defecto de gifted-chat:
+  // Tres correcciones sobre el Composer por defecto de gifted-chat:
   //  1) BLOQUEO DE ESCRITURA: gifted-chat inyecta `maxLength: isTypingDisabled
   //     ? 0 : ...` en el TextInput. En dispositivos reales (iOS/Android) la
   //     animación del teclado puede dejar `isTypingDisabled` pegado en `true`,
@@ -1426,17 +1426,48 @@ export default function ChatThread({
   //  2) COLOR DEL TEXTO: sin `textInputStyle` el campo usa el negro por defecto
   //     del sistema (ilegible en modo oscuro). Fijamos `C.text` (el color de
   //     texto del tema activo) explícitamente.
+  //  3) ENTER PARA ENVIAR (solo escritorio/web): Enter envía el mensaje —
+  //     Shift+Enter sigue haciendo salto de línea, como en los chats de IA.
+  //     `props.text`/`props.onSend` son los MISMOS que usa el botón de enviar
+  //     de la librería (ver node_modules/react-native-gifted-chat/src/Send.tsx,
+  //     `onSend({text: text.trim()}, true)`): InputToolbar les pasa a
+  //     renderComposer y renderSend el mismo `props`, así que esto dispara
+  //     exactamente el mismo envío que tocar el botón, sin duplicar la
+  //     construcción del mensaje (id/fecha/usuario los pone GiftedChat).
+  //     Detectar Shift y bloquear el salto de línea del navegador con
+  //     preventDefault() SOLO existe en la implementación web de
+  //     react-native-web (ver su TextInput/index.js, handleKeyDown); en el
+  //     teclado táctil de un teléfono no hay tecla Shift física y ese evento
+  //     no trae nada usable, así que en nativo no se toca nada: Enter sigue
+  //     siendo un salto de línea y el envío sigue siendo solo con el botón.
   const renderComposerStyled = useCallback(
-    (props: ComponentProps<typeof Composer>) => (
-      <Composer
-        {...props}
-        textInputStyle={[props.textInputStyle as any, { color: C.text }]}
-        textInputProps={{
-          ...props.textInputProps,
-          maxLength: undefined,
-        }}
-      />
-    ),
+    (props: ComponentProps<typeof Composer>) => {
+      const enviarConEnter = (e: any) => {
+        if (Platform.OS !== "web" || e?.key !== "Enter" || e.shiftKey) return;
+        // No interceptar mientras un IME (acentos/ideogramas) está
+        // componiendo: ese Enter confirma el carácter, no debe enviar.
+        if (e?.nativeEvent?.isComposing) return;
+        const texto = (props.text ?? "").trim();
+        if (!texto) return;
+        e.preventDefault?.();
+        (props as unknown as { onSend?: (msgs: unknown, reset: boolean) => void })
+          .onSend?.({ text: texto }, true);
+      };
+      return (
+        <Composer
+          {...props}
+          textInputStyle={[props.textInputStyle as any, { color: C.text }]}
+          textInputProps={{
+            ...props.textInputProps,
+            maxLength: undefined,
+            onKeyPress: (e: any) => {
+              props.textInputProps?.onKeyPress?.(e);
+              enviarConEnter(e);
+            },
+          }}
+        />
+      );
+    },
     [C],
   );
 

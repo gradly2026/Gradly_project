@@ -149,6 +149,26 @@ export default function AsistenteGradly({ bottom }: Props) {
     }
   }, [input, cargando, mensajes, language, rol, pantalla]);
 
+  // Enter envía (solo escritorio/web); Shift+Enter sigue haciendo salto de
+  // línea, como en los chats de IA. Detectar Shift y bloquear el salto de
+  // línea que el navegador insertaría por defecto SOLO existe en la
+  // implementación web de react-native-web (ver su TextInput/index.js,
+  // handleKeyDown) — en el teclado táctil de un teléfono no hay tecla Shift
+  // física y ese evento no trae nada usable, así que en nativo no se toca
+  // nada: Enter sigue siendo un salto de línea y el envío sigue siendo solo
+  // con el botón.
+  const enviarConEnter = useCallback(
+    (e: any) => {
+      if (Platform.OS !== 'web' || e?.key !== 'Enter' || e.shiftKey) return;
+      // No interceptar mientras un IME (acentos/ideogramas) está
+      // componiendo: ese Enter confirma el carácter, no debe enviar.
+      if (e?.nativeEvent?.isComposing) return;
+      e.preventDefault?.();
+      void enviar();
+    },
+    [enviar],
+  );
+
   const irA = useCallback(
     (destino: string) => {
       setOpen(false);
@@ -254,6 +274,7 @@ export default function AsistenteGradly({ bottom }: Props) {
                 multiline
                 editable={!cargando}
                 onSubmitEditing={enviar}
+                onKeyPress={enviarConEnter}
               />
               <TouchableOpacity
                 style={[s.sendBtn, { backgroundColor: colors.primary, opacity: input.trim() && !cargando ? 1 : 0.5 }]}
