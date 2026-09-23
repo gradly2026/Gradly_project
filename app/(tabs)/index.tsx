@@ -73,6 +73,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useAuth } from '../../src/context/AuthContext';
 import { useTranslation } from '../../src/context/TranslationContext';
@@ -101,6 +102,10 @@ import { RADIOS_CERCANIA_KM, filtrarPorCercania, normalizarPunto } from '../../s
 // filtrarPorCercania() los aplica a la lista ya filtrada por lo demás, y
 // normalizarPunto() lee el punto guardado sin importar si viene como
 // {lat,lng} o {latitude,longitude}. Ver src/utils/geo.ts.
+import { ANCHO_MIN_GRID_ESCRITORIO, FeedGrid } from '../../src/components/FeedGrid';
+// En web de escritorio (ancho >= ANCHO_MIN_GRID_ESCRITORIO) la barra del
+// encabezado cruza todo el ancho y las tarjetas se reparten de 3 en 3; en
+// cualquier otro caso FeedGrid no cambia nada.
 import SelloEmpresa from '../../src/components/SelloEmpresa';
 // "Sello" visual (oro/plata/bronce) que indica el prestigio/rango de una
 // empresa, calculado a partir de su experiencia acumulada (XP) en la
@@ -458,6 +463,11 @@ export default function FeedVacantes() {
   const { t, language } = useTranslation();
   const { styles, colors } = useThemedStyles();
   const router = useRouter();
+  const { width: anchoVentana } = useWindowDimensions();
+  const feedEnGrid = Platform.OS === 'web' && anchoVentana >= ANCHO_MIN_GRID_ESCRITORIO;
+  // Estilo del contenedor del feed: en escritorio pierde el tope de 640 y gana
+  // más margen lateral (alineado con el del encabezado).
+  const feedContentStyle = feedEnGrid ? [styles.feedContent, styles.feedContentAncho] : styles.feedContent;
 
   const [vacantes,       setVacantes]       = useState<Vacante[]>([]);
   const [aplicaciones,   setAplicaciones]   = useState<Record<string, string>>({});
@@ -1107,23 +1117,25 @@ export default function FeedVacantes() {
       <View style={{ marginTop: 12 }}>
         <Text style={styles.pasantiasSectionLabel}>{t('feed_vacantes_trabajo')}</Text>
         <Text style={styles.vacantesTrabajoSub}>{t('feed_vacantes_trabajo_sub')}</Text>
-        {filteredVacantes.map(item => (
-          <View key={item.id} style={styles.vacanteTrabajoDim}>
-            <VacanteCard
-              vacante={item}
-              yaAplico={false}
-              estadoAplicacion=""
-              onVerDetalle={setVacanteDetalle}
-              applying={false}
-              empresaTier={empresaTiers[item.empresa_id]}
-              cuposTexto={cuposTextoFeed(item)}
-              readOnly
-            />
-          </View>
-        ))}
+        <FeedGrid enGrid={feedEnGrid}>
+          {filteredVacantes.map(item => (
+            <View key={item.id} style={styles.vacanteTrabajoDim}>
+              <VacanteCard
+                vacante={item}
+                yaAplico={false}
+                estadoAplicacion=""
+                onVerDetalle={setVacanteDetalle}
+                applying={false}
+                empresaTier={empresaTiers[item.empresa_id]}
+                cuposTexto={cuposTextoFeed(item)}
+                readOnly
+              />
+            </View>
+          ))}
+        </FeedGrid>
       </View>
     );
-  }, [zonaRoja, filteredVacantes, empresaTiers, t, styles]);
+  }, [zonaRoja, filteredVacantes, empresaTiers, t, styles, feedEnGrid]);
 
   // ── Render ────────────────────────────────────────────────────────
   return (
@@ -1147,9 +1159,16 @@ export default function FeedVacantes() {
         contentContainerStyle={{ flexGrow: 1 }}
       >
       {/* ── HEADER ── */}
-      <View style={styles.header}>
-        {/* Contenedor responsive: centra y limita el ancho en web/tablet. */}
-        <View style={{ maxWidth: 640, alignSelf: 'center', width: '100%' }}>
+      <View style={feedEnGrid ? [styles.header, styles.headerAncho] : styles.header}>
+        {/* Contenedor responsive: centra y limita el ancho en web/tablet. En
+            escritorio (feedEnGrid) no hay tope: la barra usa todo el ancho. */}
+        <View
+          style={
+            feedEnGrid
+              ? { maxWidth: '100%', alignSelf: 'center', width: '100%', paddingHorizontal: 16 }
+              : { maxWidth: 640, alignSelf: 'center', width: '100%' }
+          }
+        >
         {/* Saludo */}
         <View style={styles.greetingRow}>
           <View>
@@ -1167,7 +1186,7 @@ export default function FeedVacantes() {
                   porque su opacidad se anima en cada rotación. */}
             </Animated.Text>
           </View>
-          <Text style={styles.fecha}>{fecha}</Text>
+          <Text style={feedEnGrid ? [styles.fecha, styles.fechaAncha] : styles.fecha}>{fecha}</Text>
         </View>
 
         {/* Universidad y grupo del estudiante (variante de una línea). */}
@@ -1334,7 +1353,7 @@ export default function FeedVacantes() {
         // scroll); ahora es un simple `.map()` porque toda la página comparte
         // el ScrollView de arriba — así no hay una lista "flotando" con
         // altura/scroll propios.
-        <View style={styles.feedContent}>
+        <View style={feedContentStyle}>
           <EstadoBanner
             texto={
               habilitadoParaVacantes
@@ -1345,58 +1364,62 @@ export default function FeedVacantes() {
           {filteredVacantes.length === 0 ? (
             <EmptyState />
           ) : (
-            filteredVacantes.map(item => (
-              <VacanteCard
-                key={item.id}
-                vacante={item}
-                yaAplico={item.id in aplicaciones}
-                // "item.id in aplicaciones" comprueba si esa clave existe
-                // en el diccionario (sin importar su valor).
-                estadoAplicacion={aplicaciones[item.id] ?? ''}
-                // Culminó su pasantía por cupo pero aún no está graduado (su
-                // universidad no ha validado el comprobante): ve el feed en modo
-                // lectura hasta que se le acrediten las horas.
-                onAplicar={habilitadoParaVacantes ? handleAplicar : undefined}
-                readOnly={!habilitadoParaVacantes}
-                onVerDetalle={setVacanteDetalle}
-                applying={applying === item.id}
-                empresaTier={empresaTiers[item.empresa_id]}
-                cuposTexto={cuposTextoFeed(item)}
-                contratadoAqui={aplicaciones[item.id] === 'contratado'}
-              />
-            ))
+            <FeedGrid enGrid={feedEnGrid}>
+              {filteredVacantes.map(item => (
+                <VacanteCard
+                  key={item.id}
+                  vacante={item}
+                  yaAplico={item.id in aplicaciones}
+                  // "item.id in aplicaciones" comprueba si esa clave existe
+                  // en el diccionario (sin importar su valor).
+                  estadoAplicacion={aplicaciones[item.id] ?? ''}
+                  // Culminó su pasantía por cupo pero aún no está graduado (su
+                  // universidad no ha validado el comprobante): ve el feed en modo
+                  // lectura hasta que se le acrediten las horas.
+                  onAplicar={habilitadoParaVacantes ? handleAplicar : undefined}
+                  readOnly={!habilitadoParaVacantes}
+                  onVerDetalle={setVacanteDetalle}
+                  applying={applying === item.id}
+                  empresaTier={empresaTiers[item.empresa_id]}
+                  cuposTexto={cuposTextoFeed(item)}
+                  contratadoAqui={aplicaciones[item.id] === 'contratado'}
+                />
+              ))}
+            </FeedGrid>
           )}
         </View>
       ) : tienePasantiaActiva ? (
         // ── En pasantía activa: mercado en modo lectura + pulso del mercado ──
-        <View style={styles.feedContent}>
+        <View style={feedContentStyle}>
           <EstadoBanner texto={t('feed_banner_pasantia_activa')} />
           <MercadoLaboralStats vacantes={vacantes} />
           {filteredVacantes.length === 0 ? (
             <EmptyState />
           ) : (
-            filteredVacantes.map(item => (
-              <VacanteCard
-                key={item.id}
-                vacante={item}
-                yaAplico={item.id in aplicaciones}
-                estadoAplicacion={aplicaciones[item.id] ?? ''}
-                onVerDetalle={setVacanteDetalle}
-                applying={false}
-                empresaTier={empresaTiers[item.empresa_id]}
-                cuposTexto={cuposTextoFeed(item)}
-                contratadoAqui={aplicaciones[item.id] === 'contratado'}
-                readOnly
-                // No se pasa onAplicar en absoluto — VacanteCard ya sabe
-                // manejar esa ausencia (ver "onAplicar?.(vacante)" arriba).
-              />
-            ))
+            <FeedGrid enGrid={feedEnGrid}>
+              {filteredVacantes.map(item => (
+                <VacanteCard
+                  key={item.id}
+                  vacante={item}
+                  yaAplico={item.id in aplicaciones}
+                  estadoAplicacion={aplicaciones[item.id] ?? ''}
+                  onVerDetalle={setVacanteDetalle}
+                  applying={false}
+                  empresaTier={empresaTiers[item.empresa_id]}
+                  cuposTexto={cuposTextoFeed(item)}
+                  contratadoAqui={aplicaciones[item.id] === 'contratado'}
+                  readOnly
+                  // No se pasa onAplicar en absoluto — VacanteCard ya sabe
+                  // manejar esa ausencia (ver "onAplicar?.(vacante)" arriba).
+                />
+              ))}
+            </FeedGrid>
           )}
         </View>
       ) : (
         // ── Sin pasantía todavía: cupos asegurados por su universidad +
         // autoservicio a pasantías afines a su carrera ──
-        <View style={styles.feedContent}>
+        <View style={feedContentStyle}>
           {!zonaRoja && (
             <EstadoBanner texto={t('feed_banner_sin_pasantia')} />
           )}
@@ -1431,19 +1454,21 @@ export default function FeedVacantes() {
               />
             )
           ) : (
-            pasantiasDisponibles.map(item => (
-              <VacanteCard
-                key={item.id}
-                vacante={item}
-                yaAplico={item.id in aplicaciones}
-                estadoAplicacion={aplicaciones[item.id] ?? ''}
-                onAplicar={handleInscribirPasantia}
-                accionLabel={t('feed_btn_inscribir')}
-                onVerDetalle={setVacanteDetalle}
-                applying={applying === item.id}
-                empresaTier={empresaTiers[item.empresa_id]}
-              />
-            ))
+            <FeedGrid enGrid={feedEnGrid}>
+              {pasantiasDisponibles.map(item => (
+                <VacanteCard
+                  key={item.id}
+                  vacante={item}
+                  yaAplico={item.id in aplicaciones}
+                  estadoAplicacion={aplicaciones[item.id] ?? ''}
+                  onAplicar={handleInscribirPasantia}
+                  accionLabel={t('feed_btn_inscribir')}
+                  onVerDetalle={setVacanteDetalle}
+                  applying={applying === item.id}
+                  empresaTier={empresaTiers[item.empresa_id]}
+                />
+              ))}
+            </FeedGrid>
           )}
           {vacantesTrabajoPreview}
         </View>
@@ -1522,6 +1547,9 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
+  // Escritorio (ancho >= ANCHO_MIN_GRID_ESCRITORIO, ver FeedGrid): la barra
+  // pierde el tope de 640 y cruza todo el ancho disponible.
+  headerAncho: { maxWidth: '100%' },
   greetingRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1543,6 +1571,8 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     textAlign: 'right',
     maxWidth: 120,
   },
+  // Con la barra a todo el ancho la fecha cabe en una sola línea.
+  fechaAncha: { maxWidth: 320 },
 
   // Búsqueda
   searchWrap: {
@@ -1686,6 +1716,10 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100,
     maxWidth: 640, alignSelf: 'center', width: '100%',
   },
+  // Escritorio: sin tope de ancho y con el mismo margen lateral que el
+  // encabezado (16 del contenedor + 16 de la búsqueda = 32), para que el borde
+  // izquierdo de la primera columna alinee con la barra de búsqueda.
+  feedContentAncho: { maxWidth: '100%', paddingHorizontal: 32 },
 
   // ── States
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
