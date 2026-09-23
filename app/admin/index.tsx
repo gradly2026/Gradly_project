@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -150,6 +151,22 @@ type AdminUser = {
   approval_reason?: string | null;
   approval_reviewed_by?: string | null;
   created_at?: string | null;
+};
+
+/** Documento de 'verificaciones_empresa/{uid}' visto por el admin (Fase 2/3
+ *  de la cola de aprobación de empresas, ver registro.tsx) — NIT y
+ *  documento del representante, con las 4 fotos que agregó la Fase 3. Los
+ *  campos son todos opcionales porque una empresa antigua puede no tener
+ *  fotos todavía (o, si nunca abrió el registro nuevo, ni siquiera este
+ *  documento). */
+type VerificacionEmpresaAdmin = {
+  nit?: string;
+  contacto_documento_tipo?: string;
+  contacto_documento_numero?: string;
+  nit_frente_url?: string;
+  nit_reverso_url?: string;
+  doc_frente_url?: string;
+  doc_reverso_url?: string;
 };
 
 /** Un documento de la colección `audit_logs` — bitácora de acciones administrativas (ver logAction). */
@@ -360,6 +377,15 @@ function normalizeApprovalStatus(value: unknown, activo: unknown): ApprovalStatu
 // admin (approval_status pending/active/inactive); estudiante y admin no.
 function roleRequiresApproval(role: Role): boolean {
   return role === "empresa" || role === "universidad";
+}
+
+// Traduce contacto_documento_tipo ('dui'|'pasaporte'|'licencia', ver DocType
+// en registro.tsx) a la etiqueta que ve el admin en Documentos de verificación.
+function labelDocTipoVerificacion(tipo?: string): string {
+  if (tipo === "dui") return "DUI";
+  if (tipo === "pasaporte") return "Pasaporte";
+  if (tipo === "licencia") return "Licencia";
+  return "Documento";
 }
 
 // Traduce el `error.code` de Firestore/Cloud Functions a un mensaje en
@@ -749,6 +775,14 @@ export default function AdminPreview() {
   const [approvalReason, setApprovalReason] = useState("");
   const [reportResolution, setReportResolution] = useState("");
 
+  // 🆕 Documentos de verificación de la empresa seleccionada (Fase 3 de la
+  // cola de aprobación de empresas): NIT + documento del representante, con
+  // sus 4 fotos — vive en verificaciones_empresa/{uid}, colección aparte
+  // de `usuarios` (ver VerificacionEmpresa en registro.tsx), así que se
+  // trae con una lectura propia cuando se abre el detalle de una empresa.
+  const [verificacionSel, setVerificacionSel] = useState<VerificacionEmpresaAdmin | null>(null);
+  const [verificacionSelLoading, setVerificacionSelLoading] = useState(false);
+
   // Microsección "Vacantes publicadas" (drill-down desde Operación de
   // plataforma). La lista completa se llena en `fetchPlatformMetrics` (misma
   // lectura que ya se hacía para el conteo), igual que `reportCases`.
@@ -918,6 +952,17 @@ export default function AdminPreview() {
     setBanReason(u.ban_reason ?? "");
     setApprovalReason(u.approval_reason ?? "");
     setDetailOpen(true);
+    setVerificacionSel(null);
+    if (u.role === "empresa") {
+      // Lectura aparte: verificaciones_empresa NO viaja con AdminUser (ese
+      // viene solo de la colección `usuarios`) — las reglas de Firestore
+      // ya dejan leerlo a cualquier admin (ver firestore.rules, Fase 2).
+      setVerificacionSelLoading(true);
+      getDoc(doc(db, "verificaciones_empresa", u.id))
+        .then((snap) => setVerificacionSel(snap.exists() ? (snap.data() as VerificacionEmpresaAdmin) : null))
+        .catch(() => setVerificacionSel(null))
+        .finally(() => setVerificacionSelLoading(false));
+    }
   };
 
   const openEdit = (u: AdminUser) => {
@@ -6498,6 +6543,78 @@ export default function AdminPreview() {
                   </Text>
                 ) : null}
               </Card>
+
+              {selected.role === "empresa" ? (
+                <Card style={{ marginTop: 12 }}>
+                  <Text style={s.cardTitle}>Documentos de verificación</Text>
+                  <Text style={[s.textMuted, { marginTop: 6 }]}>
+                    NIT y documento de identidad del representante — revísalos antes de aprobar o
+                    rechazar la cuenta.
+                  </Text>
+                  {verificacionSelLoading ? (
+                    <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                      <ActivityIndicator color={C.accent70} />
+                    </View>
+                  ) : !verificacionSel ? (
+                    <Text style={[s.textMuted, { marginTop: 12 }]}>
+                      Esta empresa todavía no tiene documentos de verificación registrados.
+                    </Text>
+                  ) : (
+                    <>
+                      <Text style={[s.textMuted, { marginTop: 12 }]}>
+                        NIT: {verificacionSel.nit || "No registrado"}
+                      </Text>
+                      <Text style={[s.textMuted, { marginTop: 6 }]}>
+                        Documento del representante:{" "}
+                        {labelDocTipoVerificacion(verificacionSel.contacto_documento_tipo)}{" "}
+                        {verificacionSel.contacto_documento_numero || "No registrado"}
+                      </Text>
+                      <View style={[s.row, { flexWrap: "wrap", gap: 10, marginTop: 14 }]}>
+                        {(
+                          [
+                            { label: "NIT — frente", url: verificacionSel.nit_frente_url },
+                            { label: "NIT — reverso", url: verificacionSel.nit_reverso_url },
+                            { label: "Documento — frente", url: verificacionSel.doc_frente_url },
+                            { label: "Documento — reverso", url: verificacionSel.doc_reverso_url },
+                          ] as { label: string; url?: string }[]
+                        ).map((f) => (
+                          <View key={f.label} style={{ width: 150 }}>
+                            <Text style={[s.textMuted, { fontSize: 11, marginBottom: 6 }]}>{f.label}</Text>
+                            {f.url ? (
+                              <TouchableOpacity
+                                onPress={() => Linking.openURL(f.url!)}
+                                activeOpacity={0.8}
+                              >
+                                <Image
+                                  source={{ uri: f.url }}
+                                  style={{ width: 150, height: 100, borderRadius: 10, backgroundColor: C.border }}
+                                  resizeMode="cover"
+                                />
+                              </TouchableOpacity>
+                            ) : (
+                              <View
+                                style={{
+                                  width: 150,
+                                  height: 100,
+                                  borderRadius: 10,
+                                  backgroundColor: C.border,
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                }}
+                              >
+                                <Text style={[s.textMuted, { fontSize: 11 }]}>Sin foto</Text>
+                              </View>
+                            )}
+                          </View>
+                        ))}
+                      </View>
+                      <Text style={[s.textMuted, { fontSize: 11, marginTop: 10 }]}>
+                        Toca una foto para verla a tamaño completo.
+                      </Text>
+                    </>
+                  )}
+                </Card>
+              ) : null}
 
               <Card style={{ marginTop: 12 }}>
                 <Text style={s.cardTitle}>Acciones</Text>

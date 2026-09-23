@@ -97,6 +97,19 @@ service firebase.storage {
                        || request.resource.contentType.matches('audio/.*'));
     }
 
+    // 🏢🔒 Fotos de verificación de empresa (NIT + documento del
+    //    representante, Fase 3 de la cola de aprobación de empresas): solo
+    //    la propia empresa (con rol "empresa", mismo candado que ya usa
+    //    firestore.rules para verificaciones_empresa/{uid}) o el admin
+    //    pueden leerlas; solo la propia empresa puede subirlas.
+    match /documentos_verificacion/{uid}/{fileName} {
+      allow read: if request.auth != null && (request.auth.uid == uid || esAdmin());
+      allow write: if request.auth != null && request.auth.uid == uid
+                   && firestore.get(/databases/(default)/documents/usuarios/$(uid)).data.rol == 'empresa'
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
     // 🤖 Documento que el admin sube para extraer preguntas/respuestas del
     //    FAQ del Asistente Gradly (ver functions/src/faqExtractor.ts). Solo
     //    lo lee esa Cloud Function con el Admin SDK (bypasa reglas) — nadie

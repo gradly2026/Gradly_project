@@ -302,6 +302,30 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Ir a iniciar sesión": "Go to sign in",
   "Tu cuenta de universidad fue registrada correctamente. Te llevaremos a tu panel en unos segundos…":
     "Your university account was registered successfully. We'll take you to your dashboard in a few seconds…",
+
+  // ── Paso "Documentos" del registro de empresa (app/auth/registro.tsx) y su
+  //    revisión en el panel admin (Aprobaciones → Ver detalle). ──
+  "Documentos": "Documents",
+  "Un administrador los revisa antes de activar tu cuenta — normalmente toma entre 24 y 48 horas.":
+    "An administrator reviews them before activating your account — this usually takes 24 to 48 hours.",
+  "Foto del NIT — frente (opcional)": "NIT photo — front (optional)",
+  "Foto del NIT — reverso (opcional)": "NIT photo — back (optional)",
+  "Documento del representante": "Representative's ID document",
+  "Foto del documento — frente": "Document photo — front",
+  "Foto del documento — reverso": "Document photo — back",
+  "Debes subir la foto frontal del documento": "You must upload the front photo of the document",
+  "Debes subir la foto del reverso del documento": "You must upload the back photo of the document",
+  "Documentos de verificación": "Verification documents",
+  "NIT y documento de identidad del representante — revísalos antes de aprobar o rechazar la cuenta.":
+    "The NIT and the representative's ID document — review them before approving or rejecting the account.",
+  "Esta empresa todavía no tiene documentos de verificación registrados.":
+    "This company has no verification documents on file yet.",
+  "NIT — frente": "NIT — front",
+  "NIT — reverso": "NIT — back",
+  "Documento — frente": "Document — front",
+  "Documento — reverso": "Document — back",
+  "Sin foto": "No photo",
+  "Toca una foto para verla a tamaño completo.": "Tap a photo to see it full size.",
   "Registrando ubicación y datos en la base de datos.": "Registering location and data in the database.",
   "Remoto": "Remote",
   "Renovación automática": "Automatic renewal",

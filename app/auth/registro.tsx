@@ -4,8 +4,8 @@
 // GUÍA PARA PRINCIPIANTES:
 // El archivo más grande de todo el proyecto relacionado con un solo
 // formulario. Es un "wizard" (asistente paso a paso) que registra CUENTAS
-// NUEVAS de empresa o universidad, con 5 pasos cada una:
-//   Empresa:     Datos → Logo → Representante → Plan → Seguridad
+// NUEVAS de empresa o universidad:
+//   Empresa:     Datos → Logo → Representante → Documentos → Plan → Seguridad
 //   Universidad: Institución → Logo → Carreras → Responsable → Seguridad
 // (Los estudiantes NO se registran aquí — sus cuentas las crea la propia
 // universidad en lote, ver app/dashboard-universidad.tsx.)
@@ -379,6 +379,15 @@ interface VerificacionEmpresa {
   nit: string;
   contacto_documento_tipo: DocType;
   contacto_documento_numero: string;
+  /** Fotos del paso "Documentos" (Fase 3) en Storage, subidas a
+   *  'documentos_verificacion/{uid}/...'. Las del NIT son opcionales (no
+   *  toda empresa tiene hoy una tarjeta física de NIT a mano); las del
+   *  documento del representante son obligatorias, salvo el reverso si
+   *  es pasaporte. */
+  nit_frente_url?: string;
+  nit_reverso_url?: string;
+  doc_frente_url: string;
+  doc_reverso_url?: string;
 }
 
 // ── Catálogos ─────────────────────────────────────────────────────
@@ -404,7 +413,7 @@ const INDUSTRIAS = [
 const GEO_DATA: Record<string, string[]> = DISTRITOS_POR_DEPARTAMENTO;
 
 const FLOW_LABELS: Record<Exclude<Flow, null>, string[]> = {
-  empresa: ["Datos", "Logo", "Representante", "Plan", "Seguridad"],
+  empresa: ["Datos", "Logo", "Representante", "Documentos", "Plan", "Seguridad"],
   universidad: ["Institución", "Logo", "Carreras", "Responsable", "Seguridad"],
 };
 // Las etiquetas que muestra el <Stepper> (los círculos numerados de
@@ -622,7 +631,14 @@ async function emailYaRegistrado(correo: string): Promise<boolean> {
 }
 
 // ── Selección de imagen desde galería ─────────────────────────────
-async function pickImage(setter: (uri: string) => void): Promise<void> {
+async function pickImage(
+  setter: (uri: string) => void,
+  aspect: [number, number] = [1, 1],
+  // Cuadrado por default (sirve para los logos, que es su único uso
+  // original) — las fotos de documentos (Fase 3) pasan un aspecto más
+  // ancho, porque forzarlas a un recorte cuadrado corta la tarjeta de NIT
+  // o el carnet.
+): Promise<void> {
   // Función utilitaria genérica: pide permiso, abre la galería, y si el
   // usuario elige una imagen, llama al `setter` que se le pasó (así sirve
   // tanto para el logo de empresa como el de universidad, sin duplicar
@@ -635,7 +651,7 @@ async function pickImage(setter: (uri: string) => void): Promise<void> {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     allowsEditing: true,
-    aspect: [1, 1],
+    aspect,
     quality: 0.85,
   });
   if (!result.canceled && result.assets[0]) {
@@ -664,6 +680,27 @@ async function uploadLogo(uid: string, localUri: string): Promise<string> {
   // logos de empresa como de universidad (el nombre de la carpeta no
   // cambia según el rol) — funciona porque cada `uid` es único sin
   // importar el rol de la cuenta.
+}
+
+/**
+ * Sube una foto de documento de verificación (NIT o documento del
+ * representante) a Firebase Storage — mismo patrón que uploadLogo(), pero
+ * a la ruta 'documentos_verificacion/{uid}/{fileName}', legible solo por
+ * la propia empresa y el admin (ver storage.rules). La URL que devuelve
+ * se guarda en 'verificaciones_empresa/{uid}', el mismo documento
+ * protegido de la Fase 2 — no en perfiles_empresas, que es legible por
+ * cualquier autenticado.
+ */
+async function uploadDocumentoVerificacion(
+  uid: string,
+  localUri: string,
+  fileName: string,
+): Promise<string> {
+  const response = await fetch(localUri);
+  const blob = await response.blob();
+  const storageRef = ref(storage, `documentos_verificacion/${uid}/${fileName}`);
+  await uploadBytes(storageRef, blob);
+  return getDownloadURL(storageRef);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1655,6 +1692,14 @@ export default function Registro() {
   const [eRepDocType, setERepDocType] = useState<DocType>("dui");
   const [eRepDocNum, setERepDocNum] = useState("");
 
+  // Fotos del paso "Documentos" (Fase 3 de la cola de aprobación de
+  // empresas) — las del NIT son opcionales, las del documento del
+  // representante son obligatorias salvo el reverso si es pasaporte.
+  const [eNitFrente, setENitFrente] = useState<string | null>(null);
+  const [eNitReverso, setENitReverso] = useState<string | null>(null);
+  const [eDocFrente, setEDocFrente] = useState<string | null>(null);
+  const [eDocReverso, setEDocReverso] = useState<string | null>(null);
+
   const [ePlan, setEPlan] = useState<PlanId | "">("");
   const [eCard, setECard] = useState<DatosTarjeta | null>(null);
   const [planModalVisible, setPlanModalVisible] = useState(false);
@@ -1862,7 +1907,6 @@ export default function Registro() {
   const validateE1 = () => {
     const errs: Record<string, string> = {};
     put(errs, "eNombre", valLetters(2)(eNombre));
-    put(errs, "eNit", valNit(eNit));
 
     if (!eIndustria) errs.eIndustria = "Selecciona una industria o sector";
     else if (eIndustria === "Otro")
@@ -1907,7 +1951,18 @@ export default function Registro() {
     put(errs, "eRepCargo", valLetters(2)(eRepCargo));
     put(errs, "eRepTel", valPhone(eRepTel));
     put(errs, "eRepEmail", valEmailFmt(eRepEmail));
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  // ── Empresa paso 4 (documentos) ──
+  const validateE4Documentos = () => {
+    const errs: Record<string, string> = {};
+    put(errs, "eNit", valNit(eNit));
     put(errs, "eRepDocNum", valDoc(eRepDocType, eRepDocNum));
+    if (!eDocFrente) errs.eDocFrente = "Debes subir la foto frontal del documento";
+    if (eRepDocType !== "pasaporte" && !eDocReverso)
+      errs.eDocReverso = "Debes subir la foto del reverso del documento";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -1968,7 +2023,7 @@ export default function Registro() {
     return true;
   };
 
-  // ── Seguridad (paso 5 empresa / paso 5 universidad, ambos roles) ──
+  // ── Seguridad (paso 6 empresa / paso 5 universidad, ambos roles) ──
   const validateSecurity = (
     p: string,
     p2: string,
@@ -1998,7 +2053,8 @@ export default function Registro() {
       if (step === 1 && validateE1()) goNext();
       else if (step === 2 && validateE2()) goNext();
       else if (step === 3 && validateE3()) goNext();
-      else if (step === 4 && validateEPlan()) goNext();
+      else if (step === 4 && validateE4Documentos()) goNext();
+      else if (step === 5 && validateEPlan()) goNext();
     } else if (flow === "universidad") {
       if (step === 1 && validateU1()) goNext();
       else if (step === 2 && validateU2()) goNext();
@@ -2152,7 +2208,37 @@ export default function Registro() {
         // CREATE: el perfil EXTENDIDO específico de empresa, con TODOS
         // los campos capturados en los 4 pasos anteriores del wizard.
 
-        // 🆕 NIT + documento del representante → colección aparte y protegida
+        // 🆕 Fotos del paso "Documentos" (Fase 3) → Storage. Las del NIT son
+        // opcionales y van "best-effort" (igual que el logo arriba): si
+        // fallan, no bloquean el registro, quedan vacías. Las del documento
+        // del representante SÍ son obligatorias (ya lo exigió
+        // validateE4Documentos antes de dejar avanzar el wizard), así que
+        // si su subida falla de verdad, se deja propagar al catch de
+        // afuera — mejor que una empresa quede "pendiente" sin la foto que
+        // el admin necesita para aprobarla.
+        let nitFrenteUrl = "";
+        let nitReversoUrl = "";
+        if (eNitFrente) {
+          try {
+            nitFrenteUrl = await uploadDocumentoVerificacion(uid, eNitFrente, "nit_frente.jpg");
+          } catch {
+            nitFrenteUrl = "";
+          }
+        }
+        if (eNitReverso) {
+          try {
+            nitReversoUrl = await uploadDocumentoVerificacion(uid, eNitReverso, "nit_reverso.jpg");
+          } catch {
+            nitReversoUrl = "";
+          }
+        }
+        const docFrenteUrl = await uploadDocumentoVerificacion(uid, eDocFrente!, "doc_frente.jpg");
+        const docReversoUrl =
+          eRepDocType !== "pasaporte"
+            ? await uploadDocumentoVerificacion(uid, eDocReverso!, "doc_reverso.jpg")
+            : "";
+
+        // NIT + documento del representante → colección aparte y protegida
         // (Fase 2 de la cola de aprobación de empresas: ver VerificacionEmpresa
         // más arriba y firestore.rules, match /verificaciones_empresa/{empresaId}).
         const verificacion: VerificacionEmpresa = {
@@ -2160,6 +2246,10 @@ export default function Registro() {
           nit: eNit.trim(),
           contacto_documento_tipo: eRepDocType,
           contacto_documento_numero: eRepDocNum.trim(),
+          ...(nitFrenteUrl ? { nit_frente_url: nitFrenteUrl } : {}),
+          ...(nitReversoUrl ? { nit_reverso_url: nitReversoUrl } : {}),
+          doc_frente_url: docFrenteUrl,
+          ...(docReversoUrl ? { doc_reverso_url: docReversoUrl } : {}),
         };
         await setDoc(doc(db, "verificaciones_empresa", uid), verificacion);
       } else {
@@ -2292,17 +2382,8 @@ export default function Registro() {
               autoCapitalize="words"
               error={errors.eNombre}
             />
-            <FloatInput
-              label="NIT"
-              value={eNit}
-              onChangeText={live("eNit", setENit, maskNit, valNit)}
-              // Aquí el "filtro" es en realidad una MÁSCARA (maskNit):
-              // no solo bloquea caracteres, también INSERTA los guiones
-              // automáticamente en las posiciones correctas.
-              keyboardType="number-pad"
-              maxLength={17}
-              error={errors.eNit}
-            />
+            {/* El NIT se movió al paso "Documentos" (Fase 3 de la cola de
+                aprobación de empresas), junto a su foto. */}
             <SelectInput
               label="Industria / sector"
               value={eIndustria}
@@ -2468,7 +2549,8 @@ export default function Registro() {
         );
       case 3:
         // ── Paso 3: Representante — mismos patrones de campo que el
-        // paso 1, más el DocTypeSelector explicado arriba ──
+        // paso 1 (su documento de identidad se pide en el siguiente paso,
+        // "Documentos", junto con la foto) ──
         return (
           <View>
             <Text style={s.stepTitle}>Representante</Text>
@@ -2501,8 +2583,48 @@ export default function Registro() {
               keyboardType="email-address"
               error={errors.eRepEmail}
             />
+            {/* El tipo/número de documento y sus fotos se juntaron en el
+                paso "Documentos" (Fase 3 de la cola de aprobación de
+                empresas) — antes vivían aquí sueltos. */}
+          </View>
+        );
+      case 4:
+        // ── Paso 4: Documentos — NIT + documento del representante, cada
+        // uno con su foto. Fase 3 de la cola de aprobación de empresas (ver
+        // memoria project_cola_aprobacion_empresas): un admin los revisa
+        // antes de activar la cuenta. Las fotos del NIT son opcionales (no
+        // hay certeza de que toda empresa tenga hoy una tarjeta física de
+        // NIT con reverso con datos); las del documento del representante
+        // son obligatorias, salvo el reverso si es pasaporte (una libreta,
+        // sin "reverso" con datos). ──
+        return (
+          <View>
+            <Text style={s.stepTitle}>Documentos</Text>
+            <Text style={s.stepSubtitle}>
+              Un administrador los revisa antes de activar tu cuenta — normalmente toma entre 24 y
+              48 horas.
+            </Text>
 
-            <SectionLabel>Documento de identidad</SectionLabel>
+            <FloatInput
+              label="NIT"
+              value={eNit}
+              onChangeText={live("eNit", setENit, maskNit, valNit)}
+              keyboardType="number-pad"
+              maxLength={17}
+              error={errors.eNit}
+            />
+            <UploadZone
+              label="Foto del NIT — frente (opcional)"
+              imageUri={eNitFrente}
+              onPress={() => pickImage((uri) => setENitFrente(uri), [16, 10])}
+            />
+            <UploadZone
+              label="Foto del NIT — reverso (opcional)"
+              imageUri={eNitReverso}
+              onPress={() => pickImage((uri) => setENitReverso(uri), [16, 10])}
+            />
+
+            <SectionLabel>Documento del representante</SectionLabel>
             <DocTypeSelector
               value={eRepDocType}
               onChange={(t) => {
@@ -2532,10 +2654,30 @@ export default function Registro() {
               maxLength={DOC_RULES[eRepDocType].maxLen}
               error={errors.eRepDocNum}
             />
+            <UploadZone
+              label="Foto del documento — frente"
+              imageUri={eDocFrente}
+              onPress={() => pickImage((uri) => {
+                setEDocFrente(uri);
+                clearErr("eDocFrente");
+              }, [16, 10])}
+              error={errors.eDocFrente}
+            />
+            {eRepDocType !== "pasaporte" && (
+              <UploadZone
+                label="Foto del documento — reverso"
+                imageUri={eDocReverso}
+                onPress={() => pickImage((uri) => {
+                  setEDocReverso(uri);
+                  clearErr("eDocReverso");
+                }, [16, 10])}
+                error={errors.eDocReverso}
+              />
+            )}
           </View>
         );
-      case 4:
-        // ── Paso 4: Plan — usa PlanCard y TarjetaModal (explicados arriba) ──
+      case 5:
+        // ── Paso 5: Plan — usa PlanCard y TarjetaModal (explicados arriba) ──
         return (
           <View>
             <Text style={s.stepTitle}>Elige tu plan</Text>
@@ -2619,8 +2761,8 @@ export default function Registro() {
             )}
           </View>
         );
-      case 5:
-        // ── Paso 5: Seguridad — 2 PasswordField + TermsRow (definido más abajo) ──
+      case 6:
+        // ── Paso 6: Seguridad — 2 PasswordField + TermsRow (definido más abajo) ──
         return (
           <View>
             <Text style={s.stepTitle}>Seguridad</Text>
@@ -2986,10 +3128,9 @@ export default function Registro() {
     }
   };
 
-  const maxStep = flow === "universidad" ? 5 : 5;
-  // (Ambos flujos tienen 5 pasos — esta expresión, aunque siempre da 5
-  // sin importar el flujo, queda escrita como ternario probablemente
-  // por si algún día un flujo necesitara un número de pasos distinto.)
+  const maxStep = flow === "universidad" ? 5 : 6;
+  // Empresa ganó un sexto paso, "Documentos" (Fase 3 de la cola de
+  // aprobación de empresas) — universidad se queda en 5.
   const isLastStep = step === maxStep;
 
   // ══════════════════════════════════════════════════════════════
