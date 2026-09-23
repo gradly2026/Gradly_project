@@ -24,7 +24,7 @@ import * as DocumentPicker from 'expo-document-picker';
 // (para elegir un PDF, en este caso), distinto de ImagePicker (que abre
 // la galería de FOTOS).
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
@@ -153,6 +153,15 @@ function getLevel(pct: number) {
 // ─────────────────────────────────────────────
 export default function PerfilTab() {
   const router = useRouter();
+  // "Ir a Mi ubicación" desde el filtro de cercanía del feed (Inicio) llega
+  // aquí con ?seccion=ubicacion. Esta pestaña queda montada mientras la app
+  // vive (el navegador de tabs no la desmonta al cambiar de pestaña), así
+  // que PerfilMasterDetail — que solo LEE `initialSectionId` al montar, ver
+  // ese componente — no reaccionaría por sí solo a un nuevo valor del
+  // parámetro; más abajo se le da una `key` que cambia con el salto, para
+  // forzar un remount SOLO cuando el salto es nuevo.
+  const { seccion: seccionSalto } = useLocalSearchParams<{ seccion?: string }>();
+  const seccionInicialPerfil = seccionSalto === 'ubicacion' ? 'ubicacion' : null;
   const { user } = useAuth();
   const { styles, colors } = useThemedStyles();
   const { isDark } = useTheme();
@@ -537,6 +546,12 @@ export default function PerfilTab() {
       <StatusBar style="light" />
 
       <PerfilMasterDetail
+        // key: fuerza un remount cuando llega un salto NUEVO (ver
+        // seccionInicialPerfil arriba) — initialSectionId de por sí solo se
+        // lee al montar, así que sin esto un salto a una pestaña ya montada
+        // no abriría la sección.
+        key={seccionInicialPerfil ?? 'menu'}
+        initialSectionId={seccionInicialPerfil}
         // Aquí es donde se activa el patrón "orientado a configuración"
         // mencionado en la guía del encabezado: en vez de escribir el
         // JSX completo de cada sección del perfil (con su tarjeta, su

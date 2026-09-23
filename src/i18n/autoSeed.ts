@@ -1553,6 +1553,13 @@ export const UBICACION_SEED_EN: Record<string, string> = {
   "Guarda el punto exacto de tu empresa una sola vez en “Mi ubicación” y desde ahí podrás cargarlo con un toque cada vez que publiques una pasantía o vacante — más rápido, y le da al estudiante un dato verificado de a dónde va a llegar.":
     "Save your company's exact spot once in “My location” and load it with one tap every time you post a job or internship — faster, and it gives the student a verified fact about where they're headed.",
   "Ir a Mi ubicación": "Go to My location",
+
+  // ── Filtro de cercanía en el feed de pasantías/vacantes del estudiante
+  //    (FiltroCercaniaSinUbicacionModal, v196) — reutiliza el título y los
+  //    botones de arriba, solo cambia el cuerpo. ──
+  "Este filtro toma como referencia el punto guardado en “Mi ubicación” para calcular qué tan cerca está cada pasantía o vacante de ti. Guárdalo una sola vez y podrás usarlo cada vez que quieras filtrar por distancia.":
+    "This filter uses the point saved in “My location” to calculate how close each internship or job is to you. Save it once and you'll be able to use it every time you want to filter by distance.",
+
   "Actualizaste tu ubicación": "You updated your location",
   "Actualizarlas automáticamente": "Update them automatically",
   "Las editaré yo mismo": "I'll edit them myself",

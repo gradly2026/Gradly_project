@@ -94,6 +94,13 @@ import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import VacanteDetailModal from '../../src/components/VacanteDetailModal';
 import InscripcionExitoModal from '../../src/components/InscripcionExitoModal';
+import FiltroCercaniaSinUbicacionModal from '../../src/components/FiltroCercaniaSinUbicacionModal';
+import { RADIOS_CERCANIA_KM, filtrarPorCercania, normalizarPunto } from '../../src/utils/geo';
+// Filtro de "cercanía" (distancia en línea recta desde "Mi ubicación" del
+// estudiante): RADIOS_CERCANIA_KM decide los radios que ofrece el filtro,
+// filtrarPorCercania() los aplica a la lista ya filtrada por lo demás, y
+// normalizarPunto() lee el punto guardado sin importar si viene como
+// {lat,lng} o {latitude,longitude}. Ver src/utils/geo.ts.
 import SelloEmpresa from '../../src/components/SelloEmpresa';
 // "Sello" visual (oro/plata/bronce) que indica el prestigio/rango de una
 // empresa, calculado a partir de su experiencia acumulada (XP) en la
@@ -165,6 +172,10 @@ interface Vacante {
    *  A diferencia de `activa`, esto NO lo toca el admin ni el propio
    *  pausar/reactivar de la empresa. */
   cerrada?: boolean;
+  /** Punto exacto de la plaza (o de la empresa) — ya se usaba para "Cómo
+   *  llegar" y ahora también para el filtro de cercanía del feed (ver
+   *  src/utils/geo.ts). Vacantes remotas o legadas pueden no tenerlo. */
+  ubicacion_coords?: { latitude: number; longitude: number } | null;
 }
 
 // ─────────────────────────────────────────────
@@ -185,6 +196,13 @@ const FILTROS = [
 // coincidiendo con `vacante.modalidad` tal como se guarda en Firestore, en
 // español) — por eso no se traduce. `labelKey` es solo lo que LEE el
 // usuario.
+
+const RADIOS_FILTRO = RADIOS_CERCANIA_KM.map(km => ({ km, labelKey: `feed_cercania_${km}km` }));
+// Chips de "Distancia": un "Todas" (reutiliza feed_filtro_todas, mismo texto
+// que el filtro de modalidad) + uno por cada radio de RADIOS_CERCANIA_KM
+// (src/utils/geo.ts) — esa lista es la única fuente de verdad de los radios
+// que ofrece el filtro Y de los que de verdad se usan para calcular la
+// distancia, así que nunca pueden desalinearse.
 
 const HOY = new Date();
 // Se calcula UNA sola vez, al cargar el archivo (no dentro del
@@ -462,6 +480,12 @@ export default function FeedVacantes() {
   // lista — evita recalcular el filtrado completo en CADA tecla
   // presionada.
   const [filtroActivo,   setFiltroActivo]   = useState('todas');
+  // Filtro de cercanía (independiente del de modalidad de arriba: se pueden
+  // combinar, p. ej. "Presencial" + "5 km"). null = "Todas" (sin filtrar por
+  // distancia). El modal se abre si el estudiante toca un radio sin tener
+  // "Mi ubicación" guardada — ver FiltroCercaniaSinUbicacionModal.
+  const [filtroRadioKm,  setFiltroRadioKm]  = useState<number | null>(null);
+  const [avisoUbicacionOpen, setAvisoUbicacionOpen] = useState(false);
   const [phraseIdx,      setPhraseIdx]      = useState(0);
   const [cargando,       setCargando]       = useState(true);
   const [vacanteDetalle, setVacanteDetalle] = useState<Vacante | null>(null);
@@ -476,6 +500,8 @@ export default function FeedVacantes() {
     universidad_id?: string; grupo_id?: string;
     // Para el filtro/orden por afinidad de carrera.
     carrera?: string; skills?: string[];
+    // "Mi ubicación": punto de referencia para el filtro de cercanía.
+    ubicacion_precisa?: { lat: number; lng: number } | null;
   } | null>(null);
   const [perfilCargado, setPerfilCargado] = useState(false);
 
@@ -810,8 +836,14 @@ export default function FeedVacantes() {
     );
   }, []);
 
+  // ── Filtro de cercanía: punto guardado en "Mi ubicación" del estudiante ──
+  const origenEstudiante = useMemo(
+    () => normalizarPunto(perfilEstudiante?.ubicacion_precisa ?? null),
+    [perfilEstudiante?.ubicacion_precisa],
+  );
+
   // ── Filtrado local ───────────────────────────────────────────────
-  const filteredVacantes = useMemo(() => {
+  const { lista: filteredVacantes, ocultosPorUbicacion: ocultosEmpleo } = useMemo(() => {
     // Las de categoría 'pasantia' se gestionan por el matchmaking
     // universidad↔empresa (Matchmaking.tsx); este feed individual es solo
     // para 'vacante' (o vacantes legado sin categoría asignada aún).
@@ -864,8 +896,9 @@ export default function FeedVacantes() {
       return total > 1 && aplicaciones[v.id] === 'contratado';
     });
 
-    return res;
-  }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, userProfile, aplicaciones]);
+    const { visibles, ocultosPorFaltaDeUbicacion } = filtrarPorCercania(res, origenEstudiante, filtroRadioKm);
+    return { lista: visibles, ocultosPorUbicacion: ocultosPorFaltaDeUbicacion };
+  }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, userProfile, aplicaciones, origenEstudiante, filtroRadioKm]);
   // useMemo: este cálculo (filtrar + ordenar) solo se vuelve a ejecutar
   // cuando cambia alguna de sus dependencias — no en CADA render de la
   // pantalla (por ejemplo, no se recalcula solo porque `applying` cambió).
@@ -875,8 +908,10 @@ export default function FeedVacantes() {
   // le aseguró su universidad (ver <TableroCupos/> en el render). Vacío por
   // completo si es Zona Roja, o si ya está graduado/en pasantía (ese caso lo
   // cubren las otras 2 ramas del render).
-  const pasantiasDisponibles = useMemo(() => {
-    if (habilitadoParaVacantes || tienePasantiaActiva || tieneCupoFinalizado || zonaRoja) return [];
+  const { lista: pasantiasDisponibles, ocultosPorUbicacion: ocultosPasantias } = useMemo(() => {
+    if (habilitadoParaVacantes || tienePasantiaActiva || tieneCupoFinalizado || zonaRoja) {
+      return { lista: [], ocultosPorUbicacion: 0 };
+    }
     // Corta temprano: si el estudiante está en cualquiera de las otras 2
     // situaciones (o es Zona Roja), esta lista ni siquiera se calcula —
     // simplemente queda vacía.
@@ -910,8 +945,30 @@ export default function FeedVacantes() {
     if (filtroActivo !== 'todas') {
       res = res.filter(v => v.modalidad === filtroActivo || v.area === filtroActivo);
     }
-    return res;
-  }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, miCarrera, habilitadoParaVacantes, tienePasantiaActiva, tieneCupoFinalizado, zonaRoja, vacantesConCupoReservado]);
+    const { visibles, ocultosPorFaltaDeUbicacion } = filtrarPorCercania(res, origenEstudiante, filtroRadioKm);
+    return { lista: visibles, ocultosPorUbicacion: ocultosPorFaltaDeUbicacion };
+  }, [vacantes, searchQuery, filtroActivo, perfilEstudiante, miCarrera, habilitadoParaVacantes, tienePasantiaActiva, tieneCupoFinalizado, zonaRoja, vacantesConCupoReservado, origenEstudiante, filtroRadioKm]);
+
+  // ── Filtro de cercanía: aviso de "ocultas por falta de ubicación" ──
+  // Mismas 2 ramas que deciden más abajo cuál lista se dibuja (feed de
+  // empleo vs. autoservicio de pasantías) — nunca se muestran las 2 a la
+  // vez, así que basta elegir el contador de la que sí se ve.
+  const mostrandoEmpleo =
+    habilitadoParaVacantes || (tieneCupoFinalizado && !tienePasantiaActiva) || tienePasantiaActiva;
+  const ocultosPorUbicacionActivo = mostrandoEmpleo ? ocultosEmpleo : ocultosPasantias;
+
+  // Toca un chip de radio: si aún no hay "Mi ubicación" guardada, se explica
+  // por qué antes de aplicarlo (el filtro no tendría ningún punto de
+  // referencia). Los radios ya elegidos con un punto guardado se pueden
+  // desactivar libremente sin volver a pasar por el modal.
+  const tocarRadio = (km: number) => {
+    if (!origenEstudiante) { setAvisoUbicacionOpen(true); return; }
+    setFiltroRadioKm(prev => (prev === km ? null : km));
+  };
+  const irAMiUbicacion = () => {
+    setAvisoUbicacionOpen(false);
+    router.push({ pathname: '/(tabs)/perfil', params: { seccion: 'ubicacion' } } as any);
+  };
 
   // ── Aplicar a vacante ────────────────────────────────────────────
   const handleAplicar = useCallback(async (vacante: Vacante) => {
@@ -1215,6 +1272,47 @@ export default function FeedVacantes() {
             </TouchableOpacity>
           ) : null}
         </View>
+
+        {/* Chips de "Distancia" — filtro de cercanía, independiente del de
+            modalidad de arriba (se combinan con AND: p. ej. "Presencial" +
+            "5 km"). Sin flechas de scroll propias: son 5 chips cortos, con
+            flexWrap alcanza para que quepan en cualquier ancho de pantalla. */}
+        <View style={styles.cercaniaWrap}>
+          <Text style={styles.cercaniaLabel}>{t('feed_cercania_titulo')}</Text>
+          <View style={styles.cercaniaChips}>
+            <JellyButton
+              style={[styles.filtroChip, { borderRadius: 20 }, filtroRadioKm === null && styles.filtroChipActive]}
+              contentStyle={{ paddingHorizontal: 14, paddingVertical: 6 }}
+              onPress={() => setFiltroRadioKm(null)}
+            >
+              <Text style={[styles.filtroChipText, filtroRadioKm === null && styles.filtroChipTextActive]}>
+                {t('feed_filtro_todas')}
+              </Text>
+            </JellyButton>
+            {RADIOS_FILTRO.map(r => (
+              <JellyButton
+                key={r.km}
+                style={[styles.filtroChip, { borderRadius: 20 }, filtroRadioKm === r.km && styles.filtroChipActive]}
+                contentStyle={{ paddingHorizontal: 14, paddingVertical: 6 }}
+                onPress={() => tocarRadio(r.km)}
+              >
+                <Text style={[styles.filtroChipText, filtroRadioKm === r.km && styles.filtroChipTextActive]}>
+                  {t(r.labelKey)}
+                </Text>
+              </JellyButton>
+            ))}
+          </View>
+          {filtroRadioKm !== null && (
+            <Text style={styles.cercaniaNota}>{t('feed_cercania_nota')}</Text>
+          )}
+          {filtroRadioKm !== null && ocultosPorUbicacionActivo > 0 && (
+            <Text style={styles.cercaniaAviso}>
+              {mostrandoEmpleo
+                ? t(ocultosPorUbicacionActivo === 1 ? 'feed_cercania_aviso_vacante_1' : 'feed_cercania_aviso_vacante_n', { n: ocultosPorUbicacionActivo })
+                : t(ocultosPorUbicacionActivo === 1 ? 'feed_cercania_aviso_pasantia_1' : 'feed_cercania_aviso_pasantia_n', { n: ocultosPorUbicacionActivo })}
+            </Text>
+          )}
+        </View>
           </>
         )}
         </View>
@@ -1391,6 +1489,13 @@ export default function FeedVacantes() {
           onClose={() => setInscripcionOk(null)}
         />
       )}
+
+      {/* ── Filtro de cercanía: aviso de "Mi ubicación" sin registrar ── */}
+      <FiltroCercaniaSinUbicacionModal
+        visible={avisoUbicacionOpen}
+        onClose={() => setAvisoUbicacionOpen(false)}
+        onIrAMiUbicacion={irAMiUbicacion}
+      />
     </View>
     </LiquidBackground>
   );
@@ -1496,6 +1601,20 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     color: COLORS.textMuted,
   },
   filtroChipTextActive: { color: COLORS.textPrimary },
+  cercaniaWrap: { paddingHorizontal: 16, marginTop: 10 },
+  cercaniaLabel: {
+    fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted,
+    marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3,
+  },
+  cercaniaChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  cercaniaNota: {
+    fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.textMuted,
+    fontStyle: 'italic', marginTop: 6,
+  },
+  cercaniaAviso: {
+    fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.warning,
+    marginTop: 4,
+  },
 
   // ── Card
   card: {
