@@ -72,17 +72,26 @@ export async function obtenerRolConReintento(
 }
 
 export type BloqueoCuenta = {
-  tipo: "baneado" | "inactivo";
+  tipo: "baneado" | "pendiente" | "inactivo";
   motivo: string | null;
 };
 
 /**
  * Lee `usuarios/{uid}` justo después de un login exitoso para detectar si un
- * administrador baneó o inactivó la cuenta (panel admin: [[project_panel_admin_ruteo]]).
- * El SDK de Auth ya rechaza `signInWithEmailAndPassword` para cuentas con
- * `disabled: true`, pero el login sin contraseña (custom token) y una
- * inactivación que no llegó a sincronizarse a Auth pueden dejarlo pasar —
- * esta es la última barrera antes de navegar al dashboard.
+ * administrador baneó o inactivó la cuenta (panel admin: [[project_panel_admin_ruteo]]),
+ * o si todavía está esperando la aprobación administrativa de registro
+ * (`approval_status: 'pending'` — cola "Aprobaciones" del panel admin, ver
+ * project_cola_aprobacion_empresas). El SDK de Auth ya rechaza
+ * `signInWithEmailAndPassword` para cuentas con `disabled: true`, pero el
+ * login sin contraseña (custom token) y una inactivación que no llegó a
+ * sincronizarse a Auth pueden dejarlo pasar — esta es la última barrera antes
+ * de navegar al dashboard.
+ *
+ * Orden de los 3 chequeos: `baneado` (acción explícita de un admin) gana
+ * sobre `pendiente` (que también deja `activo:false`, pero es un estado
+ * neutro de "todavía no revisado", no un castigo); `inactivo` es el resto de
+ * los casos con `activo:false` (p. ej. una cuenta que el admin rechazó tras
+ * revisarla, `approval_status:'inactive'`).
  */
 export async function verificarBloqueoCuenta(
   uid: string,
@@ -96,6 +105,9 @@ export async function verificarBloqueoCuenta(
         tipo: "baneado",
         motivo: data?.motivo_baneo ? String(data.motivo_baneo) : null,
       };
+    }
+    if (data?.approval_status === "pending") {
+      return { tipo: "pendiente", motivo: null };
     }
     if (data?.activo === false) {
       return { tipo: "inactivo", motivo: null };

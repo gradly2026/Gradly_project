@@ -294,6 +294,14 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Recibo Gradly": "Gradly receipt",
   "Reclutamiento": "Recruitment",
   "Redirigiendo a tu panel…": "Redirecting to your dashboard…",
+
+  // ── Cola de aprobación de empresas al registrarse (paso 99 del wizard,
+  //    app/auth/registro.tsx) — universidad sigue sin cambios. ──
+  "Un administrador va a revisar los datos de tu empresa antes de activar la cuenta — normalmente toma entre 24 y 48 horas. Vuelve a iniciar sesión pasado ese tiempo.":
+    "An administrator will review your company's information before activating the account — this usually takes 24 to 48 hours. Try signing in again after that.",
+  "Ir a iniciar sesión": "Go to sign in",
+  "Tu cuenta de universidad fue registrada correctamente. Te llevaremos a tu panel en unos segundos…":
+    "Your university account was registered successfully. We'll take you to your dashboard in a few seconds…",
   "Registrando ubicación y datos en la base de datos.": "Registering location and data in the database.",
   "Remoto": "Remote",
   "Renovación automática": "Automatic renewal",

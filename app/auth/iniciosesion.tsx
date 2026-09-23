@@ -123,6 +123,12 @@ const makeC = (colors: GradlyColors) => ({
   redBorder: "rgba(239,68,68,0.35)",
   green: colors.success,
   greenBg: "rgba(34,197,94,0.15)",
+  // Cuenta "en revisión" (cola de aprobación): mismo patrón rgba de
+  // arriba, pero en ámbar — no es un castigo (rojo), es un estado neutro
+  // de espera.
+  amber: colors.warning,
+  amberBg: "rgba(245,158,11,0.12)",
+  amberBorder: "rgba(245,158,11,0.35)",
 });
 
 type Tokens = ReturnType<typeof makeC>;
@@ -1334,21 +1340,38 @@ export default function InicioSesion() {
             >
               <Ionicons name="close" size={20} color={C.textMuted} />
             </TouchableOpacity>
-            <View style={[styles.magicIconWrap, styles.blockIconWrap]}>
-              <Ionicons name="lock-closed-outline" size={30} color={C.red} />
+            <View
+              style={[
+                styles.magicIconWrap,
+                styles.blockIconWrap,
+                bloqueoCuenta?.tipo === "pendiente" && styles.blockIconWrapPendiente,
+              ]}
+            >
+              <Ionicons
+                name={bloqueoCuenta?.tipo === "pendiente" ? "time-outline" : "lock-closed-outline"}
+                size={30}
+                color={bloqueoCuenta?.tipo === "pendiente" ? C.amber : C.red}
+              />
             </View>
             <Text style={styles.formTitle}>
               {bloqueoCuenta?.tipo === "baneado"
                 ? t('login_bloqueo_titulo_baneado')
-                : t('login_bloqueo_titulo_inactivo')}
+                : bloqueoCuenta?.tipo === "pendiente"
+                  ? t('login_bloqueo_titulo_pendiente')
+                  : t('login_bloqueo_titulo_inactivo')}
               {/* El texto del modal cambia según el TIPO de bloqueo: un
                   baneo (decisión de un administrador) es un mensaje
-                  distinto a una cuenta simplemente "inactiva". */}
+                  distinto a una cuenta simplemente "inactiva", y una
+                  cuenta "pendiente" (recién registrada, esperando la cola
+                  de aprobación del panel admin) tiene un tono de espera,
+                  no de castigo. */}
             </Text>
             <Text style={styles.formSub}>
               {bloqueoCuenta?.tipo === "baneado"
                 ? t('login_bloqueo_msg_baneado')
-                : t('login_bloqueo_msg_inactivo')}
+                : bloqueoCuenta?.tipo === "pendiente"
+                  ? t('login_bloqueo_msg_pendiente')
+                  : t('login_bloqueo_msg_inactivo')}
             </Text>
             {!!bloqueoCuenta?.motivo && (
               <View style={styles.blockReasonBox}>
@@ -1704,6 +1727,13 @@ const makeStyles = (C: Tokens) =>
     blockIconWrap: {
       backgroundColor: C.redBg,
       borderColor: C.redBorder,
+    },
+    // "En revisión": mismo tamaño/forma que blockIconWrap, tono ámbar en
+    // vez de rojo (no es un castigo). Se combina con blockIconWrap
+    // (mismo array de estilos), así que solo pisa color/borde.
+    blockIconWrapPendiente: {
+      backgroundColor: C.amberBg,
+      borderColor: C.amberBorder,
     },
     blockReasonBox: {
       backgroundColor: C.redBg,

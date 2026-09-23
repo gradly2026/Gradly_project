@@ -26,6 +26,7 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
   createUserWithEmailAndPassword,
+  signOut,
   updateProfile,
 } from "firebase/auth";
 // updateProfile(cred.user, { displayName }) → función de Firebase Auth
@@ -2064,7 +2065,15 @@ export default function Registro() {
         nombre_completo: nombrePrincipal,
         correo,
         rol: flow,
-        activo: true,
+        // 🆕 Cola de aprobación (solo empresa por ahora — universidad sigue
+        // activándose sola, ver project_cola_aprobacion_empresas): la cuenta
+        // nace SIN acceso hasta que un admin revise sus documentos en la
+        // sección "Aprobaciones" del panel (ya existía esa cola; antes nunca
+        // le llegaba nadie porque toda cuenta nacía activa). El bloqueo real
+        // lo aplica verificarBloqueoCuenta() en el próximo login — ver
+        // roleRouting.ts.
+        activo: !isEmpresa,
+        ...(isEmpresa ? { approval_status: "pending" as const } : {}),
         esPrimerIngreso: true,
         tourVisto: {},
         fecha_registro: serverTimestamp(),
@@ -2166,6 +2175,20 @@ export default function Registro() {
         // visto en dashboard-universidad.tsx (guardarCarreras).
       }
 
+      // 🆕 La empresa queda SIN sesión activa mientras espera aprobación: el
+      // registro (arriba) la deja autenticada de inmediato (efecto normal de
+      // createUserWithEmailAndPassword), y sin este signOut podría entrar a
+      // su panel con esa misma sesión sin pasar por el chequeo de
+      // verificarBloqueoCuenta(), que solo corre en el flujo de LOGIN — ver
+      // roleRouting.ts. Universidad no cambia: sigue activa de una vez.
+      if (isEmpresa) {
+        try {
+          await signOut(auth);
+        } catch {
+          /* si falla, el paso 99 igual no la redirige a su panel (ver abajo) */
+        }
+      }
+
       scrollTop();
       setStep(99);
       // Paso especial "99" = pantalla de éxito (no forma parte de la
@@ -2198,8 +2221,12 @@ export default function Registro() {
   };
 
   // ── Auto-redirección al dashboard 3s después del registro exitoso ──
+  // 🆕 Empresa NO se redirige sola: queda sin sesión (ver el signOut de
+  // handleRegister) esperando la aprobación admin, así que no hay panel al
+  // que mandarla todavía — su paso 99 ofrece un botón a "Iniciar sesión" en
+  // su lugar (ver el render de abajo).
   useEffect(() => {
-    if (step !== 99) return;
+    if (step !== 99 || flow === "empresa") return;
     const t = setTimeout(goToDashboard, 3000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3122,15 +3149,36 @@ export default function Registro() {
                   <Ionicons name="checkmark" size={40} color={C.green} />
                 </View>
                 <Text style={s.successTitle}>¡Cuenta creada!</Text>
-                <Text style={s.successDesc}>
-                  Tu cuenta de {flow === "empresa" ? "empresa" : "universidad"} fue
-                  registrada correctamente. Te llevaremos a tu panel en unos
-                  segundos…
-                </Text>
-                <View style={s.redirectRow}>
-                  <ActivityIndicator color={C.accent70} />
-                  <Text style={s.redirectText}>Redirigiendo a tu panel…</Text>
-                </View>
+                {flow === "empresa" ? (
+                  // 🆕 Cola de aprobación: la empresa NO tiene panel al que ir
+                  // todavía (queda sin sesión, ver handleRegister) — se le
+                  // explica el porqué y se le da un plazo concreto en vez de
+                  // dejarla adivinando.
+                  <>
+                    <Text style={s.successDesc}>
+                      Un administrador va a revisar los datos de tu empresa antes de
+                      activar la cuenta — normalmente toma entre 24 y 48 horas.
+                      Vuelve a iniciar sesión pasado ese tiempo.
+                    </Text>
+                    <TouchableOpacity
+                      style={[s.btnPrimary, { marginTop: 18, alignSelf: "stretch" }]}
+                      onPress={() => router.replace("/auth/iniciosesion" as any)}
+                    >
+                      <Text style={s.btnPrimaryText}>Ir a iniciar sesión</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <Text style={s.successDesc}>
+                      Tu cuenta de universidad fue registrada correctamente. Te
+                      llevaremos a tu panel en unos segundos…
+                    </Text>
+                    <View style={s.redirectRow}>
+                      <ActivityIndicator color={C.accent70} />
+                      <Text style={s.redirectText}>Redirigiendo a tu panel…</Text>
+                    </View>
+                  </>
+                )}
               </View>
             </View>
           )}
