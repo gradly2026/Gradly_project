@@ -25,6 +25,11 @@
  *    historial completo de `solicitudes_practicas` (admin.ts). Backfill de una
  *    sola vez para pasantías aprobadas antes de que existiera el autoreporte
  *    en tiempo real; también sirve para reconciliar si hiciera falta.
+ *  · migrarVerificacionesEmpresa → backfill de una sola vez: mueve el NIT y
+ *    el documento del representante de `perfiles_empresas` (legible por
+ *    cualquier autenticado) a `verificaciones_empresa` (solo dueño + admin),
+ *    para las empresas registradas antes de la Fase 2 de la cola de
+ *    aprobación (admin.ts). Idempotente, seguro de repetir.
  *  · obtenerSaludAsistencia → contadores agregados para la tarjeta "Salud
  *    operativa" del panel admin (Config): pasantías terminadas
  *    anticipadamente en 30 días + incidencias de tardanza reiterada abiertas
@@ -93,6 +98,7 @@ export {
   deleteUserComplete,
   deshabilitarVacanteAdmin,
   eliminarVacanteAdmin,
+  migrarVerificacionesEmpresa,
   obtenerAsistenciaPasantiaAdmin,
   obtenerSaludAsistencia,
   resolveReport,

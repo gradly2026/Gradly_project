@@ -166,6 +166,25 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
+    // 🔒 VERIFICACIONES_EMPRESA — NIT y documento de identidad del
+    //    representante (Fase 2 de la cola de aprobación de empresas, ver
+    //    memoria project_cola_aprobacion_empresas). Vive APARTE de
+    //    perfiles_empresas a propósito: ese perfil es legible por cualquier
+    //    autenticado (arriba), y Firestore no filtra la lectura campo por
+    //    campo — meter aquí datos identificatorios (y, en la Fase 3, fotos
+    //    de esos documentos) los habría dejado tan expuestos como el resto
+    //    del perfil público. Solo el dueño y el admin pueden leer o escribir.
+    match /verificaciones_empresa/{empresaId} {
+      allow read: if request.auth != null
+        && (request.auth.uid == empresaId || esAdmin());
+      // `esRol('empresa')` (no solo el uid) evita que cualquier autenticado
+      // (p. ej. un estudiante) cree/edite un documento con su propio uid en
+      // esta colección — no le serviría de nada, pero no tiene por qué poder.
+      allow create: if request.auth.uid == empresaId && esRol('empresa');
+      allow update: if (request.auth.uid == empresaId && esRol('empresa')) || esAdmin();
+      allow delete: if esAdmin();
+    }
+
     // 🏫 PERFILES_UNIVERSIDADES
     match /perfiles_universidades/{uniId} {
       allow read: if request.auth != null;

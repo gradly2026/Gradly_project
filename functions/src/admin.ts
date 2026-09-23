@@ -779,6 +779,122 @@ export const backfillAlianzasCalificaciones = onCall(
 );
 
 /**
+ * Migra a `verificaciones_empresa/{uid}` (colección protegida, solo dueño +
+ * admin — ver firestore.rules) el NIT y el documento del representante que
+ * hasta la Fase 2 de la cola de aprobación de empresas vivían en
+ * `perfiles_empresas`, legible por cualquier autenticado. Backfill de una
+ * sola vez para las empresas registradas ANTES de ese cambio (las nuevas ya
+ * nacen con esos 3 campos en la colección protegida — ver app/auth/registro.tsx).
+ *
+ * Por cada empresa con al menos uno de los 3 campos viejos:
+ *  1) Copia SOLO lo que falte en `verificaciones_empresa/{uid}` — nunca pisa
+ *     un valor que ya esté ahí, por si esa empresa ya editó su NIT/documento
+ *     desde "Mi Perfil" DESPUÉS de la Fase 2 pero ANTES de este backfill (su
+ *     valor ahí sería más nuevo que el que quedó abandonado en el perfil viejo).
+ *  2) Borra los 3 campos de `perfiles_empresas` (cierra la exposición).
+ *
+ * Idempotente y seguro de repetir: una empresa ya migrada no tiene esos 3
+ * campos en `perfiles_empresas`, así que en una segunda corrida simplemente
+ * no entra al `if` y no se toca.
+ */
+export const migrarVerificacionesEmpresa = onCall(
+  { region: REGION, timeoutSeconds: 300, memory: "512MiB" },
+  async (req) => {
+    try {
+      const actor = await requireAdmin(req.auth);
+
+      const [empresasSnap, verifSnap] = await Promise.all([
+        db.collection("perfiles_empresas").get(),
+        db.collection("verificaciones_empresa").get(),
+      ]);
+      const verifPorId = new Map(verifSnap.docs.map((d) => [d.id, d.data() ?? {}]));
+
+      let batch = db.batch();
+      let pendientes = 0;
+      let migradas = 0;
+      let limpiadas = 0;
+      let sinDatosViejos = 0;
+
+      const confirmarLote = async () => {
+        if (pendientes < 450) return;
+        await batch.commit();
+        batch = db.batch();
+        pendientes = 0;
+      };
+
+      for (const empresaDoc of empresasSnap.docs) {
+        const d = empresaDoc.data() ?? {};
+        const nitViejo = asString(d.nit);
+        const tipoViejo = asString(d.contacto_documento_tipo);
+        const numeroViejo = asString(d.contacto_documento_numero);
+        if (!nitViejo && !tipoViejo && !numeroViejo) {
+          sinDatosViejos++;
+          continue;
+        }
+
+        const actual = verifPorId.get(empresaDoc.id) ?? {};
+        const relleno: Record<string, unknown> = {};
+        if (!asString((actual as any).nit) && nitViejo) relleno.nit = nitViejo;
+        if (!asString((actual as any).contacto_documento_tipo) && tipoViejo) {
+          relleno.contacto_documento_tipo = tipoViejo;
+        }
+        if (!asString((actual as any).contacto_documento_numero) && numeroViejo) {
+          relleno.contacto_documento_numero = numeroViejo;
+        }
+        if (Object.keys(relleno).length > 0) {
+          batch.set(
+            db.collection("verificaciones_empresa").doc(empresaDoc.id),
+            { uid: empresaDoc.id, ...relleno },
+            { merge: true },
+          );
+          pendientes++;
+          migradas++;
+          await confirmarLote();
+        }
+
+        batch.update(empresaDoc.ref, {
+          nit: admin.firestore.FieldValue.delete(),
+          contacto_documento_tipo: admin.firestore.FieldValue.delete(),
+          contacto_documento_numero: admin.firestore.FieldValue.delete(),
+        });
+        pendientes++;
+        limpiadas++;
+        await confirmarLote();
+      }
+      if (pendientes > 0) await batch.commit();
+
+      await safeWriteAuditLog({
+        actor,
+        action: "empresa.verificacion.migrar",
+        entityType: "perfiles_empresas",
+        entityId: "backfill",
+        payload: {
+          empresasRevisadas: empresasSnap.size,
+          migradas,
+          limpiadas,
+          sinDatosViejos,
+        },
+      });
+
+      return {
+        ok: true,
+        empresasRevisadas: empresasSnap.size,
+        migradas,
+        limpiadas,
+        sinDatosViejos,
+      };
+    } catch (error: any) {
+      console.error("migrarVerificacionesEmpresa failed:", error);
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError(
+        "internal",
+        `Error interno en migrarVerificacionesEmpresa: ${String(error?.message ?? error)}`,
+      );
+    }
+  },
+);
+
+/**
  * "Salud de asistencia" — contadores agregados para el panel admin, señal de
  * plataforma (no un detalle persona por persona; para eso el admin abre el
  * caso puntual desde Reportes/Incidencias). Deliberadamente por Cloud

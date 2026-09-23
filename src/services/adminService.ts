@@ -102,6 +102,19 @@ type BackfillAlianzasOutput = {
   reclamosRevisados: number;
 };
 
+/** Resultado del backfill de NIT/documento a verificaciones_empresa (Fase 2
+ *  de la cola de aprobación de empresas). Ver functions/src/admin.ts. */
+type MigrarVerificacionesEmpresaOutput = {
+  ok: boolean;
+  empresasRevisadas: number;
+  /** A cuántas se les completó algún dato en verificaciones_empresa. */
+  migradas: number;
+  /** A cuántas se les borró el NIT/documento viejo de perfiles_empresas. */
+  limpiadas: number;
+  /** Ya no tenían esos campos ahí (nada que migrar ni que limpiar). */
+  sinDatosViejos: number;
+};
+
 export type SaludAsistenciaOutput = {
   terminacionesAnticipadas30d: number;
   incidenciasTardanzaAbiertas: number;
@@ -174,6 +187,10 @@ const _backfillAlianzasCalificaciones = httpsCallable<void, BackfillAlianzasOutp
   functions,
   "backfillAlianzasCalificaciones",
 );
+const _migrarVerificacionesEmpresa = httpsCallable<void, MigrarVerificacionesEmpresaOutput>(
+  functions,
+  "migrarVerificacionesEmpresa",
+);
 const _obtenerSaludAsistencia = httpsCallable<void, SaludAsistenciaOutput>(
   functions,
   "obtenerSaludAsistencia",
@@ -242,6 +259,14 @@ export async function deleteUserComplete(
  * `functions/src/admin.ts` — solo admin puede invocarlo. */
 export async function backfillAlianzasCalificaciones(): Promise<BackfillAlianzasOutput> {
   const res = await _backfillAlianzasCalificaciones();
+  return res.data;
+}
+
+/** Backfill de una sola vez, seguro de repetir: mueve el NIT y el documento
+ * del representante de `perfiles_empresas` a `verificaciones_empresa` (Fase 2
+ * de la cola de aprobación de empresas). Ver `functions/src/admin.ts`. */
+export async function migrarVerificacionesEmpresa(): Promise<MigrarVerificacionesEmpresaOutput> {
+  const res = await _migrarVerificacionesEmpresa();
   return res.data;
 }
 

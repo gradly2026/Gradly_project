@@ -33,6 +33,7 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from 'firebase/firestore';
@@ -785,6 +786,15 @@ export default function DashboardEmpresa() {
   // tema en la cabecera — mostrar también la de este dashboard la duplicaría.
   const [chatAbiertoEnMensajes, setChatAbiertoEnMensajes] = useState(false);
   const [perfil,      setPerfil]      = useState<PerfilEmpresa | null>(null);
+  // 🆕 NIT + documento del representante — colección aparte y protegida
+  // (Fase 2 de la cola de aprobación de empresas, ver
+  // project_cola_aprobacion_empresas): perfiles_empresas es legible por
+  // cualquier autenticado, así que estos 2 datos ya no viven ahí.
+  const [verificacion, setVerificacion] = useState<{
+    nit?: string;
+    contacto_documento_tipo?: string;
+    contacto_documento_numero?: string;
+  } | null>(null);
   const [vacantes,    setVacantes]    = useState<Vacante[]>([]);
   const [apps,        setApps]        = useState<Aplicacion[]>([]);
   const [solicitudesGrupo, setSolicitudesGrupo] = useState<SolicitudGrupo[]>([]);
@@ -970,6 +980,15 @@ export default function DashboardEmpresa() {
     if (!user) return;
     const unsub = onSnapshot(doc(db, 'perfiles_empresas', user.uid), snap => {
       if (snap.exists()) setPerfil(snap.data() as PerfilEmpresa);
+    });
+    return unsub;
+  }, [user]);
+
+  // 🆕 verificaciones_empresa/{uid}: NIT + documento del representante.
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(doc(db, 'verificaciones_empresa', user.uid), snap => {
+      setVerificacion(snap.exists() ? (snap.data() as any) : null);
     });
     return unsub;
   }, [user]);
@@ -2045,7 +2064,13 @@ export default function DashboardEmpresa() {
             description: 'Estos datos los ven las universidades y estudiantes. Puedes editarlos.',
             fields: [
               { key: 'nombre_empresa', label: 'Nombre de la empresa', value: (perfil as any)?.nombre_empresa ?? '' },
-              { key: 'nit', label: 'NIT', value: (perfil as any)?.nit ?? '', placeholder: '####-######-###-#' },
+              // 🆕 El NIT vive en verificaciones_empresa/{uid} desde la Fase 2
+              // (ver project_cola_aprobacion_empresas); se cae al valor viejo
+              // de perfiles_empresas SOLO como respaldo de lectura para las
+              // empresas registradas antes de este cambio — Guardar siempre
+              // escribe en la colección nueva (ver onSave), así que en cuanto
+              // esa empresa guarda una vez, su NIT ya quedó migrado.
+              { key: 'nit', label: 'NIT', value: verificacion?.nit ?? (perfil as any)?.nit ?? '', placeholder: '####-######-###-#' },
               { key: 'industria', label: 'Industria / Rubro', value: (perfil as any)?.industria ?? '' },
               { key: 'descripcion', label: 'Descripción', value: (perfil as any)?.descripcion ?? '', multiline: true },
               { key: 'sitio_web', label: 'Sitio web', value: (perfil as any)?.sitio_web ?? '', keyboardType: 'url', autoCapitalize: 'none' },
@@ -2058,7 +2083,6 @@ export default function DashboardEmpresa() {
               try {
                 await updateDoc(doc(db, 'perfiles_empresas', user!.uid), {
                   nombre_empresa: v.nombre_empresa,
-                  nit: v.nit,
                   industria: v.industria,
                   descripcion: v.descripcion,
                   sitio_web: v.sitio_web,
@@ -2066,6 +2090,11 @@ export default function DashboardEmpresa() {
                   instagram: v.instagram,
                   facebook: v.facebook,
                 });
+                // 🆕 El NIT se guarda aparte, en verificaciones_empresa/{uid}
+                // (Fase 2). `merge:true` porque una empresa registrada ANTES
+                // de este cambio todavía no tiene ese documento — así se crea
+                // en su primer Guardar, en vez de fallar con "no existe".
+                await setDoc(doc(db, 'verificaciones_empresa', user!.uid), { nit: v.nit }, { merge: true });
               } catch { Alert.alert('Error', 'No se pudo guardar.'); }
             },
           },
@@ -2127,7 +2156,11 @@ export default function DashboardEmpresa() {
               { key: 'contacto_cargo', label: 'Cargo', value: (perfil as any)?.contacto_cargo ?? '' },
               { key: 'contacto_telefono', label: 'Teléfono de contacto', value: (perfil as any)?.contacto_telefono ?? '', keyboardType: 'phone-pad' },
               { key: 'contacto_correo', label: 'Correo de contacto', value: (perfil as any)?.contacto_correo ?? '', keyboardType: 'email-address', autoCapitalize: 'none' },
-              { key: 'contacto_documento_numero', label: 'Documento del responsable', value: (perfil as any)?.contacto_documento_numero ?? '' },
+              // 🆕 Mismo respaldo de lectura que el NIT de arriba: vive en
+              // verificaciones_empresa/{uid} desde la Fase 2, con caída al
+              // valor viejo de perfiles_empresas para las empresas ya
+              // registradas (se migra sola en su próximo Guardar).
+              { key: 'contacto_documento_numero', label: 'Documento del responsable', value: verificacion?.contacto_documento_numero ?? (perfil as any)?.contacto_documento_numero ?? '' },
             ],
             onSave: async (v) => {
               try {
@@ -2136,8 +2169,12 @@ export default function DashboardEmpresa() {
                   contacto_cargo: v.contacto_cargo,
                   contacto_telefono: v.contacto_telefono,
                   contacto_correo: v.contacto_correo,
-                  contacto_documento_numero: v.contacto_documento_numero,
                 });
+                await setDoc(
+                  doc(db, 'verificaciones_empresa', user!.uid),
+                  { contacto_documento_numero: v.contacto_documento_numero },
+                  { merge: true },
+                );
               } catch { Alert.alert('Error', 'No se pudo guardar.'); }
             },
           },

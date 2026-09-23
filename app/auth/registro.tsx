@@ -330,7 +330,6 @@ interface DatosTarjeta {
 interface PerfilEmpresa extends PlanRestricciones {
   uid: string;
   nombre_empresa: string;
-  nit: string;
   industria: string;
   descripcion: string;
   logo_url: string;
@@ -345,8 +344,12 @@ interface PerfilEmpresa extends PlanRestricciones {
   contacto_cargo: string;
   contacto_telefono: string;
   contacto_correo: string;
-  contacto_documento_tipo: DocType;
-  contacto_documento_numero: string;
+  // 🆕 nit / contacto_documento_tipo / contacto_documento_numero YA NO viven
+  // aquí (Fase 2 de la cola de aprobación, ver project_cola_aprobacion_empresas):
+  // perfiles_empresas lo puede leer cualquier autenticado, y esos 3 campos
+  // son datos identificatorios del NIT y del documento del representante.
+  // Van en 'verificaciones_empresa/{uid}', legible solo por la propia
+  // empresa y por el admin — ver VerificacionEmpresa más abajo.
   premium: boolean;
   estado_suscripcion: string;
   /** Ciclo de facturación contratado en el paso 4 ("mensual" | "anual").
@@ -362,6 +365,21 @@ interface PerfilEmpresa extends PlanRestricciones {
 // El "contrato" completo del documento que se crea en
 // 'perfiles_empresas' al finalizar el registro — describe TODOS los
 // campos que el resto de la app puede esperar encontrar ahí.
+
+/**
+ * Documento de 'verificaciones_empresa/{uid}' — NIT y documento de
+ * identidad del representante, aparte de perfiles_empresas porque ese
+ * perfil es legible por cualquier autenticado (ver la nota en
+ * PerfilEmpresa de arriba). Solo lo pueden leer la propia empresa y el
+ * admin (firestore.rules). La Fase 3 le agregará las fotos de estos
+ * documentos a este MISMO doc.
+ */
+interface VerificacionEmpresa {
+  uid: string;
+  nit: string;
+  contacto_documento_tipo: DocType;
+  contacto_documento_numero: string;
+}
 
 // ── Catálogos ─────────────────────────────────────────────────────
 const INDUSTRIAS = [
@@ -2098,7 +2116,6 @@ export default function Registro() {
         const perfilEmpresa: PerfilEmpresa = {
           uid,
           nombre_empresa: eNombre.trim(),
-          nit: eNit.trim(),
           industria: eIndustria === "Otro" ? eIndustriaOtro.trim() : eIndustria,
           descripcion: eDesc.trim(),
           logo_url: logoUrl,
@@ -2113,8 +2130,6 @@ export default function Registro() {
           contacto_cargo: eRepCargo.trim(),
           contacto_telefono: eRepTel.trim(),
           contacto_correo: eRepEmail.trim().toLowerCase(),
-          contacto_documento_tipo: eRepDocType,
-          contacto_documento_numero: eRepDocNum.trim(),
           // ── Plan, límites e insignia (leídos por el resto de la app) ──
           plan: restric.plan,
           limiteVacantes: restric.limiteVacantes,
@@ -2136,6 +2151,17 @@ export default function Registro() {
         });
         // CREATE: el perfil EXTENDIDO específico de empresa, con TODOS
         // los campos capturados en los 4 pasos anteriores del wizard.
+
+        // 🆕 NIT + documento del representante → colección aparte y protegida
+        // (Fase 2 de la cola de aprobación de empresas: ver VerificacionEmpresa
+        // más arriba y firestore.rules, match /verificaciones_empresa/{empresaId}).
+        const verificacion: VerificacionEmpresa = {
+          uid,
+          nit: eNit.trim(),
+          contacto_documento_tipo: eRepDocType,
+          contacto_documento_numero: eRepDocNum.trim(),
+        };
+        await setDoc(doc(db, "verificaciones_empresa", uid), verificacion);
       } else {
         await setDoc(doc(db, "perfiles_universidades", uid), {
           uid,

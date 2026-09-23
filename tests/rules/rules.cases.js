@@ -62,6 +62,7 @@ const A = (uid, id) => doc(dbDe(uid), `asignaciones_cupo/${id}`);
 const RG = (uid) => doc(dbDe(uid), 'registros_asistencia/A1_2026-09-21');
 const AJ = (uid, id) => doc(dbDe(uid), `ajustes_asistencia/${id}`);
 const TOP = (uid) => doc(dbDe(uid), 'ranking_plataforma/top_estudiantes');
+const VE = (uid, id) => doc(dbDe(uid), `verificaciones_empresa/${id}`);
 const diaAsist = (dia) => new FieldPath('asistencias', dia);
 
 const BASE = () => ({
@@ -101,6 +102,7 @@ async function reiniciar() {
     poner('ajustes_asistencia/A1', { empresaId: 'emp1', estudianteId: 'stu1', universidadId: 'uni1', dias: [] }),
     poner('codigos_asistencia/12345678', { asignacionId: 'A1', usado: false }),
     poner('ranking_plataforma/top_estudiantes', { lista: [] }),
+    poner('verificaciones_empresa/emp1', { nit: '0614-010101-101-1', contacto_documento_tipo: 'dui', contacto_documento_numero: '000000000' }),
   ]);
 }
 
@@ -217,6 +219,22 @@ const CASOS = [
   ['T5', 'Top 3: el admin intenta escribirlo desde el cliente', () => setDoc(TOP('adm1'), { lista: [1] }), 'DENY'],
   ['T6', 'Top 3: una empresa intenta escribirlo', () => setDoc(TOP('emp1'), { lista: [1] }), 'DENY'],
   ['T7', 'Top 3: SERVIDOR lo escribe (Admin SDK)', () => setDoc(TOP('owner'), { lista: [] }), 'ALLOW'],
+
+  // ── verificaciones_empresa: NIT + documento del representante — solo la
+  // propia empresa (rol empresa, no cualquier uid) y el admin ──
+  ['VE1', 'crea el suyo (empresa2, doc aún no existe)', () => setDoc(VE('emp2', 'emp2'), { nit: 'x', contacto_documento_tipo: 'dui', contacto_documento_numero: '111111111' }), 'ALLOW'],
+  ['VE2', 'empresa intenta crear el de OTRA empresa (id no coincide con su uid)', () => setDoc(VE('emp1', 'emp2b'), { nit: 'x' }), 'DENY'],
+  ['VE3', 'un estudiante intenta crear uno con su propio uid (uid coincide, pero no es rol empresa)', () => setDoc(VE('stu1', 'stu1'), { nit: 'x' }), 'DENY'],
+  ['VE4', 'lee la propia empresa', () => getDoc(VE('emp1', 'emp1')), 'ALLOW'],
+  ['VE5', 'lo lee el admin', () => getDoc(VE('adm1', 'emp1')), 'ALLOW'],
+  ['VE6', 'OTRA empresa intenta leerlo', () => getDoc(VE('emp2', 'emp1')), 'DENY'],
+  ['VE7', 'un estudiante intenta leerlo', () => getDoc(VE('stu1', 'emp1')), 'DENY'],
+  ['VE8', 'una universidad intenta leerlo', () => getDoc(VE('uni1', 'emp1')), 'DENY'],
+  ['VE9', 'la propia empresa lo actualiza', () => updateDoc(VE('emp1', 'emp1'), { nit: 'y' }), 'ALLOW'],
+  ['VE10', 'el admin lo actualiza', () => updateDoc(VE('adm1', 'emp1'), { nit: 'z' }), 'ALLOW'],
+  ['VE11', 'OTRA empresa intenta actualizarlo', () => updateDoc(VE('emp2', 'emp1'), { nit: 'y' }), 'DENY'],
+  ['VE12', 'la propia empresa intenta BORRARLO (solo admin puede)', () => deleteDoc(VE('emp1', 'emp1')), 'DENY'],
+  ['VE13', 'el admin lo borra', () => deleteDoc(VE('adm1', 'emp1')), 'ALLOW'],
 ];
 
 // ── Ejecución ────────────────────────────────────────────────────────────

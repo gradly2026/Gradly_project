@@ -45,6 +45,7 @@ import {
   deshabilitarVacanteAdmin as deshabilitarVacanteAdminAction,
   eliminarVacanteAdmin as eliminarVacanteAdminAction,
   extraerFaqDeDocumento,
+  migrarVerificacionesEmpresa,
   obtenerAsistenciaPasantiaAdmin,
   obtenerSaludAsistencia,
   recalcularTopEstudiantes,
@@ -610,6 +611,10 @@ export default function AdminPreview() {
   const [recalcularConfirmOpen, setRecalcularConfirmOpen] = useState(false);
   // Botón "Recalcular Top 3 ahora" (Config → Top 3 estudiantes).
   const [top3Loading, setTop3Loading] = useState(false);
+  // Botón "Migrar NIT/documento" (Config → Privacidad), Fase 2 de la cola de
+  // aprobación de empresas.
+  const [migrarVerifLoading, setMigrarVerifLoading] = useState(false);
+  const [migrarVerifConfirmOpen, setMigrarVerifConfirmOpen] = useState(false);
 
   // ── "Salud operativa" (Config): contadores agregados bajo demanda ──
   const [saludAsistencia, setSaludAsistencia] = useState<SaludAsistenciaOutput | null>(null);
@@ -2676,6 +2681,33 @@ export default function AdminPreview() {
       setBackfillLoading(false);
     }
   }, [t]);
+
+  // Botón "Migrar NIT/documento" de Config: llama a migrarVerificacionesEmpresa
+  // (adminService.ts), el backfill de una sola vez de la Fase 2 de la cola de
+  // aprobación de empresas — mueve a la colección protegida verificaciones_empresa
+  // el NIT y el documento del representante de las empresas registradas antes
+  // de ese cambio, y limpia esos 3 campos de perfiles_empresas (legible por
+  // cualquier autenticado). Idempotente: es seguro repetirlo.
+  const runMigrarVerificaciones = useCallback(async () => {
+    setMigrarVerifLoading(true);
+    try {
+      const r = await migrarVerificacionesEmpresa();
+      mostrarAviso(
+        "exito",
+        "Migración terminada",
+        `Revisamos ${r.empresasRevisadas} empresa(s): ${r.migradas} con datos nuevos que completar, ${r.limpiadas} con el NIT/documento viejo ya borrado de su perfil público, y ${r.sinDatosViejos} que no tenían nada que migrar.`,
+      );
+    } catch (error) {
+      mostrarAviso(
+        "error",
+        "La migración no terminó",
+        "Los datos quedaron como estaban, no se dañó nada. Puedes volver a lanzarla cuando quieras.",
+        translateSync(adminDetailedErrorMessage(error, "migrar el NIT y el documento de las empresas")),
+      );
+    } finally {
+      setMigrarVerifLoading(false);
+    }
+  }, [mostrarAviso]);
 
   // Botón "Recalcular Top 3 ahora" de Config: llama a la Cloud Function
   // recalcularTopEstudiantes (adminService.ts), que vuelve a armar YA el Top 3
@@ -6319,6 +6351,27 @@ export default function AdminPreview() {
         </TouchableOpacity>
       </Card>
 
+      <Card style={{ marginBottom: 14 }}>
+        <Text style={s.cardTitle}>Privacidad — NIT y documentos</Text>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          El NIT y el documento del representante de las empresas ahora viven en una colección
+          aparte que solo la propia empresa y el admin pueden leer (antes estaban en su perfil
+          público, visible para cualquier usuario con sesión). Las empresas registradas antes de
+          este cambio todavía tienen esos datos en los dos lugares. Usa el botón para migrar las
+          que falten y borrar el dato viejo del perfil público. Es seguro repetirlo.
+        </Text>
+        <TouchableOpacity
+          style={[s.btnOutline, { marginTop: 14, opacity: migrarVerifLoading ? 0.6 : 1 }]}
+          disabled={migrarVerifLoading}
+          onPress={() => setMigrarVerifConfirmOpen(true)}
+          activeOpacity={0.8}
+        >
+          <Text style={s.btnOutlineText}>
+            {migrarVerifLoading ? "Migrando…" : "Migrar NIT/documento"}
+          </Text>
+        </TouchableOpacity>
+      </Card>
+
       {/* "Salud operativa": contadores agregados bajo demanda, señal de
           plataforma (no un detalle persona por persona — para eso el admin
           abre el caso puntual desde Reportes/Incidencias). Ver Cloud Function
@@ -8099,6 +8152,58 @@ export default function AdminPreview() {
     </Modal>
   );
 
+  const MigrarVerifConfirmModal = () => (
+    <Modal
+      visible={migrarVerifConfirmOpen}
+      transparent
+      animationType="none"
+      onRequestClose={() => {
+        if (!migrarVerifLoading) setMigrarVerifConfirmOpen(false);
+      }}
+    >
+      <View style={s.modalOverlay}>
+        <View style={[s.modal, isPhone && s.modalCompact]}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>Migrar NIT/documento</Text>
+            <TouchableOpacity
+              style={[s.iconBtn, { width: 38, height: 38 }]}
+              onPress={() => setMigrarVerifConfirmOpen(false)}
+              activeOpacity={0.8}
+              disabled={migrarVerifLoading}
+            >
+              <Ionicons name="close" size={20} color={C.text} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[s.textMuted, { lineHeight: 20 }]}>
+            Va a revisar TODAS las empresas, completar lo que falte en la colección protegida y
+            borrar el NIT/documento viejo de su perfil público. No toca ningún otro dato. ¿Continuar?
+          </Text>
+          <View style={[s.row, { gap: 10, marginTop: 20 }]}>
+            <TouchableOpacity
+              style={[s.btnOutline, { flex: 1 }]}
+              onPress={() => setMigrarVerifConfirmOpen(false)}
+              activeOpacity={0.85}
+              disabled={migrarVerifLoading}
+            >
+              <Text style={s.btnOutlineText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.btnPrimary, { flex: 1 }]}
+              onPress={() => {
+                setMigrarVerifConfirmOpen(false);
+                void runMigrarVerificaciones();
+              }}
+              activeOpacity={0.85}
+              disabled={migrarVerifLoading}
+            >
+              <Text style={s.btnPrimaryText}>{migrarVerifLoading ? "Procesando..." : "Migrar"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   // Progreso de "Subir documento" del FAQ (subirDocumentoFaq) — 2 etapas
   // reales (subida a Storage, luego extracción vía Groq), sin barra de
   // porcentaje inventada: no hay una señal granular de avance dentro de una
@@ -8321,6 +8426,7 @@ export default function AdminPreview() {
       {VacanteDetailAdminModal()}
       {VacanteModeracionModal()}
       {RecalcularConfirmModal()}
+      {MigrarVerifConfirmModal()}
       {FaqSubidaModal()}
       {!isDesktop ? Drawer() : null}
       {AvisoOverlay()}
