@@ -255,6 +255,7 @@
   "perfil_ayuda": "Help",
   "perfil_calificar_plataforma": "Rate the platform",
   "perfil_nueva_skill": "New skill",
+  "perfil_agregar_skill": "Add skill",
   "perfil_eliminar_skill": "Remove skill",
   "perfil_quitar_skill": "Remove \"{{skill}}\" from your skills?",
   "perfil_datos_tarjeta": "Card details",

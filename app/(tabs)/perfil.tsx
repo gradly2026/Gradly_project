@@ -823,26 +823,15 @@ export default function PerfilTab() {
             icon: 'sparkles-outline',
             tone: 'purple',
             render: () => (
-              <View style={styles.skillsWrap}>
-                {skills.map(sk => (
-                  <TouchableOpacity
-                    key={sk}
-                    style={styles.skillChip}
-                    onLongPress={() => setDeletingSkill(sk)}
-                    onPress={() => setDeletingSkill(sk)}
-                    // Tanto un toque normal como uno "largo" (mantener
-                    // presionado) abren la confirmación de borrado —
-                    // redundante a propósito, para que funcione fácil
-                    // tanto en celular (donde "mantener presionado" es un
-                    // gesto natural) como en web (donde no siempre existe
-                    // ese gesto, y un clic simple es más intuitivo).
-                  >
-                    <Text style={styles.skillText}>{sk}</Text>
-                  </TouchableOpacity>
-                ))}
+              // Lista en COLUMNA: primero SIEMPRE el botón (o el campo) para crear
+              // otra habilidad, y debajo cada habilidad guardada, una bajo otra, en
+              // el orden en que se guardaron. Antes eran chips en fila con el botón
+              // "+" al final, que se iba perdiendo al fondo cuando había muchas.
+              <View style={styles.skillsList}>
                 {!showAddSkill ? (
-                  <TouchableOpacity style={styles.addSkillBtn} onPress={() => setShowAddSkill(true)}>
-                    <Ionicons name="add" size={16} color={COLORS.primaryLight} />
+                  <TouchableOpacity style={styles.addSkillRow} onPress={() => setShowAddSkill(true)} activeOpacity={0.8}>
+                    <Ionicons name="add" size={18} color={COLORS.primaryLight} />
+                    <Text style={styles.addSkillRowText}>{t('perfil_agregar_skill')}</Text>
                   </TouchableOpacity>
                 ) : (
                   <View style={styles.skillInputWrap}>
@@ -868,6 +857,23 @@ export default function PerfilTab() {
                     </TouchableOpacity>
                   </View>
                 )}
+                {skills.map(sk => (
+                  <TouchableOpacity
+                    key={sk}
+                    style={styles.skillRow}
+                    onLongPress={() => setDeletingSkill(sk)}
+                    onPress={() => setDeletingSkill(sk)}
+                    // Tanto un toque normal como uno "largo" (mantener
+                    // presionado) abren la confirmación de borrado —
+                    // redundante a propósito, para que funcione fácil
+                    // tanto en celular (donde "mantener presionado" es un
+                    // gesto natural) como en web (donde no siempre existe
+                    // ese gesto, y un clic simple es más intuitivo).
+                  >
+                    <Text style={styles.skillRowText}>{sk}</Text>
+                    <Ionicons name="trash-outline" size={16} color={COLORS.textMuted} />
+                  </TouchableOpacity>
+                ))}
               </View>
             ),
           },
@@ -1062,13 +1068,15 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   actionBtnOutlineText: { fontSize: 14, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
 
   // ── Skills
-  skillsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  skillChip: {
-    backgroundColor: COLORS.primary12, borderRadius: 20,
-    paddingHorizontal: 12, paddingVertical: 6,
+  // Lista vertical: botón/campo de "agregar" arriba y cada habilidad en su fila.
+  skillsList: { flexDirection: 'column', gap: 8 },
+  skillRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.primary12, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 10,
     borderWidth: 1, borderColor: COLORS.primary35,
   },
-  skillText: { fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.primaryLight },
+  skillRowText: { flex: 1, fontSize: 13, fontFamily: FONTS.interMedium, color: COLORS.primaryLight },
   dispSaveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     backgroundColor: COLORS.primary,
@@ -1081,18 +1089,20 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   },
   ubicEditToggleTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
 
-  addSkillBtn: {
-    width: 34, height: 34, borderRadius: 17,
+  addSkillRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    height: 42, borderRadius: 14,
     backgroundColor: COLORS.backgroundSurface,
     borderWidth: 1, borderColor: COLORS.border,
-    alignItems: 'center', justifyContent: 'center',
   },
+  addSkillRowText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+  // Campo de texto al crear una habilidad: ocupa el mismo lugar (arriba) que el
+  // botón, a todo el ancho de la columna.
   skillInputWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: COLORS.backgroundSurface,
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4,
+    borderRadius: 14, paddingHorizontal: 12, paddingVertical: 4, minHeight: 42,
     borderWidth: 1, borderColor: COLORS.primary35,
-    flex: 1,
   },
   skillInput: {
     flex: 1, fontSize: 12,
