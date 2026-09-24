@@ -2773,13 +2773,24 @@ export default function AdminPreview() {
     setTop3Loading(true);
     try {
       const r = await recalcularTopEstudiantes();
+      // El Top 3 se guardó, pero sin el perfil público filtrado los estudiantes no
+      // pueden abrir a los ganadores ("Perfil no disponible"): se avisa aparte.
+      // (publicarPerfilesPublicos atrapa los fallos por lote y devuelve cuántos SÍ
+      // se guardaron, así que se compara contra el total de ganadores.)
+      const publicacionFallo =
+        r.nombres.length > 0 && (!r.perfilesPublicos || r.perfilesPublicos.publicados < r.nombres.length);
       mostrarAviso(
-        "exito",
+        publicacionFallo ? "advertencia" : "exito",
         "Top 3 actualizado",
+        publicacionFallo
+          ? "El Top 3 quedó actualizado, pero no se pudieron publicar los perfiles públicos de esos estudiantes. Vuelve a pulsar el botón en un momento."
+          : r.nombres.length > 0
+            ? "Ya está el nuevo Top 3. Lo verán las empresas, universidades y estudiantes cuando abran el Inicio."
+            : "El recálculo terminó, pero todavía no hay estudiantes con horas certificadas y calificación. Cuando los haya, entrarán en la próxima actualización.",
         r.nombres.length > 0
-          ? "Ya está el nuevo Top 3. Lo verán las empresas y universidades cuando abran el Inicio."
-          : "El recálculo terminó, pero todavía no hay estudiantes con horas certificadas y calificación. Cuando los haya, entrarán en la próxima actualización.",
-        r.nombres.length > 0 ? r.nombres.join(", ") : undefined,
+          ? r.nombres.join(", ") +
+            (r.perfilesPublicos ? `\nPerfiles públicos publicados para estudiantes: ${r.perfilesPublicos.publicados}` : "")
+          : undefined,
       );
     } catch (error) {
       mostrarAviso(
@@ -6389,8 +6400,8 @@ export default function AdminPreview() {
       <Card style={{ marginBottom: 14 }}>
         <Text style={s.cardTitle}>Top 3 estudiantes</Text>
         <Text style={[s.textMuted, { marginTop: 6 }]}>
-          Es un solo Top 3 para toda la plataforma y lo ven todas las empresas y universidades en el
-          Inicio. Entran los estudiantes con horas certificadas y calificación, ordenados por
+          Es un solo Top 3 para toda la plataforma y lo ven las empresas, las universidades y los
+          estudiantes en el Inicio. Entran los estudiantes con horas certificadas y calificación, ordenados por
           promedio. Se actualiza solo cada 3 días (a las 3:00 a. m.). Usa el botón para actualizarlo
           ya, por ejemplo después de banear a un estudiante que está en la lista.
         </Text>

@@ -85,12 +85,11 @@ import { useTranslation } from '../../src/context/TranslationContext';
 import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, webScrollStyle, type GradlyColors } from '../../src/context/ThemeContext';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
-import MiInstitucionCard from '../../src/components/MiInstitucionCard';
 import ComprobantePasantiaCard from '../../src/components/ComprobantePasantiaCard';
 import RecordatorioCalificacionCard from '../../src/components/RecordatorioCalificacionCard';
-// Línea de identidad "UES · Grupo 2026-A" bajo el saludo: le recuerda al
-// estudiante a qué universidad y grupo pertenece, dato que ya estaba en su
-// perfil pero no se mostraba en ninguna pantalla.
+// (Aquí había una línea "UES · Grupo" bajo el saludo — MiInstitucionCard,
+// variante compacta —; se quitó a pedido del usuario el 2026-09-23. El dato
+// sigue en la pestaña "Institución".)
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { JellyButton } from '../../components/ui/liquid-glass/JellyButton';
 import VacanteDetailModal from '../../src/components/VacanteDetailModal';
@@ -103,7 +102,7 @@ import { RADIOS_CERCANIA_KM, filtrarPorCercania, normalizarPunto } from '../../s
 // normalizarPunto() lee el punto guardado sin importar si viene como
 // {lat,lng} o {latitude,longitude}. Ver src/utils/geo.ts.
 import { RedGradlyBanner } from '../../src/components/NetworkStats';
-import { ANCHO_MIN_GRID_ESCRITORIO, FeedGrid } from '../../src/components/FeedGrid';
+import { ANCHO_MIN_GRID_ESCRITORIO, ANCHO_MIN_TOGGLE_ESTADISTICAS, FeedGrid } from '../../src/components/FeedGrid';
 // En web de escritorio (ancho >= ANCHO_MIN_GRID_ESCRITORIO) la barra del
 // encabezado cruza todo el ancho y las tarjetas se reparten de 3 en 3; en
 // cualquier otro caso FeedGrid no cambia nada.
@@ -469,6 +468,13 @@ export default function FeedVacantes() {
   // Estilo del contenedor del feed: en escritorio pierde el tope de 640 y gana
   // más margen lateral (alineado con el del encabezado).
   const feedContentStyle = feedEnGrid ? [styles.feedContent, styles.feedContentAncho] : styles.feedContent;
+  // Tablet / escritorio (web): un botón alterna entre "estadísticas de la Red
+  // Gradly" y el feed (buscador + filtros + vacantes/pasantías). En celular las
+  // estadísticas siguen fijas sobre el buscador, como antes. `verEstadisticas`
+  // solo vale mientras la ventana sea lo bastante ancha; si se achica, se ignora.
+  const conToggleEstadisticas = Platform.OS === 'web' && anchoVentana >= ANCHO_MIN_TOGGLE_ESTADISTICAS;
+  const [verEstadisticas, setVerEstadisticas] = useState(false);
+  const estadisticasVisibles = conToggleEstadisticas && verEstadisticas;
 
   const [vacantes,       setVacantes]       = useState<Vacante[]>([]);
   const [aplicaciones,   setAplicaciones]   = useState<Record<string, string>>({});
@@ -1006,9 +1012,9 @@ export default function FeedVacantes() {
       );
       showToast();
     } catch (err: any) {
-      if (!err.message?.includes('Ya aplicaste')) {
+      if (!err.message?.includes('Ya te postulaste')) {
         void showAlert(t('error_generico'), err.message ?? t('feed_alert_error_aplicar'));
-        // No muestra un Alert de error si el mensaje es "Ya aplicaste..."
+        // No muestra un Alert de error si el mensaje es "Ya te postulaste..."
         // — ese caso puede pasar por un doble toque accidental, y no hace
         // falta alarmar al usuario con un Alert por algo tan menor
         // (simplemente no se envía dos veces, sin más aviso).
@@ -1190,13 +1196,6 @@ export default function FeedVacantes() {
           <Text style={feedEnGrid ? [styles.fecha, styles.fechaAncha] : styles.fecha}>{fecha}</Text>
         </View>
 
-        {/* Universidad y grupo del estudiante (variante de una línea). */}
-        <MiInstitucionCard
-          universidadId={perfilEstudiante?.universidad_id ?? (userProfile as any)?.universidad_id}
-          grupoId={perfilEstudiante?.grupo_id}
-          variant="compacta"
-        />
-
         {/* Estado del comprobante de finalización tras culminar una pasantía por
             cupo — se auto-oculta si no hay ninguno pendiente. */}
         {user?.uid && <ComprobantePasantiaCard rol="estudiante" uid={user.uid} />}
@@ -1213,17 +1212,40 @@ export default function FeedVacantes() {
             y ENCIMA del buscador. En escritorio los tres cuadros van en una fila.
             Al tocar una empresa/universidad/estudiante se abre su perfil público; el
             de un estudiante es la versión filtrada (solo logros, sin contacto). */}
-        {user?.uid && (
+        {user?.uid && (conToggleEstadisticas ? (
+          // Tablet / escritorio (web): en vez de tener las estadísticas siempre a la
+          // vista, este botón alterna entre ellas y el feed. Con las estadísticas a la
+          // vista dice a qué vuelve: "Mostrar vacantes" o "Mostrar pasantías", según lo
+          // que el estudiante ve en su feed (mostrandoEmpleo).
+          <View style={styles.estadisticasBtnWrap}>
+            <JellyButton
+              style={styles.estadisticasBtn}
+              contentStyle={styles.estadisticasBtnContent}
+              onPress={() => setVerEstadisticas(v => !v)}
+            >
+              <Ionicons
+                name={verEstadisticas ? (mostrandoEmpleo ? 'briefcase-outline' : 'school-outline') : 'stats-chart-outline'}
+                size={16}
+                color={COLORS.textPrimary}
+              />
+              <Text style={styles.estadisticasBtnText}>
+                {verEstadisticas
+                  ? t(mostrandoEmpleo ? 'feed_btn_mostrar_vacantes' : 'feed_btn_mostrar_pasantias')
+                  : t('feed_btn_mostrar_estadisticas')}
+              </Text>
+            </JellyButton>
+          </View>
+        ) : (
           <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
             <RedGradlyBanner disposicion={feedEnGrid ? 'fila' : 'carrusel'} />
           </View>
-        )}
+        ))}
 
         {/* Búsqueda y filtros: hay algo que buscar en los 3 estados del feed
             (vacantes, vacantes en modo lectura, o pasantías de autoservicio) —
             antes solo se mostraba si `habilitadoParaVacantes`. Se oculta solo
             para Zona Roja, que nunca tiene nada que buscar en autoservicio. */}
-        {(habilitadoParaVacantes || tienePasantiaActiva || !zonaRoja) && (
+        {!estadisticasVisibles && (habilitadoParaVacantes || tienePasantiaActiva || !zonaRoja) && (
           <>
         <View style={styles.searchWrap}>
           <Ionicons name="search-outline" size={18} color={COLORS.textMuted} style={{ marginRight: 8 }} />
@@ -1357,7 +1379,12 @@ export default function FeedVacantes() {
           explicada al inicio del archivo: primero se revisa si TODAVÍA
           faltan datos por cargar (loader), y si no, se decide entre 3
           ramas mutuamente excluyentes según la situación del estudiante. */}
-      {cargando || !perfilCargado || !acuerdoCargado || !cupoCargado ? (
+      {estadisticasVisibles ? (
+        // Estadísticas de la Red Gradly en lugar del feed (ver el botón del encabezado).
+        <View style={feedContentStyle}>
+          <RedGradlyBanner disposicion={feedEnGrid ? 'fila' : 'carrusel'} />
+        </View>
+      ) : cargando || !perfilCargado || !acuerdoCargado || !cupoCargado ? (
         <View style={styles.loader}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
@@ -1731,6 +1758,12 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100,
     maxWidth: 640, alignSelf: 'center', width: '100%',
   },
+  // Botón que alterna estadísticas <-> feed (web, tablet y escritorio).
+  estadisticasBtnWrap: { paddingHorizontal: 16, marginTop: 2, marginBottom: 12, flexDirection: 'row' },
+  estadisticasBtn: { alignSelf: 'flex-start', borderRadius: 20, backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  estadisticasBtnContent: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 9 },
+  estadisticasBtnText: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
+
   // Escritorio: sin tope de ancho y con el mismo margen lateral que el
   // encabezado (16 del contenedor + 16 de la búsqueda = 32), para que el borde
   // izquierdo de la primera columna alinee con la barra de búsqueda.

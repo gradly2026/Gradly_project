@@ -30,7 +30,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
-import { publicarPerfilesPublicos } from "./perfilesPublicos";
+import { publicarPerfilesPublicos, type ResumenPublicacion } from "./perfilesPublicos";
 
 if (admin.apps.length === 0) admin.initializeApp();
 const db = admin.firestore();
@@ -252,7 +252,14 @@ export async function calcularTopEstudiantes(): Promise<{ entradas: EntradaTop[]
  */
 export async function refrescarTopEstudiantes(
   forzar: boolean,
-): Promise<{ actualizado: boolean; entradas: EntradaTop[]; elegibles: number }> {
+): Promise<{
+  actualizado: boolean;
+  entradas: EntradaTop[];
+  elegibles: number;
+  /** Perfiles públicos publicados para los ganadores; `null` = falló la publicación
+   *  (el Top ya quedó guardado igual); ausente = no se recalculó (sigue vigente). */
+  perfilesPublicos?: ResumenPublicacion | null;
+}> {
   if (!forzar) {
     const previo = await db.doc(RUTA_TOP).get();
     const ultimo = ms(previo.data()?.actualizadoAt);
@@ -275,15 +282,16 @@ export async function refrescarTopEstudiantes(
   // Perfil público filtrado de los 3 ganadores, para que otro estudiante pueda
   // abrirlos (ver perfilesPublicos.ts). Best-effort: si falla, el Top 3 ya quedó
   // guardado y NO se debe deshacer ni fallar por esto.
+  let perfilesPublicos: ResumenPublicacion | null = null;
   try {
-    await publicarPerfilesPublicos(
+    perfilesPublicos = await publicarPerfilesPublicos(
       entradas.map((e) => e.id),
       new Map(entradas.filter((e) => e.empresaNombre).map((e) => [e.id, e.empresaNombre] as [string, string])),
     );
   } catch (e) {
     logger.warn("top estudiantes: no se pudieron publicar los perfiles públicos", e);
   }
-  return { actualizado: true, entradas, elegibles };
+  return { actualizado: true, entradas, elegibles, perfilesPublicos };
 }
 
 // ── 1) JOB DIARIO (recalcula solo cada 3 días) ─────────────────────────
@@ -311,7 +319,12 @@ export const recalcularTopEstudiantes = onCall(
     await exigirAdmin(req.auth);
     try {
       const r = await refrescarTopEstudiantes(true);
-      return { elegibles: r.elegibles, nombres: r.entradas.map((e) => e.nombre) };
+      return {
+        elegibles: r.elegibles,
+        nombres: r.entradas.map((e) => e.nombre),
+        // Cuántos perfiles públicos quedaron listos para los estudiantes (null = falló).
+        perfilesPublicos: r.perfilesPublicos ?? null,
+      };
     } catch (e) {
       logger.error("recalcularTopEstudiantes: falló", e);
       throw new HttpsError("internal", "No se pudo recalcular el Top 3. Intenta de nuevo.");

@@ -129,6 +129,9 @@ export type RecalcularTopEstudiantesOutput = {
   elegibles: number;
   /** Nombres del Top 3 resultante (puede venir vacío). */
   nombres: string[];
+  /** Perfiles públicos filtrados publicados para que los estudiantes puedan abrir a
+   *  los ganadores. `null` = no se pudieron publicar (el Top 3 sí se actualizó). */
+  perfilesPublicos?: { publicados: number; omitidos: number } | null;
 };
 
 type ObtenerAsistenciaPasantiaAdminInput = {

@@ -10,6 +10,11 @@ import { StyleSheet, View } from 'react-native';
 // pasantía') ya no cabe en una línea junto a la fecha.
 export const ANCHO_MIN_GRID_ESCRITORIO = 1200;
 
+// Desde este ancho (tablet y escritorio), en web, las estadísticas de la Red Gradly
+// dejan de ir fijas sobre el buscador: un botón alterna entre "estadísticas" y el
+// feed (buscador + vacantes/pasantías). Más angosto (celular) siguen fijas, como antes.
+export const ANCHO_MIN_TOGGLE_ESTADISTICAS = 768;
+
 const gridStyles = StyleSheet.create({
   // Margen negativo + relleno en cada celda = separación de 16 entre tarjetas
   // sin que el borde exterior de la primera/última columna sobre.

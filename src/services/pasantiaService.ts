@@ -230,7 +230,9 @@ async function crearAplicacion(
   // donde estudiante_id y vacante_id coincidan con los que se están
   // recibiendo ahora (dos condiciones `where` combinadas = "Y" lógico:
   // deben cumplirse AMBAS).
-  if (!existing.empty) throw new Error('Ya aplicaste a esta vacante.');
+  // OJO: app/(tabs)/index.tsx detecta este caso por el TEXTO ('Ya te postulaste');
+  // si cambias la frase, cambia también ese chequeo.
+  if (!existing.empty) throw new Error('Ya te postulaste a esta vacante.');
   // .empty es true si la búsqueda no encontró ningún documento. Si SÍ
   // encontró algo (!existing.empty), significa que el estudiante ya
   // había aplicado antes a esta misma vacante — se lanza un error para

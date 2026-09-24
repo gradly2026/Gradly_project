@@ -554,11 +554,13 @@ export const ADMIN_SEED_EN: Record<string, string> = {
     "Recalculates every company's and university's partnerships and the average rating of the students they worked with — this feeds the \"Top Companies/Universities\" section on the home screen. Run it once so internships approved before this change count too (new ones are recorded automatically); it also works to recalculate everything if something drifts out of sync. Safe to run more than once.",
   // ── Top 3 estudiantes de la plataforma (Configuración → Top 3 estudiantes) ──
   "Recalcular Top 3 ahora": "Recalculate Top 3 now",
-  "Es un solo Top 3 para toda la plataforma y lo ven todas las empresas y universidades en el Inicio. Entran los estudiantes con horas certificadas y calificación, ordenados por promedio. Se actualiza solo cada 3 días (a las 3:00 a. m.). Usa el botón para actualizarlo ya, por ejemplo después de banear a un estudiante que está en la lista.":
-    "It's a single Top 3 for the whole platform, and every company and university sees it on the home screen. Students with certified hours and a rating get in, ordered by average. It updates on its own every 3 days (at 3:00 a.m.). Use the button to update it right now, for example after banning a student who is on the list.",
+  "Es un solo Top 3 para toda la plataforma y lo ven las empresas, las universidades y los estudiantes en el Inicio. Entran los estudiantes con horas certificadas y calificación, ordenados por promedio. Se actualiza solo cada 3 días (a las 3:00 a. m.). Usa el botón para actualizarlo ya, por ejemplo después de banear a un estudiante que está en la lista.":
+    "It's a single Top 3 for the whole platform, and companies, universities and students all see it on the home screen. Students with certified hours and a rating get in, ordered by average. It updates on its own every 3 days (at 3:00 a.m.). Use the button to update it right now, for example after banning a student who is on the list.",
   "Top 3 actualizado": "Top 3 updated",
-  "Ya está el nuevo Top 3. Lo verán las empresas y universidades cuando abran el Inicio.":
-    "The new Top 3 is ready. Companies and universities will see it when they open the home screen.",
+  "Ya está el nuevo Top 3. Lo verán las empresas, universidades y estudiantes cuando abran el Inicio.":
+    "The new Top 3 is ready. Companies, universities and students will see it when they open the home screen.",
+  "El Top 3 quedó actualizado, pero no se pudieron publicar los perfiles públicos de esos estudiantes. Vuelve a pulsar el botón en un momento.":
+    "The Top 3 was updated, but the public profiles of those students couldn't be published. Press the button again in a moment.",
   "El recálculo terminó, pero todavía no hay estudiantes con horas certificadas y calificación. Cuando los haya, entrarán en la próxima actualización.":
     "The recalculation finished, but there are no students with certified hours and a rating yet. When there are, they will get in on the next update.",
   "No se pudo actualizar el Top 3": "The Top 3 couldn't be updated",
@@ -2231,6 +2233,8 @@ export const TOP_ESTUDIANTES_SEED_EN: Record<string, string> = {
   // Lupa del estudiante → botón del modal de detalle + avisos.
   "Inscribirme": "Enroll",
   "Postularme": "Apply",
+  // Ya enviaste tu postulación a esa vacante (lo lanza pasantiaService.crearAplicacion).
+  "Ya te postulaste a esta vacante.": "You've already applied to this job.",
   "¡Listo!": "Done!",
   "No se pudo inscribir": "Couldn't enroll",
   "Vuelve a abrir la pasantía e inténtalo de nuevo.": "Reopen the internship and try again.",

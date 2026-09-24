@@ -106,9 +106,9 @@ const PASOS_SUB: Record<Rol, string> = {
 type Oportunidad = { icon: IconName; titulo: string; sub: string; ubicacion: string; chips: string[]; tag: string; cta: string };
 const OPORTUNIDADES: Record<Rol, Oportunidad[]> = {
   estudiante: [
-    { icon: 'business-outline', titulo: 'Analista de Datos Jr. (Pasantía)', sub: 'Empresa de Tecnología', ubicacion: 'San Salvador, El Salvador', chips: ['Presencial', '20 hrs/sem'], tag: 'Vacante activa', cta: 'Aplicar' },
-    { icon: 'business-outline', titulo: 'Soporte de Sistemas (Pasantía)', sub: 'Empresa Financiera', ubicacion: 'Santa Ana, El Salvador', chips: ['Híbrido', '25 hrs/sem'], tag: 'Vacante activa', cta: 'Aplicar' },
-    { icon: 'business-outline', titulo: 'Asistente de Marketing (Pasantía)', sub: 'Agencia de Marketing', ubicacion: 'San Miguel, El Salvador', chips: ['Remoto', '15 hrs/sem'], tag: 'Vacante activa', cta: 'Aplicar' },
+    { icon: 'business-outline', titulo: 'Analista de Datos Jr. (Pasantía)', sub: 'Empresa de Tecnología', ubicacion: 'San Salvador, El Salvador', chips: ['Presencial', '20 hrs/sem'], tag: 'Vacante activa', cta: 'Postularme' },
+    { icon: 'business-outline', titulo: 'Soporte de Sistemas (Pasantía)', sub: 'Empresa Financiera', ubicacion: 'Santa Ana, El Salvador', chips: ['Híbrido', '25 hrs/sem'], tag: 'Vacante activa', cta: 'Postularme' },
+    { icon: 'business-outline', titulo: 'Asistente de Marketing (Pasantía)', sub: 'Agencia de Marketing', ubicacion: 'San Miguel, El Salvador', chips: ['Remoto', '15 hrs/sem'], tag: 'Vacante activa', cta: 'Postularme' },
   ],
   empresa: [
     { icon: 'person-outline', titulo: 'Estudiante de Ingeniería en Sistemas', sub: 'Disponible para pasantía', ubicacion: 'San Salvador, El Salvador', chips: ['Presencial', '20 hrs/sem'], tag: 'Aplicante activo', cta: 'Ver perfil' },
