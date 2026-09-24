@@ -13,8 +13,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
-import { useEffect, useMemo, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Dimensions, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text, useAutoText } from "./AutoText";
 import { BarChart } from 'react-native-chart-kit';
 import PerfilPublicoModal, { type PerfilRol } from '../../components/PerfilPublicoModal';
@@ -202,7 +202,47 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
 
   const enFila = disposicion === 'fila';
 
-  const RankCard = ({ titulo, icon, color, data, perfilRol }: {
+  // ── Flechas ◀▶ del carrusel (solo web) ──
+  // En web (escritorio/tablet) no hay swipe táctil, así que "Top Universidades"
+  // quedaba fuera de alcance detrás de "Top Empresas". Las flechas mueven el
+  // carrusel una tarjeta (cardWidth + el gap de 12). En la disposición 'fila' no
+  // hacen falta (los tres cuadros ya se ven) y en nativo no se dibujan.
+  const conFlechas = Platform.OS === 'web' && !enFila;
+  const carruselRef = useRef<ScrollView | null>(null);
+  const [pagina, setPagina] = useState(0);
+  // Espejo de `pagina` para leerlo dentro de efectos/handlers sin depender del render.
+  const paginaRef = useRef(0);
+  // Mientras corre la animación de un clic, los eventos de scroll pasan por
+  // posiciones intermedias (el "redondeo" daría la página de origen) y harían
+  // parpadear las flechas: se ignoran hasta este instante.
+  const ignorarScrollHasta = useRef(0);
+  const fijarPagina = (p: number) => {
+    paginaRef.current = p;
+    setPagina(p);
+  };
+  const irAPagina = (p: number) => {
+    ignorarScrollHasta.current = Date.now() + 600;
+    carruselRef.current?.scrollTo({ x: p * (cardWidth + 12), animated: true });
+    fijarPagina(p);
+  };
+  // Un swipe o el trackpad también mueven el carrusel: la página se deduce del offset.
+  const alScrollCarrusel = (offsetX: number) => {
+    if (Date.now() < ignorarScrollHasta.current) return;
+    const p = Math.max(0, Math.min(1, Math.round(offsetX / (cardWidth + 12))));
+    if (p !== paginaRef.current) fijarPagina(p);
+  };
+  // Si cambia el ancho (redimensionar la ventana) se mantiene la tarjeta actual:
+  // sin esto el offset en píxeles quedaría a medias entre las dos.
+  useEffect(() => {
+    if (!conFlechas) return;
+    carruselRef.current?.scrollTo({ x: paginaRef.current * (cardWidth + 12), animated: false });
+  }, [cardWidth, conFlechas]);
+
+  // Es una función que devuelve JSX (se invoca como `rankCard({...})`), no un
+  // componente: al definirse dentro del render, como componente habría cambiado
+  // de identidad en cada render y React lo habría desmontado y vuelto a montar
+  // — con las flechas eso ocurre en cada cambio de página, a mitad de la animación.
+  const rankCard = ({ titulo, icon, color, data, perfilRol }: {
     titulo: string; icon: keyof typeof Ionicons.glyphMap; color: string;
     data: RankEntry[]; perfilRol: PerfilRol;
   }) => (
@@ -263,13 +303,42 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
         if (w > 0 && Math.abs(w - anchoContenedor) > 0.5) setAnchoContenedor(w);
       }}
     >
-      <Text style={styles.bannerHeading}>🌐 Estadísticas de la Red Gradly</Text>
+      {conFlechas ? (
+        // Web: el título comparte fila con las flechas ◀▶ del carrusel: ▶ va a
+        // "Top Universidades" y ◀ vuelve a "Top Empresas"; cada una se atenúa
+        // cuando ya se está en ese extremo.
+        <View style={styles.bannerHeadingRow}>
+          <Text style={[styles.bannerHeading, { flex: 1, marginBottom: 0 }]}>🌐 Estadísticas de la Red Gradly</Text>
+          <TouchableOpacity
+            style={[styles.bannerArrow, pagina === 0 && styles.bannerArrowDisabled]}
+            onPress={() => irAPagina(0)}
+            disabled={pagina === 0}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Volver al Top Empresas"
+          >
+            <Ionicons name="chevron-back" size={18} color={pagina === 0 ? colors.textMuted : colors.primaryLight} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.bannerArrow, pagina === 1 && styles.bannerArrowDisabled]}
+            onPress={() => irAPagina(1)}
+            disabled={pagina === 1}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Ver el Top Universidades"
+          >
+            <Ionicons name="chevron-forward" size={18} color={pagina === 1 ? colors.textMuted : colors.primaryLight} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <Text style={styles.bannerHeading}>🌐 Estadísticas de la Red Gradly</Text>
+      )}
 
       {enFila ? (
         // Pantalla ancha: los tres cuadros lado a lado, todos del mismo alto.
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'stretch' }}>
-          <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} perfilRol="empresa" />
-          <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} perfilRol="universidad" />
+          {rankCard({ titulo: 'Top Empresas', icon: 'trophy', color: colors.gold, data: topEmpresas, perfilRol: 'empresa' })}
+          {rankCard({ titulo: 'Top Universidades', icon: 'school', color: colors.primaryLight, data: topUnis, perfilRol: 'universidad' })}
           {puedeVerTop3 && topEstCargado && (
             <View style={{ flex: 1 }}>{top3Estudiantes({ flex: 1 })}</View>
           )}
@@ -277,14 +346,17 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
       ) : (
         <>
           <ScrollView
+            ref={carruselRef}
             horizontal
             showsHorizontalScrollIndicator={false}
             snapToInterval={cardWidth + 12}
             decelerationRate="fast"
             contentContainerStyle={{ gap: 12 }}
+            onScroll={conFlechas ? (e) => alScrollCarrusel(e.nativeEvent.contentOffset.x) : undefined}
+            scrollEventThrottle={conFlechas ? 16 : undefined}
           >
-            <RankCard titulo="Top Empresas" icon="trophy" color={colors.gold} data={topEmpresas} perfilRol="empresa" />
-            <RankCard titulo="Top Universidades" icon="school" color={colors.primaryLight} data={topUnis} perfilRol="universidad" />
+            {rankCard({ titulo: 'Top Empresas', icon: 'trophy', color: colors.gold, data: topEmpresas, perfilRol: 'empresa' })}
+            {rankCard({ titulo: 'Top Universidades', icon: 'school', color: colors.primaryLight, data: topUnis, perfilRol: 'universidad' })}
           </ScrollView>
 
           {/* Top 3 estudiantes de toda la plataforma — BAJO el carrusel, a lo ancho
@@ -551,6 +623,15 @@ function MiniStat({ label, value, color, styles }: { label: string; value: numbe
 // ─────────────────────────────────────────────
 const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   bannerHeading: { fontSize: 15, fontFamily: FONTS.soraSemiBold, color: COLORS.textPrimary, marginBottom: 10 },
+  // Web: título + flechas ◀▶ del carrusel en una fila.
+  bannerHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  bannerArrow: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.backgroundSurface,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  bannerArrowDisabled: { opacity: 0.45 },
   rankCard: {
     borderRadius: 20, padding: 16, overflow: 'hidden',
     borderWidth: 1, borderColor: 'rgba(124,58,237,0.18)',

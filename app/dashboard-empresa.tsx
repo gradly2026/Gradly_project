@@ -4196,23 +4196,84 @@ function PickerRow({ label, options, selected, onSelect, error, disabled, hint }
   /** Nota corta bajo los chips (se muestra tal cual). */
   hint?: string;
 }) {
-  const { styles } = useThemedStyles();
+  const { styles, colors } = useThemedStyles();
+
+  // ── Flechas ◀▶ (solo web) ── En web no hay swipe táctil: si los chips no caben
+  // en el ancho del modal (p. ej. "Área", con 11 opciones), las últimas quedaban
+  // inalcanzables. Se mide el ancho visible y el del contenido; las flechas
+  // aparecen solo cuando de verdad hay algo oculto. Mismo patrón que la fila de
+  // filtros de la pestaña Vacantes del estudiante. En nativo no se dibuja nada.
+  const scrollRef = useRef<ScrollView | null>(null);
+  const [viewportW, setViewportW] = useState(0);
+  const [contentW, setContentW] = useState(0);
+  const [scrollX, setScrollX] = useState(0);
+  const maxScroll = Math.max(0, contentW - viewportW);
+  const conFlechas = Platform.OS === 'web' && contentW > viewportW + 8;
+  const puedeIzq = scrollX > 4;
+  const puedeDer = scrollX < maxScroll - 4;
+  const mover = (delta: number) => {
+    // Acota el destino entre 0 y el máximo desplazable.
+    const siguiente = Math.max(0, Math.min(scrollX + delta, maxScroll));
+    scrollRef.current?.scrollTo({ x: siguiente, animated: true });
+    setScrollX(siguiente);
+  };
+  // Desplazamiento por clic: ~2/3 del ancho visible (mínimo 120) para que un clic
+  // avance varios chips sin saltarse ninguno de golpe.
+  const paso = Math.max(120, Math.round(viewportW * 0.66));
+
   return (
     <>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 6, marginBottom: hint ? 4 : 10 }}>
-        {options.map(opt => (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: hint ? 4 : 10 }}>
+        {conFlechas && (
           <TouchableOpacity
-            key={opt}
-            style={[styles.pickerChip, selected === opt && styles.pickerChipActive, disabled && { opacity: 0.45 }]}
-            onPress={() => onSelect(opt)}
-            disabled={disabled}
+            style={[styles.pickerArrow, !puedeIzq && styles.pickerArrowDisabled]}
+            onPress={() => mover(-paso)}
+            disabled={!puedeIzq}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Anterior"
           >
-            <Text style={[styles.pickerText, selected === opt && styles.pickerTextActive]}>{opt}</Text>
+            <Ionicons name="chevron-back" size={16} color={puedeIzq ? colors.primaryLight : colors.textMuted} />
           </TouchableOpacity>
-        ))}
-      </ScrollView>
+        )}
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ gap: 6 }}
+          // Se mide el propio ScrollView (no la fila): así el ancho visible ya
+          // descuenta las flechas y el tope de desplazamiento es el real.
+          onLayout={(e) => setViewportW(e.nativeEvent.layout.width)}
+          onContentSizeChange={(w) => setContentW(w)}
+          onScroll={(e) => setScrollX(e.nativeEvent.contentOffset.x)}
+          scrollEventThrottle={16}
+        >
+          {options.map(opt => (
+            <TouchableOpacity
+              key={opt}
+              style={[styles.pickerChip, selected === opt && styles.pickerChipActive, disabled && { opacity: 0.45 }]}
+              onPress={() => onSelect(opt)}
+              disabled={disabled}
+            >
+              <Text style={[styles.pickerText, selected === opt && styles.pickerTextActive]}>{opt}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        {conFlechas && (
+          <TouchableOpacity
+            style={[styles.pickerArrow, !puedeDer && styles.pickerArrowDisabled]}
+            onPress={() => mover(paso)}
+            disabled={!puedeDer}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Siguiente"
+          >
+            <Ionicons name="chevron-forward" size={16} color={puedeDer ? colors.primaryLight : colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
       {!!hint && <Text style={styles.fieldHint}>{hint}</Text>}
       {!!error && <Text style={styles.fieldError}>{error}</Text>}
     </>
@@ -4486,6 +4547,14 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   pickerChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   pickerText: { fontSize: 12, fontFamily: FONTS.interMedium, color: COLORS.textMuted },
   pickerTextActive: { color: COLORS.textPrimary },
+  // Flechas ◀▶ de PickerRow (solo web, cuando los chips no caben).
+  pickerArrow: {
+    width: 30, height: 30, borderRadius: 15,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.backgroundSurface,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  pickerArrowDisabled: { opacity: 0.45 },
 });
 
 // Estilos de secciones (s)
