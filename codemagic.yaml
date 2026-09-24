@@ -1,7 +1,7 @@
 workflows:
   react-native-android:
     name: Build Android APK
-    max_build_duration: 30
+    max_build_duration: 60
     instance_type: mac_mini_m1
     environment:
       node: latest
@@ -14,6 +14,24 @@ workflows:
           npx expo prebuild --platform android
       - name: Compilar APK
         script: |
-          cd android && ./gradlew assembleRelease
+          cd android
+          # A veces dl.google.com (el Maven de Google) responde lento o corta la
+          # conexion desde las maquinas de Codemagic y Gradle falla con 'Read timed
+          # out' al bajar gradle-8.5.0.jar y otros. No es un error del codigo. Se
+          # sube el tiempo de espera y los reintentos de descarga de Gradle y, si
+          # aun asi falla, se repite la compilacion (lo ya descargado queda en cache).
+          echo >> gradle.properties
+          cat >> gradle.properties <<'EOF'
+          systemProp.org.gradle.internal.http.connectionTimeout=180000
+          systemProp.org.gradle.internal.http.socketTimeout=180000
+          systemProp.org.gradle.internal.repository.max.tentatives=6
+          systemProp.org.gradle.internal.repository.initial.backoff=2000
+          EOF
+          for intento in 1 2 3; do
+            ./gradlew assembleRelease && exit 0
+            echo "Intento $intento fallido; se reintenta en 30 segundos..."
+            sleep 30
+          done
+          exit 1
     artifacts:
       - android/app/build/outputs/apk/**/*.apk
