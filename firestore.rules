@@ -817,12 +817,21 @@ service cloud.firestore {
     // Cubre tanto los reportes de chat/perfil (reporteService) como los
     // laborales (empresa reporta a un empleado contratado: el doc lleva
     // `contexto:'laboral'` + `contratoId`, y el contador de 3 vive en
-    // `contratos_laborales.reportesCount`). El `create` abierto a autenticados
-    // ya lo permite; el empleado reportado NO puede leer el reporte (se entera
-    // por una notificación, no por esta colección).
+    // `contratos_laborales.reportesCount`). El empleado reportado NO puede leer
+    // el reporte (se entera por una notificación, no por esta colección).
     match /reportes/{reporteId} {
       allow read: if resource.data.reportador_id == request.auth.uid || esAdmin();
-      allow create: if request.auth != null;
+      // 🔒 create: cualquier autenticado puede DENUNCIAR, pero solo como sí mismo
+      // (reportador_id y reportante_id = su uid: no se puede suplantar a otro) y
+      // el reporte entra SIEMPRE como 'abierto' y sin `resolucion`. Antes bastaba
+      // estar autenticado, así que se podía crear uno ya 'resuelto' o con un
+      // estado inventado. Los 3 sitios que lo crean (reporteService x2 y
+      // contratoService.reportarEmpleado) ya mandan exactamente esto.
+      allow create: if request.auth != null
+        && request.resource.data.reportador_id == request.auth.uid
+        && request.resource.data.reportante_id == request.auth.uid
+        && request.resource.data.estado == 'abierto'
+        && !request.resource.data.keys().hasAny(['resolucion']);
       // 🔒 CAMBIO: estado/resolucion ya no se escriben directo desde el cliente
       // — solo resolveReport (Cloud Function, admin.ts) los toca, para dejar
       // auditoría server-side en audit_logs.

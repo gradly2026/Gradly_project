@@ -29,7 +29,7 @@ Córrelas **antes de cada `firebase deploy --only firestore:rules`**. Sale con c
 
 Para ver qué cambia una modificación de reglas, prueba también la versión anterior: `git show HEAD:firestore.rules > /tmp/anterior.rules` y luego `RULES_TEST_REGLAS=/tmp/anterior.rules npm run test:rules`. Los casos que fallen ahí son justo los comportamientos que tu cambio modificó.
 
-## Qué cubren (74 casos)
+## Qué cubren (114 casos)
 
 | Grupo | Colección | Qué comprueba |
 | --- | --- | --- |
@@ -37,7 +37,8 @@ Para ver qué cambia una modificación de reglas, prueba también la versión an
 | `G` | `registros_asistencia` | Lo lee el trío + admin; solo el servidor lo crea; la empresa solo puede confirmar la salida (no tocar `estado` ni `tardanzaMin`). |
 | `H` | `ajustes_asistencia` | Días no computados: los crean/actualizan empresa o universidad de esa inscripción (validado con `get()`); el estudiante no. |
 | `K` | `codigos_asistencia` | Cerrada a todo cliente. |
-| `T` | `ranking_plataforma/top_estudiantes` | Lo leen empresa, universidad y admin (no estudiantes); nadie lo escribe desde la app. |
+| `T` | `ranking_plataforma/top_estudiantes` | Lo leen empresa, universidad, admin y (desde v204) estudiantes; nadie lo escribe desde la app. |
+| `RP` | `reportes` | Cualquiera denuncia, pero solo como sí mismo (`reportador_id` y `reportante_id` = su uid), siempre 'abierto' y sin `resolucion`; `estado` lo cambia solo el servidor (Cloud Function `resolveReport`, con auditoría); el reportado no lee el reporte. Los 6 casos de creación indebida (RP3 a RP8) fallan con las reglas anteriores a v212. |
 
 Los casos marcados "(guardia)" en `rules.cases.js` son los que protegen el campo `asistencias`: si alguien afloja esa regla por error, fallan.
 

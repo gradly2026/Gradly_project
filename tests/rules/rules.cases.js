@@ -65,6 +65,12 @@ const TOP = (uid) => doc(dbDe(uid), 'ranking_plataforma/top_estudiantes');
 const VE = (uid, id) => doc(dbDe(uid), `verificaciones_empresa/${id}`);
 const PP = (uid, id) => doc(dbDe(uid), `perfiles_publicos_estudiantes/${id}`);
 const PE = (uid, id) => doc(dbDe(uid), `perfiles_estudiantes/${id}`);
+const RP = (uid, id) => doc(dbDe(uid), `reportes/${id}`);
+// Reporte tal cual lo crean reporteService / contratoService (los 3 sitios del cliente).
+const NUEVO_REPORTE = (yo, extra = {}) => ({
+  reportado_id: 'stu2', reportante_id: yo, reportador_id: yo, motivo: 'Contenido inapropiado',
+  tipo: 'usuario', descripcion: 'x', estado: 'abierto', fecha: serverTimestamp(), ...extra,
+});
 const diaAsist = (dia) => new FieldPath('asistencias', dia);
 
 const BASE = () => ({
@@ -105,6 +111,7 @@ async function reiniciar() {
     poner('codigos_asistencia/12345678', { asignacionId: 'A1', usado: false }),
     poner('ranking_plataforma/top_estudiantes', { lista: [] }),
     poner('perfiles_publicos_estudiantes/stu2', { nombre_completo: 'Estudiante Dos', calificacion_promedio: 5 }),
+    poner('reportes/R1', { reportado_id: 'stu2', reportante_id: 'stu1', reportador_id: 'stu1', motivo: 'x', tipo: 'usuario', estado: 'abierto' }),
     poner('verificaciones_empresa/emp1', { nit: '0614-010101-101-1', contacto_documento_tipo: 'dui', contacto_documento_numero: '000000000' }),
   ]);
 }
@@ -255,6 +262,25 @@ const CASOS = [
   ['PE1', 'un estudiante NO puede leer el perfil COMPLETO de otro estudiante', () => getDoc(PE('stu1', 'stu2')), 'DENY'],
   ['PE2', 'un estudiante SÍ lee el suyo', () => getDoc(PE('stu1', 'stu1')), 'ALLOW'],
   ['PE3', 'una empresa sigue leyendo el perfil completo (sin cambios)', () => getDoc(PE('emp1', 'stu1')), 'ALLOW'],
+
+  // ── RP · reportes: cualquiera denuncia, pero como sí mismo y siempre 'abierto' ──
+  // `estado` lo cambia SOLO la Cloud Function resolveReport (deja auditoría). Antes el
+  // `create` solo pedía estar autenticado: se podía crear un reporte ya 'resuelto',
+  // con un estado inventado ('abiert') o a nombre de otro usuario.
+  ['RP1', 'un estudiante crea un reporte propio válido (como reporteService)', () => setDoc(RP('stu1', 'N1'), NUEVO_REPORTE('stu1')), 'ALLOW'],
+  ['RP2', 'una empresa crea un reporte laboral válido con campos extra (como reportarEmpleado)', () => setDoc(RP('emp1', 'N2'), NUEVO_REPORTE('emp1', { tipo: 'laboral', contexto: 'laboral', contratoId: 'C1', reportado_nombre: 'Est' })), 'ALLOW'],
+  ['RP3', 'crear un reporte ya en estado resuelto', () => setDoc(RP('stu1', 'N3'), NUEVO_REPORTE('stu1', { estado: 'resuelto' })), 'DENY'],
+  ['RP4', 'crear un reporte con estado inventado (abiert)', () => setDoc(RP('stu1', 'N4'), NUEVO_REPORTE('stu1', { estado: 'abiert' })), 'DENY'],
+  ['RP5', 'crear un reporte sin estado', () => setDoc(RP('stu1', 'N5'), (({ estado, ...resto }) => resto)(NUEVO_REPORTE('stu1'))), 'DENY'],
+  ['RP6', 'crear un reporte a nombre de OTRO reportador (reportador_id ajeno)', () => setDoc(RP('stu1', 'N6'), NUEVO_REPORTE('stu1', { reportador_id: 'stu2' })), 'DENY'],
+  ['RP7', 'crear un reporte atribuido a OTRO reportante (reportante_id ajeno)', () => setDoc(RP('stu1', 'N7'), NUEVO_REPORTE('stu1', { reportante_id: 'emp1' })), 'DENY'],
+  ['RP8', 'crear un reporte que ya trae una resolucion', () => setDoc(RP('stu1', 'N8'), NUEVO_REPORTE('stu1', { resolucion: 'Ya resuelto' })), 'DENY'],
+  ['RP9', 'el dueño intenta cambiar el estado de su propio reporte', () => updateDoc(RP('stu1', 'R1'), { estado: 'resuelto' }), 'DENY'],
+  ['RP10', 'el admin intenta cambiar el estado desde el cliente (solo resolveReport)', () => updateDoc(RP('adm1', 'R1'), { estado: 'en_investigacion' }), 'DENY'],
+  ['RP11', 'el admin edita un campo NO protegido del reporte', () => updateDoc(RP('adm1', 'R1'), { nota_admin: 'revisado' }), 'ALLOW'],
+  ['RP12', 'SERVIDOR (Cloud Function resolveReport) cambia el estado', () => updateDoc(RP('owner', 'R1'), { estado: 'resuelto', resolucion: 'ok' }), 'ALLOW'],
+  ['RP13', 'el reportador lee su propio reporte', () => getDoc(RP('stu1', 'R1')), 'ALLOW'],
+  ['RP14', 'el reportado NO puede leer el reporte en su contra', () => getDoc(RP('stu2', 'R1')), 'DENY'],
 ];
 
 // ── Ejecución ────────────────────────────────────────────────────────────
