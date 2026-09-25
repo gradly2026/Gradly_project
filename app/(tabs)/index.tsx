@@ -460,7 +460,7 @@ function Chip({
 // ─────────────────────────────────────────────
 export default function FeedVacantes() {
   const { user, userProfile } = useAuth();
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const { styles, colors } = useThemedStyles();
   const router = useRouter();
   const { width: anchoVentana } = useWindowDimensions();
@@ -591,10 +591,6 @@ export default function FeedVacantes() {
   // .split(' ')[0] toma solo la PRIMERA palabra del nombre completo (el
   // primer nombre), para un saludo más cercano ("Hola, Ana!" en vez de
   // "Hola, Ana María Pérez López!").
-  const fecha  = HOY.toLocaleDateString(language === 'en' ? 'en-US' : 'es-SV', { weekday: 'long', day: 'numeric', month: 'long' });
-  // La fecha larga la formatea el SISTEMA OPERATIVO, no nuestro catálogo:
-  // por eso aquí no va t(), sino el código de idioma correspondiente —
-  // así "lunes 25 de agosto" se vuelve "Monday, August 25" solo.
 
   // ── Firebase: vacantes activas ──────────────────────────────────
   useEffect(() => {
@@ -1193,7 +1189,6 @@ export default function FeedVacantes() {
                   porque su opacidad se anima en cada rotación. */}
             </Animated.Text>
           </View>
-          <Text style={feedEnGrid ? [styles.fecha, styles.fechaAncha] : styles.fecha}>{fecha}</Text>
         </View>
 
         {/* Estado del comprobante de finalización tras culminar una pasantía por
@@ -1606,15 +1601,6 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 3,
   },
-  fecha: {
-    fontSize: 11,
-    fontFamily: FONTS.interRegular,
-    color: COLORS.textMuted,
-    textAlign: 'right',
-    maxWidth: 120,
-  },
-  // Con la barra a todo el ancho la fecha cabe en una sola línea.
-  fechaAncha: { maxWidth: 320 },
 
   // Búsqueda
   searchWrap: {
