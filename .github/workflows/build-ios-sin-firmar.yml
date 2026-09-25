@@ -1,0 +1,82 @@
+name: Build iOS (sin firmar)
+
+# SOLO MANUAL: GitHub > Actions > 'Build iOS (sin firmar)' > Run workflow.
+# No corre con los push (el deploy de la web sigue siendo deploy-web.yml).
+#
+# Genera un .ipa SIN FIRMAR (Gradly-sin-firmar.ipa) para probar la app en un
+# iPhone propio sin cuenta de Apple Developer de pago: se descarga de la seccion
+# 'Artifacts' de la corrida y se instala con Sideloadly o AltStore, que lo firman
+# con un Apple ID gratuito (caduca a los 7 dias, maximo 3 apps por Apple ID).
+# NO sirve para TestFlight ni para la App Store: eso exige la cuenta de pago.
+#
+# El repositorio es publico, asi que los runners macOS son gratuitos.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Checkout Gradly_project
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # /ios esta en .gitignore: la carpeta nativa se genera en cada corrida a
+      # partir de app.json (mismo enfoque que codemagic.yaml con Android). En macOS
+      # el prebuild tambien ejecuta 'pod install'.
+      - name: Expo prebuild (iOS)
+        run: npx expo prebuild --platform ios
+
+      - name: Compilar para iPhone sin firmar
+        run: |
+          set -eo pipefail
+          cd ios
+          WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
+          SCHEME="${WORKSPACE%.xcworkspace}"
+          echo "Workspace: $WORKSPACE | Esquema: $SCHEME"
+          xcodebuild -version
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      # Un .ipa es un zip con una carpeta 'Payload' que contiene la .app.
+      - name: Empaquetar .ipa
+        run: |
+          set -eo pipefail
+          APP=$(ls -d ios/build/Build/Products/Release-iphoneos/*.app | head -n 1)
+          echo "App: $APP"
+          rm -rf Payload Gradly-sin-firmar.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry Gradly-sin-firmar.ipa Payload
+          ls -lh Gradly-sin-firmar.ipa
+
+      - name: Subir .ipa como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gradly-sin-firmar-ipa
+          path: Gradly-sin-firmar.ipa
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
