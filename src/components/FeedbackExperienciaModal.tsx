@@ -221,7 +221,7 @@ export default function FeedbackExperienciaModal({
               </View>
               <Text style={styles.resultXp}>+{resultado.xp} XP</Text>
               {resultado.subioDeRango ? (
-                <Text style={styles.resultSubio}>¡Subiste de rango! 🎉</Text>
+                <Text style={styles.resultSubio}>¡Subiste de rango!</Text>
               ) : null}
               <Text style={styles.resultRango}>
                 Rango: <Text style={{ color: resultado.rango.color }}>{resultado.rango.nivel}</Text>

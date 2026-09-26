@@ -481,7 +481,7 @@ export async function firmarAcuerdo(
   // 5) Metadatos del chat (inbox) + no leídos para la contraparte.
   const otroUid = firmadoPor === empresaId ? universidadId : empresaId;
   batch.update(doc(db, "chats", chatId), {
-    lastMessage: "✅ Acuerdo firmado",
+    lastMessage: "Acuerdo firmado",
     lastSenderId: firmadoPor,
     updatedAt: serverTimestamp(),
     [`unread.${otroUid}`]: increment(1),
@@ -618,7 +618,7 @@ export async function modificarAcuerdo(
   // 4) Inbox de la contraparte.
   const otroUid = aceptadoPor === empresaId ? universidadId : empresaId;
   batch.update(doc(db, "chats", chatId), {
-    lastMessage: "🕒 Horario actualizado",
+    lastMessage: "Horario actualizado",
     lastSenderId: aceptadoPor,
     updatedAt: serverTimestamp(),
     [`unread.${otroUid}`]: increment(1),

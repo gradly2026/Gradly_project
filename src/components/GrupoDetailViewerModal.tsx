@@ -282,7 +282,8 @@ export default function GrupoDetailViewerModal({ visible, grupoId, onClose }: Pr
                 <Text style={styles.nombre} noTranslate>{grupo.nombre}</Text>
                 {grupo.egresado && (
                   <View style={styles.egresadoBadge}>
-                    <Text style={styles.egresadoBadgeText}>🎓 Egresado</Text>
+                    <Ionicons name="school-outline" size={13} color={colors.gold} />
+                    <Text style={styles.egresadoBadgeText}>Egresado</Text>
                   </View>
                 )}
               </View>
@@ -445,6 +446,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   egresadoBadge: {
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10,
     backgroundColor: COLORS.primary12,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
   },
   egresadoBadgeText: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.gold },
   section: {

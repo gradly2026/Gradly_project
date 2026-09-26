@@ -460,7 +460,7 @@ const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
   // (useOnboarding + OnboardingBubble), aplicado aquí a las secciones del
   // panel de universidad en vez de a las pestañas del estudiante.
   inicio: {
-    titulo: '¡Bienvenido a tu panel! 🎓',
+    titulo: '¡Bienvenido a tu panel!',
     texto:
       'Este es tu panel general. Aquí ves de un vistazo el total de estudiantes, las pasantías activas, las horas aprobadas y las solicitudes pendientes.',
   },
@@ -1638,7 +1638,7 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
       try {
         await enviarNotificacion(
           uid,
-          'Grupo egresado 🎓',
+          'Grupo egresado',
           `El grupo "${grupo.nombre}" fue marcado como egresado (${estSnap.size} estudiante(s)).`,
           'success',
           grupo.id,
@@ -2056,7 +2056,8 @@ function SeccionEstudiantes({ estudiantes, uid, solicitudesGrupo, onAbrirChatEnM
                     <Text style={s.estudianteNombre} numberOfLines={1}>{item.nombre}</Text>
                     {item.egresado && (
                       <View style={s.egresadoBadge}>
-                        <Text style={s.egresadoBadgeText}>🎓 Egresado</Text>
+                        <Ionicons name="school-outline" size={11} color={colors.gold} />
+                        <Text style={s.egresadoBadgeText}>Egresado</Text>
                       </View>
                     )}
                   </View>
@@ -3274,6 +3275,7 @@ const makeS = (COLORS: GradlyColors) => StyleSheet.create({
   egresadoBadge: {
     backgroundColor: COLORS.gold + '22',
     borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
   },
   egresadoBadgeText: { fontSize: 10, fontFamily: FONTS.interSemiBold, color: COLORS.gold },
   estudianteInitial: { fontSize: 16, fontFamily: FONTS.soraBold, color: COLORS.primaryLight },

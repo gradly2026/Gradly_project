@@ -432,7 +432,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "candidatura": "application",
   "¡Aplicación enviada!": "Application sent!",
   "¡Avanzaste a Entrevista!": "You advanced to an interview!",
-  "¡Bienvenido a tu panel! 🏢": "Welcome to your dashboard! 🏢",
+  "¡Bienvenido a tu panel!": "Welcome to your dashboard!",
   "¡Cuenta creada!": "Account created!",
   "¡Felicidades!": "Congratulations!",
   "¡Meta alcanzada! Ya estás certificado.": "Goal reached! You're now certified.",
@@ -466,7 +466,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   // ya tenían sus propios pasos sembrados; estos son los que faltaban
   // (estudiante es nuevo, y 'historial'/'perfil' de empresa y 'perfil' de
   // universidad quedaban fuera del recorrido antes de este cambio). ──
-  "¡Bienvenido a Gradly! 🎓": "Welcome to Gradly! 🎓",
+  "¡Bienvenido a Gradly!": "Welcome to Gradly!",
   "Aquí verás vacantes o pasantías según el momento de tu práctica: cupos asegurados por tu universidad, pasantías afines a tu carrera, o vacantes cuando ya te gradúes.":
     "Here you'll see job postings or internships depending on where you are in your internship: slots secured by your university, internships matching your major, or job postings once you graduate.",
   "Mi Progreso": "My Progress",
@@ -527,7 +527,7 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "+ Agregar pregunta": "+ Add question",
   "Guardar preguntas frecuentes": "Save FAQ",
   // ── Subir documento para precargar el FAQ (extraerFaqDeDocumento, v158) ──
-  "📄 Subir documento (.pdf, .docx, .txt)": "📄 Upload document (.pdf, .docx, .txt)",
+  "Subir documento (.pdf, .docx, .txt)": "Upload document (.pdf, .docx, .txt)",
   "Ya tienes 40 preguntas — borra alguna para poder subir un documento.":
     "You already have 40 questions — delete one to be able to upload a document.",
   "Subiendo archivo…": "Uploading file…",
@@ -1592,7 +1592,7 @@ export const UBICACION_SEED_EN: Record<string, string> = {
   // ── Editar "Mi ubicación" ya guardada + "usar mi ubicación registrada" al
   //    publicar + barrido automático de vacantes/pasantías afectadas (v155) ──
   "Editar ubicación": "Edit location",
-  "📌  Usar mi ubicación registrada": "📌  Use my registered location",
+  "Usar mi ubicación registrada": "Use my registered location",
   "Aún no tienes una ubicación registrada": "You don't have a registered location yet",
   "Guarda el punto exacto de tu empresa una sola vez en “Mi ubicación” y desde ahí podrás cargarlo con un toque cada vez que publiques una pasantía o vacante — más rápido, y le da al estudiante un dato verificado de a dónde va a llegar.":
     "Save your company's exact spot once in “My location” and load it with one tap every time you post a job or internship — faster, and it gives the student a verified fact about where they're headed.",
@@ -1671,7 +1671,6 @@ export const PROGRESO_SEED_EN: Record<string, string> = {
 export const RESUMEN_HOME_SEED_EN: Record<string, string> = {
   // Insignia de plan (dashboard-empresa): rama "premium" del mismo ternario
   // cuya rama "Plan Básico" ya vivía en AUTO_SEED_EN.
-  "⭐ Premium": "⭐ Premium",
   // EmpresaHomeCards
   "Vacantes activas": "Active job posts",
   "Aplic. pendientes": "Pending applications",
@@ -1744,7 +1743,7 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
     "We're doing maintenance on Gradly. Please try again shortly.",
   // GrupoDetailViewerModal
   "No se encontró este grupo.": "This group was not found.",
-  "🎓 Egresado": "🎓 Graduated",
+  "Egresado": "Graduated",
   "Información del grupo": "Group information",
   "Universidad": "University",
   "No disponible": "Not available",
@@ -2591,4 +2590,23 @@ export const ONBOARDING_INICIAL_SEED_EN: Record<string, string> = {
   "Certifica pasantías, fortalece alianzas": "Certify internships, strengthen partnerships",
   "Construye relaciones directas con empresas que ya confían en las pasantías de tus egresados.":
     "Build direct relationships with companies that already trust your graduates' internships.",
+};
+
+// ── Textos a los que se les quitó el emoji del principio (👋 🎓 💡 📍 …): ahora
+// el ícono es un Ionicons aparte y el texto va solo. Se siembran aquí para no
+// depender de la traducción asíncrona (la clave es el texto EXACTO en español). ──
+export const SIN_EMOJIS_SEED_EN: Record<string, string> = {
+  "Capturar mi Ubicación Actual": "Capture my current location",
+  "Formato cuadrado recomendado (PNG con fondo transparente).": "Recommended square format (PNG with a transparent background).",
+  "Puedes seleccionar varias carreras y revisarlas antes de continuar. Estas se mostrarán en el perfil público de tu universidad.": "You can select several programs and review them before continuing. They will be shown on your university's public profile.",
+  "Agrega detalles relevantes acerca de la vacante, responsabilidades y beneficios.": "Add relevant details about the position, its responsibilities and benefits.",
+  "La fecha debe ser al menos 5 días después de hoy, con un plazo máximo de 3 meses.": "The date must be at least 5 days from today, with a maximum of 3 months.",
+  "Cuántos estudiantes puedes recibir. Las universidades reservan cupos para sus grupos hasta agotarlos.": "How many students you can take. Universities reserve spots for their groups until they run out.",
+  "Los estudiantes ven este horario antes de postularse, y el sistema avisa a las universidades cuántos de sus alumnos pueden cumplirlo.": "Students see this schedule before applying, and the system tells universities how many of their students can meet it.",
+  "Estadísticas de la Red Gradly": "Gradly Network Statistics",
+  "¡Subiste de rango!": "You ranked up!",
+  "Foto": "Photo",
+  "Propuesta de cambio de horario": "Schedule change proposal",
+  "Propuesta de acuerdo": "Agreement proposal",
+  "Acuerdo firmado": "Agreement signed",
 };

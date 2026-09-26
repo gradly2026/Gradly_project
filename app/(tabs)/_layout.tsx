@@ -98,7 +98,7 @@ const TOUR_RUTAS: Record<TabKey, string> = {
 // que NAVEGAR de verdad a la siguiente (ver handleTourContinuar más abajo).
 const TOUR_PASOS: Record<TabKey, { titulo: string; texto: string }> = {
   index: {
-    titulo: '¡Bienvenido a Gradly! 🎓',
+    titulo: '¡Bienvenido a Gradly!',
     texto:
       'Aquí verás vacantes o pasantías según el momento de tu práctica: cupos asegurados por tu universidad, pasantías afines a tu carrera, o vacantes cuando ya te gradúes.',
   },

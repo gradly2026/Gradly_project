@@ -1031,12 +1031,15 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function InfoNote({ children }: { children: React.ReactNode }) {
-  // Una cajita informativa con fondo tenue (💡 tips) — usada varias veces
-  // en el formulario para dar contexto adicional sin ser un error.
-  const { s } = useRegistroTheme();
+  // Una cajita informativa con fondo tenue (consejos) — usada varias veces
+  // en el formulario para dar contexto adicional sin ser un error. Lleva un
+  // ícono formal de bombilla (antes cada texto empezaba con un emoji 💡); el
+  // texto va en su propio <Text> para que AutoText lo siga traduciendo.
+  const { s, C } = useRegistroTheme();
   return (
-    <View style={s.infoNote}>
-      <Text style={s.infoNoteText}>{children}</Text>
+    <View style={[s.infoNote, { flexDirection: "row", alignItems: "flex-start", gap: 8 }]}>
+      <Ionicons name="bulb-outline" size={16} color={C.textSub} style={{ marginTop: 2 }} />
+      <Text style={[s.infoNoteText, { flex: 1 }]}>{children}</Text>
     </View>
   );
 }
@@ -1298,9 +1301,10 @@ function TarjetaModal({
             />
           </ScrollView>
 
-          <View style={s.modalNote}>
-            <Text style={s.modalNoteText}>
-              🔒 Pago simulado. No se realiza ningún cargo real.
+          <View style={[s.modalNote, { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 }]}>
+            <Ionicons name="lock-closed-outline" size={14} color={C.textMuted} />
+            <Text style={[s.modalNoteText, { flexShrink: 1 }]}>
+              Pago simulado. No se realiza ningún cargo real.
             </Text>
           </View>
 
@@ -1410,7 +1414,7 @@ function CarrerasModal({
           </Text>
           <Text style={s.carreraItemMeta}>
             {item.tipo} · {item.modalidad} · {item.duracion}
-            {esRoja ? "  ·  🔒 Regulada por el Estado" : ""}
+            {esRoja ? "  ·  Regulada por el Estado" : ""}
           </Text>
         </View>
       </TouchableOpacity>
@@ -2544,7 +2548,7 @@ export default function Registro() {
               }}
               error={errors.eLogo}
             />
-            <InfoNote>💡 Formato cuadrado recomendado (PNG con fondo transparente).</InfoNote>
+            <InfoNote>Formato cuadrado recomendado (PNG con fondo transparente).</InfoNote>
           </View>
         );
       case 3:
@@ -2937,7 +2941,7 @@ export default function Registro() {
               }}
               error={errors.uLogo}
             />
-            <InfoNote>💡 Formato cuadrado recomendado (PNG con fondo transparente).</InfoNote>
+            <InfoNote>Formato cuadrado recomendado (PNG con fondo transparente).</InfoNote>
           </View>
         );
       case 4:
@@ -3083,7 +3087,7 @@ export default function Registro() {
             )}
 
             <InfoNote>
-              💡 Puedes seleccionar varias carreras y revisarlas antes de
+              Puedes seleccionar varias carreras y revisarlas antes de
               continuar. Estas se mostrarán en el perfil público de tu
               universidad.
             </InfoNote>

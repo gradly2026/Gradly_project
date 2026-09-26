@@ -6307,7 +6307,10 @@ export default function AdminPreview() {
               activeOpacity={0.8}
               disabled={faqEntradas.length >= 40 || faqSubidaFase !== "idle"}
             >
-              <Text style={s.btnOutlineText}>📄 Subir documento (.pdf, .docx, .txt)</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                <Ionicons name="document-text-outline" size={16} color={C.accent70} />
+                <Text style={s.btnOutlineText}>Subir documento (.pdf, .docx, .txt)</Text>
+              </View>
             </TouchableOpacity>
             <Text style={[s.textMuted, { fontSize: 11.5, marginTop: 6 }]}>
               {faqEntradas.length >= 40

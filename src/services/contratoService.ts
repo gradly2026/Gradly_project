@@ -324,7 +324,7 @@ export async function contratarCandidato(params: {
   //    de trabajo"; el split de esa pantalla llega en la Fase 4).
   await enviarNotificacion(
     estudianteId,
-    '¡Fuiste contratado! 🎉',
+    '¡Fuiste contratado!',
     `${empresaNombre} te contrató para "${vacante.titulo}". Abre tu progreso para ver los detalles del puesto.`,
     'success',
     '/(tabs)/progreso',

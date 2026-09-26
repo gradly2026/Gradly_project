@@ -315,7 +315,7 @@ const MENU: { key: SeccionEmpresa; label: string; icon: keyof typeof Ionicons.gl
 const TOUR_CLAVES: SeccionEmpresa[] = ['inicio', 'vacantes', 'kanban', 'activas', 'perfil'];
 const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
   inicio: {
-    titulo: '¡Bienvenido a tu panel! 🏢',
+    titulo: '¡Bienvenido a tu panel!',
     texto:
       'Este es tu panel general. Aquí ves un resumen de tu actividad: vacantes publicadas, aplicaciones recibidas y pasantías en curso.',
   },
@@ -2359,11 +2359,11 @@ export default function DashboardEmpresa() {
   // en autoSeed.ts, quedando a merced de la traducción async.
   // El rótulo sale del `plan` real, no del flag binario `premium`: 'gratuito'
   // es "Plan Gratuito", 'mensual' es el "Plan Básico" del catálogo comercial y
-  // 'premium' su estrella. Antes todo lo no-premium caía en "Plan Básico", así
+  // 'premium' el "Plan Premium". Antes todo lo no-premium caía en "Plan Básico", así
   // que una empresa del plan gratuito se veía rotulada como si pagara.
   const planKeyBadge = (perfil?.plan ?? 'gratuito') as 'gratuito' | 'mensual' | 'premium';
   const planBadgeLabel = useAutoText(
-    planKeyBadge === 'premium' ? '⭐ Premium' : planKeyBadge === 'mensual' ? 'Plan Básico' : 'Plan Gratuito',
+    planKeyBadge === 'premium' ? 'Plan Premium' : planKeyBadge === 'mensual' ? 'Plan Básico' : 'Plan Gratuito',
   );
 
   // ── Guard de ciclo de vida: evita render/crasheos con UID null ──
@@ -2687,14 +2687,20 @@ export default function DashboardEmpresa() {
 
                   {/* a) Capturar ubicación actual */}
                   <TouchableOpacity style={mapStyles.primaryBtn} onPress={capturarUbicacion} disabled={procesandoUbicacion}>
-                    <Text style={mapStyles.primaryBtnText}>📍  Capturar mi Ubicación Actual</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Ionicons name="locate-outline" size={18} color="#fff" />
+                      <Text style={mapStyles.primaryBtnText}>Capturar mi Ubicación Actual</Text>
+                    </View>
                   </TouchableOpacity>
 
                   {/* b) Usar el punto ya registrado en "Mi ubicación" (más confianza:
                       es la dirección verificada de la empresa, no dónde esté
                       físicamente quien está publicando ahora mismo). */}
                   <TouchableOpacity style={mapStyles.secondaryBtn} onPress={usarUbicacionGuardada} disabled={procesandoUbicacion}>
-                    <Text style={mapStyles.secondaryBtnText}>📌  Usar mi ubicación registrada</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Ionicons name="pin-outline" size={18} color={colors.primaryLight} />
+                      <Text style={mapStyles.secondaryBtnText}>Usar mi ubicación registrada</Text>
+                    </View>
                   </TouchableOpacity>
 
                   {procesandoUbicacion && (
@@ -2773,7 +2779,7 @@ export default function DashboardEmpresa() {
                 label="Descripción*" value={nvDesc} onChange={onChangeDesc}
                 placeholder="Descripción de la vacante..." multiline
                 error={nvErrors.desc} valid={!nvErrors.desc && !!nvDesc.trim()}
-                infoText="💡 Agrega detalles relevantes acerca de la vacante, responsabilidades y beneficios."
+                infoText="Agrega detalles relevantes acerca de la vacante, responsabilidades y beneficios."
               />
               <FieldInput
                 label="Skills (separadas por coma)*" value={nvSkills} onChange={onChangeSkills}
@@ -2784,13 +2790,13 @@ export default function DashboardEmpresa() {
                 label="Fecha límite*" value={nvFechaLim} onChange={onChangeFecha}
                 placeholder="YYYY-MM-DD" keyboardType="number-pad" maxLength={10}
                 error={nvErrors.fecha} valid={!nvErrors.fecha && !!nvFechaLim.trim()}
-                infoText="💡 La fecha debe ser al menos 5 días después de hoy, con un plazo máximo de 3 meses."
+                infoText="La fecha debe ser al menos 5 días después de hoy, con un plazo máximo de 3 meses."
               />
               <FieldInput
                 label="Cupos disponibles*" value={nvCupos} onChange={onChangeCupos}
                 placeholder="Ej. 8" keyboardType="number-pad" maxLength={3}
                 error={nvErrors.cupos} valid={!nvErrors.cupos && !!nvCupos.trim()}
-                infoText="💡 Cuántos estudiantes puedes recibir. Las universidades reservan cupos para sus grupos hasta agotarlos."
+                infoText="Cuántos estudiantes puedes recibir. Las universidades reservan cupos para sus grupos hasta agotarlos."
               />
               <HorarioVacanteSelector
                 value={nvHorario}
@@ -3476,7 +3482,10 @@ export default function DashboardEmpresa() {
 
             <View style={{ width: '100%', backgroundColor: 'rgba(0,0,0,0.3)', padding: 16, borderRadius: 12, marginBottom: 24, gap: 8 }}>
               {PLAN_DISPLAY[newPlanInfo as keyof typeof PLAN_DISPLAY]?.beneficios.map((ben, i) => (
-                <Text key={i} style={{ color: COLORS.textPrimary, fontFamily: FONTS.interRegular, fontSize: 14 }}>✅ {ben}</Text>
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                  <Ionicons name="checkmark-circle" size={18} color="#22C55E" />
+                  <Text style={{ flex: 1, color: COLORS.textPrimary, fontFamily: FONTS.interRegular, fontSize: 14 }}>{ben}</Text>
+                </View>
               ))}
             </View>
 
@@ -3518,10 +3527,10 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
   const { s, colors } = useThemedStyles();
   // Mismo criterio que el badge del encabezado: el rótulo depende del `plan`
   // real ('gratuito' → "Plan Gratuito", 'mensual' → "Plan Básico", 'premium' →
-  // "⭐ Premium"), no del flag binario `premium`.
+  // "Plan Premium"), no del flag binario `premium`.
   const planKeyBadge = (perfil?.plan ?? 'gratuito') as 'gratuito' | 'mensual' | 'premium';
   const planBadgeLabel = useAutoText(
-    planKeyBadge === 'premium' ? '⭐ Premium' : planKeyBadge === 'mensual' ? 'Plan Básico' : 'Plan Gratuito',
+    planKeyBadge === 'premium' ? 'Plan Premium' : planKeyBadge === 'mensual' ? 'Plan Básico' : 'Plan Gratuito',
   );
   const inscripcionesActivas = useInscripcionesActivas('empresaId', empresaId);
 
@@ -4182,7 +4191,13 @@ function FieldInput({ label, value, onChange, placeholder, multiline, keyboardTy
         maxLength={maxLength}
       />
       {!!error && <Text style={styles.fieldError}>{error}</Text>}
-      {!!infoText && <Text style={styles.fieldInfo}>{infoText}</Text>}
+      {!!infoText && (
+        // Consejo con ícono formal (antes cada texto llevaba un emoji 💡 delante).
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginBottom: 6, marginTop: -2 }}>
+          <Ionicons name="bulb-outline" size={13} color="#22C55E" style={{ marginTop: 1 }} />
+          <Text style={[styles.fieldInfo, { flex: 1, marginBottom: 0, marginTop: 0 }]}>{infoText}</Text>
+        </View>
+      )}
     </>
   );
 }

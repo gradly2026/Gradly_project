@@ -933,7 +933,7 @@ export default function ChatThread({
         };
       }
       await setDoc(ref, payload);
-      void touchChatOnMessage(chatId, "📷 Foto", giftedUser._id, chatUsers);
+      void touchChatOnMessage(chatId, "Foto", giftedUser._id, chatUsers);
       setImgPreviewUri(null);
       setReplyTo(null);
     } catch (error) {
@@ -972,7 +972,7 @@ export default function ChatThread({
           };
         }
         await setDoc(ref, payload);
-        void touchChatOnMessage(chatId, "🎤 Audio", giftedUser._id, chatUsers);
+        void touchChatOnMessage(chatId, "Audio", giftedUser._id, chatUsers);
         setAudioRecOpen(false);
         setReplyTo(null);
       } catch (error) {
@@ -991,9 +991,9 @@ export default function ChatThread({
     const cita = msg.isDeleted
       ? "Mensaje eliminado"
       : msg.type === "image"
-        ? "📷 Foto"
+        ? "Foto"
         : msg.type === "audio"
-          ? "🎤 Audio"
+          ? "Audio"
           : msg.text;
     setReplyTo({ _id: msg._id, text: cita, user: msg.user });
   }, []);
@@ -1061,7 +1061,7 @@ export default function ChatThread({
         payload.audioDuration = Math.round(Number(msg.audioDuration ?? 0)) || 0;
       }
       void setDoc(ref, payload);
-      const resumen = esImg ? "📷 Foto" : esAud ? "🎤 Audio" : msg.text;
+      const resumen = esImg ? "Foto" : esAud ? "Audio" : msg.text;
       void touchChatOnMessage(destino.id, resumen, giftedUser._id, destino.users);
     },
     [forwardMsg, giftedUser._id, giftedUser.name],
@@ -1588,7 +1588,7 @@ export default function ChatThread({
       });
       void touchChatOnMessage(
         chatId,
-        esCambio ? "🕒 Propuesta de cambio de horario" : "📅 Propuesta de acuerdo",
+        esCambio ? "Propuesta de cambio de horario" : "Propuesta de acuerdo",
         giftedUser._id,
         chatUsers,
       );
@@ -1659,7 +1659,7 @@ export default function ChatThread({
         });
         void touchChatOnMessage(
           chatId,
-          `👥 Grupo compartido: ${grupo.grupoNombre}`,
+          `Grupo compartido: ${grupo.grupoNombre}`,
           giftedUser._id,
           chatUsers,
         );

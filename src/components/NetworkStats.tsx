@@ -53,7 +53,6 @@ export function makeChartConfig(colors: GradlyColors, isDark: boolean) {
 }
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-const MEDALLAS = ['🥇', '🥈', '🥉'];
 
 // ═════════════════════════════════════════════
 // BANNER: ESTADÍSTICAS DE LA RED GRADLY
@@ -260,8 +259,9 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
         <Text style={styles.rankEmpty}>Aún sin datos suficientes.</Text>
       ) : (
         data.map((e, i) => (
+          // Sin medalla ni ícono de posición (pedido del usuario): el orden de la
+          // lista ya dice quién es el #1.
           <View key={`${e.id}-${i}`} style={styles.rankRow}>
-            <Text style={styles.rankMedal}>{MEDALLAS[i]}</Text>
             <TouchableOpacity
               style={{ flex: 1 }}
               activeOpacity={e.id ? 0.7 : 1}
@@ -280,6 +280,15 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
         ))
       )}
     </BlurView>
+  );
+
+  // Título del banner con un ícono formal (antes llevaba un emoji 🌐 delante). El
+  // texto va en su propio <Text> para que AutoText lo siga traduciendo.
+  const tituloBanner = (estilo?: object) => (
+    <View style={[styles.bannerTitulo, estilo]}>
+      <Ionicons name="globe-outline" size={18} color={colors.primaryLight} />
+      <Text style={[styles.bannerHeading, { marginBottom: 0, flexShrink: 1 }]}>Estadísticas de la Red Gradly</Text>
+    </View>
   );
 
   // Cuadro "Top 3 estudiantes" (igual en las dos disposiciones; solo cambia su estilo).
@@ -308,7 +317,7 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
         // "Top Universidades" y ◀ vuelve a "Top Empresas"; cada una se atenúa
         // cuando ya se está en ese extremo.
         <View style={styles.bannerHeadingRow}>
-          <Text style={[styles.bannerHeading, { flex: 1, marginBottom: 0 }]}>🌐 Estadísticas de la Red Gradly</Text>
+          {tituloBanner({ flex: 1 })}
           <TouchableOpacity
             style={[styles.bannerArrow, pagina === 0 && styles.bannerArrowDisabled]}
             onPress={() => irAPagina(0)}
@@ -331,7 +340,7 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
           </TouchableOpacity>
         </View>
       ) : (
-        <Text style={styles.bannerHeading}>🌐 Estadísticas de la Red Gradly</Text>
+        tituloBanner({ marginBottom: 10 })
       )}
 
       {enFila ? (
@@ -625,6 +634,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   bannerHeading: { fontSize: 15, fontFamily: FONTS.soraSemiBold, color: COLORS.textPrimary, marginBottom: 10 },
   // Web: título + flechas ◀▶ del carrusel en una fila.
   bannerHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  bannerTitulo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   bannerArrow: {
     width: 34, height: 34, borderRadius: 17,
     alignItems: 'center', justifyContent: 'center',
@@ -642,7 +652,6 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   rankTitle: { fontSize: 14, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
   rankEmpty: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, paddingVertical: 8 },
   rankRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  rankMedal: { fontSize: 14, width: 24, textAlign: 'center' },
   rankName: { flex: 1, fontSize: 13, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
   rankValue: { fontSize: 13, fontFamily: FONTS.rajdhaniBold },
   rankStars: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.gold, marginTop: 1 },

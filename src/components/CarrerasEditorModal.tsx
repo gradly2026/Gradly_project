@@ -116,7 +116,7 @@ export default function CarrerasEditorModal({
           </Text>
           <Text style={s.itemMeta}>
             {item.tipo} · {item.modalidad} · {item.duracion}
-            {esRoja ? "  ·  🔒 Regulada por el Estado" : ""}
+            {esRoja ? "  ·  Regulada por el Estado" : ""}
           </Text>
         </View>
       </TouchableOpacity>

@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { AutoText as Text } from "./AutoText";
@@ -84,10 +85,13 @@ export default function HorarioVacanteSelector({
       </View>
 
       {!!error && <Text style={s.error}>{error}</Text>}
-      <Text style={s.ayuda}>
-        💡 Los estudiantes ven este horario antes de postularse, y el sistema avisa a las
-        universidades cuántos de sus alumnos pueden cumplirlo.
-      </Text>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 5 }}>
+        <Ionicons name="bulb-outline" size={13} color={colors.textMuted} style={{ marginTop: 1 }} />
+        <Text style={[s.ayuda, { flex: 1 }]}>
+          Los estudiantes ven este horario antes de postularse, y el sistema avisa a las
+          universidades cuántos de sus alumnos pueden cumplirlo.
+        </Text>
+      </View>
 
       <Modal visible={picker !== null} transparent animationType="fade" onRequestClose={() => setPicker(null)}>
         <Pressable style={s.backdrop} onPress={() => setPicker(null)}>

@@ -42,8 +42,6 @@ interface Props {
   textoVacio?: string;
 }
 
-const MEDALLAS = ['🥇', '🥈', '🥉', '4°', '5°'];
-
 export default function TopEstudiantesCard({
   titulo, entries, onVerEstudiante, detallado, relacionEmpresa, style, subtitulo, textoVacio,
 }: Props) {
@@ -69,7 +67,8 @@ export default function TopEstudiantesCard({
           disabled={!e.id}
           onPress={() => e.id && onVerEstudiante(e.id)}
         >
-          <Text style={s.medal} noTranslate>{MEDALLAS[i] ?? `${i + 1}°`}</Text>
+          {/* Sin medalla ni número de posición (pedido del usuario): el orden de la
+              lista ya dice quién es el #1. */}
           <StorageAvatar url={e.foto} size={34} fallbackIcon="person" />
           <View style={{ flex: 1 }}>
             <Text style={s.nombre} numberOfLines={1} noTranslate>{e.nombre}</Text>
@@ -126,7 +125,6 @@ const makeStyles = (COLORS: GradlyColors) =>
       flexDirection: 'row', alignItems: 'center', gap: 10,
       paddingVertical: 9, borderTopWidth: 1, borderTopColor: COLORS.border,
     },
-    medal: { fontSize: 13, width: 22, textAlign: 'center' },
     nombre: { fontSize: 13.5, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
     sub: { fontSize: 11.5, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 1 },
     subRelacion: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, marginTop: 1 },
