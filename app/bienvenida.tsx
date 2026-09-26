@@ -25,6 +25,7 @@ import {
 } from 'react-native';
 import { AutoText as Text } from '../src/components/AutoText';
 import DescargarApk from '../src/components/DescargarApk';
+import TemaOscuroFijo from '../src/components/TemaOscuroFijo';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { COLORS, FONTS, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
@@ -314,7 +315,19 @@ function Estrellas({ valor, size = 13 }: { valor: number; size?: number }) {
   );
 }
 
+// /bienvenida SIEMPRE en oscuro: además de fijar sus propios colores (más abajo),
+// se envuelve en TemaOscuroFijo para que también lo estén los componentes que usa
+// por dentro y leen el tema con useTheme() (GlassCard, LiquidBackground). Sin esto,
+// con el modo claro guardado las tarjetas salían en blanco y el fondo gris claro.
 export default function BienvenidaScreen() {
+  return (
+    <TemaOscuroFijo>
+      <BienvenidaContenido />
+    </TemaOscuroFijo>
+  );
+}
+
+function BienvenidaContenido() {
   const router = useRouter();
   // Fijo en modo oscuro a propósito, sin importar el tema real que el
   // usuario tenga guardado en su cuenta (ni siquiera si no hay sesión
