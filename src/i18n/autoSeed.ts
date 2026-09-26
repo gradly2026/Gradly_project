@@ -2498,6 +2498,8 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
   // Testimonios (calificaciones reales de la plataforma)
   "Todavía no hay calificaciones de este rol con comentario.":
     "There aren't any ratings with a comment from this role yet.",
+  // Botón de descarga del APK de Android (DescargarApk.tsx).
+  "Descargar app": "Download app",
 };
 
 // app/calificar-plataforma.tsx — "Mi perfil → Calificar la plataforma",

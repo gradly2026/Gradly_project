@@ -24,6 +24,7 @@ import {
   View,
 } from 'react-native';
 import { AutoText as Text } from '../src/components/AutoText';
+import DescargarApk from '../src/components/DescargarApk';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { COLORS, FONTS, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
@@ -459,6 +460,9 @@ export default function BienvenidaScreen() {
               <Text style={styles.btnOutlineText}>Ya tengo cuenta</Text>
             </Pressable>
           </View>
+          {/* Descarga del APK de Android: solo web y solo si ya hay un release publicado
+              en GitHub con Gradly.apk (si no, no se dibuja). Ver DescargarApk.tsx. */}
+          <DescargarApk />
           <View style={[styles.ecoRow, { flexDirection: wide ? 'row' : 'column' }]}>
             {[
               { icon: 'person-outline' as IconName, title: 'Estudiantes', desc: 'Haz tu pasantía y consigue tu primer empleo' },
