@@ -54,7 +54,7 @@ export default function TopEstudiantesCard({
   return (
     <View style={[s.card, style]}>
       <View style={s.header}>
-        <Ionicons name="star" size={16} color={colors.gold} />
+        <Ionicons name="people-outline" size={18} color={colors.primaryLight} />
         <Text style={s.title}>{titulo}</Text>
       </View>
       {!!subtitulo && <Text style={s.subtitulo}>{subtitulo}</Text>}

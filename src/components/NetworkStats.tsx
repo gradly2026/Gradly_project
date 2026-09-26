@@ -252,7 +252,7 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
       style={[styles.rankCard, enFila ? { flex: 1 } : { width: cardWidth }]}
     >
       <View style={styles.rankHeader}>
-        <Ionicons name={icon} size={18} color={color} />
+        <Ionicons name={icon} size={18} color={colors.primaryLight} />
         <Text style={styles.rankTitle}>{titulo}</Text>
       </View>
       {data.length === 0 ? (
@@ -346,8 +346,8 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
       {enFila ? (
         // Pantalla ancha: los tres cuadros lado a lado, todos del mismo alto.
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'stretch' }}>
-          {rankCard({ titulo: 'Top Empresas', icon: 'trophy', color: colors.gold, data: topEmpresas, perfilRol: 'empresa' })}
-          {rankCard({ titulo: 'Top Universidades', icon: 'school', color: colors.primaryLight, data: topUnis, perfilRol: 'universidad' })}
+          {rankCard({ titulo: 'Top Empresas', icon: 'business-outline', color: colors.gold, data: topEmpresas, perfilRol: 'empresa' })}
+          {rankCard({ titulo: 'Top Universidades', icon: 'school-outline', color: colors.primaryLight, data: topUnis, perfilRol: 'universidad' })}
           {puedeVerTop3 && topEstCargado && (
             <View style={{ flex: 1 }}>{top3Estudiantes({ flex: 1 })}</View>
           )}
@@ -364,8 +364,8 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
             onScroll={conFlechas ? (e) => alScrollCarrusel(e.nativeEvent.contentOffset.x) : undefined}
             scrollEventThrottle={conFlechas ? 16 : undefined}
           >
-            {rankCard({ titulo: 'Top Empresas', icon: 'trophy', color: colors.gold, data: topEmpresas, perfilRol: 'empresa' })}
-            {rankCard({ titulo: 'Top Universidades', icon: 'school', color: colors.primaryLight, data: topUnis, perfilRol: 'universidad' })}
+            {rankCard({ titulo: 'Top Empresas', icon: 'business-outline', color: colors.gold, data: topEmpresas, perfilRol: 'empresa' })}
+            {rankCard({ titulo: 'Top Universidades', icon: 'school-outline', color: colors.primaryLight, data: topUnis, perfilRol: 'universidad' })}
           </ScrollView>
 
           {/* Top 3 estudiantes de toda la plataforma — BAJO el carrusel, a lo ancho
