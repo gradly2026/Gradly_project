@@ -97,7 +97,10 @@ export default function CertificarPasanteModal({
   const verComprobante = async () => {
     if (!comprobante) return;
     try {
-      if (comprobante.origen === 'pdf' && comprobante.archivoUrl) {
+      // `archivoUrl` cubre tanto el PDF real generado por el servidor como uno
+      // propio que adjuntó la empresa; sin él (comprobantes de antes de esta
+      // fase) cae a la constancia HTML de siempre.
+      if (comprobante.archivoUrl) {
         await Linking.openURL(comprobante.archivoUrl);
       } else {
         await abrirConstancia(

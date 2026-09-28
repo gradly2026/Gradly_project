@@ -96,7 +96,10 @@ export default function ComprobantePasantiaCard({ rol, uid }: { rol: Rol; uid: s
 
   const verDocumento = async (comp: Comprobante) => {
     try {
-      if (comp.origen === 'pdf' && comp.archivoUrl) {
+      // `archivoUrl` cubre tanto el PDF real generado por el servidor como uno
+      // propio que adjuntó la empresa; sin él (comprobantes de antes de esta
+      // fase) cae a la constancia HTML de siempre.
+      if (comp.archivoUrl) {
         await Linking.openURL(comp.archivoUrl);
       } else {
         await abrirConstancia(

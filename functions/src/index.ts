@@ -79,6 +79,12 @@
  *    admin (lo dispara, sin esperar, el botón "Recalcular Top 3 ahora"). Mismo
  *    criterio y orden que el cliente (topEstudiantesService.ts); solo reescribe
  *    los perfiles cuya lista cambió (topPerfiles.ts).
+ *  · enviarComprobantePdf → la empresa envía el comprobante de finalización de
+ *    una pasantía por cupo (comprobante.ts, Fase 1 de la mejora al comprobante).
+ *    Genera un PDF real (pdf-lib, comprobantePdf.ts) y lo sube a Storage con su
+ *    propio token de descarga, en vez del HTML que había que imprimir a mano.
+ *    Reconstruye identidad/datos denormalizados desde `asignaciones_cupo`;
+ *    fechaFin/horasCumplidas los acepta del cliente con validación de rango.
  *
  * Nota: el antiguo patrón "traducir al escribir" (triggers translate_*) se
  * retiró — se reemplazó por la traducción al vuelo con caché, que cubre también
@@ -119,3 +125,4 @@ export {
   registrarSalidaAnticipada,
   recordatorioAsistenciaPendiente,
 } from "./asistencia";
+export { enviarComprobantePdf } from "./comprobante";

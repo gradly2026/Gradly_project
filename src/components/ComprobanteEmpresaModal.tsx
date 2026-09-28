@@ -7,7 +7,7 @@ import { db } from '../config/firebaseConfig';
 import { textoHorario } from '../data/disponibilidad';
 import {
   construirDatosConstancia,
-  enviarComprobante,
+  enviarComprobantePdf,
   subirComprobantePdf,
 } from '../services/comprobanteService';
 import type { AsignacionCupo } from '../services/reclamoCuposService';
@@ -154,13 +154,11 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
     if (!listoParaEnviar) return;
     setEnviando(true);
     try {
-      await enviarComprobante(datos, {
-        archivoUrl,
-        notaEmpresa: nota,
-        area,
-        supervisor,
-        fechaEmisionISO,
-      });
+      await enviarComprobantePdf(
+        asignacion.id,
+        { fechaFin: datos.fechaFin, horasCumplidas: horas },
+        { archivoUrl, notaEmpresa: nota, area, supervisor, fechaEmisionISO },
+      );
       showAlert(
         'Comprobante enviado',
         'Tu universidad ya puede revisarlo y validarlo. Al validarlo, el proceso queda 100% culminado.',

@@ -29,10 +29,21 @@ import {
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { db, storage } from '../config/firebaseConfig';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { app, db, storage } from '../config/firebaseConfig';
 import type { HorarioPasantia } from '../data/disponibilidad';
 import type { AsignacionCupo } from './reclamoCuposService';
 import { enviarNotificacion } from './notificationService';
+
+const functions = getFunctions(app, 'us-central1');
+
+/** Mensaje de un error de callable listo para mostrar. El SDK de Firebase le pega
+ *  al final el estado HTTP (`... [400]`), un dato técnico que al usuario no le
+ *  dice nada: se quita, sin tocar el resto del texto que escribe el servidor. */
+function mensajeDeCallable(e: any, porDefecto: string): string {
+  const msg = String(e?.message ?? '').replace(/\s*\[\d{3}\]\s*$/, '').trim();
+  return msg || porDefecto;
+}
 
 export const COLECCION_COMPROBANTES = 'comprobantes_pasantia';
 
@@ -257,6 +268,64 @@ export async function enviarComprobante(
     'info',
     `comprobante:${datos.asignacionId}`,
   );
+}
+
+export interface ResultadoEnviarComprobantePdf {
+  ok: boolean;
+  archivoUrl: string;
+  origen: 'auto' | 'pdf';
+}
+const _enviarComprobantePdf = httpsCallable<
+  {
+    asignacionId: string;
+    fechaFin: string;
+    horasCumplidas: number;
+    area?: string;
+    supervisor?: string;
+    notaEmpresa?: string;
+    fechaEmisionISO?: string;
+    archivoUrlPropio?: string | null;
+  },
+  ResultadoEnviarComprobantePdf
+>(functions, 'enviarComprobantePdf');
+
+/**
+ * La EMPRESA envía el comprobante — versión servidor (Fase 1 de la mejora al
+ * comprobante): el documento se genera como un PDF real (pdf-lib, functions/
+ * src/comprobantePdf.ts) y queda guardado una sola vez en Storage, en vez del
+ * HTML que había que imprimir/guardar a mano. El servidor reconstruye
+ * identidad y datos denormalizados directo de `asignaciones_cupo` (nunca del
+ * cliente); `fechaFin`/`horasCumplidas` se validan por rango, porque
+ * recalcularlos exactamente como `progresoPorMeta` (horasPasantia.ts) no vale
+ * la pena portarlo a functions/. `enviarComprobante` (arriba) queda intacta
+ * como camino de emergencia; esta es la que usa ComprobanteEmpresaModal.tsx.
+ */
+export async function enviarComprobantePdf(
+  asignacionId: string,
+  datos: { fechaFin: string; horasCumplidas: number },
+  opts: {
+    archivoUrl?: string | null;
+    notaEmpresa?: string;
+    area?: string;
+    supervisor?: string;
+    fechaEmisionISO?: string;
+  } = {},
+): Promise<ResultadoEnviarComprobantePdf> {
+  try {
+    const res = await _enviarComprobantePdf({
+      asignacionId,
+      fechaFin: datos.fechaFin,
+      horasCumplidas: datos.horasCumplidas,
+      area: opts.area,
+      supervisor: opts.supervisor,
+      notaEmpresa: opts.notaEmpresa,
+      fechaEmisionISO: opts.fechaEmisionISO,
+      archivoUrlPropio: opts.archivoUrl ?? null,
+    });
+    return res.data;
+  } catch (e: any) {
+    throw new Error(mensajeDeCallable(e, 'No se pudo enviar el comprobante. Intenta de nuevo.'));
+  }
 }
 
 /**

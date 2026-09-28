@@ -255,10 +255,10 @@ export default function PerfilTab() {
     try {
       // Mismo mecanismo que ya usan empresa y universidad para este mismo
       // documento (ComprobanteEmpresaModal.tsx / CertificarPasanteModal.tsx):
-      // si la empresa adjuntó su propio PDF, se abre ese archivo; si no, se
-      // genera la constancia y se abre como documento imprimible/descargable
-      // (diálogo nativo de imprimir en el celular, pestaña nueva en la web).
-      if (comp.origen === 'pdf' && comp.archivoUrl) {
+      // si hay `archivoUrl` (PDF real generado por el servidor, o uno propio
+      // que adjuntó la empresa) se abre directo; si no (comprobantes de antes
+      // de esta fase), cae a la constancia HTML de siempre.
+      if (comp.archivoUrl) {
         await Linking.openURL(comp.archivoUrl);
       } else {
         await abrirConstancia(

@@ -282,10 +282,11 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
   const verComprobante = async (comp: Comprobante) => {
     try {
       // Mismo mecanismo que ya usan la empresa (al enviarlo) y la universidad
-      // (al validarlo) para este mismo documento: si se adjuntó un PDF propio
-      // se abre ese archivo; si no, se genera la constancia y se abre como
-      // documento imprimible/descargable.
-      if (comp.origen === "pdf" && comp.archivoUrl) {
+      // (al validarlo) para este mismo documento: `archivoUrl` cubre tanto el
+      // PDF real generado por el servidor como uno propio que adjuntó la
+      // empresa; sin él (comprobantes de antes de esta fase) cae a la
+      // constancia HTML de siempre.
+      if (comp.archivoUrl) {
         await Linking.openURL(comp.archivoUrl);
       } else {
         await abrirConstancia(
