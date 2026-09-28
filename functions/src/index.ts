@@ -87,6 +87,11 @@
  *    fechaFin/horasCumplidas los acepta del cliente con validación de rango.
  *    Fase 2: el PDF trae un código QR a una página pública de verificación
  *    (app/verificar.tsx).
+ *  · backfillComprobantesPdf → genera el PDF real (con QR) de los
+ *    comprobantes enviados ANTES de la Fase 1, que hoy solo tienen la
+ *    constancia HTML de siempre (comprobante.ts). Nunca toca los que la
+ *    empresa mandó como su propio PDF (`origen:'pdf'`). Solo admin; botón
+ *    "Generar PDF real de comprobantes antiguos" en el panel admin (Config).
  *  · sincronizarComprobantePublico / backfillComprobantesPublicos → espejo
  *    público (`comprobantes_publicos`, lectura sin sesión) de
  *    `comprobantes_pasantia` (comprobantePublico.ts, Fase 2 del comprobante).
@@ -133,7 +138,7 @@ export {
   registrarSalidaAnticipada,
   recordatorioAsistenciaPendiente,
 } from "./asistencia";
-export { enviarComprobantePdf } from "./comprobante";
+export { enviarComprobantePdf, backfillComprobantesPdf } from "./comprobante";
 export {
   sincronizarComprobantePublico,
   backfillComprobantesPublicos,

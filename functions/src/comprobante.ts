@@ -244,3 +244,101 @@ export const enviarComprobantePdf = onCall({ region: REGION }, async (req) => {
 
   return { ok: true, archivoUrl, origen };
 });
+
+/**
+ * Backfill de una sola vez: genera el PDF real (con QR) de los comprobantes
+ * enviados ANTES de esta fase, que hoy solo tienen la constancia HTML de
+ * siempre (sin `archivoUrl`). Reutiliza exactamente el mismo camino que
+ * `enviarComprobantePdf` — mismos datos, mismo `construirComprobantePdfBytes`,
+ * mismo path fijo en Storage con su propio token de descarga — a partir de
+ * los campos que YA tiene guardados cada comprobante (sin releer
+ * `asignaciones_cupo`: para uno ya enviado, esos datos no deberían cambiar).
+ *
+ * A propósito NUNCA toca los que tienen `origen:'pdf'` (la empresa adjuntó su
+ * propio documento, por ejemplo en papel membretado): reemplazarlo por uno
+ * genérico del sistema sería peor, no mejor. Tampoco toca los que YA tienen
+ * `archivoUrl` (de esta fase en adelante, o de una corrida anterior de este
+ * mismo backfill) — es seguro repetirlo.
+ *
+ * Al actualizar `comprobantes_pasantia.archivoUrl`, el trigger
+ * `sincronizarComprobantePublico` (comprobantePublico.ts) refresca solo su
+ * espejo público automáticamente — no hace falta llamar aparte a
+ * `backfillComprobantesPublicos` después de este.
+ */
+export const backfillComprobantesPdf = onCall(
+  { region: REGION, timeoutSeconds: 300, memory: "512MiB" },
+  async (req) => {
+    try {
+      const uid = req.auth?.uid;
+      if (!uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
+      const actorSnap = await db.doc(`usuarios/${uid}`).get();
+      if (actorSnap.data()?.rol !== "admin") {
+        throw new HttpsError("permission-denied", "No tienes permisos de administrador.");
+      }
+
+      const snap = await db.collection("comprobantes_pasantia").get();
+      const candidatos = snap.docs.filter((d) => {
+        const c = d.data() as any;
+        return !c.archivoUrl && c.origen !== "pdf";
+      });
+
+      const bucket = admin.storage().bucket();
+      let generados = 0;
+      let fallidos = 0;
+      for (const d of candidatos) {
+        const c = d.data() as any;
+        const asignacionId = d.id;
+        try {
+          const datosPdf: DatosConstanciaPdf = {
+            estudianteNombre: String(c.estudianteNombre ?? ""),
+            empresaNombre: String(c.empresaNombre ?? ""),
+            universidadNombre: String(c.universidadNombre ?? ""),
+            vacanteTitulo: String(c.vacanteTitulo ?? ""),
+            carrera: String(c.carrera ?? ""),
+            fechaInicio: String(c.fechaInicio ?? ""),
+            fechaFin: String(c.fechaFin ?? ""),
+            horasCumplidas: Math.round(Number(c.horasCumplidas) || 0),
+            horario: c.horario ?? null,
+          };
+          const fechaEmisionRaw = String(c.fechaEmision ?? "");
+          const extraPdf: ExtraConstanciaPdf = {
+            area: String(c.area ?? ""),
+            supervisor: String(c.supervisor ?? ""),
+            nota: String(c.notaEmpresa ?? ""),
+            fechaEmisionISO: esFechaISOValida(fechaEmisionRaw) ? fechaEmisionRaw : hoyISO(),
+            urlVerificacion: `${URL_BASE_VERIFICACION}?id=${asignacionId}`,
+          };
+
+          const bytes = await construirComprobantePdfBytes(datosPdf, extraPdf);
+          const path = `constancias_cupo/${asignacionId}/constancia.pdf`;
+          const token = crypto.randomUUID();
+          await bucket.file(path).save(Buffer.from(bytes), {
+            metadata: {
+              contentType: "application/pdf",
+              metadata: { firebaseStorageDownloadTokens: token },
+            },
+          });
+          const archivoUrl =
+            `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+
+          await db.collection("comprobantes_pasantia").doc(asignacionId).update({
+            archivoUrl, origen: "auto",
+          });
+          generados++;
+        } catch (e) {
+          logger.warn(`backfillComprobantesPdf: no se pudo generar el PDF de ${asignacionId}`, e);
+          fallidos++;
+        }
+      }
+
+      return { ok: true, revisados: snap.size, candidatos: candidatos.length, generados, fallidos };
+    } catch (error: any) {
+      logger.error("backfillComprobantesPdf failed:", error);
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError(
+        "internal",
+        `Error interno en backfillComprobantesPdf: ${String(error?.message ?? error)}`,
+      );
+    }
+  },
+);

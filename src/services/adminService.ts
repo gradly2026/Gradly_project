@@ -113,6 +113,16 @@ type BackfillComprobantesPublicosOutput = {
   procesados: number;
 };
 
+/** Resultado del backfill de PDF real (con QR) para comprobantes anteriores
+ *  a la Fase 1. Ver functions/src/comprobante.ts. */
+type BackfillComprobantesPdfOutput = {
+  ok: boolean;
+  revisados: number;
+  candidatos: number;
+  generados: number;
+  fallidos: number;
+};
+
 /** Resultado del backfill de NIT/documento a verificaciones_empresa (Fase 2
  *  de la cola de aprobación de empresas). Ver functions/src/admin.ts. */
 type MigrarVerificacionesEmpresaOutput = {
@@ -209,6 +219,10 @@ const _backfillComprobantesPublicos = httpsCallable<void, BackfillComprobantesPu
   functions,
   "backfillComprobantesPublicos",
 );
+const _backfillComprobantesPdf = httpsCallable<void, BackfillComprobantesPdfOutput>(
+  functions,
+  "backfillComprobantesPdf",
+);
 const _obtenerSaludAsistencia = httpsCallable<void, SaludAsistenciaOutput>(
   functions,
   "obtenerSaludAsistencia",
@@ -294,6 +308,15 @@ export async function migrarVerificacionesEmpresa(): Promise<MigrarVerificacione
  * traiga (Fase 2 del comprobante). Ver `functions/src/comprobantePublico.ts`. */
 export async function backfillComprobantesPublicos(): Promise<BackfillComprobantesPublicosOutput> {
   const res = await _backfillComprobantesPublicos();
+  return res.data;
+}
+
+/** Backfill de una sola vez, seguro de repetir: genera el PDF real (con QR)
+ * de los comprobantes enviados antes de la Fase 1 (hoy solo tienen la
+ * constancia HTML de siempre). Nunca toca los que la empresa subió como su
+ * propio PDF. Ver `functions/src/comprobante.ts`. */
+export async function backfillComprobantesPdf(): Promise<BackfillComprobantesPdfOutput> {
+  const res = await _backfillComprobantesPdf();
   return res.data;
 }
 

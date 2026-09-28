@@ -42,6 +42,7 @@ import { auth, db, storage } from "../../src/config/firebaseConfig";
 import { useAuth } from "../../src/context/AuthContext";
 import {
   backfillAlianzasCalificaciones,
+  backfillComprobantesPdf,
   backfillComprobantesPublicos,
   deleteUserComplete as deleteUserCompleteAction,
   deshabilitarVacanteAdmin as deshabilitarVacanteAdminAction,
@@ -646,6 +647,10 @@ export default function AdminPreview() {
   // (código QR): backfill de una sola vez para comprobantes ya existentes.
   const [comprobantesPublicosLoading, setComprobantesPublicosLoading] = useState(false);
   const [comprobantesPublicosConfirmOpen, setComprobantesPublicosConfirmOpen] = useState(false);
+  // Botón "Generar PDF real de comprobantes antiguos" (Config): backfill que
+  // le crea el PDF real (con QR) a los comprobantes de antes de la Fase 1.
+  const [comprobantesPdfLoading, setComprobantesPdfLoading] = useState(false);
+  const [comprobantesPdfConfirmOpen, setComprobantesPdfConfirmOpen] = useState(false);
 
   // ── "Salud operativa" (Config): contadores agregados bajo demanda ──
   const [saludAsistencia, setSaludAsistencia] = useState<SaludAsistenciaOutput | null>(null);
@@ -2792,6 +2797,32 @@ export default function AdminPreview() {
       );
     } finally {
       setComprobantesPublicosLoading(false);
+    }
+  }, [mostrarAviso]);
+
+  // Botón "Generar PDF real de comprobantes antiguos" de Config: llama a
+  // backfillComprobantesPdf (adminService.ts) — genera el PDF real (con QR)
+  // de los comprobantes enviados antes de la Fase 1, que hoy solo tienen la
+  // constancia HTML de siempre. Nunca toca los que la empresa subió como su
+  // propio PDF. Idempotente.
+  const runBackfillComprobantesPdf = useCallback(async () => {
+    setComprobantesPdfLoading(true);
+    try {
+      const r = await backfillComprobantesPdf();
+      mostrarAviso(
+        "exito",
+        "PDF generado",
+        `Revisamos ${r.revisados} comprobante(s): ${r.candidatos} sin PDF real, ${r.generados} con su PDF (y QR) ya generado, y ${r.fallidos} que no se pudieron generar.`,
+      );
+    } catch (error) {
+      mostrarAviso(
+        "error",
+        "No terminó",
+        "Los comprobantes que ya tenían PDF no se tocaron. Puedes volver a lanzarlo cuando quieras.",
+        translateSync(adminDetailedErrorMessage(error, "generar el PDF real de los comprobantes antiguos")),
+      );
+    } finally {
+      setComprobantesPdfLoading(false);
     }
   }, [mostrarAviso]);
 
@@ -6492,6 +6523,26 @@ export default function AdminPreview() {
         </TouchableOpacity>
       </Card>
 
+      <Card style={{ marginBottom: 14 }}>
+        <Text style={s.cardTitle}>PDF real de comprobantes antiguos</Text>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          Los comprobantes enviados antes de esta fase todavía solo tienen la constancia en HTML de
+          siempre (hay que imprimirla a mano para guardarla como PDF). Este botón les genera su PDF
+          real, con código QR incluido, a partir de los mismos datos que ya tienen guardados. Nunca
+          toca los comprobantes donde la empresa adjuntó su propio PDF. Es seguro repetirlo.
+        </Text>
+        <TouchableOpacity
+          style={[s.btnOutline, { marginTop: 14, opacity: comprobantesPdfLoading ? 0.6 : 1 }]}
+          disabled={comprobantesPdfLoading}
+          onPress={() => setComprobantesPdfConfirmOpen(true)}
+          activeOpacity={0.8}
+        >
+          <Text style={s.btnOutlineText}>
+            {comprobantesPdfLoading ? "Generando…" : "Generar PDF real de comprobantes antiguos"}
+          </Text>
+        </TouchableOpacity>
+      </Card>
+
       {/* "Salud operativa": contadores agregados bajo demanda, señal de
           plataforma (no un detalle persona por persona — para eso el admin
           abre el caso puntual desde Reportes/Incidencias). Ver Cloud Function
@@ -8451,6 +8502,61 @@ export default function AdminPreview() {
     </Modal>
   );
 
+  const ComprobantesPdfConfirmModal = () => (
+    <Modal
+      visible={comprobantesPdfConfirmOpen}
+      transparent
+      animationType="none"
+      onRequestClose={() => {
+        if (!comprobantesPdfLoading) setComprobantesPdfConfirmOpen(false);
+      }}
+    >
+      <View style={s.modalOverlay}>
+        <View style={[s.modal, isPhone && s.modalCompact]}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>Generar PDF real de comprobantes antiguos</Text>
+            <TouchableOpacity
+              style={[s.iconBtn, { width: 38, height: 38 }]}
+              onPress={() => setComprobantesPdfConfirmOpen(false)}
+              activeOpacity={0.8}
+              disabled={comprobantesPdfLoading}
+            >
+              <Ionicons name="close" size={20} color={C.text} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[s.textMuted, { lineHeight: 20 }]}>
+            Va a revisar TODOS los comprobantes ya enviados y generarle un PDF real (con QR) a los
+            que todavía no lo tienen, usando sus propios datos guardados. No toca los comprobantes
+            donde la empresa adjuntó su propio PDF, ni los que ya tienen uno generado. ¿Continuar?
+          </Text>
+          <View style={[s.row, { gap: 10, marginTop: 20 }]}>
+            <TouchableOpacity
+              style={[s.btnOutline, { flex: 1 }]}
+              onPress={() => setComprobantesPdfConfirmOpen(false)}
+              activeOpacity={0.85}
+              disabled={comprobantesPdfLoading}
+            >
+              <Text style={s.btnOutlineText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.btnPrimary, { flex: 1 }]}
+              onPress={() => {
+                setComprobantesPdfConfirmOpen(false);
+                void runBackfillComprobantesPdf();
+              }}
+              activeOpacity={0.85}
+              disabled={comprobantesPdfLoading}
+            >
+              <Text style={s.btnPrimaryText}>
+                {comprobantesPdfLoading ? "Procesando..." : "Generar"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   // Progreso de "Subir documento" del FAQ (subirDocumentoFaq) — 2 etapas
   // reales (subida a Storage, luego extracción vía Groq), sin barra de
   // porcentaje inventada: no hay una señal granular de avance dentro de una
@@ -8675,6 +8781,7 @@ export default function AdminPreview() {
       {RecalcularConfirmModal()}
       {MigrarVerifConfirmModal()}
       {ComprobantesPublicosConfirmModal()}
+      {ComprobantesPdfConfirmModal()}
       {FaqSubidaModal()}
       {!isDesktop ? Drawer() : null}
       {AvisoOverlay()}

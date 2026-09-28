@@ -2666,4 +2666,10 @@ export const VERIFICAR_SEED_EN: Record<string, string> = {
   "Generando…": "Generating…",
   "Va a revisar TODOS los comprobantes ya enviados y crear/actualizar su espejo público (nombre del estudiante, carrera, universidad, empresa, puesto, fechas, horas y estado de validación). No toca ningún otro dato ni el PDF original. ¿Continuar?":
     "It will review ALL documents already sent and create/update their public mirror (student name, major, university, company, position, dates, hours, and validation status). It doesn't touch any other data or the original PDF. Continue?",
+  "PDF real de comprobantes antiguos": "Real PDF for old documents",
+  "Los comprobantes enviados antes de esta fase todavía solo tienen la constancia en HTML de siempre (hay que imprimirla a mano para guardarla como PDF). Este botón les genera su PDF real, con código QR incluido, a partir de los mismos datos que ya tienen guardados. Nunca toca los comprobantes donde la empresa adjuntó su propio PDF. Es seguro repetirlo.":
+    "Documents sent before this phase still only have the usual HTML certificate (it has to be printed by hand to save it as a PDF). This button generates their real PDF, QR code included, from the same data they already have saved. It never touches documents where the company attached its own PDF. It's safe to repeat.",
+  "Generar PDF real de comprobantes antiguos": "Generate real PDF for old documents",
+  "Va a revisar TODOS los comprobantes ya enviados y generarle un PDF real (con QR) a los que todavía no lo tienen, usando sus propios datos guardados. No toca los comprobantes donde la empresa adjuntó su propio PDF, ni los que ya tienen uno generado. ¿Continuar?":
+    "It will review ALL documents already sent and generate a real PDF (with QR) for the ones that don't have one yet, using their own saved data. It doesn't touch documents where the company attached its own PDF, or ones that already have one generated. Continue?",
 };
