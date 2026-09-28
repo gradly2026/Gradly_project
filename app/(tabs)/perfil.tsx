@@ -35,6 +35,7 @@ import {
   Alert,
   Animated,
   Image,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -42,6 +43,7 @@ import {
   View,
 } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput } from "../../src/components/AutoText";
+import { showAlert } from '../../src/components/AppAlert';
 import { useAuth } from '../../src/context/AuthContext';
 import { auth, db, storage } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, type GradlyColors } from '../../src/context/ThemeContext';
@@ -89,6 +91,8 @@ import {
   type DisponibilidadHoraria,
 } from '../../src/data/disponibilidad';
 import { textoUbicacion, type UbicacionEstudiante } from '../../src/data/ubicacionElSalvador';
+import { suscribirComprobantesDeRol, type Comprobante } from '../../src/services/comprobanteService';
+import { abrirConstancia, constanciaHtml } from '../../src/utils/constanciaHtml';
 
 // Hook que recrea los estilos según el tema activo (claro/oscuro)
 function useThemedStyles() {
@@ -233,6 +237,43 @@ export default function PerfilTab() {
     );
     return unsub;
   }, [user]);
+
+  // ── Comprobante(s) de finalización de pasantía por cupo (Fase "PDF a los 3
+  //    roles"). La sección solo aparece en `sections` (más abajo) cuando esta
+  //    lista NO está vacía: un doc en `comprobantes_pasantia` solo existe una
+  //    vez que la empresa lo envía, así que su sola presencia ya cumple "que
+  //    aparezca la opción solo si la empresa envía el comprobante". A
+  //    diferencia de ComprobantePasantiaCard (Inicio), aquí NO se oculta al
+  //    validarse: el perfil es el lugar donde queda un historial permanente. ──
+  const [comprobantes, setComprobantes] = useState<Comprobante[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    return suscribirComprobantesDeRol('estudiante', user.uid, setComprobantes);
+  }, [user]);
+
+  const verComprobante = async (comp: Comprobante) => {
+    try {
+      // Mismo mecanismo que ya usan empresa y universidad para este mismo
+      // documento (ComprobanteEmpresaModal.tsx / CertificarPasanteModal.tsx):
+      // si la empresa adjuntó su propio PDF, se abre ese archivo; si no, se
+      // genera la constancia y se abre como documento imprimible/descargable
+      // (diálogo nativo de imprimir en el celular, pestaña nueva en la web).
+      if (comp.origen === 'pdf' && comp.archivoUrl) {
+        await Linking.openURL(comp.archivoUrl);
+      } else {
+        await abrirConstancia(
+          constanciaHtml(comp, {
+            area: comp.area,
+            supervisor: comp.supervisor,
+            nota: comp.notaEmpresa,
+            fechaEmisionISO: comp.fechaEmision,
+          }),
+        );
+      }
+    } catch (e: any) {
+      showAlert('No se pudo abrir el documento', e?.message ?? 'Inténtalo de nuevo.');
+    }
+  };
 
   // ── Firestore: perfil ────────────────────────────────────────────
   useEffect(() => {
@@ -650,6 +691,52 @@ export default function PerfilTab() {
             tone: 'purple' as const,
             render: () => <HistorialPuestos rol="estudiante" id={user?.uid ?? ''} propio />,
           },
+          // "Comprobante de pasantía" (pasantías por CUPO): SOLO existe en el
+          // array cuando `comprobantes` no está vacío — un doc en
+          // `comprobantes_pasantia` solo se crea cuando la empresa lo envía.
+          ...(comprobantes.length > 0
+            ? [{
+                id: 'comprobante',
+                title: 'Comprobante de pasantía',
+                subtitle: comprobantes.every(c => c.estado === 'validado')
+                  ? 'Comprobante validado'
+                  : 'Esperando aprobación de tu universidad',
+                icon: 'ribbon-outline' as const,
+                tone: comprobantes.every(c => c.estado === 'validado') ? 'green' as const : 'orange' as const,
+                render: () => (
+                  <View style={{ gap: 12 }}>
+                    {[...comprobantes]
+                      .sort((a, b) => (b.fechaEmision ?? '').localeCompare(a.fechaEmision ?? ''))
+                      .map(c => {
+                        const validado = c.estado === 'validado';
+                        return (
+                          <View key={c.id} style={styles.compFila}>
+                            <View style={[styles.compEstado, validado && styles.compEstadoValidado]}>
+                              <Ionicons
+                                name={validado ? 'checkmark-circle' : 'time-outline'}
+                                size={14}
+                                color={validado ? COLORS.success : COLORS.warning}
+                              />
+                              <Text style={[styles.compEstadoTxt, { color: validado ? COLORS.success : COLORS.warning }]}>
+                                {validado ? 'Comprobante validado' : 'Esperando aprobación de tu universidad'}
+                              </Text>
+                            </View>
+                            {!!(c.empresaNombre || c.vacanteTitulo) && (
+                              <Text style={styles.compEmpresa} numberOfLines={1} noTranslate>
+                                {[c.vacanteTitulo, c.empresaNombre].filter(Boolean).join(' · ')}
+                              </Text>
+                            )}
+                            <TouchableOpacity style={styles.compBtn} onPress={() => verComprobante(c)} activeOpacity={0.8}>
+                              <Ionicons name="document-text-outline" size={15} color={colors.primaryLight} />
+                              <Text style={styles.compBtnTxt}>Ver comprobante</Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                  </View>
+                ),
+              }]
+            : []),
           /* ── "Mi disponibilidad" OCULTA a pedido del usuario (2026-09-02).
              El estudiante ya no fija sus horarios aquí; el horario de la
              práctica lo define la empresa/universidad al inscribirlo. Para
@@ -1109,6 +1196,28 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     fontFamily: FONTS.interRegular, color: COLORS.textPrimary,
     paddingVertical: 0,
   },
+
+  // ── Comprobante de pasantía (una fila por comprobante — normalmente una sola)
+  compFila: {
+    gap: 8, padding: 12, borderRadius: 14,
+    backgroundColor: COLORS.backgroundSurface,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  compEstado: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    backgroundColor: COLORS.warning + '1a',
+  },
+  compEstadoValidado: { backgroundColor: COLORS.success + '1a' },
+  compEstadoTxt: { fontSize: 12, fontFamily: FONTS.interSemiBold },
+  compEmpresa: { fontSize: 13, fontFamily: FONTS.interMedium, color: COLORS.textPrimary },
+  compBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    height: 40, borderRadius: 12,
+    backgroundColor: COLORS.backgroundCard,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  compBtnTxt: { fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
 
   // ── Info personal
   infoCard: {

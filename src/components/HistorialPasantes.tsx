@@ -15,12 +15,14 @@ import {
   Alert,
   FlatList,
   Image,
+  Linking,
   StyleSheet,
 
   TouchableOpacity,
   View,
 } from "react-native";
 import { AutoText as Text } from "./AutoText";
+import { showAlert } from "./AppAlert";
 import PerfilPublicoModal from "../../components/PerfilPublicoModal";
 import OfertarEmpleoModal from "./OfertarEmpleoModal";
 import { db } from "../config/firebaseConfig";
@@ -29,6 +31,8 @@ import {
   calcularNivelEstudiante,
   type NivelEstudiante,
 } from "../services/pasantiaService";
+import { suscribirComprobantesDeRol, type Comprobante } from "../services/comprobanteService";
+import { abrirConstancia, constanciaHtml } from "../utils/constanciaHtml";
 import { COLORS, webScrollStyle } from "../context/ThemeContext";
 
 const C = {
@@ -77,6 +81,12 @@ interface PasanteItem {
   nivel: NivelEstudiante;
   puntuacion: number;
   horasAprobadas: number;
+  /** true = pasantía por CUPO (`solicitudId` = id de `asignaciones_cupo`, el
+   *  mismo id que su comprobante en `comprobantes_pasantia`); false = de GRUPO
+   *  (`solicitudId` = id de `solicitudes_practicas`, cuya constancia es UNA
+   *  sola compartida por todo el grupo, sin estado por estudiante — el botón
+   *  "Ver comprobante" solo se ofrece hoy para el caso por cupo). */
+  esCupo: boolean;
 }
 
 interface Props {
@@ -199,6 +209,7 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
             nivel: calcularNivelEstudiante(horasAprob, horasObj),
             puntuacion: Number(match?.calificacion_promedio ?? 0),
             horasAprobadas: horasAprob,
+            esCupo: false,
           });
         });
       });
@@ -235,6 +246,7 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
           nivel: calcularNivelEstudiante(horas, horas || 1),
           puntuacion: Number(pf.calificacion_promedio ?? 0),
           horasAprobadas: horas,
+          esCupo: true,
         });
       });
 
@@ -248,6 +260,47 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
   }, [solicitudes, cuposFin]);
 
   const perfilViewer = useMemo(() => empresaId, [empresaId]);
+
+  // ── Comprobantes de finalización (pasantías por CUPO) — para el botón "Ver
+  //    comprobante" de arriba de "Ofertar empleo". Se piden todos los de la
+  //    empresa de una vez (misma colección que ya usan empresa/universidad
+  //    para este documento) y se emparejan por id con `item.solicitudId`,
+  //    que para un pasante por cupo ES el id de su `asignaciones_cupo`
+  //    (= id de su comprobante, 1 a 1). Las pasantías de GRUPO no entran
+  //    aquí: su constancia es una sola compartida por todo el grupo. ──
+  const [comprobantes, setComprobantes] = useState<Comprobante[]>([]);
+  useEffect(() => {
+    if (!empresaId) return;
+    return suscribirComprobantesDeRol("empresa", empresaId, setComprobantes);
+  }, [empresaId]);
+  const compPorId = useMemo(() => {
+    const m: Record<string, Comprobante> = {};
+    comprobantes.forEach((c) => { m[c.id] = c; });
+    return m;
+  }, [comprobantes]);
+
+  const verComprobante = async (comp: Comprobante) => {
+    try {
+      // Mismo mecanismo que ya usan la empresa (al enviarlo) y la universidad
+      // (al validarlo) para este mismo documento: si se adjuntó un PDF propio
+      // se abre ese archivo; si no, se genera la constancia y se abre como
+      // documento imprimible/descargable.
+      if (comp.origen === "pdf" && comp.archivoUrl) {
+        await Linking.openURL(comp.archivoUrl);
+      } else {
+        await abrirConstancia(
+          constanciaHtml(comp, {
+            area: comp.area,
+            supervisor: comp.supervisor,
+            nota: comp.notaEmpresa,
+            fechaEmisionISO: comp.fechaEmision,
+          }),
+        );
+      }
+    } catch (e: any) {
+      showAlert("No se pudo abrir el documento", e?.message ?? "Inténtalo de nuevo.");
+    }
+  };
 
   // ── Re-contacto: abre/reactiva el chat directo y navega ──
   const reContactar = async (item: PasanteItem) => {
@@ -293,6 +346,9 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
   const renderItem = ({ item }: { item: PasanteItem }) => {
     const inicial = item.nombre?.[0]?.toUpperCase() ?? "?";
     const cargando = resolviendo === item.key;
+    // Solo pasantías por CUPO, y solo si la empresa ya envió el comprobante
+    // (enviado o validado) — sin eso no hay nada que mostrar.
+    const comprobante = item.esCupo ? compPorId[item.solicitudId] ?? null : null;
     return (
       <TouchableOpacity
         style={styles.card}
@@ -357,6 +413,24 @@ export default function HistorialPasantes({ empresaId, empresaNombre }: Props) {
             </View>
           ) : null}
         </View>
+
+        {/* Comprobante de finalización enviado a la universidad (solo por cupo) */}
+        {comprobante ? (
+          <TouchableOpacity
+            style={styles.comprobanteBtn}
+            activeOpacity={0.85}
+            onPress={() => verComprobante(comprobante)}
+          >
+            <Ionicons
+              name={comprobante.estado === "validado" ? "shield-checkmark-outline" : "document-text-outline"}
+              size={15}
+              color={comprobante.estado === "validado" ? C.green : C.accent}
+            />
+            <Text style={[styles.comprobanteText, comprobante.estado === "validado" && { color: C.green }]}>
+              {comprobante.estado === "validado" ? "Ver comprobante — validado" : "Ver comprobante enviado"}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         {/* Acciones: Ofertar empleo (crea una oferta formal) + Re-contactar (chat) */}
         <View style={styles.accionesRow}>
@@ -521,6 +595,21 @@ const styles = StyleSheet.create({
     color: C.textSub,
     fontSize: 12,
     fontWeight: "600",
+  },
+  comprobanteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingVertical: 10,
+  },
+  comprobanteText: {
+    color: C.text,
+    fontSize: 12.5,
+    fontWeight: "700",
   },
   accionesRow: { flexDirection: "row", gap: 8 },
   ofertarBtn: {

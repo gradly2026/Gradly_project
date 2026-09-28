@@ -1071,6 +1071,12 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "No se pudo validar": "Couldn't validate it",
   "No se pudo abrir el documento": "Couldn't open the document",
 
+  // ── Sección "Comprobante de pasantía" en Mi perfil (estudiante) — a
+  // diferencia de la tarjeta del Inicio, esta NO se oculta al validarse. ──
+  "Comprobante de pasantía": "Internship certificate",
+  "Esperando aprobación de tu universidad": "Waiting for your university's approval",
+  "Ver comprobante": "View certificate",
+
   // ── Modal al tocar la notificación del comprobante + feed post-culminación ──
   "Comprobante en revisión": "Certificate under review",
   "El comprobante de tu pasantía está en trámite. Sigue su avance desde la tarjeta de tu inicio.":
