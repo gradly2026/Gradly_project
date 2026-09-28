@@ -2672,4 +2672,7 @@ export const VERIFICAR_SEED_EN: Record<string, string> = {
   "Generar PDF real de comprobantes antiguos": "Generate real PDF for old documents",
   "Va a revisar TODOS los comprobantes ya enviados y generarle un PDF real (con QR) a los que todavía no lo tienen, usando sus propios datos guardados. No toca los comprobantes donde la empresa adjuntó su propio PDF, ni los que ya tienen uno generado. ¿Continuar?":
     "It will review ALL documents already sent and generate a real PDF (with QR) for the ones that don't have one yet, using their own saved data. It doesn't touch documents where the company attached its own PDF, or ones that already have one generated. Continue?",
+  "Comprobante enviado — sin código QR": "Document sent — no QR code",
+  "Tu universidad ya puede revisarlo. No se pudo generar el código QR de verificación; puedes reenviarlo para intentarlo de nuevo.":
+    "Your university can already review it. The verification QR code couldn't be generated; you can resend it to try again.",
 };

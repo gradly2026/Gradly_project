@@ -305,6 +305,9 @@ export interface ResultadoEnviarComprobantePdf {
   ok: boolean;
   archivoUrl: string;
   origen: 'auto' | 'pdf';
+  /** false SOLO si se generó el PDF automático pero no se pudo dibujar el
+   *  código QR de verificación (caso raro) — el envío igual se completó. */
+  qrOk: boolean;
 }
 const _enviarComprobantePdf = httpsCallable<
   {

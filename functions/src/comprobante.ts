@@ -154,6 +154,10 @@ export const enviarComprobantePdf = onCall({ region: REGION }, async (req) => {
   const archivoUrlPropio = String(req.data?.archivoUrlPropio ?? "").trim();
   let archivoUrl: string;
   let origen: "auto" | "pdf";
+  // true salvo que se haya pedido un QR y no se pudiera dibujar (ver
+  // ResultadoComprobantePdf en comprobantePdf.ts) — el envío del PDF propio
+  // de la empresa nunca dibuja un QR, así que no aplica ("nada que fallara").
+  let qrOk = true;
 
   if (archivoUrlPropio) {
     const prefijoEsperado =
@@ -183,7 +187,9 @@ export const enviarComprobantePdf = onCall({ region: REGION }, async (req) => {
 
     let bytes: Uint8Array;
     try {
-      bytes = await construirComprobantePdfBytes(datosPdf, extraPdf);
+      const resultado = await construirComprobantePdfBytes(datosPdf, extraPdf);
+      bytes = resultado.bytes;
+      qrOk = resultado.qrOk;
     } catch (e) {
       logger.error("No se pudo generar el PDF del comprobante", e);
       throw new HttpsError("internal", "No se pudo generar el documento. Intenta de nuevo.");
@@ -242,7 +248,7 @@ export const enviarComprobantePdf = onCall({ region: REGION }, async (req) => {
     "info", `comprobante:${asignacionId}`,
   );
 
-  return { ok: true, archivoUrl, origen };
+  return { ok: true, archivoUrl, origen, qrOk };
 });
 
 /**
@@ -284,6 +290,7 @@ export const backfillComprobantesPdf = onCall(
 
       const bucket = admin.storage().bucket();
       let generados = 0;
+      let sinQr = 0;
       let fallidos = 0;
       for (const d of candidatos) {
         const c = d.data() as any;
@@ -309,7 +316,7 @@ export const backfillComprobantesPdf = onCall(
             urlVerificacion: `${URL_BASE_VERIFICACION}?id=${asignacionId}`,
           };
 
-          const bytes = await construirComprobantePdfBytes(datosPdf, extraPdf);
+          const { bytes, qrOk } = await construirComprobantePdfBytes(datosPdf, extraPdf);
           const path = `constancias_cupo/${asignacionId}/constancia.pdf`;
           const token = crypto.randomUUID();
           await bucket.file(path).save(Buffer.from(bytes), {
@@ -325,13 +332,14 @@ export const backfillComprobantesPdf = onCall(
             archivoUrl, origen: "auto",
           });
           generados++;
+          if (!qrOk) sinQr++;
         } catch (e) {
           logger.warn(`backfillComprobantesPdf: no se pudo generar el PDF de ${asignacionId}`, e);
           fallidos++;
         }
       }
 
-      return { ok: true, revisados: snap.size, candidatos: candidatos.length, generados, fallidos };
+      return { ok: true, revisados: snap.size, candidatos: candidatos.length, generados, sinQr, fallidos };
     } catch (error: any) {
       logger.error("backfillComprobantesPdf failed:", error);
       if (error instanceof HttpsError) throw error;

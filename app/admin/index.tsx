@@ -2809,10 +2809,11 @@ export default function AdminPreview() {
     setComprobantesPdfLoading(true);
     try {
       const r = await backfillComprobantesPdf();
+      const sinQrTxt = r.sinQr > 0 ? ` (${r.sinQr} sin QR)` : "";
       mostrarAviso(
         "exito",
         "PDF generado",
-        `Revisamos ${r.revisados} comprobante(s): ${r.candidatos} sin PDF real, ${r.generados} con su PDF (y QR) ya generado, y ${r.fallidos} que no se pudieron generar.`,
+        `Revisamos ${r.revisados} comprobante(s): ${r.candidatos} sin PDF real, ${r.generados} generados${sinQrTxt}, y ${r.fallidos} que no se pudieron generar.`,
       );
     } catch (error) {
       mostrarAviso(

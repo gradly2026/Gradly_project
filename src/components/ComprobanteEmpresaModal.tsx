@@ -154,15 +154,26 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
     if (!listoParaEnviar) return;
     setEnviando(true);
     try {
-      await enviarComprobantePdf(
+      const res = await enviarComprobantePdf(
         asignacion.id,
         { fechaFin: datos.fechaFin, horasCumplidas: horas },
         { archivoUrl, notaEmpresa: nota, area, supervisor, fechaEmisionISO },
       );
-      showAlert(
-        'Comprobante enviado',
-        'Tu universidad ya puede revisarlo y validarlo. Al validarlo, el proceso queda 100% culminado.',
-      );
+      // El envío se completó de todas formas; qrOk:false es el único caso raro
+      // en que el documento se generó sin su código QR de verificación (una
+      // función pura, sin red — prácticamente solo pasaría por un bug). Se
+      // avisa aparte, sin tratarlo como un fallo del envío.
+      if (res.qrOk) {
+        showAlert(
+          'Comprobante enviado',
+          'Tu universidad ya puede revisarlo y validarlo. Al validarlo, el proceso queda 100% culminado.',
+        );
+      } else {
+        showAlert(
+          'Comprobante enviado — sin código QR',
+          'Tu universidad ya puede revisarlo. No se pudo generar el código QR de verificación; puedes reenviarlo para intentarlo de nuevo.',
+        );
+      }
       onListo();
     } catch (e: any) {
       showAlert('No se pudo enviar', e?.message ?? 'Inténtalo de nuevo.');

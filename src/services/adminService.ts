@@ -120,6 +120,8 @@ type BackfillComprobantesPdfOutput = {
   revisados: number;
   candidatos: number;
   generados: number;
+  /** De los `generados`, cuántos quedaron sin código QR (caso raro). */
+  sinQr: number;
   fallidos: number;
 };
 

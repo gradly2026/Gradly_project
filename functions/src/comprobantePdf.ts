@@ -136,12 +136,20 @@ const CONTENT_W = PAGE_W - MARGIN_SIDE * 2;
 const INK = rgb(0.078, 0.070, 0.11);
 const INK_SUB = rgb(0.33, 0.33, 0.33);
 
+export interface ResultadoComprobantePdf {
+  bytes: Uint8Array;
+  /** false SOLO si se pidió un QR (`extra.urlVerificacion` presente) y no se
+   *  pudo dibujar — el documento se genera igual, sin QR. true si no se pidió
+   *  QR, o si se pidió y se dibujó bien. */
+  qrOk: boolean;
+}
+
 /** Dibuja la constancia completa (A4, 1 página normalmente) y devuelve los
  *  bytes del PDF. Mismo texto/orden que `constanciaHtml()`. */
 export async function construirComprobantePdfBytes(
   datos: DatosConstanciaPdf,
   extra: ExtraConstanciaPdf,
-): Promise<Uint8Array> {
+): Promise<ResultadoComprobantePdf> {
   const pdf = await PDFDocument.create();
   const regular = await pdf.embedFont(StandardFonts.TimesRoman);
   const bold = await pdf.embedFont(StandardFonts.TimesRomanBold);
@@ -251,7 +259,10 @@ export async function construirComprobantePdfBytes(
   dibujarCentrado(hoy, regular, 11, 15);
 
   // QR de verificación pública (Fase 2) — un fallo aquí (p. ej. una URL rara)
-  // no debe tumbar el documento completo: se loggea y se sigue sin QR.
+  // no debe tumbar el documento completo: se loggea, se sigue sin QR, y se
+  // reporta en `qrOk` para que el llamador pueda avisar (sin bloquear el
+  // envío, que ya se completó bien salvo por este detalle cosmético).
+  let qrOk = true;
   if (extra.urlVerificacion) {
     try {
       const qrBytes = await QRCode.toBuffer(extra.urlVerificacion, {
@@ -272,8 +283,9 @@ export async function construirComprobantePdfBytes(
       y -= 12;
     } catch (e) {
       logger.warn("No se pudo dibujar el QR de verificación", e);
+      qrOk = false;
     }
   }
 
-  return pdf.save();
+  return { bytes: await pdf.save(), qrOk };
 }
