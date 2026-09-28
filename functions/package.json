@@ -20,9 +20,11 @@
     "mammoth": "^1.12.3",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
+    "qrcode": "^1.5.4",
     "resend": "^6.16.0"
   },
   "devDependencies": {
+    "@types/qrcode": "^1.5.5",
     "firebase-functions-test": "^3.4.1",
     "typescript": "^6.0.0"
   },

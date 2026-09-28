@@ -706,6 +706,19 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
+    // 📡 COMPROBANTES_PUBLICOS — espejo de solo lectura de
+    //    `comprobantes_pasantia` (Fase 2, código QR). Mismo id que el
+    //    original. Genuinamente pública (como `calificaciones_plataforma`):
+    //    quien escanea el QR del PDF no tiene sesión ni cuenta en Gradly.
+    //    Solo trae la lista blanca de campos seguros (ver
+    //    CAMPOS_PUBLICOS_COMPROBANTE en functions/src/comprobantePublico.ts);
+    //    la escribe únicamente el Admin SDK (el trigger
+    //    sincronizarComprobantePublico y el backfill de esa misma función).
+    match /comprobantes_publicos/{asignacionId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // 🤝 APLICACIONES_GRUPOS (Universidad → Vacante)
     match /aplicaciones_grupos/{aplicacionId} {
       allow read: if request.auth != null

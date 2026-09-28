@@ -2637,3 +2637,33 @@ export const SIN_EMOJIS_SEED_EN: Record<string, string> = {
   "Propuesta de acuerdo": "Agreement proposal",
   "Acuerdo firmado": "Agreement signed",
 };
+
+// app/verificar.tsx (página pública sin sesión, a donde lleva el código QR
+// del comprobante) + el botón nuevo de backfill en el panel admin (Config).
+export const VERIFICAR_SEED_EN: Record<string, string> = {
+  "VERIFICACIÓN GRADLY": "GRADLY VERIFICATION",
+  "Verificando comprobante…": "Verifying document…",
+  "Comprobante no encontrado": "Document not found",
+  "Este enlace no corresponde a ningún comprobante emitido por Gradly.":
+    "This link does not correspond to any document issued by Gradly.",
+  "No se pudo verificar": "Could not verify",
+  "No se pudo verificar el documento. Revisa tu conexión e intenta de nuevo.":
+    "The document could not be verified. Check your connection and try again.",
+  "Reintentar": "Retry",
+  "Validado por la universidad": "Validated by the university",
+  "Pendiente de validación universitaria": "Pending university validation",
+  "Universidad": "University",
+  "Empresa": "Company",
+  "Puesto": "Position",
+  "Período": "Period",
+  "Horas cumplidas": "Hours completed",
+  "Este comprobante fue emitido a través de Gradly y corresponde a una pasantía real registrada en la plataforma.":
+    "This document was issued through Gradly and corresponds to a real internship registered on the platform.",
+  "Verificación pública de comprobantes": "Public document verification",
+  "El comprobante de finalización de una pasantía por cupo ahora trae un código QR que lleva a una página pública, sin necesidad de cuenta, para confirmar que es real. Los comprobantes enviados antes de este cambio no tienen QR en su PDF, pero igual pueden hacerse verificables con este botón. Es seguro repetirlo.":
+    "The completion document for a slot-based internship now includes a QR code linking to a public page, no account needed, to confirm it's real. Documents sent before this change don't have a QR in their PDF, but can still be made verifiable with this button. It's safe to repeat.",
+  "Generar verificación pública": "Generate public verification",
+  "Generando…": "Generating…",
+  "Va a revisar TODOS los comprobantes ya enviados y crear/actualizar su espejo público (nombre del estudiante, carrera, universidad, empresa, puesto, fechas, horas y estado de validación). No toca ningún otro dato ni el PDF original. ¿Continuar?":
+    "It will review ALL documents already sent and create/update their public mirror (student name, major, university, company, position, dates, hours, and validation status). It doesn't touch any other data or the original PDF. Continue?",
+};

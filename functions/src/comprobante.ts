@@ -40,6 +40,15 @@
  * apunte al propio bucket/path antes de guardarla — al mover la escritura del
  * documento a una Cloud Function, esa URL pasa a ser un parámetro que un
  * cliente modificado podría falsificar.
+ *
+ * FASE 2 (QR): el PDF generado automáticamente incluye un código QR que lleva
+ * a `${URL_BASE_VERIFICACION}?id={asignacionId}` (app/verificar.tsx, página
+ * pública sin sesión). Esta función no escribe la colección espejo pública
+ * (`comprobantes_publicos`) directamente — eso lo hace un trigger aparte,
+ * `sincronizarComprobantePublico` (comprobantePublico.ts), que reacciona a
+ * CUALQUIER escritura de `comprobantes_pasantia` (esta function o la
+ * `validarComprobante()` del cliente), así que no hace falta tocar esta
+ * function cuando cambie el estado a 'validado'.
  */
 import * as crypto from "crypto";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -59,6 +68,8 @@ const REGION = "us-central1";
 const OFFSET_MS = -6 * 60 * 60 * 1000;
 const MAX_TEXTO_LIBRE = 400;
 const MAX_HORAS = 5000;
+/** Dominio de producción, literal (mismo patrón que `URL_LOGIN` en correo.ts). */
+const URL_BASE_VERIFICACION = "https://gradly.website/verificar";
 
 function ahoraEnSV(): Date {
   return new Date(Date.now() + OFFSET_MS);
@@ -165,7 +176,10 @@ export const enviarComprobantePdf = onCall({ region: REGION }, async (req) => {
       horasCumplidas,
       horario: a.horario ?? null,
     };
-    const extraPdf: ExtraConstanciaPdf = { area, supervisor, nota: notaEmpresa, fechaEmisionISO };
+    const extraPdf: ExtraConstanciaPdf = {
+      area, supervisor, nota: notaEmpresa, fechaEmisionISO,
+      urlVerificacion: `${URL_BASE_VERIFICACION}?id=${asignacionId}`,
+    };
 
     let bytes: Uint8Array;
     try {

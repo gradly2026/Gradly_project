@@ -203,6 +203,10 @@ export default function RootLayout() {
                   <Stack.Screen name="bienvenida" />
                   {/* app/bienvenida.tsx — landing page pública para
                       visitantes sin cuenta (/bienvenida) */}
+                  <Stack.Screen name="verificar" />
+                  {/* app/verificar.tsx — verificación pública (sin cuenta)
+                      del comprobante de finalización de una pasantía, a
+                      donde lleva su código QR (/verificar?id=...) */}
                   <Stack.Screen name="(tabs)" />
                   {/* El grupo completo de pestañas del estudiante */}
                   <Stack.Screen name="auth" />

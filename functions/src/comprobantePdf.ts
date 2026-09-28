@@ -12,6 +12,8 @@
  * envuelven (título, subtítulo, nombre de la empresa en la firma).
  */
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import QRCode from "qrcode";
+import * as logger from "firebase-functions/logger";
 
 export interface HorarioPdf {
   dias: string[];
@@ -39,6 +41,10 @@ export interface ExtraConstanciaPdf {
   nota?: string;
   /** ISO `yyyy-mm-dd`, ya resuelta por el llamador (sin default aquí). */
   fechaEmisionISO: string;
+  /** URL completa de la página pública de verificación (Fase 2). Solo se
+   *  dibuja el código QR si viene presente — la función sigue siendo
+   *  testeable/reusable sin depender de la verificación pública. */
+  urlVerificacion?: string;
 }
 
 const MESES = [
@@ -243,6 +249,31 @@ export async function construirComprobantePdfBytes(
   dibujarCentrado(empresa, bold, 12, 16);
   if (supervisor) dibujarCentrado(sanearTextoPdf(supervisor), regular, 11, 15);
   dibujarCentrado(hoy, regular, 11, 15);
+
+  // QR de verificación pública (Fase 2) — un fallo aquí (p. ej. una URL rara)
+  // no debe tumbar el documento completo: se loggea y se sigue sin QR.
+  if (extra.urlVerificacion) {
+    try {
+      const qrBytes = await QRCode.toBuffer(extra.urlVerificacion, {
+        type: "png", margin: 1, width: 240,
+      });
+      const qrImage = await pdf.embedPng(qrBytes);
+      const qrSize = 78;
+      y -= 18;
+      asegurarEspacio(qrSize + 34);
+      const qrX = MARGIN_SIDE + (CONTENT_W - qrSize) / 2;
+      page.drawImage(qrImage, { x: qrX, y: y - qrSize, width: qrSize, height: qrSize });
+      y -= qrSize + 6;
+      dibujarCentrado("Escanea para verificar este documento", regular, 9, 13);
+      const urlLimpia = sanearTextoPdf(extra.urlVerificacion);
+      page.drawText(urlLimpia, {
+        x: anchoCentrado(urlLimpia, regular, 8), y: y - 8, size: 8, font: regular, color: INK_SUB,
+      });
+      y -= 12;
+    } catch (e) {
+      logger.warn("No se pudo dibujar el QR de verificación", e);
+    }
+  }
 
   return pdf.save();
 }

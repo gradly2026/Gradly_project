@@ -106,6 +106,13 @@ type BackfillAlianzasOutput = {
   reclamosRevisados: number;
 };
 
+/** Resultado del backfill del espejo público de comprobantes (Fase 2 del
+ *  comprobante, código QR). Ver functions/src/comprobantePublico.ts. */
+type BackfillComprobantesPublicosOutput = {
+  ok: boolean;
+  procesados: number;
+};
+
 /** Resultado del backfill de NIT/documento a verificaciones_empresa (Fase 2
  *  de la cola de aprobación de empresas). Ver functions/src/admin.ts. */
 type MigrarVerificacionesEmpresaOutput = {
@@ -198,6 +205,10 @@ const _migrarVerificacionesEmpresa = httpsCallable<void, MigrarVerificacionesEmp
   functions,
   "migrarVerificacionesEmpresa",
 );
+const _backfillComprobantesPublicos = httpsCallable<void, BackfillComprobantesPublicosOutput>(
+  functions,
+  "backfillComprobantesPublicos",
+);
 const _obtenerSaludAsistencia = httpsCallable<void, SaludAsistenciaOutput>(
   functions,
   "obtenerSaludAsistencia",
@@ -274,6 +285,15 @@ export async function backfillAlianzasCalificaciones(): Promise<BackfillAlianzas
  * de la cola de aprobación de empresas). Ver `functions/src/admin.ts`. */
 export async function migrarVerificacionesEmpresa(): Promise<MigrarVerificacionesEmpresaOutput> {
   const res = await _migrarVerificacionesEmpresa();
+  return res.data;
+}
+
+/** Backfill de una sola vez, seguro de repetir: crea/actualiza el espejo
+ * público (`comprobantes_publicos`) de TODOS los comprobantes ya existentes,
+ * para que también sean verificables por QR aunque su PDF original no lo
+ * traiga (Fase 2 del comprobante). Ver `functions/src/comprobantePublico.ts`. */
+export async function backfillComprobantesPublicos(): Promise<BackfillComprobantesPublicosOutput> {
+  const res = await _backfillComprobantesPublicos();
   return res.data;
 }
 

@@ -42,6 +42,7 @@ import { auth, db, storage } from "../../src/config/firebaseConfig";
 import { useAuth } from "../../src/context/AuthContext";
 import {
   backfillAlianzasCalificaciones,
+  backfillComprobantesPublicos,
   deleteUserComplete as deleteUserCompleteAction,
   deshabilitarVacanteAdmin as deshabilitarVacanteAdminAction,
   eliminarVacanteAdmin as eliminarVacanteAdminAction,
@@ -641,6 +642,10 @@ export default function AdminPreview() {
   // aprobación de empresas.
   const [migrarVerifLoading, setMigrarVerifLoading] = useState(false);
   const [migrarVerifConfirmOpen, setMigrarVerifConfirmOpen] = useState(false);
+  // Botón "Generar verificación pública" (Config), Fase 2 del comprobante
+  // (código QR): backfill de una sola vez para comprobantes ya existentes.
+  const [comprobantesPublicosLoading, setComprobantesPublicosLoading] = useState(false);
+  const [comprobantesPublicosConfirmOpen, setComprobantesPublicosConfirmOpen] = useState(false);
 
   // ── "Salud operativa" (Config): contadores agregados bajo demanda ──
   const [saludAsistencia, setSaludAsistencia] = useState<SaludAsistenciaOutput | null>(null);
@@ -2761,6 +2766,32 @@ export default function AdminPreview() {
       );
     } finally {
       setMigrarVerifLoading(false);
+    }
+  }, [mostrarAviso]);
+
+  // Botón "Generar verificación pública" de Config: llama a
+  // backfillComprobantesPublicos (adminService.ts), el backfill de una sola
+  // vez de la Fase 2 del comprobante (código QR) — crea/actualiza el espejo
+  // público de TODOS los comprobantes ya existentes, para que también sean
+  // verificables aunque su PDF original no traiga QR. Idempotente.
+  const runBackfillComprobantesPublicos = useCallback(async () => {
+    setComprobantesPublicosLoading(true);
+    try {
+      const r = await backfillComprobantesPublicos();
+      mostrarAviso(
+        "exito",
+        "Verificación pública generada",
+        `Revisamos ${r.procesados} comprobante(s) y actualizamos su espejo público. Ya pueden verificarse escaneando su código QR o abriendo su enlace de verificación.`,
+      );
+    } catch (error) {
+      mostrarAviso(
+        "error",
+        "No terminó",
+        "Los datos quedaron como estaban, no se dañó nada. Puedes volver a lanzarlo cuando quieras.",
+        translateSync(adminDetailedErrorMessage(error, "generar la verificación pública de los comprobantes")),
+      );
+    } finally {
+      setComprobantesPublicosLoading(false);
     }
   }, [mostrarAviso]);
 
@@ -6441,6 +6472,26 @@ export default function AdminPreview() {
         </TouchableOpacity>
       </Card>
 
+      <Card style={{ marginBottom: 14 }}>
+        <Text style={s.cardTitle}>Verificación pública de comprobantes</Text>
+        <Text style={[s.textMuted, { marginTop: 6 }]}>
+          El comprobante de finalización de una pasantía por cupo ahora trae un código QR que lleva
+          a una página pública, sin necesidad de cuenta, para confirmar que es real. Los comprobantes
+          enviados antes de este cambio no tienen QR en su PDF, pero igual pueden hacerse verificables
+          con este botón. Es seguro repetirlo.
+        </Text>
+        <TouchableOpacity
+          style={[s.btnOutline, { marginTop: 14, opacity: comprobantesPublicosLoading ? 0.6 : 1 }]}
+          disabled={comprobantesPublicosLoading}
+          onPress={() => setComprobantesPublicosConfirmOpen(true)}
+          activeOpacity={0.8}
+        >
+          <Text style={s.btnOutlineText}>
+            {comprobantesPublicosLoading ? "Generando…" : "Generar verificación pública"}
+          </Text>
+        </TouchableOpacity>
+      </Card>
+
       {/* "Salud operativa": contadores agregados bajo demanda, señal de
           plataforma (no un detalle persona por persona — para eso el admin
           abre el caso puntual desde Reportes/Incidencias). Ver Cloud Function
@@ -8345,6 +8396,61 @@ export default function AdminPreview() {
     </Modal>
   );
 
+  const ComprobantesPublicosConfirmModal = () => (
+    <Modal
+      visible={comprobantesPublicosConfirmOpen}
+      transparent
+      animationType="none"
+      onRequestClose={() => {
+        if (!comprobantesPublicosLoading) setComprobantesPublicosConfirmOpen(false);
+      }}
+    >
+      <View style={s.modalOverlay}>
+        <View style={[s.modal, isPhone && s.modalCompact]}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>Generar verificación pública</Text>
+            <TouchableOpacity
+              style={[s.iconBtn, { width: 38, height: 38 }]}
+              onPress={() => setComprobantesPublicosConfirmOpen(false)}
+              activeOpacity={0.8}
+              disabled={comprobantesPublicosLoading}
+            >
+              <Ionicons name="close" size={20} color={C.text} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[s.textMuted, { lineHeight: 20 }]}>
+            Va a revisar TODOS los comprobantes ya enviados y crear/actualizar su espejo público
+            (nombre del estudiante, carrera, universidad, empresa, puesto, fechas, horas y estado de
+            validación). No toca ningún otro dato ni el PDF original. ¿Continuar?
+          </Text>
+          <View style={[s.row, { gap: 10, marginTop: 20 }]}>
+            <TouchableOpacity
+              style={[s.btnOutline, { flex: 1 }]}
+              onPress={() => setComprobantesPublicosConfirmOpen(false)}
+              activeOpacity={0.85}
+              disabled={comprobantesPublicosLoading}
+            >
+              <Text style={s.btnOutlineText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.btnPrimary, { flex: 1 }]}
+              onPress={() => {
+                setComprobantesPublicosConfirmOpen(false);
+                void runBackfillComprobantesPublicos();
+              }}
+              activeOpacity={0.85}
+              disabled={comprobantesPublicosLoading}
+            >
+              <Text style={s.btnPrimaryText}>
+                {comprobantesPublicosLoading ? "Procesando..." : "Generar"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   // Progreso de "Subir documento" del FAQ (subirDocumentoFaq) — 2 etapas
   // reales (subida a Storage, luego extracción vía Groq), sin barra de
   // porcentaje inventada: no hay una señal granular de avance dentro de una
@@ -8568,6 +8674,7 @@ export default function AdminPreview() {
       {VacanteModeracionModal()}
       {RecalcularConfirmModal()}
       {MigrarVerifConfirmModal()}
+      {ComprobantesPublicosConfirmModal()}
       {FaqSubidaModal()}
       {!isDesktop ? Drawer() : null}
       {AvisoOverlay()}

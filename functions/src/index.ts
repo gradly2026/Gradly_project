@@ -85,6 +85,14 @@
  *    propio token de descarga, en vez del HTML que había que imprimir a mano.
  *    Reconstruye identidad/datos denormalizados desde `asignaciones_cupo`;
  *    fechaFin/horasCumplidas los acepta del cliente con validación de rango.
+ *    Fase 2: el PDF trae un código QR a una página pública de verificación
+ *    (app/verificar.tsx).
+ *  · sincronizarComprobantePublico / backfillComprobantesPublicos → espejo
+ *    público (`comprobantes_publicos`, lectura sin sesión) de
+ *    `comprobantes_pasantia` (comprobantePublico.ts, Fase 2 del comprobante).
+ *    El trigger reacciona a cualquier escritura (creación o validación
+ *    universitaria); el callable es un backfill de una sola vez para los
+ *    comprobantes previos a esta fase, invocado desde el panel admin (Config).
  *
  * Nota: el antiguo patrón "traducir al escribir" (triggers translate_*) se
  * retiró — se reemplazó por la traducción al vuelo con caché, que cubre también
@@ -126,3 +134,7 @@ export {
   recordatorioAsistenciaPendiente,
 } from "./asistencia";
 export { enviarComprobantePdf } from "./comprobante";
+export {
+  sincronizarComprobantePublico,
+  backfillComprobantesPublicos,
+} from "./comprobantePublico";

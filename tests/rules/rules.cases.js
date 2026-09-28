@@ -18,6 +18,8 @@
  *   universidades · adm1 = admin.  La inscripción A1 es de stu1 + emp1 + uni1.
  *   `owner` se salta las reglas: equivale al Admin SDK, o sea a las Cloud
  *   Functions (y se usa para sembrar los datos de cada caso).
+ *   `anon` = sin sesión (`request.auth == null`), para colecciones
+ *   genuinamente públicas como `comprobantes_publicos`.
  *
  * Variables opcionales: RULES_TEST_REGLAS (otro archivo de reglas a probar) y
  * RULES_TEST_SOLO (ids separados por coma, o solo la letra de un grupo: "E,U1").
@@ -55,6 +57,9 @@ const usuarios = {};
 for (const uid of ['stu1', 'stu2', 'emp1', 'emp2', 'uni1', 'uni2', 'adm1']) {
   usuarios[uid] = nuevoCliente(uid, { sub: uid });
 }
+// Cliente SIN sesión (request.auth == null): simula a quien escanea el QR del
+// comprobante sin cuenta ni inicio de sesión en Gradly (comprobantes_publicos).
+usuarios.anon = nuevoCliente('anon', undefined);
 const dbDe = (uid) => (uid === 'owner' ? owner : usuarios[uid]);
 
 // ── Referencias y datos de apoyo ───────────────────────────────────────
@@ -64,6 +69,7 @@ const AJ = (uid, id) => doc(dbDe(uid), `ajustes_asistencia/${id}`);
 const TOP = (uid) => doc(dbDe(uid), 'ranking_plataforma/top_estudiantes');
 const VE = (uid, id) => doc(dbDe(uid), `verificaciones_empresa/${id}`);
 const PP = (uid, id) => doc(dbDe(uid), `perfiles_publicos_estudiantes/${id}`);
+const CP = (uid, id) => doc(dbDe(uid), `comprobantes_publicos/${id}`);
 const PE = (uid, id) => doc(dbDe(uid), `perfiles_estudiantes/${id}`);
 const RP = (uid, id) => doc(dbDe(uid), `reportes/${id}`);
 // Reporte tal cual lo crean reporteService / contratoService (los 3 sitios del cliente).
@@ -111,6 +117,7 @@ async function reiniciar() {
     poner('codigos_asistencia/12345678', { asignacionId: 'A1', usado: false }),
     poner('ranking_plataforma/top_estudiantes', { lista: [] }),
     poner('perfiles_publicos_estudiantes/stu2', { nombre_completo: 'Estudiante Dos', calificacion_promedio: 5 }),
+    poner('comprobantes_publicos/A1', { estudianteNombre: 'Estudiante Uno', estado: 'enviado' }),
     poner('reportes/R1', { reportado_id: 'stu2', reportante_id: 'stu1', reportador_id: 'stu1', motivo: 'x', tipo: 'usuario', estado: 'abierto' }),
     poner('verificaciones_empresa/emp1', { nit: '0614-010101-101-1', contacto_documento_tipo: 'dui', contacto_documento_numero: '000000000' }),
   ]);
@@ -291,6 +298,19 @@ const CASOS = [
   ['RP12', 'SERVIDOR (Cloud Function resolveReport) cambia el estado', () => updateDoc(RP('owner', 'R1'), { estado: 'resuelto', resolucion: 'ok' }), 'ALLOW'],
   ['RP13', 'el reportador lee su propio reporte', () => getDoc(RP('stu1', 'R1')), 'ALLOW'],
   ['RP14', 'el reportado NO puede leer el reporte en su contra', () => getDoc(RP('stu2', 'R1')), 'DENY'],
+
+  // ── CP · comprobantes_publicos: espejo público del comprobante de finalización
+  // (Fase 2, código QR). Genuinamente pública (como calificaciones_plataforma):
+  // quien escanea el QR no tiene sesión. Solo el Admin SDK la escribe. ──
+  ['CP1', 'sin sesión (anónimo) lee un comprobante público', () => getDoc(CP('anon', 'A1')), 'ALLOW'],
+  ['CP2', 'un estudiante autenticado también puede leerlo', () => getDoc(CP('stu1', 'A1')), 'ALLOW'],
+  ['CP3', 'sin sesión intenta crear uno nuevo', () => setDoc(CP('anon', 'A9'), { estudianteNombre: 'x' }), 'DENY'],
+  ['CP4', 'una empresa intenta crear uno nuevo', () => setDoc(CP('emp1', 'A9'), { estudianteNombre: 'x' }), 'DENY'],
+  ['CP5', 'el admin intenta escribir uno nuevo desde el cliente', () => setDoc(CP('adm1', 'A9'), { estudianteNombre: 'x' }), 'DENY'],
+  ['CP6', 'SERVIDOR (Admin SDK) crea uno nuevo', () => setDoc(CP('owner', 'A9'), { estudianteNombre: 'María' }), 'ALLOW'],
+  ['CP7', 'sin sesión intenta actualizar el que ya existe', () => updateDoc(CP('anon', 'A1'), { estudianteNombre: 'y' }), 'DENY'],
+  ['CP8', 'sin sesión intenta borrarlo', () => deleteDoc(CP('anon', 'A1')), 'DENY'],
+  ['CP9', 'SERVIDOR (Admin SDK) lo borra', () => deleteDoc(CP('owner', 'A1')), 'ALLOW'],
 ];
 
 // ── Ejecución ────────────────────────────────────────────────────────────

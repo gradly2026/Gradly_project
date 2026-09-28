@@ -129,6 +129,37 @@ export async function getComprobante(asignacionId: string): Promise<Comprobante 
   }
 }
 
+/** Colección espejo pública (Fase 2, código QR) — solo la lista blanca de
+ *  campos seguros de `Comprobante`, sin sesión requerida para leerla. La
+ *  escribe únicamente el Admin SDK (functions/src/comprobantePublico.ts). */
+export const COLECCION_COMPROBANTES_PUBLICOS = 'comprobantes_publicos';
+
+export interface ComprobantePublico {
+  estudianteNombre: string;
+  carrera: string;
+  universidadNombre: string;
+  empresaNombre: string;
+  vacanteTitulo: string;
+  fechaInicio: string;
+  fechaFin: string;
+  horasCumplidas: number;
+  estado: EstadoComprobante;
+  fechaEmision?: string;
+  actualizado_at?: any;
+}
+
+/** Lectura pública (sin sesión) del espejo de un comprobante, para
+ *  `app/verificar.tsx`. A propósito NO atrapa errores de red/lectura (a
+ *  diferencia de `getComprobante()`): esta función distingue "no existe" (una
+ *  ausencia CONFIRMADA — `null`) de "no se pudo verificar" (lanza), para que
+ *  la página no muestre un comprobante real como falso por un simple
+ *  problema de conexión. */
+export async function getComprobantePublico(asignacionId: string): Promise<ComprobantePublico | null> {
+  if (!asignacionId) return null;
+  const snap = await getDoc(doc(db, COLECCION_COMPROBANTES_PUBLICOS, asignacionId));
+  return snap.exists() ? (snap.data() as ComprobantePublico) : null;
+}
+
 /** Suscripción en vivo al comprobante de una asignación (para modal/tarjeta). */
 export function suscribirComprobante(
   asignacionId: string,
