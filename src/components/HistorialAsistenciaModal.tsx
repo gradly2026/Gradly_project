@@ -15,8 +15,9 @@ import {
 import { suscribirAjustesAsistencia } from '../services/ajusteAsistenciaService';
 import type { AsignacionCupo } from '../services/reclamoCuposService';
 import type { DiaLaboral } from '../types/chat';
-import { VENTANA_CORRECCION_DIAS, diasSinAsistencia } from '../utils/horasPasantia';
+import { VENTANA_CORRECCION_DIAS, diasSinAsistencia, minutosAHora12 } from '../utils/horasPasantia';
 import RegistrarAsistenciaManualForm, { fechaLarga } from './RegistrarAsistenciaManualForm';
+import SalidaAnticipadaForm from './SalidaAnticipadaForm';
 
 // ════════════════════════════════════════════════════════════════════
 //  HistorialAsistenciaModal — Fase 3 de "asistencia real": la empresa ve,
@@ -62,9 +63,12 @@ export default function HistorialAsistenciaModal({ visible, empresaId, onClose }
   // (no se piden) y el (pasante, día) que se está corrigiendo, si hay uno.
   const [excluidasPorAsig, setExcluidasPorAsig] = useState<Record<string, string[]>>({});
   const [manual, setManual] = useState<{ asignacion: AsignacionCupo; fecha: string } | null>(null);
+  // Fila para la que se está abriendo el formulario de salida anticipada
+  // (emergencia) — sustituye la lista igual que `manual`.
+  const [salidaAnticipadaPara, setSalidaAnticipadaPara] = useState<AsignacionCupo | null>(null);
 
   useEffect(() => {
-    if (!visible) setManual(null);
+    if (!visible) { setManual(null); setSalidaAnticipadaPara(null); }
   }, [visible]);
 
   useEffect(() => {
@@ -187,6 +191,12 @@ export default function HistorialAsistenciaModal({ visible, empresaId, onClose }
             onVolver={() => setManual(null)}
             onRegistrada={() => setManual(null)}
           />
+         ) : salidaAnticipadaPara ? (
+          <SalidaAnticipadaForm
+            asignacion={salidaAnticipadaPara}
+            onVolver={() => setSalidaAnticipadaPara(null)}
+            onRegistrada={() => setSalidaAnticipadaPara(null)}
+          />
          ) : (
          <>
           <View style={s.headerRow}>
@@ -247,16 +257,35 @@ export default function HistorialAsistenciaModal({ visible, empresaId, onClose }
                       <Text style={[s.filaEstado, { color: estadoColor }]}>{estadoTxt}</Text>
                     </View>
                     {r && !r.salidaConfirmada ? (
-                      <TouchableOpacity
-                        style={[s.btnSalida, confirmando === a.id && { opacity: 0.6 }]}
-                        activeOpacity={0.85}
-                        disabled={confirmando === a.id}
-                        onPress={() => onConfirmarSalida(fila)}
-                      >
-                        {confirmando === a.id
-                          ? <ActivityIndicator size="small" color={C.primaryLight} />
-                          : <Text style={s.btnSalidaTxt}>Confirmar salida</Text>}
-                      </TouchableOpacity>
+                      <View style={{ gap: 6, alignItems: 'flex-end' }}>
+                        <TouchableOpacity
+                          style={[s.btnSalida, confirmando === a.id && { opacity: 0.6 }]}
+                          activeOpacity={0.85}
+                          disabled={confirmando === a.id}
+                          onPress={() => onConfirmarSalida(fila)}
+                        >
+                          {confirmando === a.id
+                            ? <ActivityIndicator size="small" color={C.primaryLight} />
+                            : <Text style={s.btnSalidaTxt}>Confirmar salida</Text>}
+                        </TouchableOpacity>
+                        {/* Emergencia: a diferencia de "Confirmar salida" (solo bitácora),
+                            esto SÍ corta las horas de hoy — ver SalidaAnticipadaForm. */}
+                        <TouchableOpacity
+                          style={s.btnSalidaAnticipada}
+                          activeOpacity={0.85}
+                          onPress={() => setSalidaAnticipadaPara(a)}
+                        >
+                          <Ionicons name="warning-outline" size={12} color={C.warning} />
+                          <Text style={s.btnSalidaAnticipadaTxt}>Salida anticipada</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : r?.salidaConfirmada && r.salidaAnticipada ? (
+                      <View style={s.salidaOk}>
+                        <Ionicons name="warning" size={14} color={C.warning} />
+                        <Text style={[s.salidaOkTxt, { color: C.warning }]} noTranslate>
+                          {`Salida anticipada — ${typeof r.salidaAnticipadaMin === 'number' ? minutosAHora12(r.salidaAnticipadaMin) : ''}`}
+                        </Text>
+                      </View>
                     ) : r?.salidaConfirmada ? (
                       <View style={s.salidaOk}>
                         <Ionicons name="checkmark-circle" size={14} color={C.success} />
@@ -312,6 +341,14 @@ const makeStyles = (C: GradlyColors) =>
       paddingHorizontal: 11, paddingVertical: 8,
     },
     btnSalidaTxt: { fontSize: 11.5, fontFamily: FONTS.interSemiBold, color: C.primaryLight },
+    // Distinto a propósito de btnSalida (color de advertencia, no del tema):
+    // esta acción sí corta las horas de hoy, "Confirmar salida" no.
+    btnSalidaAnticipada: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      borderWidth: 1, borderColor: C.warning + '55', borderRadius: 10,
+      paddingHorizontal: 11, paddingVertical: 6,
+    },
+    btnSalidaAnticipadaTxt: { fontSize: 10.5, fontFamily: FONTS.interSemiBold, color: C.warning },
     salidaOk: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     salidaOkTxt: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: C.success },
   });

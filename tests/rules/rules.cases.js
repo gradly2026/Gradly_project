@@ -200,6 +200,16 @@ const CASOS = [
   ['G17', 'registro: la empresa intenta borrarlo', () => deleteDoc(RG('emp1')), 'DENY'],
   ['G18', 'registro: SERVIDOR crea el registro manual (Admin SDK)', () => setDoc(doc(owner, 'registros_asistencia/A1_2026-09-22'), { ...NUEVO_REG(), manual: true }), 'ALLOW'],
 
+  // ── Salida anticipada (emergencia, Fase "salida anticipada"): el cliente NO
+  // puede tocar los campos nuevos de registros_asistencia (ya bloqueado por el
+  // mismo hasOnly de G13, esto lo confirma con el emulador real) ni la forma
+  // {desde,hasta} de asignaciones_cupo.asistencias (ya bloqueado por E3/M3);
+  // solo el servidor (registrarSalidaAnticipada, Admin SDK) puede escribir ambos. ──
+  ['SA1', 'registro: la empresa intenta poner los campos de salida anticipada ella misma', () => updateDoc(RG('emp1'), { ...SALIDA(), salidaAnticipada: true, salidaAnticipadaMin: 600, salidaAnticipadaMotivo: 'x' }), 'DENY'],
+  ['SA2', 'asignación: la empresa intenta escribir asistencias con forma {desde,hasta}', () => updateDoc(A('emp1', 'A1'), { asistencias: { '2026-09-21': { desde: 480, hasta: 600 } } }), 'DENY'],
+  ['SA3', 'registro: SERVIDOR pone los campos de salida anticipada (Admin SDK)', () => updateDoc(doc(owner, 'registros_asistencia/A1_2026-09-21'), { salidaAnticipada: true, salidaAnticipadaMin: 600, salidaAnticipadaMotivo: 'Emergencia médica' }), 'ALLOW'],
+  ['SA4', 'asignación: SERVIDOR escribe asistencias con forma {desde,hasta} (Admin SDK)', () => updateDoc(A('owner', 'A1'), { asistencias: { '2026-09-21': { desde: 480, hasta: 600 } } }), 'ALLOW'],
+
   // ── ajustes_asistencia (días no computados): empresa/universidad, validado con get() a la inscripción ──
   ['H1', 'ajustes: la empresa crea el de su inscripción', () => setDoc(AJ('emp1', 'A2'), NUEVO_AJ()), 'ALLOW'],
   ['H2', 'ajustes: la universidad crea el de su inscripción', () => setDoc(AJ('uni1', 'A2'), NUEVO_AJ()), 'ALLOW'],

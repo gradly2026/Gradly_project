@@ -116,5 +116,6 @@ export {
   generarCodigoAsistencia,
   registrarAsistenciaPorCodigo,
   registrarAsistenciaManual,
+  registrarSalidaAnticipada,
   recordatorioAsistenciaPendiente,
 } from "./asistencia";

@@ -54,6 +54,7 @@ import {
   ASISTENCIA_HORAS_DESDE,
   MARGEN_ASISTENCIA_MIN,
   VENTANA_CORRECCION_DIAS,
+  desdeDeAsistencia,
   diasSinAsistencia,
   minutosAHora12,
   type ProgresoMeta,
@@ -390,8 +391,11 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
   const hoyISOAsist = hoyISOLocal();
   const reglaActiva = hoyISOAsist >= ASISTENCIA_HORAS_DESDE;
   // Minuto del día desde el que cuentan las horas de HOY (lo escribe el
-  // servidor al registrar la asistencia).
-  const desdeHoy = asignacion.asistencias?.[hoyISOAsist];
+  // servidor al registrar la asistencia). `desdeDeAsistencia` desempaca tanto
+  // el número de siempre como el `{desde, hasta}` de un día con salida
+  // anticipada (emergencia) — en ambos casos el resultado es el mismo minuto
+  // de entrada.
+  const desdeHoy = desdeDeAsistencia(asignacion.asistencias?.[hoyISOAsist]);
   // Días recientes sin asistencia registrada: el estudiante puede pedirle a su
   // empresa que la registre. Se recalcula con cada tick del libro de horas (por
   // si hoy acaba de terminar el turno).
@@ -516,13 +520,24 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
               {registroHoy.estado === 'tarde'
                 ? `Asistencia de hoy registrada (llegaste ${registroHoy.tardanzaMin} min tarde)`
                 : 'Asistencia de hoy registrada'}
-              {registroHoy.salidaConfirmada ? ' · salida confirmada' : ''}
+              {registroHoy.salidaConfirmada && !registroHoy.salidaAnticipada ? ' · salida confirmada' : ''}
             </Text>
           </View>
           {reglaActiva && typeof desdeHoy === 'number' && (
             <View style={styles.horasDesdeRow}>
               <Text style={styles.horasText}>Tus horas de hoy cuentan desde:</Text>
               <Text style={[styles.horasText, { fontFamily: FONTS.interSemiBold }]} noTranslate>{minutosAHora12(desdeHoy)}</Text>
+            </View>
+          )}
+          {/* Salida anticipada (emergencia): la empresa la registró y las horas
+              de hoy quedaron cortadas ahí — se lo mostramos también al
+              estudiante, con el motivo que escribió la empresa. */}
+          {registroHoy.salidaAnticipada && (
+            <View style={[styles.miPasanRow, { marginTop: 4 }]}>
+              <Ionicons name="warning" size={15} color={COLORS.warning} />
+              <Text style={[styles.miPasanText, { color: COLORS.warning }]}>
+                {`Saliste antes hoy${typeof registroHoy.salidaAnticipadaMin === 'number' ? `, a las ${minutosAHora12(registroHoy.salidaAnticipadaMin)}` : ''}${registroHoy.salidaAnticipadaMotivo ? ` — ${registroHoy.salidaAnticipadaMotivo}` : ''}. Tus horas de hoy cuentan hasta esa hora.`}
+              </Text>
             </View>
           )}
           </>

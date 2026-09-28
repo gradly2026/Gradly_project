@@ -75,6 +75,16 @@ const _registrarAsistenciaManual = httpsCallable<
   ResultadoAsistenciaManual
 >(functions, 'registrarAsistenciaManual');
 
+export interface ResultadoSalidaAnticipada {
+  ok: boolean;
+  /** Minuto del día (desde medianoche) en que se registró la salida. */
+  hasta: number;
+}
+const _registrarSalidaAnticipada = httpsCallable<
+  { asignacionId: string; motivo: string },
+  ResultadoSalidaAnticipada
+>(functions, 'registrarSalidaAnticipada');
+
 /**
  * La empresa registra la asistencia OLVIDADA de un pasante que sí fue (un día
  * reciente sin registro), indicando su hora de llegada en minutos desde
@@ -133,6 +143,14 @@ export interface RegistroAsistenciaDia {
   salidaConfirmada: boolean;
   /** Milisegundos (epoch), o null si aún no se confirmó. */
   salidaConfirmadaAt: number | null;
+  /** true = la salida se registró como ANTICIPADA (emergencia, corta las horas
+   *  de ese día) — distinto de una "Confirmar salida" normal, que es solo
+   *  bitácora y no toca las horas. */
+  salidaAnticipada: boolean;
+  /** Minuto del día (desde medianoche) en que salió, o null si no aplica. */
+  salidaAnticipadaMin: number | null;
+  /** Motivo que escribió la empresa — lo ve también el estudiante. */
+  salidaAnticipadaMotivo: string | null;
 }
 
 /** ISO `yyyy-mm-dd` de HOY según el reloj del dispositivo — solo para decidir
@@ -149,6 +167,9 @@ function mapRegistro(data: any): RegistroAsistenciaDia {
     tardanzaMin: Number(data.tardanzaMin) || 0,
     salidaConfirmada: data.salidaConfirmada === true,
     salidaConfirmadaAt: typeof data.salidaConfirmadaAt?.toMillis === 'function' ? data.salidaConfirmadaAt.toMillis() : null,
+    salidaAnticipada: data.salidaAnticipada === true,
+    salidaAnticipadaMin: typeof data.salidaAnticipadaMin === 'number' ? data.salidaAnticipadaMin : null,
+    salidaAnticipadaMotivo: typeof data.salidaAnticipadaMotivo === 'string' ? data.salidaAnticipadaMotivo : null,
   };
 }
 
@@ -181,6 +202,10 @@ export function suscribirRegistroDeHoy(
  * toque que el pasante YA SALIÓ ese día — sin código, porque a esa hora la
  * confianza ya está puesta (ya se le vio entrar). Solo puede tocar los campos
  * de salida (reglas `hasOnly`); no puede alterar `estado`/`tardanzaMin`.
+ *
+ * OJO: esto es solo bitácora — NO afecta las horas de ese día (el libro de
+ * horas sigue contando hasta el fin del turno). Para una emergencia que sí
+ * debe cortar las horas, ver `registrarSalidaAnticipada` más abajo.
  */
 export async function confirmarSalida(asignacionId: string, fecha: string, empresaUid: string): Promise<void> {
   if (!asignacionId || !fecha) throw new Error('Datos inválidos.');
@@ -189,4 +214,24 @@ export async function confirmarSalida(asignacionId: string, fecha: string, empre
     salidaConfirmadaAt: serverTimestamp(),
     salidaConfirmadaPor: empresaUid,
   });
+}
+
+/**
+ * La EMPRESA registra que un pasante tuvo que salir antes de terminar su
+ * turno de HOY (una emergencia). A diferencia de `confirmarSalida`, esto SÍ
+ * corta las horas de hoy: la Cloud Function usa la hora ACTUAL del servidor
+ * como hora de salida (no una que elija la empresa) y exige un motivo, que
+ * queda documentado — lo ve también el estudiante en "Mi progreso". Solo
+ * aplica a HOY: no se puede corregir un día pasado con esta función.
+ */
+export async function registrarSalidaAnticipada(
+  asignacionId: string,
+  motivo: string,
+): Promise<ResultadoSalidaAnticipada> {
+  try {
+    const res = await _registrarSalidaAnticipada({ asignacionId, motivo });
+    return res.data;
+  } catch (e: any) {
+    throw new Error(mensajeDeCallable(e, 'No se pudo registrar la salida anticipada. Intenta de nuevo.'));
+  }
 }

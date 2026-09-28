@@ -134,6 +134,17 @@ function parseHora12(s?: string | null): number | null {
   return h * 60 + Number(m[2]);
 }
 
+/** Inverso de `parseHora12`: minutos desde medianoche → "08:00 AM". Duplicado
+ *  a propósito de `minutosAHora12` (src/utils/horasPasantia.ts, mismo cálculo)
+ *  porque functions/ no importa código de src/ (proyectos TS separados). */
+function minutosAHora12(min: number): string {
+  const total = Math.max(0, Math.round(min));
+  const h24 = Math.floor(total / 60) % 24;
+  const m = total % 60;
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
+}
+
 /** getDay() (0=domingo) de un ISO `yyyy-mm-dd`, con aritmética 100% UTC (no
  *  depende de la zona horaria del runtime de la function). */
 function getDayOfISO(iso: string): number {
@@ -581,6 +592,119 @@ export const registrarAsistenciaManual = onCall({ region: REGION }, async (req) 
   );
 
   return { ok: true, estado, tardanzaMin };
+});
+
+// ── 2c) LA EMPRESA REGISTRA UNA SALIDA ANTICIPADA (emergencia) ─────
+/**
+ * La EMPRESA confirma que un pasante tuvo que salir antes de terminar su turno
+ * de HOY (una emergencia). A diferencia de "Confirmar salida" (`registros_
+ * asistencia.salidaConfirmada`, que el cliente ya puede tocar directo y que
+ * NO afecta las horas — es solo bitácora), esto SÍ corta las horas de hoy:
+ * reemplaza el minuto de entrada guardado en `asignaciones_cupo.
+ * asistencias[fecha]` (hasta ahora siempre un número) por `{desde, hasta}`,
+ * donde `hasta` es el minuto ACTUAL del servidor — igual que el resto de este
+ * archivo, la hora real siempre la pone el servidor, nunca el cliente.
+ *
+ * Alcance limitado a HOY a propósito: no recibe ninguna fecha del cliente
+ * (siempre usa `hoyISO()`), así que no sirve para corregir un día pasado — si
+ * hiciera falta más adelante, sería una función aparte, con su propia ventana
+ * de corrección como `registrarAsistenciaManual`.
+ *
+ * Entrada: { asignacionId, motivo } (motivo: texto obligatorio — queda
+ * guardado tal cual, lo ve también el estudiante en "Mi progreso").
+ */
+export const registrarSalidaAnticipada = onCall({ region: REGION }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sesión requerida.");
+
+  const asignacionId = String(req.data?.asignacionId ?? "").trim();
+  const motivo = String(req.data?.motivo ?? "").trim();
+  if (!asignacionId) throw new HttpsError("invalid-argument", "Datos inválidos.");
+  if (!motivo) throw new HttpsError("invalid-argument", "Indica el motivo de la salida.");
+
+  const asigRef = db.collection("asignaciones_cupo").doc(asignacionId);
+  const asigSnap = await asigRef.get();
+  if (!asigSnap.exists) throw new HttpsError("not-found", "La pasantía ya no existe.");
+  const a = asigSnap.data() as any;
+  if (a.empresaId !== uid) throw new HttpsError("permission-denied", "Esta pasantía no es de tu empresa.");
+  if (a.estado !== "tomado" || a.finalizada === true) {
+    throw new HttpsError("failed-precondition", "Esta pasantía ya no está activa.");
+  }
+
+  const horaFinMin = parseHora12((a.horario ?? {}).horaFin);
+  if (horaFinMin == null) {
+    throw new HttpsError("failed-precondition", "Esta pasantía no tiene un horario válido.");
+  }
+  const fecha = hoyISO();
+  const ahoraMin = horaActualEnMinutos();
+  if (ahoraMin >= horaFinMin) {
+    throw new HttpsError(
+      "failed-precondition",
+      "El turno de hoy ya terminó. Usa \"Confirmar salida\" en vez de salida anticipada.",
+    );
+  }
+
+  const regRef = db.collection("registros_asistencia").doc(`${asignacionId}_${fecha}`);
+
+  const info = await db.runTransaction(async (tx) => {
+    const [regTx, asigTx] = await Promise.all([tx.get(regRef), tx.get(asigRef)]);
+    if (!asigTx.exists || asigTx.data()?.finalizada === true) {
+      throw new HttpsError("failed-precondition", "Esta pasantía ya no está activa.");
+    }
+    if (!regTx.exists) {
+      throw new HttpsError("failed-precondition", "Aún no se ha registrado la entrada de hoy.");
+    }
+    if (regTx.data()?.salidaConfirmada === true) {
+      throw new HttpsError("already-exists", "Ya se confirmó la salida de hoy.");
+    }
+    const registroDia = ((asigTx.data()?.asistencias ?? {}) as Record<string, unknown>)[fecha];
+    const desde = typeof registroDia === "number"
+      ? registroDia
+      : (registroDia && typeof (registroDia as any).desde === "number" ? (registroDia as any).desde : null);
+    if (desde == null) {
+      throw new HttpsError("failed-precondition", "No hay una hora de entrada registrada para hoy.");
+    }
+    if (ahoraMin <= desde) {
+      throw new HttpsError("invalid-argument", "La salida no puede ser antes o al mismo tiempo que la entrada.");
+    }
+
+    const marcadoAt = admin.firestore.FieldValue.serverTimestamp();
+    tx.update(regRef, {
+      salidaConfirmada: true,
+      salidaConfirmadaAt: marcadoAt,
+      salidaConfirmadaPor: uid,
+      salidaAnticipada: true,
+      salidaAnticipadaMin: ahoraMin,
+      salidaAnticipadaMotivo: motivo,
+    });
+    tx.update(asigRef, new admin.firestore.FieldPath("asistencias", fecha), { desde, hasta: ahoraMin });
+
+    return {
+      estudianteId: String(a.estudianteId ?? ""),
+      universidadId: String(a.universidadId ?? ""),
+      estudianteNombre: String(a.estudianteNombre ?? ""),
+    };
+  });
+
+  const horaTxt = minutosAHora12(ahoraMin);
+  try {
+    await notificar(
+      info.estudianteId, "Salida anticipada registrada",
+      `Tu empresa registró que hoy saliste antes, a las ${horaTxt} (${motivo}). Tus horas de hoy cuentan hasta esa hora.`,
+      "warning", "/(tabs)/progreso",
+    );
+    if (info.universidadId) {
+      await notificar(
+        info.universidadId, "Salida anticipada",
+        `${a.empresaNombre || "Una empresa"} registró que ${info.estudianteNombre || "un estudiante"} salió antes hoy, a las ${horaTxt} (${motivo}).`,
+        "info", "/dashboard-universidad",
+      );
+    }
+  } catch (e) {
+    logger.warn("No se pudo avisar la salida anticipada", e);
+  }
+
+  return { ok: true, hasta: ahoraMin };
 });
 
 // ── 3) RECORDATORIO DIARIO A LA EMPRESA (pasantes sin asistencia marcada) ──

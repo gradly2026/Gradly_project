@@ -1479,6 +1479,25 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Tu empresa marcó hoy como día no computado. No necesitas marcar asistencia.":
     "Your company marked today as not counted. You don't need to mark attendance.",
 
+  // ── Salida anticipada por emergencia (SalidaAnticipadaForm.tsx, botón en
+  //    HistorialAsistenciaModal, y mensajes del servidor de
+  //    registrarSalidaAnticipada en functions/src/asistencia.ts) — a
+  //    diferencia de "Confirmar salida", esto SÍ corta las horas de ese día. ──
+  "Salida anticipada": "Early check-out",
+  "Vas a registrar que salió antes de terminar su turno de hoy, ahora mismo. Sus horas de hoy contarán solo hasta este momento — esto es distinto de \"Confirmar salida\", que no afecta las horas.":
+    "You're about to record that they left before finishing today's shift, right now. Today's hours will only count up to this moment — this is different from \"Confirm check-out\", which doesn't affect the hours.",
+  "Ej. Emergencia médica, tuvo que retirarse.": "E.g. Medical emergency, had to leave.",
+  "Registrar salida anticipada": "Record early check-out",
+  "No se pudo registrar la salida anticipada. Intenta de nuevo.": "Couldn't record the early check-out. Try again.",
+  "Indica el motivo de la salida.": "Enter the reason for leaving.",
+  "El turno de hoy ya terminó. Usa \"Confirmar salida\" en vez de salida anticipada.":
+    "Today's shift already ended. Use \"Confirm check-out\" instead of an early check-out.",
+  "Aún no se ha registrado la entrada de hoy.": "Today's check-in hasn't been recorded yet.",
+  "Ya se confirmó la salida de hoy.": "Today's check-out was already confirmed.",
+  "No hay una hora de entrada registrada para hoy.": "There's no check-in time recorded for today.",
+  "La salida no puede ser antes o al mismo tiempo que la entrada.":
+    "The check-out can't be before or at the same time as the check-in.",
+
   // ── Horas por asistencia (las horas de cada día cuentan desde que se registra
   //    la asistencia; 20 min de margen; la empresa corrige hasta 3 días después)
   //    — RegistrarAsistenciaManualForm, "Días anteriores" en

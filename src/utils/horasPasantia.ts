@@ -149,11 +149,43 @@ export const MARGEN_ASISTENCIA_MIN = 20;
  *  día (mismo valor que `VENTANA_CORRECCION_DIAS` del servidor). */
 export const VENTANA_CORRECCION_DIAS = 3;
 
-/** Libro de asistencia de una asignación de cupo: `yyyy-mm-dd` → minuto del día
- *  (desde medianoche) desde el que cuentan las horas de ese día. Lo escribe
- *  SOLO el servidor: la hora de entrada del horario si la asistencia se registró
- *  dentro del margen, o la hora del registro si fue llegada tarde. */
-export type AsistenciasDia = Record<string, number>;
+/** Un día con salida ANTICIPADA (emergencia, Fase "salida anticipada"): además
+ *  del minuto desde el que cuenta (`desde`), guarda hasta qué minuto contó
+ *  (`hasta`) — antes de la hora de salida programada del horario. Lo escribe
+ *  SOLO el servidor (`registrarSalidaAnticipada`, functions/src/asistencia.ts). */
+export interface AsistenciaConSalida {
+  desde: number;
+  hasta: number;
+}
+
+/** Un día del libro de asistencia: o bien el número de siempre (minuto desde
+ *  el que cuenta; el día rinde hasta la hora de salida PROGRAMADA del
+ *  horario), o bien `{desde, hasta}` si ese día tuvo una salida anticipada
+ *  (rinde solo hasta `hasta`). Los días viejos son siempre `number` — no hace
+ *  falta ninguna migración, ese valor sigue significando exactamente lo mismo. */
+export type AsistenciaDia = number | AsistenciaConSalida;
+
+/** Libro de asistencia de una asignación de cupo: `yyyy-mm-dd` → el día (ver
+ *  `AsistenciaDia`). Lo escribe SOLO el servidor: la hora de entrada del
+ *  horario si la asistencia se registró dentro del margen, o la hora del
+ *  registro si fue llegada tarde; y, si hubo una salida anticipada, hasta qué
+ *  minuto contó ese día. */
+export type AsistenciasDia = Record<string, AsistenciaDia>;
+
+/** Minuto desde el que cuenta un día (o `undefined` si el día no tiene
+ *  asistencia registrada) — funciona igual con el `number` de siempre que con
+ *  `{desde, hasta}`. */
+export function desdeDeAsistencia(v: AsistenciaDia | undefined): number | undefined {
+  if (v == null) return undefined;
+  return typeof v === 'number' ? v : v.desde;
+}
+
+/** Minuto hasta el que cuenta un día: `finProgramado` (la hora de salida del
+ *  horario) salvo que ese día tuviera una salida anticipada, en cuyo caso es
+ *  la hora real de esa salida. */
+export function hastaDeAsistencia(v: AsistenciaDia | undefined, finProgramado: number): number {
+  return v != null && typeof v === 'object' ? v.hasta : finProgramado;
+}
 
 export interface HorarioMinimo {
   dias?: DiaLaboral[];
@@ -281,13 +313,16 @@ function progresoPorHorario(
  * `asistencias` (minuto del día desde el que cuentan sus horas):
  *   · día CON asistencia: rinde desde ese minuto hasta la hora de salida del
  *     horario — completo si el registro llegó dentro del margen, menos si fue
- *     llegada tarde;
+ *     llegada tarde; o hasta la hora de una SALIDA ANTICIPADA (emergencia,
+ *     `registrarSalidaAnticipada`) si ese día tuvo una — ver `AsistenciaDia`;
  *   · día SIN asistencia (ya pasado): 0 horas, y la fecha de fin se corre sola
  *     (la pasantía se alarga hasta completar las horas reales, igual que con los
  *     días no computados);
  *   · HOY: corre por reloj desde ese minuto (hora a hora), así que el último
  *     día — que puede ser parcial — cierra cuando pasan sus horas, no a las
- *     00:00; si hoy aún no hay asistencia, todavía no suma nada.
+ *     00:00; si hoy aún no hay asistencia, todavía no suma nada. Con una
+ *     salida anticipada, "hasta" ya quedó fijo al registrarla, así que el día
+ *     queda cerrado desde ese instante (el reloj ya no lo mueve).
  * Los días anteriores a `desdeISO` conservan el cálculo por horario (nadie
  * pierde horas ya acumuladas).
  */
@@ -343,10 +378,13 @@ function progresoPorAsistencia(
         plan = horasPorDia;
         real = cursorISO <= hoyISO ? horasPorDia : 0;
       } else {
-        const desde = asistencias[cursorISO];
+        const registro = asistencias[cursorISO];
+        const desde = desdeDeAsistencia(registro);
         const asistio = typeof desde === 'number' && Number.isFinite(desde);
-        // Lo que rinde el día COMPLETO desde el minuto en que empezó a contar.
-        const rinde = asistio ? acotar((fin - desde) / 60, 0, horasPorDia) : 0;
+        // Hasta dónde rinde el día: la hora de salida programada, salvo que
+        // ese día tuviera una salida anticipada (entonces, hasta esa hora).
+        const hastaEfectivo = asistio ? hastaDeAsistencia(registro, fin) : fin;
+        const rinde = asistio ? acotar((hastaEfectivo - desde!) / 60, 0, horasPorDia) : 0;
         if (cursorISO < hoyISO) {
           plan = rinde;
           real = rinde;
@@ -482,7 +520,10 @@ export function diasSinAsistencia(
     const dISO = aISO(d);
     if (dISO < desdeISO || d < inicio) continue;
     if (!diasSet.has(d.getDay()) || excluidas.has(dISO)) continue;
-    if (typeof libro[dISO] === 'number') continue;
+    // Ya tiene asistencia registrada ese día (número de siempre, o `{desde,
+    // hasta}` si tuvo salida anticipada) — en ambos casos no hay nada que
+    // corregir.
+    if (libro[dISO] != null) continue;
     out.push(dISO);
   }
   return out;
