@@ -16,7 +16,7 @@ import { obtenerRolConReintento } from '../utils/roleRouting';
 // ═══════════════════════════════════════════
 // TIPOS
 // ═══════════════════════════════════════════
-export type UserRole = 'estudiante' | 'empresa' | 'universidad' | 'admin';
+export type UserRole = 'estudiante' | 'empresa' | 'universidad' | 'admin' | 'tutor';
 
 export interface UserProfile {
   nombre_completo: string;

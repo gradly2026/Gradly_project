@@ -2676,3 +2676,53 @@ export const VERIFICAR_SEED_EN: Record<string, string> = {
   "Tu universidad ya puede revisarlo. No se pudo generar el código QR de verificación; puedes reenviarlo para intentarlo de nuevo.":
     "Your university can already review it. The verification QR code couldn't be generated; you can resend it to try again.",
 };
+
+// Rol nuevo "tutor" (Fase 1: fundación) — src/components/MisTutoresSection.tsx
+// (empresa) y app/dashboard-tutor.tsx (el propio tutor).
+export const TUTOR_SEED_EN: Record<string, string> = {
+  "Mis tutores": "My tutors",
+  "Encargados on-site de tus pasantes": "On-site supervisors of your interns",
+  "Todavía no has registrado ningún tutor.": "You haven't registered any tutor yet.",
+  "Activo": "Active",
+  "Inactivo": "Inactive",
+  "Agregar tutor": "Add tutor",
+  "Le enviaremos sus datos de acceso por correo. El resto de su perfil (dirección, DUI, foto, horario) lo completa él mismo.":
+    "We'll email them their access details. They complete the rest of their profile themselves (address, ID, photo, schedule).",
+  "Nombre completo": "Full name",
+  "Correo": "Email",
+  "Cargo": "Position",
+  "Carnet de trabajo": "Employee ID",
+  "Registrar tutor": "Register tutor",
+  "Faltan datos": "Missing information",
+  "Completa nombre, correo, cargo y carnet de trabajo.": "Fill in name, email, position, and employee ID.",
+  "Tutor registrado": "Tutor registered",
+  "La cuenta quedó creada, pero no pudimos enviarle el correo con sus datos de acceso. Avísale por otro medio.":
+    "The account was created, but we couldn't send the email with their access details. Let them know some other way.",
+  "No se pudo registrar": "Couldn't register",
+  "Reactivar tutor": "Reactivate tutor",
+  "Desactivar tutor": "Deactivate tutor",
+  "Reactivar": "Reactivate",
+  "Desactivar": "Deactivate",
+  "No se pudo completar": "Couldn't complete this",
+  "Mis datos": "My information",
+  "Registrados por tu empresa": "Registered by your company",
+  "Estos datos los registró tu empresa; si alguno está mal, pídele que te contacte con soporte.":
+    "Your company registered this information; if something's wrong, ask them to contact support.",
+  "Completa tú mismo estos datos.": "Fill in this information yourself.",
+  "Documento (DUI)": "ID document",
+  "Opcional": "Optional",
+  "Tu DUI es opcional y solo lo puedes ver tú (y el admin de Gradly, si hace falta verificar algo).":
+    "Your ID document is optional and only you can see it (and Gradly's admin, if something needs verifying).",
+  "Número de DUI": "ID document number",
+  "Subir foto del DUI": "Upload ID document photo",
+  "Listo": "Done",
+  "Se guardó la foto de tu DUI.": "Your ID document photo was saved.",
+  "No se pudo subir la foto.": "The photo couldn't be uploaded.",
+  "No se pudo subir el documento.": "The document couldn't be uploaded.",
+  "Mi horario": "My schedule",
+  "Horario incompleto": "Incomplete schedule",
+  "Elige los días y las horas de inicio y fin.": "Choose the days and the start and end times.",
+  "Guardar horario": "Save schedule",
+  "Horario guardado": "Schedule saved",
+  "Ya quedó actualizado tu horario.": "Your schedule is now up to date.",
+};

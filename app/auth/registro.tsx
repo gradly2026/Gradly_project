@@ -63,6 +63,7 @@ import { AutoText as Text, AutoTextInput as TextInput } from "../../src/componen
 
 import AppHeader from "../../components/AppHeader";
 import { auth, db, storage } from "../../src/config/firebaseConfig";
+import { uploadDocumentoVerificacion } from "../../src/services/storageUploads";
 import { useTheme, type GradlyColors } from "../../src/context/ThemeContext";
 import { useLoginBackGuard } from "../../src/hooks/useSessionBackGuard";
 import {
@@ -682,26 +683,9 @@ async function uploadLogo(uid: string, localUri: string): Promise<string> {
   // importar el rol de la cuenta.
 }
 
-/**
- * Sube una foto de documento de verificación (NIT o documento del
- * representante) a Firebase Storage — mismo patrón que uploadLogo(), pero
- * a la ruta 'documentos_verificacion/{uid}/{fileName}', legible solo por
- * la propia empresa y el admin (ver storage.rules). La URL que devuelve
- * se guarda en 'verificaciones_empresa/{uid}', el mismo documento
- * protegido de la Fase 2 — no en perfiles_empresas, que es legible por
- * cualquier autenticado.
- */
-async function uploadDocumentoVerificacion(
-  uid: string,
-  localUri: string,
-  fileName: string,
-): Promise<string> {
-  const response = await fetch(localUri);
-  const blob = await response.blob();
-  const storageRef = ref(storage, `documentos_verificacion/${uid}/${fileName}`);
-  await uploadBytes(storageRef, blob);
-  return getDownloadURL(storageRef);
-}
+// uploadDocumentoVerificacion se extrajo a src/services/storageUploads.ts
+// (importada más arriba) para que el tutor (Fase 1 del rol tutor) también
+// pueda reutilizarla para su propio DUI opcional.
 
 // ══════════════════════════════════════════════════════════════════
 //  Sub-componentes reutilizables

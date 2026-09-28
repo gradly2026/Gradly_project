@@ -92,6 +92,7 @@ import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import RangoCard from '../src/components/RangoCard';
 import ResenasFeedback from '../src/components/ResenasFeedback';
 import HistorialPuestos from '../src/components/HistorialPuestos';
+import MisTutoresSection from '../src/components/MisTutoresSection';
 import SeccionMensajes from '../src/components/SeccionMensajes';
 import { SolicitudesEmpresa } from '../src/components/Matchmaking';
 import type { AcuerdoData } from '../src/types/chat';
@@ -2214,6 +2215,14 @@ export default function DashboardEmpresa() {
             icon: 'people-outline' as const,
             tone: 'purple' as const,
             render: () => <HistorialPuestos rol="empresa" id={user?.uid ?? ''} propio />,
+          },
+          {
+            id: 'tutores',
+            title: 'Mis tutores',
+            subtitle: 'Encargados on-site de tus pasantes',
+            icon: 'person-add-outline' as const,
+            tone: 'blue' as const,
+            render: () => <MisTutoresSection empresaId={user?.uid ?? ''} />,
           },
           {
             id: 'plan',

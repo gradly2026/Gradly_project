@@ -83,6 +83,41 @@ export function correoCuentaRechazada(nombreEmpresa: string): ContenidoCorreo {
 }
 
 /**
+ * Bienvenida al tutor recién registrado por una empresa (Fase 1 del rol
+ * tutor, ver functions/src/tutor.ts, crearTutor). Único correo transaccional
+ * de este archivo que SÍ lleva una contraseña — es la única forma en que el
+ * tutor la conoce (nunca se le muestra a la empresa que lo registró). Si
+ * quiere cambiarla, "olvidé mi contraseña" en el login ya existe.
+ */
+export function correoCredencialesTutor(
+  nombreTutor: string,
+  correo: string,
+  passwordTemporal: string,
+): ContenidoCorreo {
+  const nombre = nombreTutor.trim() || "";
+  const saludo = nombre ? `Hola, ${escaparHtml(nombre)}.` : "Hola.";
+  const saludoTexto = nombre ? `Hola, ${nombre}.` : "Hola.";
+  return {
+    asunto: "Te registraron como tutor en Gradly",
+    html: envoltorio(`
+    <h2 style="margin:0 0 8px">Ya tienes acceso a Gradly</h2>
+    <p style="margin:0 0 16px;color:#475569">${saludo} Una empresa te registró como tutor de sus pasantes en Gradly. Ya puedes iniciar sesión con estos datos:</p>
+    <p style="margin:0 0 8px;color:#0f172a"><strong>Correo:</strong> ${escaparHtml(correo)}</p>
+    <p style="margin:0 0 24px;color:#0f172a"><strong>Contraseña temporal:</strong> ${escaparHtml(passwordTemporal)}</p>
+    <p style="margin:0 0 24px"><a href="${URL_LOGIN}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px">Iniciar sesión</a></p>
+    <p style="margin:0 0 16px;color:#475569">También puedes entrar sin contraseña, con un código que te enviamos a este mismo correo (la opción "Acceso sin contraseña" en la pantalla de inicio de sesión). Si prefieres cambiar la contraseña, usa "Olvidé mi contraseña" una vez dentro.</p>
+    <p style="margin:0;color:#64748b;font-size:14px">Si no esperabas este correo, escríbenos a ${CORREO_SOPORTE}.</p>
+  `),
+    texto:
+      `Ya tienes acceso a Gradly\n\n${saludoTexto} Una empresa te registró como tutor de sus pasantes en Gradly. Ya puedes iniciar sesión con estos datos:\n\n` +
+      `Correo: ${correo}\nContraseña temporal: ${passwordTemporal}\n\n` +
+      `Iniciar sesión: ${URL_LOGIN}\n\n` +
+      `También puedes entrar sin contraseña, con un código que te enviamos a este mismo correo ("Acceso sin contraseña" en la pantalla de inicio de sesión). Si prefieres cambiar la contraseña, usa "Olvidé mi contraseña" una vez dentro.\n\n` +
+      `Si no esperabas este correo, escríbenos a ${CORREO_SOPORTE}.`,
+  };
+}
+
+/**
  * Envía un correo y dice si salió. NUNCA lanza: quien la llama ya hizo su
  * trabajo (p. ej. aprobar la cuenta) y no debe deshacerlo ni fallar porque el
  * aviso no se pudo mandar. El SDK de Resend no lanza cuando el fallo es del

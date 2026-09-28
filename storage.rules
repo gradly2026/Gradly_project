@@ -51,6 +51,16 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
+    // 👔 Foto de perfil del tutor (rol nuevo, Fase 1). A diferencia del logo
+    //    de la empresa (marca pública), esta es la foto de una persona — se
+    //    exige sesión para leerla, no "cualquiera".
+    match /fotos_tutores/{uid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
     // 🖼️ logos genéricos — ⚠️ write abierto a cualquier autenticado; si no es
     //    imprescindible, restríngelo o elimínalo.
     match /logos/{document=**} {
@@ -104,8 +114,11 @@ service firebase.storage {
     //    pueden leerlas; solo la propia empresa puede subirlas.
     match /documentos_verificacion/{uid}/{fileName} {
       allow read: if request.auth != null && (request.auth.uid == uid || esAdmin());
+      // 'tutor' se agregó en la Fase 1 del rol tutor: reutiliza esta misma
+      // ruta/función de subida para su DUI opcional (verificaciones_tutor en
+      // firestore.rules), en vez de duplicar la regla en otra ruta.
       allow write: if request.auth != null && request.auth.uid == uid
-                   && firestore.get(/databases/(default)/documents/usuarios/$(uid)).data.rol == 'empresa'
+                   && firestore.get(/databases/(default)/documents/usuarios/$(uid)).data.rol in ['empresa', 'tutor']
                    && request.resource.size < 10 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }

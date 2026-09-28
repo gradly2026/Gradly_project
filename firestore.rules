@@ -185,6 +185,43 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
+    // 👔 PERFILES_TUTORES — el encargado on-site que una EMPRESA delega para
+    //    supervisar a sus pasantes (Fase 1 del rol "tutor": solo existencia
+    //    de la cuenta y autoedición del propio perfil — asignación a
+    //    pasantes, asistencia y observaciones llegan en fases posteriores).
+    //    El `create` real lo hace la Cloud Function crearTutor con Admin SDK
+    //    (bypasa esta regla); queda aquí como red de seguridad. Lectura
+    //    acotada al propio tutor y a la empresa dueña (NO "cualquier
+    //    autenticado" como perfiles_empresas/universidades) porque todavía
+    //    no hay ningún otro rol que necesite verlo.
+    match /perfiles_tutores/{tutorId} {
+      allow read: if request.auth != null
+        && (request.auth.uid == tutorId
+            || resource.data.empresa_id == request.auth.uid
+            || esAdmin());
+      allow create: if (esRol('empresa') && request.resource.data.empresa_id == request.auth.uid)
+                     || esAdmin();
+      allow update: if request.auth.uid == tutorId
+                     || resource.data.empresa_id == request.auth.uid
+                     || esAdmin();
+      allow delete: if esAdmin();
+    }
+
+    // 🔒 VERIFICACIONES_TUTOR — DUI del tutor (opcional). Vive aparte por el
+    //    mismo motivo que verificaciones_empresa: perfiles_tutores puede
+    //    volverse legible por más roles en una fase futura (el pasante
+    //    viendo a su tutor asignado, por ejemplo) y Firestore no filtra la
+    //    lectura campo por campo. A diferencia de verificaciones_empresa, ni
+    //    siquiera la empresa dueña puede leerlo — solo el propio tutor y el
+    //    admin.
+    match /verificaciones_tutor/{tutorId} {
+      allow read: if request.auth != null
+        && (request.auth.uid == tutorId || esAdmin());
+      allow create: if request.auth.uid == tutorId && esRol('tutor');
+      allow update: if (request.auth.uid == tutorId && esRol('tutor')) || esAdmin();
+      allow delete: if esAdmin();
+    }
+
     // 🏫 PERFILES_UNIVERSIDADES
     match /perfiles_universidades/{uniId} {
       allow read: if request.auth != null;

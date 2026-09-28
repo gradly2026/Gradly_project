@@ -218,6 +218,9 @@ export default function RootLayout() {
                   <Stack.Screen name="dashboard-empresa" />
                   <Stack.Screen name="dashboard-estudiante" />
                   <Stack.Screen name="dashboard-joventalento" />
+                  <Stack.Screen name="dashboard-tutor" />
+                  {/* app/dashboard-tutor.tsx — rol nuevo "tutor" (Fase 1):
+                      el encargado on-site de pasantes que delega una empresa */}
                   <Stack.Screen name="ChatScreen" />
                   <Stack.Screen name="mensajes/index" />
                   <Stack.Screen name="mensajes/[id]" />

@@ -98,6 +98,12 @@
  *    El trigger reacciona a cualquier escritura (creación o validación
  *    universitaria); el callable es un backfill de una sola vez para los
  *    comprobantes previos a esta fase, invocado desde el panel admin (Config).
+ *  · crearTutor / desactivarTutor / reactivarTutor → rol nuevo "tutor"
+ *    (tutor.ts, Fase 1: fundación). Una empresa registra a su encargado
+ *    on-site de pasantes; crearTutor crea la cuenta de Auth + Firestore con
+ *    Admin SDK y le manda sus credenciales por correo (Resend) — nunca se
+ *    las muestra a la empresa. desactivarTutor/reactivarTutor solo los puede
+ *    llamar la empresa dueña de ese tutor.
  *
  * Nota: el antiguo patrón "traducir al escribir" (triggers translate_*) se
  * retiró — se reemplazó por la traducción al vuelo con caché, que cubre también
@@ -143,3 +149,4 @@ export {
   sincronizarComprobantePublico,
   backfillComprobantesPublicos,
 } from "./comprobantePublico";
+export { crearTutor, desactivarTutor, reactivarTutor } from "./tutor";

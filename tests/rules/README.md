@@ -29,7 +29,7 @@ Córrelas **antes de cada `firebase deploy --only firestore:rules`**. Sale con c
 
 Para ver qué cambia una modificación de reglas, prueba también la versión anterior: `git show HEAD:firestore.rules > /tmp/anterior.rules` y luego `RULES_TEST_REGLAS=/tmp/anterior.rules npm run test:rules`. Los casos que fallen ahí son justo los comportamientos que tu cambio modificó.
 
-## Qué cubren (127 casos)
+## Qué cubren (144 casos)
 
 | Grupo | Colección | Qué comprueba |
 | --- | --- | --- |
@@ -41,6 +41,8 @@ Para ver qué cambia una modificación de reglas, prueba también la versión an
 | `RP` | `reportes` | Cualquiera denuncia, pero solo como sí mismo (`reportador_id` y `reportante_id` = su uid), siempre 'abierto' y sin `resolucion`; `estado` lo cambia solo el servidor (Cloud Function `resolveReport`, con auditoría); el reportado no lee el reporte. Los 6 casos de creación indebida (RP3 a RP8) fallan con las reglas anteriores a v212. |
 | `SA` | `registros_asistencia` + `asignaciones_cupo` | Salida anticipada (emergencia): el cliente no puede poner él mismo los campos `salidaAnticipada*` (ya bloqueado por el mismo `hasOnly` de G13) ni la forma `{desde,hasta}` de `asistencias` (ya bloqueado por el guardia de `asistencias`); solo el servidor (`registrarSalidaAnticipada`, Admin SDK) escribe ambos. Guardia por construcción, no exige reglas nuevas. |
 | `CP` | `comprobantes_publicos` | Espejo público del comprobante de finalización (Fase 2, código QR): lo lee CUALQUIERA, incluso sin sesión (`anon`, un cliente sin `mockUserToken`); solo el Admin SDK lo crea/actualiza/borra — ningún cliente autenticado, ni siquiera el admin, puede escribirlo. |
+| `TU` | `perfiles_tutores` | Rol nuevo "tutor" (Fase 1: fundación). Lo lee el propio tutor y la empresa dueña (`empresa_id`); nadie más. El `create` (red de seguridad — la vía real es la Cloud Function `crearTutor`, Admin SDK) exige que `empresa_id` coincida con el uid de quien crea. El `update` lo permiten el propio tutor y la empresa dueña. |
+| `VT` | `verificaciones_tutor` | DUI del tutor (opcional). A diferencia de `verificaciones_empresa`, ni siquiera la empresa dueña puede leerlo — solo el propio tutor y el admin. |
 
 Los casos marcados "(guardia)" en `rules.cases.js` son los que protegen el campo `asistencias`: si alguien afloja esa regla por error, fallan.
 

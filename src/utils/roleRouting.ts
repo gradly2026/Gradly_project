@@ -28,6 +28,8 @@ export function rutaPorRol(rol: UserRole | null | undefined): string | null {
       return "/dashboard-empresa";
     case "estudiante":
       return "/(tabs)";
+    case "tutor":
+      return "/dashboard-tutor";
     default:
       return null;
   }
@@ -38,6 +40,7 @@ const ROLES_VALIDOS: ReadonlyArray<UserRole> = [
   "empresa",
   "universidad",
   "admin",
+  "tutor",
 ];
 
 const esperar = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

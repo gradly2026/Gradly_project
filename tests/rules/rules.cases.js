@@ -54,7 +54,7 @@ function nuevoCliente(nombre, token) {
 }
 const owner = nuevoCliente('owner', 'owner');
 const usuarios = {};
-for (const uid of ['stu1', 'stu2', 'emp1', 'emp2', 'uni1', 'uni2', 'adm1']) {
+for (const uid of ['stu1', 'stu2', 'emp1', 'emp2', 'uni1', 'uni2', 'adm1', 'tutor1']) {
   usuarios[uid] = nuevoCliente(uid, { sub: uid });
 }
 // Cliente SIN sesión (request.auth == null): simula a quien escanea el QR del
@@ -70,6 +70,8 @@ const TOP = (uid) => doc(dbDe(uid), 'ranking_plataforma/top_estudiantes');
 const VE = (uid, id) => doc(dbDe(uid), `verificaciones_empresa/${id}`);
 const PP = (uid, id) => doc(dbDe(uid), `perfiles_publicos_estudiantes/${id}`);
 const CP = (uid, id) => doc(dbDe(uid), `comprobantes_publicos/${id}`);
+const PT = (uid, id) => doc(dbDe(uid), `perfiles_tutores/${id}`);
+const VT = (uid, id) => doc(dbDe(uid), `verificaciones_tutor/${id}`);
 const PE = (uid, id) => doc(dbDe(uid), `perfiles_estudiantes/${id}`);
 const RP = (uid, id) => doc(dbDe(uid), `reportes/${id}`);
 // Reporte tal cual lo crean reporteService / contratoService (los 3 sitios del cliente).
@@ -108,6 +110,8 @@ async function reiniciar() {
     poner('usuarios/emp1', { rol: 'empresa' }), poner('usuarios/emp2', { rol: 'empresa' }),
     poner('usuarios/uni1', { rol: 'universidad' }), poner('usuarios/uni2', { rol: 'universidad' }),
     poner('usuarios/adm1', { rol: 'admin' }),
+    poner('usuarios/tutor1', { rol: 'tutor', empresa_id: 'emp1' }),
+    poner('perfiles_tutores/tutor1', { empresa_id: 'emp1', nombre_completo: 'Tutor Uno', activo: true }),
     poner('perfiles_estudiantes/stu1', { universidad_id: 'uni1' }),
     poner('perfiles_estudiantes/stu2', { universidad_id: 'uni2' }),
     poner('asignaciones_cupo/A1', BASE()),
@@ -311,6 +315,32 @@ const CASOS = [
   ['CP7', 'sin sesión intenta actualizar el que ya existe', () => updateDoc(CP('anon', 'A1'), { estudianteNombre: 'y' }), 'DENY'],
   ['CP8', 'sin sesión intenta borrarlo', () => deleteDoc(CP('anon', 'A1')), 'DENY'],
   ['CP9', 'SERVIDOR (Admin SDK) lo borra', () => deleteDoc(CP('owner', 'A1')), 'ALLOW'],
+
+  // ── TU · perfiles_tutores: rol nuevo "tutor" (Fase 1: fundación). El
+  // create real lo hace la Cloud Function crearTutor (Admin SDK); estos
+  // casos prueban la regla como red de seguridad. Lectura acotada al propio
+  // tutor y a la empresa dueña (NO cualquier autenticado). ──
+  ['TU1', 'la empresa dueña lee el perfil de su tutor', () => getDoc(PT('emp1', 'tutor1')), 'ALLOW'],
+  ['TU2', 'el propio tutor lee su perfil', () => getDoc(PT('tutor1', 'tutor1')), 'ALLOW'],
+  ['TU3', 'OTRA empresa intenta leerlo', () => getDoc(PT('emp2', 'tutor1')), 'DENY'],
+  ['TU4', 'un estudiante intenta leerlo', () => getDoc(PT('stu1', 'tutor1')), 'DENY'],
+  ['TU5', 'una empresa crea un tutor propio (empresa_id = su uid)', () => setDoc(PT('emp1', 'tutor9'), { empresa_id: 'emp1', nombre_completo: 'x' }), 'ALLOW'],
+  ['TU6', 'una empresa intenta crear un tutor con empresa_id de OTRA empresa', () => setDoc(PT('emp1', 'tutor9'), { empresa_id: 'emp2', nombre_completo: 'x' }), 'DENY'],
+  ['TU7', 'un estudiante intenta crear un tutor', () => setDoc(PT('stu1', 'tutor9'), { empresa_id: 'stu1', nombre_completo: 'x' }), 'DENY'],
+  ['TU8', 'el propio tutor actualiza su perfil (dirección)', () => updateDoc(PT('tutor1', 'tutor1'), { direccion: 'Calle X' }), 'ALLOW'],
+  ['TU9', 'la empresa dueña actualiza el perfil de su tutor', () => updateDoc(PT('emp1', 'tutor1'), { cargo: 'Supervisor' }), 'ALLOW'],
+  ['TU10', 'OTRA empresa intenta actualizarlo', () => updateDoc(PT('emp2', 'tutor1'), { cargo: 'x' }), 'DENY'],
+  ['TU11', 'un estudiante intenta actualizarlo', () => updateDoc(PT('stu1', 'tutor1'), { cargo: 'x' }), 'DENY'],
+  ['TU12', 'SERVIDOR (Admin SDK) lo borra', () => deleteDoc(PT('owner', 'tutor1')), 'ALLOW'],
+
+  // ── VT · verificaciones_tutor: DUI del tutor (opcional). A diferencia de
+  // verificaciones_empresa, ni siquiera la empresa dueña puede leerlo —
+  // solo el propio tutor y el admin. ──
+  ['VT1', 'el propio tutor crea su verificación', () => setDoc(VT('tutor1', 'tutor1'), { documento_numero: '000000000' }), 'ALLOW'],
+  ['VT2', 'la empresa dueña intenta leer el DUI de su tutor', () => getDoc(VT('emp1', 'tutor1')), 'DENY'],
+  ['VT3', 'otro tutor intenta leer el DUI de tutor1', () => getDoc(VT('emp2', 'tutor1')), 'DENY'],
+  ['VT4', 'una empresa intenta crear/escribir la verificación de un tutor', () => setDoc(VT('emp1', 'tutor1'), { documento_numero: 'x' }), 'DENY'],
+  ['VT5', 'el admin lee el DUI del tutor', () => getDoc(VT('adm1', 'tutor1')), 'ALLOW'],
 ];
 
 // ── Ejecución ────────────────────────────────────────────────────────────

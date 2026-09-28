@@ -156,6 +156,8 @@ function routeForRole(rol: UserRole | null): string {
       return "/dashboard-universidad";
     case "empresa":
       return "/dashboard-empresa";
+    case "tutor":
+      return "/dashboard-tutor";
     case "estudiante":
     default:
       // El "default" cubre tanto rol === 'estudiante' explícito como

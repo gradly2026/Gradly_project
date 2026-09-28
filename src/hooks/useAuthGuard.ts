@@ -9,6 +9,7 @@ const ROLE_HOME: Record<UserRole, string> = {
   universidad: '/dashboard-universidad',
   empresa:     '/dashboard-empresa',
   estudiante:  '/(tabs)',
+  tutor:       '/dashboard-tutor',
 };
 
 /**
