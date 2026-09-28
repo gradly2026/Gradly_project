@@ -200,6 +200,23 @@ export function compatibilidadConHorario(
   return puede ? "compatible" : "incompatible";
 }
 
+/**
+ * ¿Se solapan dos horarios FIJOS (tutor vs pasante, rol "tutor" Fase 2)?
+ * A diferencia de `compatibilidadConHorario` (una cuadrícula de
+ * disponibilidad contra un horario fijo), aquí ambos lados son
+ * `HorarioPasantia` — comparación directa de rango en los días en común.
+ * Se usa solo como aviso suave, nunca para bloquear nada.
+ */
+export function horariosSeSolapan(a: HorarioPasantia, b: HorarioPasantia): boolean {
+  if (!a.dias?.length || !b.dias?.length || !a.dias.some((d) => b.dias.includes(d))) return false;
+  const iniA = parseHoraAMinutos(a.horaInicio);
+  const finA = parseHoraAMinutos(a.horaFin);
+  const iniB = parseHoraAMinutos(b.horaInicio);
+  const finB = parseHoraAMinutos(b.horaFin);
+  if (iniA == null || finA == null || iniB == null || finB == null) return false;
+  return iniA < finB && iniB < finA;
+}
+
 export interface ResumenCompatibilidad {
   compatibles: number;
   incompatibles: number;

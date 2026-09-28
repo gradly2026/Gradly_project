@@ -112,6 +112,7 @@ async function reiniciar() {
     poner('usuarios/adm1', { rol: 'admin' }),
     poner('usuarios/tutor1', { rol: 'tutor', empresa_id: 'emp1' }),
     poner('perfiles_tutores/tutor1', { empresa_id: 'emp1', nombre_completo: 'Tutor Uno', activo: true }),
+    poner('perfiles_tutores/tutor2', { empresa_id: 'emp2', nombre_completo: 'Tutor Dos', activo: true }),
     poner('perfiles_estudiantes/stu1', { universidad_id: 'uni1' }),
     poner('perfiles_estudiantes/stu2', { universidad_id: 'uni2' }),
     poner('asignaciones_cupo/A1', BASE()),
@@ -341,6 +342,14 @@ const CASOS = [
   ['VT3', 'otro tutor intenta leer el DUI de tutor1', () => getDoc(VT('emp2', 'tutor1')), 'DENY'],
   ['VT4', 'una empresa intenta crear/escribir la verificación de un tutor', () => setDoc(VT('emp1', 'tutor1'), { documento_numero: 'x' }), 'DENY'],
   ['VT5', 'el admin lee el DUI del tutor', () => getDoc(VT('adm1', 'tutor1')), 'ALLOW'],
+
+  // ── TA · asignaciones_cupo.tutorId: la empresa asigna un tutor SUYO a un
+  // cupo suyo (rol "tutor", Fase 2). El get() cruzado con perfiles_tutores
+  // impide asignar un tutor que no le pertenece. ──
+  ['TA1', 'la empresa dueña asigna un tutor suyo', () => updateDoc(A('emp1', 'A1'), { tutorId: 'tutor1', tutorNombre: 'Tutor Uno' }), 'ALLOW'],
+  ['TA2', 'la empresa dueña intenta asignar un tutor de OTRA empresa', () => updateDoc(A('emp1', 'A1'), { tutorId: 'tutor2', tutorNombre: 'Tutor Dos' }), 'DENY'],
+  ['TA3', 'OTRA empresa (dueña del tutor, pero no del cupo) intenta asignarlo', () => updateDoc(A('emp2', 'A1'), { tutorId: 'tutor2', tutorNombre: 'Tutor Dos' }), 'DENY'],
+  ['TA4', 'un estudiante intenta asignar un tutor', () => updateDoc(A('stu1', 'A1'), { tutorId: 'tutor1', tutorNombre: 'Tutor Uno' }), 'DENY'],
 ];
 
 // ── Ejecución ────────────────────────────────────────────────────────────

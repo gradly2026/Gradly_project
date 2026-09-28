@@ -194,6 +194,17 @@ export interface AsignacionCupo {
   gravedad?: 'leve' | 'moderada' | 'grave';
   /** Motivo del fin anticipado (lo ven el estudiante, la empresa y la universidad). */
   motivoFin?: string;
+  /**
+   * Tutor asignado (rol nuevo "tutor", Fase 2 — ver memoria del proyecto):
+   * el encargado on-site de este pasante, delegado por la empresa. `tutorId`
+   * es el uid en `perfiles_tutores`; `tutorNombre` va denormalizado (mismo
+   * patrón que `estudianteNombre`/`empresaNombre`) para que las pantallas
+   * que ya tienen la asignación en mano no necesiten una lectura aparte.
+   */
+  tutorId?: string | null;
+  tutorNombre?: string | null;
+  /** Cuándo se asignó/reasignó el tutor por última vez (serverTimestamp). */
+  tutorAsignadoAt?: any;
 }
 
 /** Datos que la UI pasa al reclamar. */
@@ -1026,4 +1037,76 @@ export async function fijarFechaPresentacion(
     fechaPresentacion: fechaISO,
     fechaPresentacionAt: serverTimestamp(),
   });
+}
+
+// ─────────────────────────────────────────────
+// Tutor asignado (rol nuevo "tutor", Fase 2) — la empresa delega el
+// encargado on-site de este pasante
+// ─────────────────────────────────────────────
+
+/**
+ * La empresa asigna (o reasigna) el tutor de un cupo. Al reasignar a un
+ * tutor DISTINTO del ya asignado, `motivoReasignacion` es obligatorio — no
+ * se guarda como campo aparte, viaja como notificación al tutor saliente
+ * (mismo criterio que `terminarPasantiaAnticipada`, que dobla el motivo
+ * dentro del texto de la notificación en vez de abrir un historial nuevo).
+ * Las reglas de Firestore ya validan que el tutor asignado pertenezca de
+ * verdad a esta empresa (cruce con `perfiles_tutores/{tutorId}.empresa_id`).
+ */
+export async function asignarTutor(params: {
+  asignacionId: string;
+  tutorId: string;
+  tutorNombre: string;
+  /** Obligatorio SOLO si ya había otro tutor DISTINTO asignado. */
+  motivoReasignacion?: string;
+}): Promise<void> {
+  const { asignacionId, tutorId, tutorNombre } = params;
+  if (!asignacionId) throw new Error('Asignación inválida.');
+  if (!tutorId) throw new Error('Elige un tutor.');
+
+  const ref = doc(db, COLECCION_ASIGNACIONES, asignacionId);
+  const datos = await runTransaction(db, async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Esta asignación ya no existe.');
+    const a = snap.data() as AsignacionCupo;
+    const tutorIdAnterior = a.tutorId ?? null;
+    const esReasignacion = !!tutorIdAnterior && tutorIdAnterior !== tutorId;
+    if (esReasignacion && !params.motivoReasignacion?.trim()) {
+      throw new Error('Indica el motivo del cambio de tutor.');
+    }
+    tx.update(ref, {
+      tutorId,
+      tutorNombre,
+      tutorAsignadoAt: serverTimestamp(),
+    });
+    return {
+      tutorIdAnterior,
+      tutorNombreAnterior: a.tutorNombre ?? '',
+      estudianteNombre: a.estudianteNombre ?? '',
+      empresaNombre: a.empresaNombre ?? '',
+      vacanteTitulo: a.vacanteTitulo ?? '',
+    };
+  });
+
+  const quien = datos.estudianteNombre || 'un estudiante';
+  const cual = datos.vacanteTitulo || 'su pasantía';
+
+  if (datos.tutorIdAnterior && datos.tutorIdAnterior !== tutorId) {
+    await enviarNotificacion(
+      datos.tutorIdAnterior,
+      'Ya no eres tutor de este pasante',
+      `${datos.empresaNombre || 'La empresa'} reasignó a ${quien} ("${cual}") a otro tutor. Motivo: ${params.motivoReasignacion?.trim()}`,
+      'info',
+      '/dashboard-tutor',
+    );
+  }
+  if (tutorId !== datos.tutorIdAnterior) {
+    await enviarNotificacion(
+      tutorId,
+      'Tienes un nuevo pasante asignado',
+      `Ahora eres el tutor de ${quien} en "${cual}".`,
+      'success',
+      '/dashboard-tutor',
+    );
+  }
 }

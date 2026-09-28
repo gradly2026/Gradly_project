@@ -26,6 +26,8 @@ interface Props {
   onAjustarAsistencia?: (asignacion: AsignacionCupo) => void;
   /** Abrir "Terminar pasantía" (despido/renuncia, Fase 5) para esta asignación. */
   onTerminarPasantia?: (asignacion: AsignacionCupo) => void;
+  /** Abrir "Asignar tutor" (rol "tutor", Fase 2) para esta asignación. */
+  onAsignarTutor?: (asignacion: AsignacionCupo) => void;
 }
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -45,7 +47,7 @@ const fechaLarga = (d: Date) =>
  */
 export default function FechaPresentacionModal({
   visible, asignacion, empresaId, empresaNombre, onClose, onGuardado, onVerPerfil,
-  onAjustarAsistencia, onTerminarPasantia,
+  onAjustarAsistencia, onTerminarPasantia, onAsignarTutor,
 }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -65,6 +67,12 @@ export default function FechaPresentacionModal({
   // hacer falta "coordinar" el arranque, así que el atajo del chat pasa a ser un
   // simple "Contacta al estudiante".
   const primerDiaLlego = !!fechaActual && fechaActual.getTime() <= hoy.getTime();
+  // Rol "tutor" (Fase 2): asignar un tutor es requisito SOLO para fijar el
+  // primer día por PRIMERA VEZ — una pasantía que ya tenía fecha antes de
+  // esta fase (o cualquier caso legado sin tutor) sigue editándose normal,
+  // sin quedar bloqueada retroactivamente por un requisito que no existía
+  // cuando se creó.
+  const requiereTutorPrimero = !fechaActual && !asignacion.tutorId;
 
   const guardar = async (dia: Date) => {
     setCalAbierto(false);
@@ -139,11 +147,32 @@ export default function FechaPresentacionModal({
               </Text>
             </View>
 
+            {/* Tutor asignado (rol "tutor", Fase 2) — arriba del botón de
+                primer día a propósito: la empresa debe elegir tutor antes de
+                poder fijar el Día 1 por primera vez. */}
+            {!!onAsignarTutor && (
+              <TouchableOpacity
+                style={s.tutorBox}
+                activeOpacity={0.8}
+                onPress={() => onAsignarTutor(asignacion)}
+              >
+                <Ionicons
+                  name={asignacion.tutorId ? 'person' : 'person-add-outline'}
+                  size={17}
+                  color={asignacion.tutorId ? colors.success : colors.warning}
+                />
+                <Text style={[s.tutorTxt, asignacion.tutorId && { color: colors.textPrimary }]} noTranslate>
+                  {asignacion.tutorId ? `Tutor: ${asignacion.tutorNombre}` : 'Sin tutor asignado'}
+                </Text>
+                <Text style={s.tutorAccion}>{asignacion.tutorId ? 'Cambiar' : 'Asignar tutor'}</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
-              style={[s.btnPrimary, (guardando || primerDiaLlego) && { opacity: primerDiaLlego ? 0.4 : 0.6 }]}
+              style={[s.btnPrimary, (guardando || primerDiaLlego || requiereTutorPrimero) && { opacity: (primerDiaLlego || requiereTutorPrimero) ? 0.4 : 0.6 }]}
               activeOpacity={0.85}
-              disabled={guardando || primerDiaLlego}
-              accessibilityState={{ disabled: guardando || primerDiaLlego }}
+              disabled={guardando || primerDiaLlego || requiereTutorPrimero}
+              accessibilityState={{ disabled: guardando || primerDiaLlego || requiereTutorPrimero }}
               onPress={() => setCalAbierto(true)}
             >
               {guardando
@@ -154,6 +183,9 @@ export default function FechaPresentacionModal({
                   </Text>
                 )}
             </TouchableOpacity>
+            {requiereTutorPrimero && (
+              <Text style={s.tutorHint}>Asigna un tutor arriba para poder fijar el primer día.</Text>
+            )}
 
             <TouchableOpacity
               style={[s.btnSecundario, abriendoChat && { opacity: 0.6 }]}
@@ -247,6 +279,15 @@ const makeStyles = (COLORS: GradlyColors) =>
       paddingHorizontal: 13, paddingVertical: 12, marginTop: 16,
     },
     fechaTxt: { flex: 1, fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted },
+    tutorBox: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      backgroundColor: COLORS.backgroundSurface,
+      borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
+      paddingHorizontal: 13, paddingVertical: 11, marginTop: 10,
+    },
+    tutorTxt: { flex: 1, fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted },
+    tutorAccion: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+    tutorHint: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.warning, marginTop: 6, textAlign: 'center' },
     btnPrimary: {
       marginTop: 14, backgroundColor: COLORS.primary,
       borderRadius: 13, paddingVertical: 13, alignItems: 'center',

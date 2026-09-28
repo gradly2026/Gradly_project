@@ -2725,4 +2725,22 @@ export const TUTOR_SEED_EN: Record<string, string> = {
   "Guardar horario": "Save schedule",
   "Horario guardado": "Schedule saved",
   "Ya quedó actualizado tu horario.": "Your schedule is now up to date.",
+
+  // Fase 2 del rol "tutor" — asignación a pasantes (FechaPresentacionModal.tsx,
+  // AsignarTutorModal.tsx).
+  "Sin tutor asignado": "No tutor assigned",
+  "Asignar tutor": "Assign tutor",
+  "Ir a Mis tutores": "Go to My tutors",
+  "Cambiar": "Change",
+  "Asigna un tutor arriba para poder fijar el primer día.": "Assign a tutor above to be able to set the first day.",
+  "Todavía no has registrado ningún tutor. Registra uno en Mi Perfil antes de asignarlo.":
+    "You haven't registered any tutor yet. Register one in My Profile before assigning them.",
+  "Elige quién supervisará a este pasante en la empresa.": "Choose who will supervise this intern at the company.",
+  "Horario no coincide con el del pasante": "Schedule doesn't match the intern's",
+  "Motivo del cambio": "Reason for the change",
+  "Ej. el tutor anterior ya no está disponible…": "E.g. the previous tutor is no longer available…",
+  "Cuéntanos un poco más: al menos 10 caracteres.": "Tell us a bit more: at least 10 characters.",
+  "Cambiar tutor": "Change tutor",
+  "Tutor asignado": "Tutor assigned",
+  "No se pudo asignar": "Couldn't assign",
 };

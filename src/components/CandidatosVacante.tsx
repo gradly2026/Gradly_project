@@ -6,6 +6,7 @@ import { AutoText as Text } from "./AutoText";
 import { db } from "../config/firebaseConfig";
 import { FONTS, useTheme, type GradlyColors } from "../context/ThemeContext";
 import AjusteAsistenciaModal from "./AjusteAsistenciaModal";
+import AsignarTutorModal from "./AsignarTutorModal";
 import FechaPresentacionModal from "./FechaPresentacionModal";
 import TerminarPasantiaModal from "./TerminarPasantiaModal";
 import type { AsignacionCupo } from "../services/reclamoCuposService";
@@ -43,6 +44,7 @@ export default function CandidatosVacante({
   categoria,
   cupos,
   onVerPerfil,
+  onIrAMisTutores,
 }: {
   vacanteId: string;
   /**
@@ -61,6 +63,9 @@ export default function CandidatosVacante({
   /** Total de cupos declarado. `null`/ausente = vacante legada, sin total conocido. */
   cupos?: number | null;
   onVerPerfil: (estudianteId: string) => void;
+  /** La empresa no tiene tutores registrados: llevarla a "Mis tutores" (rol
+   *  "tutor", Fase 2). */
+  onIrAMisTutores?: () => void;
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -73,6 +78,8 @@ export default function CandidatosVacante({
   const [ajusteSel, setAjusteSel] = useState<AsignacionCupo | null>(null);
   // Terminar pasantía (despido/renuncia), abierto desde FechaPresentacionModal.
   const [terminarSel, setTerminarSel] = useState<AsignacionCupo | null>(null);
+  // Asignar/reasignar tutor (rol "tutor", Fase 2), abierto desde FechaPresentacionModal.
+  const [tutorSel, setTutorSel] = useState<AsignacionCupo | null>(null);
 
   useEffect(() => {
     if (!vacanteId || !empresaId) return;
@@ -281,6 +288,10 @@ export default function CandidatosVacante({
           setAsignSel(null);
           setTimeout(() => setTerminarSel(a), Platform.OS === "ios" ? 350 : 0);
         }}
+        onAsignarTutor={(a) => {
+          setAsignSel(null);
+          setTimeout(() => setTutorSel(a), Platform.OS === "ios" ? 350 : 0);
+        }}
       />
 
       <AjusteAsistenciaModal
@@ -296,6 +307,14 @@ export default function CandidatosVacante({
         visible={!!terminarSel}
         asignacion={terminarSel}
         onClose={() => setTerminarSel(null)}
+      />
+
+      <AsignarTutorModal
+        visible={!!tutorSel}
+        asignacion={tutorSel}
+        empresaId={empresaId}
+        onClose={() => setTutorSel(null)}
+        onIrAMisTutores={onIrAMisTutores}
       />
     </View>
   );

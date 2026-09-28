@@ -118,6 +118,7 @@ import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import AjusteAsistenciaModal from '../src/components/AjusteAsistenciaModal';
 import CandidatosVacante from '../src/components/CandidatosVacante';
 import FechaPresentacionModal from '../src/components/FechaPresentacionModal';
+import AsignarTutorModal from '../src/components/AsignarTutorModal';
 import HistorialAsistenciaModal from '../src/components/HistorialAsistenciaModal';
 import RegistrarAsistenciaModal from '../src/components/RegistrarAsistenciaModal';
 import TerminarPasantiaModal from '../src/components/TerminarPasantiaModal';
@@ -2013,7 +2014,7 @@ export default function DashboardEmpresa() {
           onChatCandidato={handleChatConCandidato}
         />
       );
-      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onVerPerfil={setPerfilCandidatoId} empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} />;
+      case 'activas':  return <SeccionActivas apps={apps} solicitudesGrupo={solicitudesGrupo} onVerPerfil={setPerfilCandidatoId} empresaId={user!.uid} empresaNombre={perfil?.nombre_empresa ?? (userProfile as any)?.nombre_completo ?? 'Empresa'} onIrAMisTutores={() => { setPerfilSeccionInicial('tutores'); setSeccion('perfil'); }} />;
       case 'perfil':   return renderPerfilSeccion();
       case 'mensajes': return (
         <SeccionMensajes
@@ -2594,6 +2595,11 @@ export default function DashboardEmpresa() {
                     categoria={vacanteSeleccionada.categoria}
                     cupos={vacanteSeleccionada.cupos}
                     onVerPerfil={setPerfilCandidatoId}
+                    onIrAMisTutores={() => {
+                      setVacanteSeleccionada(null);
+                      setPerfilSeccionInicial('tutores');
+                      setSeccion('perfil');
+                    }}
                   />
                 </>
               )}
@@ -3803,10 +3809,11 @@ function SeccionVacantes({ vacantes, onNueva, onToggle, onVerDetalles, onEditar,
 //     así ya no hace falta una sección aparte para el historial.
 // Se entra SIEMPRE en "Incidencias".
 // ─────────────────────────────────────────────
-function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empresaNombre }: {
+function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empresaNombre, onIrAMisTutores }: {
   apps: Aplicacion[]; solicitudesGrupo: SolicitudGrupo[];
   onVerPerfil: (estudianteId: string) => void;
   empresaId: string; empresaNombre: string;
+  onIrAMisTutores?: () => void;
 }) {
   const { s, colors } = useThemedStyles();
   const { t } = useTranslation();
@@ -3830,6 +3837,8 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
   const [historialAsistOpen, setHistorialAsistOpen] = useState(false);
   // Cupo seleccionado → TerminarPasantiaModal (despido/renuncia, Fase 5).
   const [terminarSel, setTerminarSel] = useState<any | null>(null);
+  // Cupo seleccionado → AsignarTutorModal (rol "tutor", Fase 2).
+  const [tutorSel, setTutorSel] = useState<any | null>(null);
   // Pasantía cuyo detalle se abre al tocar su nombre dentro de una tarjeta.
   const [vacDetalle, setVacDetalle] = useState<VacanteDetalle | null>(null);
   useEffect(() => {
@@ -4124,6 +4133,10 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
           setCupoSel(null);
           setTimeout(() => setTerminarSel(a), Platform.OS === 'ios' ? 350 : 0);
         }}
+        onAsignarTutor={(a) => {
+          setCupoSel(null);
+          setTimeout(() => setTutorSel(a), Platform.OS === 'ios' ? 350 : 0);
+        }}
       />
 
       {/* Días no computados (enfermedad/permiso/emergencia) del cupo elegido. */}
@@ -4148,6 +4161,15 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
 
       {/* Terminar pasantía anticipadamente: despido o renuncia (Fase 5). */}
       <TerminarPasantiaModal visible={!!terminarSel} asignacion={terminarSel} onClose={() => setTerminarSel(null)} />
+
+      {/* Asignar/reasignar tutor (rol "tutor", Fase 2). */}
+      <AsignarTutorModal
+        visible={!!tutorSel}
+        asignacion={tutorSel}
+        empresaId={empresaId}
+        onClose={() => setTutorSel(null)}
+        onIrAMisTutores={onIrAMisTutores}
+      />
 
       {/* Detalle de la pasantía, abierto al tocar su nombre en una tarjeta. */}
       <VacanteDetailModal

@@ -457,12 +457,30 @@ service cloud.firestore {
             //    solo las Cloud Functions (Admin SDK, que bypasa estas reglas).
             //    Sin esto el estudiante (o su universidad) podría acreditarse
             //    asistencia editando su propio documento.
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['asistencias'])
+            // 🆕 Fase 2 del rol "tutor": `tutorId`/`tutorNombre`/
+            //    `tutorAsignadoAt` tampoco — solo la empresa dueña los asigna
+            //    (ver la rama de abajo, con su propio cruce contra
+            //    perfiles_tutores). Sin este bloqueo el estudiante o la
+            //    universidad podrían asignarse cualquier tutor editando su
+            //    propio documento.
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['asistencias', 'tutorId', 'tutorNombre', 'tutorAsignadoAt'])
           )
           || (
             request.auth.uid == resource.data.empresaId
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['fechaPresentacion', 'fechaPresentacionAt'])
+          )
+          // 🆕 Fase 2 del rol "tutor": la EMPRESA dueña asigna/reasigna el
+          //    tutor de este pasante. El get() cruzado con perfiles_tutores
+          //    impide que asigne un tutor que no es suyo. El motivo de una
+          //    reasignación NO se guarda aquí — viaja como notificación al
+          //    tutor saliente (ver asignarTutor en reclamoCuposService.ts).
+          || (
+            request.auth.uid == resource.data.empresaId
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['tutorId', 'tutorNombre', 'tutorAsignadoAt'])
+            && get(/databases/$(database)/documents/perfiles_tutores/$(request.resource.data.tutorId)).data.empresa_id == request.auth.uid
           )
           // 🆕 La EMPRESA dueña puede CERRAR la inscripción al cumplirse la meta
           //    de horas (mismo cierre idempotente que ya hace el estudiante).
