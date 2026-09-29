@@ -129,7 +129,8 @@ function GlassTabBar({
   navigation,
   mensajesBadge,
   onActiveKeyChange,
-}: BottomTabBarProps & { mensajesBadge: number; onActiveKeyChange: (key: TabKey) => void }) {
+  chatPaneOpen,
+}: BottomTabBarProps & { mensajesBadge: number; onActiveKeyChange: (key: TabKey) => void; chatPaneOpen: boolean }) {
   // GlassTabBar es un COMPONENTE PERSONALIZADO que React Navigation usa
   // EN VEZ de su barra de pestañas por defecto (ver la prop `tabBar` del
   // componente <Tabs> más abajo). Recibe las props estándar de React
@@ -189,9 +190,11 @@ function GlassTabBar({
     }
   };
 
-  // Oculta en la pestaña "Mensajes": la sección de chat debe verse limpia,
-  // sin menú inferior superpuesto sobre la conversación.
-  if (activeKey === 'mensajes') return null;
+  // En la pestaña "Mensajes" se queda visible mientras se ve la bandeja de
+  // chats (para poder salir sin necesitar una flecha aparte); solo se
+  // oculta con una conversación ABIERTA, para que se vea limpia sin el
+  // menú superpuesto.
+  if (activeKey === 'mensajes' && chatPaneOpen) return null;
 
   return <FloatingNavBar items={items} activeKey={activeKey} onChange={handleChange} />;
 }
@@ -282,6 +285,7 @@ export default function TabLayout() {
             {...props}
             mensajesBadge={mensajesNoLeidos}
             onActiveKeyChange={setActiveKey}
+            chatPaneOpen={chatPaneOpen}
           />
         )}
       >
@@ -293,11 +297,13 @@ export default function TabLayout() {
       </Tabs>
 
       {/* Botones flotantes superiores (notificaciones · idioma · tema).
-          Se ocultan SOLO cuando el usuario está en la pestaña Mensajes CON un
-          chat abierto: ChatThread ya trae esos 3 botones en su cabecera. En
-          otra pestaña siguen visibles aunque SeccionMensajes quede montada de
-          fondo (las tabs no se desmontan al cambiar). */}
-      {!(chatPaneOpen && enMensajes) && <FloatingTopBar userId={user?.uid} />}
+          Ocultos en TODA la pestaña "Mensajes": a nivel de bandeja ahora los
+          dibuja InboxList en su propia cabecera, y con un chat abierto los
+          dibuja ChatThread en la suya — mostrar también esta píldora los
+          duplicaría en ambos casos. En otra pestaña siguen visibles aunque
+          SeccionMensajes quede montada de fondo (las tabs no se desmontan al
+          cambiar). */}
+      {!enMensajes && <FloatingTopBar userId={user?.uid} />}
       {/* Al estar aquí, FUERA de <Tabs> pero dentro del mismo Fragment,
           esta barra flota SOBRE cualquiera de las 5 pestañas, sin tener
           que repetirla dentro de cada archivo individual. */}
