@@ -731,7 +731,10 @@ export const registrarSalidaAnticipada = onCall({ region: REGION }, async (req) 
  * una nota de texto con una entrada real. La fecha SIEMPRE es `hoyISO()` del
  * servidor — nunca la manda el cliente — así "se congela al día siguiente"
  * es real y no depende del reloj del teléfono. `texto` vacío está permitido:
- * el tutor puede borrar su propia nota mientras sigue siendo hoy.
+ * el tutor puede borrar su propia nota mientras sigue siendo hoy. Solo el
+ * tutor autor escribe, pero la LEEN también el estudiante, la empresa dueña
+ * y la universidad (firestore.rules) — por eso se denormaliza `universidadId`
+ * aquí además de `estudianteId`/`empresaId`.
  *
  * Entrada: { asignacionId, texto }.
  */
@@ -760,6 +763,7 @@ export const registrarObservacionTutor = onCall({ region: REGION }, async (req) 
     fecha,
     estudianteId: a.estudianteId ?? "",
     empresaId: a.empresaId ?? "",
+    universidadId: a.universidadId ?? "",
     tutorId: uid,
     texto,
     ...(existia ? {} : { creadoAt: admin.firestore.FieldValue.serverTimestamp() }),

@@ -17,13 +17,17 @@ export default function PanelPasanteTutor({
   visible,
   asignacion,
   progreso,
-  tutorUid,
+  actorUid,
+  soloLectura = false,
   onClose,
 }: {
   visible: boolean;
   asignacion: AsignacionCupo | null;
   progreso: ProgresoMeta | null;
-  tutorUid: string;
+  /** uid de quien puede actuar (tutor o empresa); no hace falta si `soloLectura`. */
+  actorUid?: string;
+  /** true para universidad/estudiante: calendario y observaciones de solo lectura. */
+  soloLectura?: boolean;
   onClose: () => void;
 }) {
   const { colors: C } = useTheme();
@@ -57,7 +61,7 @@ export default function PanelPasanteTutor({
           )}
 
           <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
-            <CalendarioPasanteTutor asignacion={asignacion} tutorUid={tutorUid} />
+            <CalendarioPasanteTutor asignacion={asignacion} actorUid={actorUid} soloLectura={soloLectura} />
           </ScrollView>
         </View>
       </View>

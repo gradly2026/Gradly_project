@@ -26,6 +26,7 @@ import { AutoText as Text } from "./AutoText";
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { useTranslation } from '../context/TranslationContext';
+import { suscribirObservacionDia, type ObservacionTutorDia } from '../services/observacionTutorService';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 
 const MAX_W = 640;
@@ -83,16 +84,24 @@ function aFecha(v: any): Date | null {
 
 const claveDia = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 const mismoDia = (a: Date, b: Date) => claveDia(a) === claveDia(b);
+/** ISO `yyyy-mm-dd` (para el id de `observaciones_tutor/{asignacionId}_{fecha}`). */
+const isoLocal = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export default function CalendarioEventos({
   uid,
   rol = 'universidad',
   inscripcion,
+  asignacionId,
 }: {
   uid: string;
   rol?: 'universidad' | 'empresa' | 'estudiante';
   /** Estudiante inscrito a una pasantía de cupo: pinta sus días de horario. */
   inscripcion?: InscripcionCalendario | null;
+  /** Id de `asignaciones_cupo` de esa pasantía (rol "tutor", Fase 3): si se
+   *  pasa, el día seleccionado también muestra la observación que dejó el
+   *  tutor ese día, si la hay. Solo aplica al calendario del estudiante. */
+  asignacionId?: string | null;
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -104,6 +113,16 @@ export default function CalendarioEventos({
   const hoy = useMemo(() => new Date(), []);
   const [mesVisible, setMesVisible] = useState(() => new Date(hoy.getFullYear(), hoy.getMonth(), 1));
   const [diaSel, setDiaSel] = useState<Date | null>(null);
+
+  // Observación del tutor de ese día (Fase 3 del rol "tutor") — solo se
+  // consulta cuando hay un día elegido y un asignacionId, un doc a la vez
+  // (no todo el mes), mismo criterio de "listener bajo demanda" que ya usa
+  // este componente para el resto de su detalle diario.
+  const [obsDiaSel, setObsDiaSel] = useState<ObservacionTutorDia | null>(null);
+  useEffect(() => {
+    if (!asignacionId || !diaSel) { setObsDiaSel(null); return; }
+    return suscribirObservacionDia(asignacionId, isoLocal(diaSel), setObsDiaSel);
+  }, [asignacionId, diaSel]);
 
   // Formatos de fecha/mes/día que respetan el idioma activo (antes fijos en
   // español vía los arrays MESES/DIAS_SEMANA).
@@ -434,7 +453,18 @@ export default function CalendarioEventos({
                   </View>
                 </View>
               )}
-              {eventosDiaSel.length === 0 && !noComputadoDiaSel
+              {!!obsDiaSel?.texto && (
+                <View style={styles.evRow}>
+                  <View style={[styles.evIcon, { backgroundColor: colors.primaryLight + '22' }]}>
+                    <Ionicons name="chatbox-ellipses" size={14} color={colors.primaryLight} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.evTitulo}>Observación del tutor</Text>
+                    <Text style={styles.evDetalle} noTranslate>{obsDiaSel.texto}</Text>
+                  </View>
+                </View>
+              )}
+              {eventosDiaSel.length === 0 && !noComputadoDiaSel && !obsDiaSel?.texto
                 ? <Text style={styles.empty}>Sin eventos el {formatoFechaDetalle.format(diaSel)}.</Text>
                 : eventosDiaSel.map(renderEvento)}
             </>

@@ -35,10 +35,12 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
 type CampoTutor = 'nombreCompleto' | 'correo' | 'cargo' | 'carnetTrabajo';
 
-/** Borde del campo: neutral antes del primer intento de enviar; rojo si ese
- *  campo quedó con error; verde si ya se intentó enviar y el campo es válido. */
-function campoBorde(s: ReturnType<typeof makeStyles>, intentoEnviar: boolean, error?: string) {
-  if (!intentoEnviar) return null;
+/** Borde del campo: neutral mientras el usuario no ha tocado ESE campo
+ *  todavía; en cuanto escribe algo en él, se valida al instante — rojo con
+ *  error, verde si ya es válido. Por campo, no por el formulario completo:
+ *  escribir en uno no enciende el color de los demás. */
+function campoBorde(s: ReturnType<typeof makeStyles>, tocado: boolean, error?: string) {
+  if (!tocado) return null;
   return error ? s.inputError : s.inputOk;
 }
 
@@ -53,7 +55,7 @@ export default function MisTutoresSection({ empresaId }: Props) {
   const [cargo, setCargo] = useState('');
   const [carnetTrabajo, setCarnetTrabajo] = useState('');
   const [errores, setErrores] = useState<Partial<Record<CampoTutor, string>>>({});
-  const [intentoEnviar, setIntentoEnviar] = useState(false);
+  const [tocados, setTocados] = useState<Partial<Record<CampoTutor, boolean>>>({});
   const [guardando, setGuardando] = useState(false);
   const [cambiandoId, setCambiandoId] = useState<string | null>(null);
 
@@ -65,7 +67,7 @@ export default function MisTutoresSection({ empresaId }: Props) {
     setCargo('');
     setCarnetTrabajo('');
     setErrores({});
-    setIntentoEnviar(false);
+    setTocados({});
   };
 
   const validarCampo = (campo: CampoTutor, valor: string): string => {
@@ -77,12 +79,12 @@ export default function MisTutoresSection({ empresaId }: Props) {
     return '';
   };
 
-  /** Valida un campo EN VIVO, pero solo después del primer intento de enviar
-   *  — antes de eso no se le muestra ningún error a la empresa todavía. */
-  const revalidarSiCorresponde = (campo: CampoTutor, valor: string) => {
-    if (!intentoEnviar) return;
+  /** Valida ESE campo al instante, en cada tecla — no espera a un intento de
+   *  envío. Marca el campo como "tocado" para que su borde ya pueda pintarse. */
+  const revalidar = (campo: CampoTutor, valor: string) => {
     const msg = validarCampo(campo, valor);
     setErrores((prev) => ({ ...prev, [campo]: msg }));
+    setTocados((prev) => (prev[campo] ? prev : { ...prev, [campo]: true }));
   };
 
   const registrar = async () => {
@@ -93,7 +95,9 @@ export default function MisTutoresSection({ empresaId }: Props) {
       if (msg) nuevosErrores[campo] = msg;
     });
     setErrores(nuevosErrores);
-    setIntentoEnviar(true);
+    // Al enviar, todo campo cuenta como "tocado" — así un campo vacío que el
+    // usuario nunca llegó a escribir también se pinta de rojo de inmediato.
+    setTocados({ nombreCompleto: true, correo: true, cargo: true, carnetTrabajo: true });
     if (Object.keys(nuevosErrores).length > 0) return;
 
     setGuardando(true);
@@ -213,9 +217,9 @@ export default function MisTutoresSection({ empresaId }: Props) {
 
             <View style={s.campoWrap}>
               <TextInput
-                style={[s.input, campoBorde(s, intentoEnviar, errores.nombreCompleto)]}
+                style={[s.input, campoBorde(s, !!tocados.nombreCompleto, errores.nombreCompleto)]}
                 value={nombreCompleto}
-                onChangeText={(v) => { const limpio = soloLetras(v); setNombreCompleto(limpio); revalidarSiCorresponde('nombreCompleto', limpio); }}
+                onChangeText={(v) => { const limpio = soloLetras(v); setNombreCompleto(limpio); revalidar('nombreCompleto', limpio); }}
                 placeholder="Nombre completo"
                 placeholderTextColor={colors.white60}
               />
@@ -224,9 +228,9 @@ export default function MisTutoresSection({ empresaId }: Props) {
 
             <View style={s.campoWrap}>
               <TextInput
-                style={[s.input, campoBorde(s, intentoEnviar, errores.correo)]}
+                style={[s.input, campoBorde(s, !!tocados.correo, errores.correo)]}
                 value={correo}
-                onChangeText={(v) => { setCorreo(v); revalidarSiCorresponde('correo', v); }}
+                onChangeText={(v) => { setCorreo(v); revalidar('correo', v); }}
                 placeholder="Correo"
                 placeholderTextColor={colors.white60}
                 autoCapitalize="none"
@@ -237,9 +241,9 @@ export default function MisTutoresSection({ empresaId }: Props) {
 
             <View style={s.campoWrap}>
               <TextInput
-                style={[s.input, campoBorde(s, intentoEnviar, errores.cargo)]}
+                style={[s.input, campoBorde(s, !!tocados.cargo, errores.cargo)]}
                 value={cargo}
-                onChangeText={(v) => { setCargo(v); revalidarSiCorresponde('cargo', v); }}
+                onChangeText={(v) => { setCargo(v); revalidar('cargo', v); }}
                 placeholder="Cargo"
                 placeholderTextColor={colors.white60}
               />
@@ -248,9 +252,9 @@ export default function MisTutoresSection({ empresaId }: Props) {
 
             <View style={s.campoWrap}>
               <TextInput
-                style={[s.input, campoBorde(s, intentoEnviar, errores.carnetTrabajo)]}
+                style={[s.input, campoBorde(s, !!tocados.carnetTrabajo, errores.carnetTrabajo)]}
                 value={carnetTrabajo}
-                onChangeText={(v) => { setCarnetTrabajo(v); revalidarSiCorresponde('carnetTrabajo', v); }}
+                onChangeText={(v) => { setCarnetTrabajo(v); revalidar('carnetTrabajo', v); }}
                 placeholder="Carnet de trabajo"
                 placeholderTextColor={colors.white60}
               />
@@ -309,6 +313,7 @@ const makeStyles = (C: GradlyColors) =>
       flex: 1,
       backgroundColor: 'rgba(7,5,15,0.85)',
       justifyContent: 'center',
+      alignItems: 'center',
       padding: 20,
     },
     modal: {

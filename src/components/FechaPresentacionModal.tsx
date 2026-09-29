@@ -28,6 +28,10 @@ interface Props {
   onTerminarPasantia?: (asignacion: AsignacionCupo) => void;
   /** Abrir "Asignar tutor" (rol "tutor", Fase 2) para esta asignación. */
   onAsignarTutor?: (asignacion: AsignacionCupo) => void;
+  /** Abrir el calendario de asistencia + observaciones del tutor (Fase 3) para
+   *  esta asignación — la empresa puede además actuar (confirmar salida,
+   *  salida anticipada, corrección manual), igual que el tutor. */
+  onVerCalendario?: (asignacion: AsignacionCupo) => void;
 }
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -47,7 +51,7 @@ const fechaLarga = (d: Date) =>
  */
 export default function FechaPresentacionModal({
   visible, asignacion, empresaId, empresaNombre, onClose, onGuardado, onVerPerfil,
-  onAjustarAsistencia, onTerminarPasantia, onAsignarTutor,
+  onAjustarAsistencia, onTerminarPasantia, onAsignarTutor, onVerCalendario,
 }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -198,6 +202,20 @@ export default function FechaPresentacionModal({
                 {primerDiaLlego ? 'Contacta al estudiante' : 'Coordinar por chat con el estudiante'}
               </Text>
             </TouchableOpacity>
+
+            {/* Calendario de asistencia + observaciones (Fase 3 del rol
+                "tutor"): mismo requisito que "Ajustar asistencia", solo tiene
+                sentido con el Día 1 ya fijado. */}
+            {!!onVerCalendario && !!fechaActual && (
+              <TouchableOpacity
+                style={s.btnSecundario}
+                activeOpacity={0.85}
+                onPress={() => onVerCalendario(asignacion)}
+              >
+                <Ionicons name="calendar-outline" size={16} color={colors.primaryLight} />
+                <Text style={s.btnSecundarioTxt}>Ver calendario y observaciones</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Días no computados: solo tiene sentido una vez que hay Día 1
                 fijado (si no, todavía no hay ningún día programado que excusar). */}

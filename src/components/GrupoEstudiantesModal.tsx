@@ -37,14 +37,16 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
-import { progresoPorMeta, type AsistenciasDia } from '../utils/horasPasantia';
+import { progresoPorMeta, type AsistenciasDia, type ProgresoMeta } from '../utils/horasPasantia';
 import {
   abrirChatDirectoUsuarios,
   crearChatGrupoOficial,
 } from '../services/chatService';
 import { eliminarEstudiante as eliminarEstudianteCF } from '../services/universidadService';
+import type { AsignacionCupo } from '../services/reclamoCuposService';
 import { AutoText as Text } from './AutoText';
 import { showAlert, showConfirm } from './AppAlert';
+import PanelPasanteTutor from './PanelPasanteTutor';
 import ProfileViewerModal from './ProfileViewerModal';
 import StorageAvatar from './StorageAvatar';
 import VacanteDetailModal, { type VacanteDetalle } from './VacanteDetailModal';
@@ -74,6 +76,9 @@ interface EstudianteFila {
 }
 
 interface AsignInfo {
+  /** Id del doc en `asignaciones_cupo` — hace falta para abrir su calendario
+   *  de asistencia + observaciones (PanelPasanteTutor, Fase 3 del "tutor"). */
+  id: string;
   vacanteId: string;
   vacanteTitulo: string;
   empresaId: string;
@@ -117,6 +122,9 @@ export default function GrupoEstudiantesModal({
   const [perfilEstId, setPerfilEstId] = useState<string | null>(null);
   const [perfilEmpresaId, setPerfilEmpresaId] = useState<string | null>(null);
   const [vacDetalle, setVacDetalle] = useState<VacanteDetalle | null>(null);
+  // Calendario + observaciones del tutor (Fase 3 del rol "tutor") — la
+  // universidad solo consulta, nunca actúa (soloLectura en PanelPasanteTutor).
+  const [calendarioEst, setCalendarioEst] = useState<{ asignacion: AsignacionCupo; progreso: ProgresoMeta | null } | null>(null);
 
   // ── Documento del grupo + nombre de la universidad ──
   useEffect(() => {
@@ -196,6 +204,7 @@ export default function GrupoEstudiantesModal({
           const a = d.data() as any;
           if (!a.estudianteId) return;
           map[a.estudianteId] = {
+            id: d.id,
             vacanteId: a.vacanteId ?? '',
             vacanteTitulo: a.vacanteTitulo ?? 'Pasantía',
             empresaId: a.empresaId ?? '',
@@ -382,6 +391,33 @@ export default function GrupoEstudiantesModal({
                           >
                             <Ionicons name="chatbubble-ellipses-outline" size={17} color={colors.primaryLight} />
                           </TouchableOpacity>
+                          {!!a && (
+                            <TouchableOpacity
+                              onPress={() => setCalendarioEst({
+                                asignacion: {
+                                  id: a.id,
+                                  reclamoId: null,
+                                  estudianteId: est.id,
+                                  estudianteNombre: est.nombre,
+                                  universidadId,
+                                  empresaId: a.empresaId,
+                                  empresaNombre: a.empresaNombre,
+                                  vacanteId: a.vacanteId,
+                                  vacanteTitulo: a.vacanteTitulo,
+                                  horario: a.horario,
+                                  estado: 'tomado',
+                                  fechaPresentacion: a.fechaPresentacion,
+                                  asistencias: a.asistencias,
+                                },
+                                progreso: prog,
+                              })}
+                              hitSlop={8}
+                              style={s.estIconBtn}
+                              accessibilityLabel="Ver calendario y observaciones"
+                            >
+                              <Ionicons name="calendar-outline" size={17} color={colors.primaryLight} />
+                            </TouchableOpacity>
+                          )}
                         </View>
 
                         {a ? (
@@ -431,6 +467,13 @@ export default function GrupoEstudiantesModal({
         vacante={vacDetalle}
         onClose={() => setVacDetalle(null)}
         inscritosUniversidadId={universidadId}
+      />
+      <PanelPasanteTutor
+        visible={!!calendarioEst}
+        asignacion={calendarioEst?.asignacion ?? null}
+        progreso={calendarioEst?.progreso ?? null}
+        soloLectura
+        onClose={() => setCalendarioEst(null)}
       />
     </>
   );

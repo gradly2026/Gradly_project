@@ -8,6 +8,7 @@ import { FONTS, useTheme, type GradlyColors } from "../context/ThemeContext";
 import AjusteAsistenciaModal from "./AjusteAsistenciaModal";
 import AsignarTutorModal from "./AsignarTutorModal";
 import FechaPresentacionModal from "./FechaPresentacionModal";
+import PanelPasanteTutor from "./PanelPasanteTutor";
 import TerminarPasantiaModal from "./TerminarPasantiaModal";
 import type { AsignacionCupo } from "../services/reclamoCuposService";
 import { progresoPorMeta } from "../utils/horasPasantia";
@@ -80,6 +81,8 @@ export default function CandidatosVacante({
   const [terminarSel, setTerminarSel] = useState<AsignacionCupo | null>(null);
   // Asignar/reasignar tutor (rol "tutor", Fase 2), abierto desde FechaPresentacionModal.
   const [tutorSel, setTutorSel] = useState<AsignacionCupo | null>(null);
+  // Calendario + observaciones del tutor (Fase 3), abierto desde FechaPresentacionModal.
+  const [calendarioSel, setCalendarioSel] = useState<AsignacionCupo | null>(null);
 
   useEffect(() => {
     if (!vacanteId || !empresaId) return;
@@ -292,6 +295,10 @@ export default function CandidatosVacante({
           setAsignSel(null);
           setTimeout(() => setTutorSel(a), Platform.OS === "ios" ? 350 : 0);
         }}
+        onVerCalendario={(a) => {
+          setAsignSel(null);
+          setTimeout(() => setCalendarioSel(a), Platform.OS === "ios" ? 350 : 0);
+        }}
       />
 
       <AjusteAsistenciaModal
@@ -315,6 +322,20 @@ export default function CandidatosVacante({
         empresaId={empresaId}
         onClose={() => setTutorSel(null)}
         onIrAMisTutores={onIrAMisTutores}
+      />
+
+      <PanelPasanteTutor
+        visible={!!calendarioSel}
+        asignacion={calendarioSel}
+        progreso={(() => {
+          if (!calendarioSel) return null;
+          const c = candidatos.find(x => x.asignacion?.id === calendarioSel.id);
+          return c?.asignacion?.fechaPresentacion && c?.metaHoras
+            ? progresoPorMeta(c.asignacion.horario, c.asignacion.fechaPresentacion, c.metaHoras, undefined, undefined, c.asignacion.asistencias ?? {})
+            : null;
+        })()}
+        actorUid={empresaId}
+        onClose={() => setCalendarioSel(null)}
       />
     </View>
   );

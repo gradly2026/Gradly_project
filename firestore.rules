@@ -611,14 +611,18 @@ service cloud.firestore {
     //    ese otro doc). Solo la Cloud Function registrarObservacionTutor
     //    (Admin SDK) escribe, y siempre sobre la fecha de HOY según el
     //    servidor — así "se congela al día siguiente" es real. La lee el
-    //    tutor autor, la empresa dueña (sigue viendo todo) y admin; a
-    //    propósito NO el estudiante ni la universidad (nota interna de
-    //    supervisión, sin pedido de mostrarla afuera).
+    //    tutor autor, la empresa dueña, la universidad, el estudiante y
+    //    admin — las 3 partes de la pasantía, no solo una nota interna.
     // ═══════════════════════════════════════════════════════════════════
     match /observaciones_tutor/{obsId} {
+      // La lee el trío + admin (mismo grupo que registros_asistencia): la
+      // empresa dueña sigue viendo todo, y el usuario decidió que también
+      // debe verla el estudiante y la universidad, no solo el tutor autor.
       allow read: if request.auth != null
         && (esTutorDeAsignacion(resource.data.asignacionId)
             || request.auth.uid == resource.data.empresaId
+            || request.auth.uid == resource.data.estudianteId
+            || request.auth.uid == resource.data.universidadId
             || esAdmin());
       allow create, update, delete: if false;
     }

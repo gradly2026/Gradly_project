@@ -126,7 +126,7 @@ async function reiniciar() {
     poner('registros_asistencia/A3_2026-09-21', { asignacionId: 'A3', estudianteId: 'stu1', empresaId: 'emp1', universidadId: 'uni1', fecha: '2026-09-21', estado: 'presente', tardanzaMin: 0 }),
     poner('ajustes_asistencia/A1', { empresaId: 'emp1', estudianteId: 'stu1', universidadId: 'uni1', dias: [] }),
     poner('ajustes_asistencia/A3', { empresaId: 'emp1', estudianteId: 'stu1', universidadId: 'uni1', dias: [] }),
-    poner('observaciones_tutor/A3_2026-09-21', { asignacionId: 'A3', fecha: '2026-09-21', estudianteId: 'stu1', empresaId: 'emp1', tutorId: 'tutor1', texto: 'Buen desempeño hoy.' }),
+    poner('observaciones_tutor/A3_2026-09-21', { asignacionId: 'A3', fecha: '2026-09-21', estudianteId: 'stu1', empresaId: 'emp1', universidadId: 'uni1', tutorId: 'tutor1', texto: 'Buen desempeño hoy.' }),
     poner('codigos_asistencia/12345678', { asignacionId: 'A1', usado: false }),
     poner('ranking_plataforma/top_estudiantes', { lista: [] }),
     poner('perfiles_publicos_estudiantes/stu2', { nombre_completo: 'Estudiante Dos', calificacion_promedio: 5 }),
@@ -373,9 +373,12 @@ const CASOS = [
   ['TP9', 'observación (A3): la lee el tutor autor', () => getDoc(OT('tutor1', 'A3_2026-09-21')), 'ALLOW'],
   ['TP10', 'observación (A3): la lee la empresa dueña (sigue viendo todo)', () => getDoc(OT('emp1', 'A3_2026-09-21')), 'ALLOW'],
   ['TP11', 'observación (A3): NO la lee un tutor ajeno', () => getDoc(OT('tutor2', 'A3_2026-09-21')), 'DENY'],
-  ['TP12', 'observación (A3): NO la lee el propio estudiante (fuera de alcance, nota interna)', () => getDoc(OT('stu1', 'A3_2026-09-21')), 'DENY'],
+  ['TP12', 'observación (A3): la lee el propio estudiante (decisión del usuario: la ven las 3 partes)', () => getDoc(OT('stu1', 'A3_2026-09-21')), 'ALLOW'],
   ['TP13', 'observación: un cliente (el propio tutor) intenta escribirla directo (solo la Cloud Function)', () => setDoc(OT('tutor1', 'A3_2026-09-22'), { asignacionId: 'A3', fecha: '2026-09-22', tutorId: 'tutor1', texto: 'x' }), 'DENY'],
   ['TP14', 'observación: SERVIDOR (Admin SDK) la crea/actualiza', () => setDoc(OT('owner', 'A3_2026-09-22'), { asignacionId: 'A3', fecha: '2026-09-22', tutorId: 'tutor1', texto: 'x' }), 'ALLOW'],
+  ['TP15', 'observación (A3): la lee la universidad dueña', () => getDoc(OT('uni1', 'A3_2026-09-21')), 'ALLOW'],
+  ['TP16', 'observación (A3): NO la lee OTRA universidad', () => getDoc(OT('uni2', 'A3_2026-09-21')), 'DENY'],
+  ['TP17', 'observación (A3): NO la lee OTRO estudiante', () => getDoc(OT('stu2', 'A3_2026-09-21')), 'DENY'],
 ];
 
 // ── Ejecución ────────────────────────────────────────────────────────────

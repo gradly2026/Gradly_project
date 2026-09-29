@@ -2765,4 +2765,10 @@ export const TUTOR_SEED_EN: Record<string, string> = {
   "Registrar asistencia de este día": "Log attendance for this day",
   "No hay asistencia registrada este día.": "No attendance logged for this day.",
   "Observación": "Note",
+
+  // Fase 3 del rol "tutor" — visibilidad de las observaciones para empresa
+  // (FechaPresentacionModal.tsx), universidad (GrupoEstudiantesModal.tsx) y
+  // estudiante (CalendarioEventos.tsx).
+  "Ver calendario y observaciones": "View calendar and notes",
+  "Observación del tutor": "Tutor's note",
 };

@@ -156,7 +156,12 @@ export default function DashboardTutor() {
     }
   };
 
-  if (!perfil) {
+  if (!user || !perfil) {
+    // `!user` cubre la ventana entre signOut() y el router.replace() del
+    // logout: sin esto, perfil queda con su último valor (el listener no lo
+    // limpia) y el render de abajo cae en `user!.uid` con `user` ya en null
+    // -un TypeError real en tiempo de ejecución que deja la pantalla en
+    // blanco hasta recargar, no solo un aviso de TypeScript-.
     return (
       <View style={s.loading}>
         <ActivityIndicator size="large" color={colors.primaryLight} />

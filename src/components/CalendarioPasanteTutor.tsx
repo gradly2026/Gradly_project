@@ -54,10 +54,20 @@ const horaCorta = (ms: number | null): string => {
 
 export default function CalendarioPasanteTutor({
   asignacion,
-  tutorUid,
+  actorUid,
+  soloLectura = false,
 }: {
   asignacion: AsignacionCupo;
-  tutorUid: string;
+  /** uid de quien puede actuar (el tutor asignado, o la empresa dueña — ambos
+   *  pueden hacer las mismas 4 acciones de asistencia). Solo se usa como
+   *  valor a guardar en `salidaConfirmadaPor`; la autorización real la dan
+   *  las reglas de Firestore sobre `request.auth.uid`. No hace falta cuando
+   *  `soloLectura` es true. */
+  actorUid?: string;
+  /** true para universidad/estudiante: mismo calendario y misma observación,
+   *  pero sin ningún botón de acción — ellos no son responsables de esta
+   *  pasantía, solo la consultan. */
+  soloLectura?: boolean;
 }) {
   const { colors: C } = useTheme();
   const s = useMemo(() => makeStyles(C), [C]);
@@ -156,7 +166,7 @@ export default function CalendarioPasanteTutor({
     if (!ok) return;
     setConfirmando(true);
     try {
-      await confirmarSalida(asignacion.id, hoy, tutorUid);
+      await confirmarSalida(asignacion.id, hoy, actorUid ?? '');
     } catch (e: any) {
       void showAlert('No se pudo confirmar', e?.message ?? 'Intenta de nuevo.');
     } finally {
@@ -247,7 +257,7 @@ export default function CalendarioPasanteTutor({
         <View style={s.panel}>
           <Text style={s.panelFecha} noTranslate>{fechaLarga(fechaSel)}</Text>
 
-          {esHoySel ? (
+          {esHoySel && !soloLectura ? (
             <>
               {registroSel ? (
                 <Text style={s.panelDato}>
@@ -291,12 +301,14 @@ export default function CalendarioPasanteTutor({
                 </Text>
               ) : noComputadoSel ? (
                 <Text style={s.panelVacio}>Este día quedó marcado como no computado.</Text>
-              ) : corregibleSel ? (
+              ) : corregibleSel && !soloLectura ? (
                 <TouchableOpacity style={s.btn} activeOpacity={0.85} onPress={() => setManual(fechaSel)}>
                   <Text style={s.btnTxt}>Registrar asistencia de este día</Text>
                 </TouchableOpacity>
               ) : (
-                <Text style={s.panelVacio}>No hay asistencia registrada este día.</Text>
+                <Text style={s.panelVacio}>
+                  {esHoySel ? 'Aún no se ha registrado la entrada de hoy.' : 'No hay asistencia registrada este día.'}
+                </Text>
               )}
               {!!observacionSel?.texto && (
                 <>

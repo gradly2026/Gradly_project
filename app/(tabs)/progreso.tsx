@@ -1046,6 +1046,7 @@ export default function ProgresoTab() {
                     }
                   : null
               }
+              asignacionId={inscripcion?.id}
             />
           </>
         )}

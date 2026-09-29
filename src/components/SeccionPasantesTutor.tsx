@@ -115,7 +115,7 @@ export default function SeccionPasantesTutor({
         visible={!!pasanteSel}
         asignacion={pasanteSel}
         progreso={pasanteSel ? progresoDe(pasanteSel.id) : null}
-        tutorUid={tutorId}
+        actorUid={tutorId}
         onClose={() => setPasanteSel(null)}
       />
       <HistorialPasantesTutor

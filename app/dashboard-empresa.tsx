@@ -119,6 +119,7 @@ import AjusteAsistenciaModal from '../src/components/AjusteAsistenciaModal';
 import CandidatosVacante from '../src/components/CandidatosVacante';
 import FechaPresentacionModal from '../src/components/FechaPresentacionModal';
 import AsignarTutorModal from '../src/components/AsignarTutorModal';
+import PanelPasanteTutor from '../src/components/PanelPasanteTutor';
 import HistorialAsistenciaModal from '../src/components/HistorialAsistenciaModal';
 import RegistrarAsistenciaModal from '../src/components/RegistrarAsistenciaModal';
 import TerminarPasantiaModal from '../src/components/TerminarPasantiaModal';
@@ -3839,6 +3840,8 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
   const [terminarSel, setTerminarSel] = useState<any | null>(null);
   // Cupo seleccionado → AsignarTutorModal (rol "tutor", Fase 2).
   const [tutorSel, setTutorSel] = useState<any | null>(null);
+  // Cupo seleccionado → PanelPasanteTutor, calendario + observaciones (Fase 3).
+  const [calendarioSel, setCalendarioSel] = useState<any | null>(null);
   // Pasantía cuyo detalle se abre al tocar su nombre dentro de una tarjeta.
   const [vacDetalle, setVacDetalle] = useState<VacanteDetalle | null>(null);
   useEffect(() => {
@@ -4137,6 +4140,10 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
           setCupoSel(null);
           setTimeout(() => setTutorSel(a), Platform.OS === 'ios' ? 350 : 0);
         }}
+        onVerCalendario={(a) => {
+          setCupoSel(null);
+          setTimeout(() => setCalendarioSel(a), Platform.OS === 'ios' ? 350 : 0);
+        }}
       />
 
       {/* Días no computados (enfermedad/permiso/emergencia) del cupo elegido. */}
@@ -4169,6 +4176,16 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
         empresaId={empresaId}
         onClose={() => setTutorSel(null)}
         onIrAMisTutores={onIrAMisTutores}
+      />
+
+      {/* Calendario de asistencia + observaciones del tutor (Fase 3): la
+          empresa ve lo mismo que el tutor y puede actuar igual que él. */}
+      <PanelPasanteTutor
+        visible={!!calendarioSel}
+        asignacion={calendarioSel}
+        progreso={calendarioSel ? progresoDeCupo(calendarioSel.id) : null}
+        actorUid={empresaId}
+        onClose={() => setCalendarioSel(null)}
       />
 
       {/* Detalle de la pasantía, abierto al tocar su nombre en una tarjeta. */}
