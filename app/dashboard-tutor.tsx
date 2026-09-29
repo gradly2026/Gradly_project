@@ -25,6 +25,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import * as DocumentPicker from 'expo-document-picker';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AutoText as Text, AutoTextInput as TextInput } from '../src/components/AutoText';
 import { showAlert } from '../src/components/AppAlert';
 import SalirSesionModal from '../src/components/SalirSesionModal';
@@ -51,6 +52,7 @@ export default function DashboardTutor() {
   const { user } = useAuth();
   const router = useRouter();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const s = makeStyles(colors);
 
   const [seccion, setSeccion] = useState<SeccionTutor>('pasantes');
@@ -233,7 +235,7 @@ export default function DashboardTutor() {
       )}
 
       {seccion === 'pasantes' ? (
-        <View style={{ flex: 1, padding: 16, paddingBottom: 90 }}>
+        <View style={{ flex: 1, padding: 16, paddingTop: insets.top + 16, paddingBottom: 90 }}>
           <SeccionPasantesTutor
             tutorId={user!.uid}
             pasanteAAbrirId={pasanteAAbrirId}
@@ -241,7 +243,7 @@ export default function DashboardTutor() {
           />
         </View>
       ) : seccion === 'incidencias' ? (
-        <View style={{ flex: 1, padding: 16, paddingBottom: 90 }}>
+        <View style={{ flex: 1, padding: 16, paddingTop: insets.top + 16, paddingBottom: 90 }}>
           <SeccionIncidenciasTutor tutorId={user!.uid} tutorNombre={perfil.nombre_completo} />
         </View>
       ) : seccion === 'mensajes' ? (
