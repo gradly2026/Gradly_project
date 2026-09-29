@@ -41,7 +41,9 @@
  *     historial) pero solo lo escribe el Admin SDK.
  *   - La autorización es por PERTENENCIA (uid del caller == estudianteId /
  *     empresaId de la asignación), no por rol declarado — no hace falta leer
- *     `usuarios/{uid}.rol` para nada de esto.
+ *     `usuarios/{uid}.rol` para nada de esto. Desde la Fase 3 del rol "tutor",
+ *     `esResponsableDe()` también acepta al tutor asignado (`a.tutorId`) como
+ *     equivalente de la empresa para las 3 acciones de asistencia.
  *
  * El Salvador no tiene horario de verano: es UTC-6 fijo todo el año, así que
  * la hora/fecha "de hoy" se calcula con un desplazamiento fijo en vez de
@@ -202,6 +204,15 @@ async function diasExcluidosDe(asignacionId: string): Promise<Set<string>> {
   } catch {
     return new Set();
   }
+}
+
+/** ¿El uid autenticado es responsable de esta asignación — la empresa dueña,
+ *  o el tutor que ella delegó (Fase 3 del rol "tutor")? Punto único de
+ *  autorización de las Cloud Functions de asistencia: a partir de aquí, todo
+ *  lo que antes exigía "ser la empresa" también lo puede hacer su tutor
+ *  asignado, sin que la empresa pierda ninguna de sus propias capacidades. */
+function esResponsableDe(uid: string, a: { empresaId?: string; tutorId?: string | null }): boolean {
+  return a.empresaId === uid || (!!a.tutorId && a.tutorId === uid);
 }
 
 /** Minuto (desde medianoche) desde el que CUENTAN las horas de un día: la hora
@@ -387,16 +398,20 @@ export const registrarAsistenciaPorCodigo = onCall({ region: REGION }, async (re
   if (!codSnap.exists) throw new HttpsError("not-found", "Código no encontrado.");
   const c = codSnap.data()!;
 
-  if (c.empresaId !== uid) {
-    throw new HttpsError("permission-denied", "Este código no pertenece a un pasante de tu empresa.");
+  // La autorización se decide sobre el estado VIVO de la asignación (no sobre
+  // `c.empresaId`, una copia congelada al mintear el código) — así, si el
+  // tutor se reasignó después de mintearse el código, el nuevo responsable
+  // queda cubierto de inmediato sin esperar un código nuevo.
+  const asigSnap = await db.collection("asignaciones_cupo").doc(String(c.asignacionId)).get();
+  if (!asigSnap.exists) throw new HttpsError("not-found", "La pasantía asociada ya no existe.");
+  const a = asigSnap.data() as any;
+  if (!esResponsableDe(uid, a)) {
+    throw new HttpsError("permission-denied", "Este código no pertenece a un pasante que supervises.");
   }
   if (c.usado === true) throw new HttpsError("already-exists", "Este código ya fue usado.");
   const expiraAtMs = (c.expiraAt as admin.firestore.Timestamp)?.toMillis?.() ?? 0;
   if (Date.now() > expiraAtMs) throw new HttpsError("deadline-exceeded", "Este código ya caducó.");
 
-  const asigSnap = await db.collection("asignaciones_cupo").doc(String(c.asignacionId)).get();
-  if (!asigSnap.exists) throw new HttpsError("not-found", "La pasantía asociada ya no existe.");
-  const a = asigSnap.data() as any;
   const horario = a.horario ?? {};
 
   const horaInicioMin = parseHora12(horario.horaInicio);
@@ -508,7 +523,7 @@ export const registrarAsistenciaManual = onCall({ region: REGION }, async (req) 
   const asigSnap = await asigRef.get();
   if (!asigSnap.exists) throw new HttpsError("not-found", "La pasantía ya no existe.");
   const a = asigSnap.data() as any;
-  if (a.empresaId !== uid) throw new HttpsError("permission-denied", "Esta pasantía no es de tu empresa.");
+  if (!esResponsableDe(uid, a)) throw new HttpsError("permission-denied", "No supervisas esta pasantía.");
   if (a.estado !== "tomado" || a.finalizada === true) {
     throw new HttpsError("failed-precondition", "Esta pasantía ya no está activa.");
   }
@@ -626,7 +641,7 @@ export const registrarSalidaAnticipada = onCall({ region: REGION }, async (req) 
   const asigSnap = await asigRef.get();
   if (!asigSnap.exists) throw new HttpsError("not-found", "La pasantía ya no existe.");
   const a = asigSnap.data() as any;
-  if (a.empresaId !== uid) throw new HttpsError("permission-denied", "Esta pasantía no es de tu empresa.");
+  if (!esResponsableDe(uid, a)) throw new HttpsError("permission-denied", "No supervisas esta pasantía.");
   if (a.estado !== "tomado" || a.finalizada === true) {
     throw new HttpsError("failed-precondition", "Esta pasantía ya no está activa.");
   }
@@ -705,6 +720,53 @@ export const registrarSalidaAnticipada = onCall({ region: REGION }, async (req) 
   }
 
   return { ok: true, hasta: ahoraMin };
+});
+
+// ── 2d) EL TUTOR (Fase 3) ESCRIBE/EDITA LA OBSERVACIÓN DE HOY ──────
+/**
+ * Una nota de bitácora del tutor sobre un pasante suyo, UNA por (asignación,
+ * día) — vive en `observaciones_tutor/{asignacionId}_{fecha}`, aparte de
+ * `registros_asistencia`, para no arriesgar que un consumidor de ese doc
+ * (que ante su sola existencia asume "hay asistencia registrada") confunda
+ * una nota de texto con una entrada real. La fecha SIEMPRE es `hoyISO()` del
+ * servidor — nunca la manda el cliente — así "se congela al día siguiente"
+ * es real y no depende del reloj del teléfono. `texto` vacío está permitido:
+ * el tutor puede borrar su propia nota mientras sigue siendo hoy.
+ *
+ * Entrada: { asignacionId, texto }.
+ */
+export const registrarObservacionTutor = onCall({ region: REGION }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sesión requerida.");
+
+  const asignacionId = String(req.data?.asignacionId ?? "").trim();
+  const texto = String(req.data?.texto ?? "").trim();
+  if (!asignacionId) throw new HttpsError("invalid-argument", "Datos inválidos.");
+  if (texto.length > 1000) throw new HttpsError("invalid-argument", "La observación es demasiado larga.");
+
+  const asigSnap = await db.collection("asignaciones_cupo").doc(asignacionId).get();
+  if (!asigSnap.exists) throw new HttpsError("not-found", "La pasantía ya no existe.");
+  const a = asigSnap.data() as any;
+  if (a.tutorId !== uid) throw new HttpsError("permission-denied", "No eres el tutor asignado a este pasante.");
+  if (a.estado !== "tomado" || a.finalizada === true) {
+    throw new HttpsError("failed-precondition", "Esta pasantía ya no está activa.");
+  }
+
+  const fecha = hoyISO();
+  const ref = db.collection("observaciones_tutor").doc(`${asignacionId}_${fecha}`);
+  const existia = (await ref.get()).exists;
+  await ref.set({
+    asignacionId,
+    fecha,
+    estudianteId: a.estudianteId ?? "",
+    empresaId: a.empresaId ?? "",
+    tutorId: uid,
+    texto,
+    ...(existia ? {} : { creadoAt: admin.firestore.FieldValue.serverTimestamp() }),
+    actualizadoAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return { ok: true, fecha };
 });
 
 // ── 3) RECORDATORIO DIARIO A LA EMPRESA (pasantes sin asistencia marcada) ──

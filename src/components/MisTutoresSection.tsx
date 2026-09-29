@@ -25,6 +25,23 @@ interface Props {
   empresaId: string;
 }
 
+/** Solo letras (con tildes/ñ) y espacios — se aplica mientras se escribe, así
+ *  el campo nunca llega a contener un carácter inválido. */
+const SOLO_LETRAS_RE = /[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g;
+const soloLetras = (raw: string): string => raw.replace(SOLO_LETRAS_RE, '');
+
+/** Mismo patrón de correo ya usado en el resto del proyecto (otp.ts/registro.tsx). */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+
+type CampoTutor = 'nombreCompleto' | 'correo' | 'cargo' | 'carnetTrabajo';
+
+/** Borde del campo: neutral antes del primer intento de enviar; rojo si ese
+ *  campo quedó con error; verde si ya se intentó enviar y el campo es válido. */
+function campoBorde(s: ReturnType<typeof makeStyles>, intentoEnviar: boolean, error?: string) {
+  if (!intentoEnviar) return null;
+  return error ? s.inputError : s.inputOk;
+}
+
 export default function MisTutoresSection({ empresaId }: Props) {
   const { colors } = useTheme();
   const s = makeStyles(colors);
@@ -35,6 +52,8 @@ export default function MisTutoresSection({ empresaId }: Props) {
   const [correo, setCorreo] = useState('');
   const [cargo, setCargo] = useState('');
   const [carnetTrabajo, setCarnetTrabajo] = useState('');
+  const [errores, setErrores] = useState<Partial<Record<CampoTutor, string>>>({});
+  const [intentoEnviar, setIntentoEnviar] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [cambiandoId, setCambiandoId] = useState<string | null>(null);
 
@@ -45,13 +64,38 @@ export default function MisTutoresSection({ empresaId }: Props) {
     setCorreo('');
     setCargo('');
     setCarnetTrabajo('');
+    setErrores({});
+    setIntentoEnviar(false);
+  };
+
+  const validarCampo = (campo: CampoTutor, valor: string): string => {
+    const v = valor.trim();
+    if (!v) return 'Este campo es obligatorio.';
+    if (campo === 'correo' && !EMAIL_RE.test(v)) {
+      return 'Ingresa un correo válido (debe llevar @ y un dominio, ej. nombre@empresa.com).';
+    }
+    return '';
+  };
+
+  /** Valida un campo EN VIVO, pero solo después del primer intento de enviar
+   *  — antes de eso no se le muestra ningún error a la empresa todavía. */
+  const revalidarSiCorresponde = (campo: CampoTutor, valor: string) => {
+    if (!intentoEnviar) return;
+    const msg = validarCampo(campo, valor);
+    setErrores((prev) => ({ ...prev, [campo]: msg }));
   };
 
   const registrar = async () => {
-    if (!nombreCompleto.trim() || !correo.trim() || !cargo.trim() || !carnetTrabajo.trim()) {
-      showAlert('Faltan datos', 'Completa nombre, correo, cargo y carnet de trabajo.');
-      return;
-    }
+    const valores: Record<CampoTutor, string> = { nombreCompleto, correo, cargo, carnetTrabajo };
+    const nuevosErrores: Partial<Record<CampoTutor, string>> = {};
+    (Object.keys(valores) as CampoTutor[]).forEach((campo) => {
+      const msg = validarCampo(campo, valores[campo]);
+      if (msg) nuevosErrores[campo] = msg;
+    });
+    setErrores(nuevosErrores);
+    setIntentoEnviar(true);
+    if (Object.keys(nuevosErrores).length > 0) return;
+
     setGuardando(true);
     try {
       const r = await crearTutor({
@@ -146,48 +190,73 @@ export default function MisTutoresSection({ empresaId }: Props) {
         <Text style={s.addBtnTxt}>Agregar tutor</Text>
       </TouchableOpacity>
 
-      <Modal visible={modalOpen} transparent animationType="none" onRequestClose={() => setModalOpen(false)}>
+      <Modal
+        visible={modalOpen}
+        transparent
+        animationType="none"
+        onRequestClose={() => { setModalOpen(false); limpiarFormulario(); }}
+      >
         <View style={s.overlay}>
           <View style={s.modal}>
             <View style={s.modalHeader}>
               <Text style={s.modalTitle}>Agregar tutor</Text>
-              <TouchableOpacity onPress={() => setModalOpen(false)} activeOpacity={0.8}>
+              <TouchableOpacity
+                onPress={() => { setModalOpen(false); limpiarFormulario(); }}
+                activeOpacity={0.8}
+              >
                 <Ionicons name="close" size={22} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
             <Text style={s.modalHint}>
               Le enviaremos sus datos de acceso por correo. El resto de su perfil (dirección, DUI, foto, horario) lo completa él mismo.
             </Text>
-            <TextInput
-              style={s.input}
-              value={nombreCompleto}
-              onChangeText={setNombreCompleto}
-              placeholder="Nombre completo"
-              placeholderTextColor={colors.white60}
-            />
-            <TextInput
-              style={s.input}
-              value={correo}
-              onChangeText={setCorreo}
-              placeholder="Correo"
-              placeholderTextColor={colors.white60}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-            <TextInput
-              style={s.input}
-              value={cargo}
-              onChangeText={setCargo}
-              placeholder="Cargo"
-              placeholderTextColor={colors.white60}
-            />
-            <TextInput
-              style={s.input}
-              value={carnetTrabajo}
-              onChangeText={setCarnetTrabajo}
-              placeholder="Carnet de trabajo"
-              placeholderTextColor={colors.white60}
-            />
+
+            <View style={s.campoWrap}>
+              <TextInput
+                style={[s.input, campoBorde(s, intentoEnviar, errores.nombreCompleto)]}
+                value={nombreCompleto}
+                onChangeText={(v) => { const limpio = soloLetras(v); setNombreCompleto(limpio); revalidarSiCorresponde('nombreCompleto', limpio); }}
+                placeholder="Nombre completo"
+                placeholderTextColor={colors.white60}
+              />
+              {!!errores.nombreCompleto && <Text style={s.errorTxt}>{errores.nombreCompleto}</Text>}
+            </View>
+
+            <View style={s.campoWrap}>
+              <TextInput
+                style={[s.input, campoBorde(s, intentoEnviar, errores.correo)]}
+                value={correo}
+                onChangeText={(v) => { setCorreo(v); revalidarSiCorresponde('correo', v); }}
+                placeholder="Correo"
+                placeholderTextColor={colors.white60}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+              {!!errores.correo && <Text style={s.errorTxt}>{errores.correo}</Text>}
+            </View>
+
+            <View style={s.campoWrap}>
+              <TextInput
+                style={[s.input, campoBorde(s, intentoEnviar, errores.cargo)]}
+                value={cargo}
+                onChangeText={(v) => { setCargo(v); revalidarSiCorresponde('cargo', v); }}
+                placeholder="Cargo"
+                placeholderTextColor={colors.white60}
+              />
+              {!!errores.cargo && <Text style={s.errorTxt}>{errores.cargo}</Text>}
+            </View>
+
+            <View style={s.campoWrap}>
+              <TextInput
+                style={[s.input, campoBorde(s, intentoEnviar, errores.carnetTrabajo)]}
+                value={carnetTrabajo}
+                onChangeText={(v) => { setCarnetTrabajo(v); revalidarSiCorresponde('carnetTrabajo', v); }}
+                placeholder="Carnet de trabajo"
+                placeholderTextColor={colors.white60}
+              />
+              {!!errores.carnetTrabajo && <Text style={s.errorTxt}>{errores.carnetTrabajo}</Text>}
+            </View>
+
             <TouchableOpacity
               style={[s.saveBtn, guardando && { opacity: 0.6 }]}
               onPress={registrar}
@@ -243,6 +312,8 @@ const makeStyles = (C: GradlyColors) =>
       padding: 20,
     },
     modal: {
+      width: '100%',
+      maxWidth: 420,
       backgroundColor: C.backgroundCard,
       borderRadius: 20,
       padding: 22,
@@ -252,15 +323,20 @@ const makeStyles = (C: GradlyColors) =>
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
     modalTitle: { color: C.textPrimary, fontSize: 17, fontFamily: FONTS.soraBold },
     modalHint: { color: C.white60, fontSize: 12.5, lineHeight: 17, marginBottom: 16 },
+    campoWrap: { marginBottom: 10 },
     input: {
       backgroundColor: C.white8,
       borderRadius: 12,
+      borderWidth: 1,
+      borderColor: 'transparent',
       paddingHorizontal: 14,
       paddingVertical: 11,
       color: C.textPrimary,
       fontSize: 14,
-      marginBottom: 10,
     },
+    inputError: { borderColor: C.error },
+    inputOk: { borderColor: C.success },
+    errorTxt: { color: C.error, fontSize: 11.5, fontFamily: FONTS.interRegular, marginTop: 4 },
     saveBtn: {
       backgroundColor: C.primary,
       borderRadius: 14,

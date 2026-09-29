@@ -375,6 +375,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const dashboardDelRol = (): string | null => {
     if (rol === 'empresa') return '/dashboard-empresa';
     if (rol === 'universidad') return '/dashboard-universidad';
+    if (rol === 'tutor') return '/dashboard-tutor';
     return null;
   };
 
@@ -407,6 +408,18 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
             // /dashboard-universidad, así que esto solo actualiza el parámetro
             // `verPasante` de esa misma pantalla en vez de apilar otra copia.
             router.navigate({ pathname: '/dashboard-universidad', params: { verPasante: ref.id } } as any);
+          } catch { /* ruta inválida → no navega */ }
+        }
+        return;
+      }
+      // ── Caso especial: al TUTOR (rol "tutor", Fase 3) se le asignó/
+      // reasignó un pasante. Mismo patrón que 'certificarPasante': navega a
+      // su dashboard con `verPasante`, que app/dashboard-tutor.tsx consume
+      // para abrir ese pasante en "Mis pasantes".
+      if (ref.kind === 'pasanteTutor') {
+        if (rol === 'tutor') {
+          try {
+            router.navigate({ pathname: '/dashboard-tutor', params: { verPasante: ref.id } } as any);
           } catch { /* ruta inválida → no navega */ }
         }
         return;

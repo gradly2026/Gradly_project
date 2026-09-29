@@ -22,6 +22,16 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/perfiles_estudiantes/$(request.auth.uid)).data.universidad_id == uniId;
     }
 
+    // 🆕 Fase 3 del rol "tutor": ¿el autenticado es el tutor ACTUALMENTE
+    // asignado a este cupo? Cruce en vivo contra asignaciones_cupo.tutorId
+    // (no un campo denormalizado) a propósito: así una reasignación mueve el
+    // acceso de inmediato, sin que el tutor saliente conserve para siempre lo
+    // que vio ni el entrante quede ciego al historial previo a su asignación.
+    function esTutorDeAsignacion(asignacionId) {
+      return request.auth != null
+        && get(/databases/$(database)/documents/asignaciones_cupo/$(asignacionId)).data.tutorId == request.auth.uid;
+    }
+
     // 🛡️ PANEL ADMIN — colecciones internas (solo admin)
     match /audit_logs/{logId} {
       allow read, create: if esAdmin();
@@ -525,12 +535,17 @@ service cloud.firestore {
     //    asignación; se valida cruzando con el doc real vía get().
     // ═══════════════════════════════════════════════════════════════════
     match /ajustes_asistencia/{asignacionId} {
+      // 🆕 Fase 3 del rol "tutor": el tutor asignado también lo lee (su
+      // calendario necesita saber qué días quedaron "no computados"); no se
+      // toca create/update — marcar un día así sigue siendo solo de la
+      // empresa o la universidad, fuera de alcance de esta fase.
       allow read: if resource == null
         || (request.auth != null
             && (request.auth.uid == resource.data.estudianteId
                 || request.auth.uid == resource.data.empresaId
                 || request.auth.uid == resource.data.universidadId
-                || esAdmin()));
+                || esAdmin()
+                || esTutorDeAsignacion(asignacionId)));
 
       allow create: if request.auth != null
         && (request.auth.uid == request.resource.data.empresaId
@@ -572,16 +587,40 @@ service cloud.firestore {
     //    asignación para historial y transparencia.
     // ═══════════════════════════════════════════════════════════════════
     match /registros_asistencia/{registroId} {
+      // 🆕 Fase 3 del rol "tutor": el tutor asignado lee y confirma la salida
+      // igual que la empresa dueña — mismo cruce en vivo que ajustes_asistencia.
       allow read: if request.auth != null
         && (request.auth.uid == resource.data.estudianteId
             || request.auth.uid == resource.data.empresaId
             || request.auth.uid == resource.data.universidadId
-            || esAdmin());
+            || esAdmin()
+            || esTutorDeAsignacion(resource.data.asignacionId));
       allow create, delete: if false;
       allow update: if request.auth != null
-        && request.auth.uid == resource.data.empresaId
+        && (request.auth.uid == resource.data.empresaId || esTutorDeAsignacion(resource.data.asignacionId))
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['salidaConfirmada', 'salidaConfirmadaAt', 'salidaConfirmadaPor']);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 📝 OBSERVACIONES_TUTOR — bitácora del tutor (Fase 3 del rol "tutor"):
+    //    UNA nota de texto por (asignación, día), id = `{asignacionId}_
+    //    {fecha}` (mismo esquema que `registros_asistencia`, pero colección
+    //    aparte a propósito — así una nota de texto nunca puede confundirse
+    //    con "hay asistencia registrada" para ningún consumidor existente de
+    //    ese otro doc). Solo la Cloud Function registrarObservacionTutor
+    //    (Admin SDK) escribe, y siempre sobre la fecha de HOY según el
+    //    servidor — así "se congela al día siguiente" es real. La lee el
+    //    tutor autor, la empresa dueña (sigue viendo todo) y admin; a
+    //    propósito NO el estudiante ni la universidad (nota interna de
+    //    supervisión, sin pedido de mostrarla afuera).
+    // ═══════════════════════════════════════════════════════════════════
+    match /observaciones_tutor/{obsId} {
+      allow read: if request.auth != null
+        && (esTutorDeAsignacion(resource.data.asignacionId)
+            || request.auth.uid == resource.data.empresaId
+            || esAdmin());
+      allow create, update, delete: if false;
     }
 
     // ═══════════════════════════════════════════════════════════════════

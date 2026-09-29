@@ -38,7 +38,8 @@ export type NotifRefKind =
   | 'incidencia'
   | 'ticketSoporte'
   | 'completarPerfil'
-  | 'terminacionPasantia';
+  | 'terminacionPasantia'
+  | 'pasanteTutor';
 // Tipo de TypeScript que limita `kind` a exactamente estos valores de
 // texto posibles. Cada uno corresponde a un modal de detalle distinto:
 //   'vacante'              → VacanteDetailByIdModal.tsx
@@ -76,6 +77,13 @@ export type NotifRefKind =
 //                           la `asignaciones_cupo` terminada anticipadamente
 //                           por despido o renuncia — Fase 5 de "asistencia
 //                           real"; lo ven estudiante, empresa y universidad)
+//   'pasanteTutor'        → NO abre un modal propio de la campanita: lleva
+//                           al TUTOR a su panel (pestaña "Mis pasantes") y
+//                           abre ahí el pasante cuya `asignaciones_cupo`
+//                           tiene ese id (rol "tutor", Fase 3 — mismo patrón
+//                           que 'certificarPasante'). Lo consume
+//                           app/dashboard-tutor.tsx vía el parámetro de ruta
+//                           `verPasante`.
 
 export interface NotifRef {
   // Forma del resultado "ya interpretado": qué tipo de entidad es, y cuál
@@ -84,7 +92,7 @@ export interface NotifRef {
   id: string;
 }
 
-const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'certificarPasante', 'feedbackPendiente', 'postulacionRechazada', 'contratoAviso', 'ofertaEmpleo', 'ofertaRespondida', 'incidencia', 'ticketSoporte', 'completarPerfil', 'terminacionPasantia'];
+const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'certificarPasante', 'feedbackPendiente', 'postulacionRechazada', 'contratoAviso', 'ofertaEmpleo', 'ofertaRespondida', 'incidencia', 'ticketSoporte', 'completarPerfil', 'terminacionPasantia', 'pasanteTutor'];
 // La MISMA lista de valores que el tipo NotifRefKind de arriba, pero como
 // un ARRAY real (no solo un tipo). Se necesita en tiempo de ejecución
 // (los tipos de TypeScript desaparecen al compilar, no existen dentro del

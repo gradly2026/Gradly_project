@@ -18,7 +18,7 @@ export interface InscripcionActiva {
  * lee la meta de horas de cada grupo (cacheada) y recalcula con tick de 1 min.
  */
 export function useInscripcionesActivas(
-  campo: 'universidadId' | 'empresaId',
+  campo: 'universidadId' | 'empresaId' | 'tutorId',
   uid?: string | null,
 ): InscripcionActiva[] {
   const [asignaciones, setAsignaciones] = useState<AsignacionCupo[]>([]);

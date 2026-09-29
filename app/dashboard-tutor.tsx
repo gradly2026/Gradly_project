@@ -1,19 +1,17 @@
 // ═════════════════════════════════════════════════════════════════
-// DASHBOARD TUTOR — panel del rol nuevo "tutor" (Fase 1: fundación).
-//
-// Un tutor es la persona que una EMPRESA delega como encargado on-site de
-// sus pasantes. En esta fase el dashboard es SOLO su propio perfil — nombre/
-// cargo/carnet/correo los puso la empresa al registrarlo (solo lectura
-// aquí); dirección/departamento/distrito/DUI opcional/foto/horario los
-// completa el propio tutor. Asignación a pasantes, validador de código de
-// asistencia, calendario y observaciones llegan en fases posteriores.
+// DASHBOARD TUTOR — panel del rol "tutor". Fase 1 (fundación): solo el
+// perfil propio. Fase 3 (dashboard operativo): pasa a tener pestañas
+// propias — "Mis pasantes" (nueva, ver SeccionPasantesTutor: lista de
+// pasantes a cargo, validador de código, calendario + observaciones) y
+// "Mi perfil" (el PerfilMasterDetail de siempre, sin cambios, solo movido
+// bajo una pestaña). Observaciones/Incidencias-para-tutor: ver Fase 4.
 //
 // Mismo patrón config-driven que dashboard-empresa.tsx/dashboard-
-// universidad.tsx: PerfilMasterDetail con un array `sections`.
+// universidad.tsx para el perfil: PerfilMasterDetail con un array `sections`.
 // ═════════════════════════════════════════════════════════════════
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
@@ -26,6 +24,7 @@ import { showAlert } from '../src/components/AppAlert';
 import SalirSesionModal from '../src/components/SalirSesionModal';
 import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
+import SeccionPasantesTutor from '../src/components/SeccionPasantesTutor';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { useAuth } from '../src/context/AuthContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
@@ -34,12 +33,31 @@ import type { HorarioPasantia } from '../src/data/disponibilidad';
 import type { PerfilTutor } from '../src/services/tutorService';
 import { uploadDocumentoVerificacion } from '../src/services/storageUploads';
 
+type SeccionTutor = 'pasantes' | 'perfil';
+
 export default function DashboardTutor() {
   useAuthGuard('tutor');
   const { user } = useAuth();
   const router = useRouter();
   const { colors } = useTheme();
   const s = makeStyles(colors);
+
+  const [seccion, setSeccion] = useState<SeccionTutor>('pasantes');
+  const [pasanteAAbrirId, setPasanteAAbrirId] = useState<string | null>(null);
+  const params = useLocalSearchParams<{ verPasante?: string }>();
+
+  // Deep link desde la campanita ("Tienes un nuevo pasante asignado",
+  // asignarTutor() en reclamoCuposService.ts): salta a "Mis pasantes" y abre
+  // ese pasante en cuanto la lista lo trae. Mismo patrón de "consumir el
+  // parámetro" que ya usa dashboard-universidad.tsx con `?verPasante=`.
+  useEffect(() => {
+    const id = params.verPasante ? String(params.verPasante) : '';
+    if (!id) return;
+    setSeccion('pasantes');
+    setPasanteAAbrirId(id);
+    router.setParams({ verPasante: '' } as any);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.verPasante]);
 
   const [perfil, setPerfil] = useState<PerfilTutor | null>(null);
   const [documentoNumero, setDocumentoNumero] = useState('');
@@ -149,6 +167,35 @@ export default function DashboardTutor() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.backgroundDark }}>
       <StatusBar style="light" />
+
+      <View style={s.tabBar}>
+        <TouchableOpacity
+          style={[s.tabBtn, seccion === 'pasantes' && s.tabBtnActivo]}
+          activeOpacity={0.85}
+          onPress={() => setSeccion('pasantes')}
+        >
+          <Ionicons name="people-outline" size={17} color={seccion === 'pasantes' ? colors.primaryLight : colors.white60} />
+          <Text style={[s.tabTxt, seccion === 'pasantes' && s.tabTxtActivo]}>Mis pasantes</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.tabBtn, seccion === 'perfil' && s.tabBtnActivo]}
+          activeOpacity={0.85}
+          onPress={() => setSeccion('perfil')}
+        >
+          <Ionicons name="person-outline" size={17} color={seccion === 'perfil' ? colors.primaryLight : colors.white60} />
+          <Text style={[s.tabTxt, seccion === 'perfil' && s.tabTxtActivo]}>Mi perfil</Text>
+        </TouchableOpacity>
+      </View>
+
+      {seccion === 'pasantes' ? (
+        <View style={{ flex: 1, padding: 16 }}>
+          <SeccionPasantesTutor
+            tutorId={user!.uid}
+            pasanteAAbrirId={pasanteAAbrirId}
+            onConsumidoPasanteAAbrir={() => setPasanteAAbrirId(null)}
+          />
+        </View>
+      ) : (
       <PerfilMasterDetail
         name={perfil.nombre_completo}
         subtitle={perfil.cargo}
@@ -264,6 +311,7 @@ export default function DashboardTutor() {
           },
         ]}
       />
+      )}
 
       <SalirSesionModal
         visible={logoutVisible}
@@ -281,6 +329,17 @@ export default function DashboardTutor() {
 const makeStyles = (C: GradlyColors) =>
   StyleSheet.create({
     loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.backgroundDark },
+    tabBar: {
+      flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4,
+      backgroundColor: C.backgroundDark,
+    },
+    tabBtn: {
+      flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+      paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: 'transparent',
+    },
+    tabBtnActivo: { backgroundColor: C.primary + '22', borderColor: C.primary + '55' },
+    tabTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: C.white60 },
+    tabTxtActivo: { color: C.primaryLight },
     docHint: { color: C.white60, fontSize: 12.5, lineHeight: 17 },
     docInput: {
       backgroundColor: C.white8,

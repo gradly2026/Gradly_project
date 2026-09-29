@@ -142,6 +142,7 @@ export {
   registrarAsistenciaPorCodigo,
   registrarAsistenciaManual,
   registrarSalidaAnticipada,
+  registrarObservacionTutor,
   recordatorioAsistenciaPendiente,
 } from "./asistencia";
 export { enviarComprobantePdf, backfillComprobantesPdf } from "./comprobante";

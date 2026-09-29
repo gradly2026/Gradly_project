@@ -54,7 +54,7 @@ function nuevoCliente(nombre, token) {
 }
 const owner = nuevoCliente('owner', 'owner');
 const usuarios = {};
-for (const uid of ['stu1', 'stu2', 'emp1', 'emp2', 'uni1', 'uni2', 'adm1', 'tutor1']) {
+for (const uid of ['stu1', 'stu2', 'emp1', 'emp2', 'uni1', 'uni2', 'adm1', 'tutor1', 'tutor2']) {
   usuarios[uid] = nuevoCliente(uid, { sub: uid });
 }
 // Cliente SIN sesión (request.auth == null): simula a quien escanea el QR del
@@ -65,7 +65,9 @@ const dbDe = (uid) => (uid === 'owner' ? owner : usuarios[uid]);
 // ── Referencias y datos de apoyo ───────────────────────────────────────
 const A = (uid, id) => doc(dbDe(uid), `asignaciones_cupo/${id}`);
 const RG = (uid) => doc(dbDe(uid), 'registros_asistencia/A1_2026-09-21');
+const RG3 = (uid) => doc(dbDe(uid), 'registros_asistencia/A3_2026-09-21');
 const AJ = (uid, id) => doc(dbDe(uid), `ajustes_asistencia/${id}`);
+const OT = (uid, id) => doc(dbDe(uid), `observaciones_tutor/${id}`);
 const TOP = (uid) => doc(dbDe(uid), 'ranking_plataforma/top_estudiantes');
 const VE = (uid, id) => doc(dbDe(uid), `verificaciones_empresa/${id}`);
 const PP = (uid, id) => doc(dbDe(uid), `perfiles_publicos_estudiantes/${id}`);
@@ -111,14 +113,20 @@ async function reiniciar() {
     poner('usuarios/uni1', { rol: 'universidad' }), poner('usuarios/uni2', { rol: 'universidad' }),
     poner('usuarios/adm1', { rol: 'admin' }),
     poner('usuarios/tutor1', { rol: 'tutor', empresa_id: 'emp1' }),
+    poner('usuarios/tutor2', { rol: 'tutor', empresa_id: 'emp2' }),
     poner('perfiles_tutores/tutor1', { empresa_id: 'emp1', nombre_completo: 'Tutor Uno', activo: true }),
     poner('perfiles_tutores/tutor2', { empresa_id: 'emp2', nombre_completo: 'Tutor Dos', activo: true }),
     poner('perfiles_estudiantes/stu1', { universidad_id: 'uni1' }),
     poner('perfiles_estudiantes/stu2', { universidad_id: 'uni2' }),
     poner('asignaciones_cupo/A1', BASE()),
     poner('asignaciones_cupo/A2', { ...BASE(), asistencias: { '2026-09-21': 480 } }),
+    // A3: mismo cupo base, pero YA con un tutor asignado (Fase 3 del rol "tutor").
+    poner('asignaciones_cupo/A3', { ...BASE(), tutorId: 'tutor1', tutorNombre: 'Tutor Uno' }),
     poner('registros_asistencia/A1_2026-09-21', { asignacionId: 'A1', estudianteId: 'stu1', empresaId: 'emp1', universidadId: 'uni1', fecha: '2026-09-21', estado: 'presente', tardanzaMin: 0 }),
+    poner('registros_asistencia/A3_2026-09-21', { asignacionId: 'A3', estudianteId: 'stu1', empresaId: 'emp1', universidadId: 'uni1', fecha: '2026-09-21', estado: 'presente', tardanzaMin: 0 }),
     poner('ajustes_asistencia/A1', { empresaId: 'emp1', estudianteId: 'stu1', universidadId: 'uni1', dias: [] }),
+    poner('ajustes_asistencia/A3', { empresaId: 'emp1', estudianteId: 'stu1', universidadId: 'uni1', dias: [] }),
+    poner('observaciones_tutor/A3_2026-09-21', { asignacionId: 'A3', fecha: '2026-09-21', estudianteId: 'stu1', empresaId: 'emp1', tutorId: 'tutor1', texto: 'Buen desempeño hoy.' }),
     poner('codigos_asistencia/12345678', { asignacionId: 'A1', usado: false }),
     poner('ranking_plataforma/top_estudiantes', { lista: [] }),
     poner('perfiles_publicos_estudiantes/stu2', { nombre_completo: 'Estudiante Dos', calificacion_promedio: 5 }),
@@ -350,6 +358,24 @@ const CASOS = [
   ['TA2', 'la empresa dueña intenta asignar un tutor de OTRA empresa', () => updateDoc(A('emp1', 'A1'), { tutorId: 'tutor2', tutorNombre: 'Tutor Dos' }), 'DENY'],
   ['TA3', 'OTRA empresa (dueña del tutor, pero no del cupo) intenta asignarlo', () => updateDoc(A('emp2', 'A1'), { tutorId: 'tutor2', tutorNombre: 'Tutor Dos' }), 'DENY'],
   ['TA4', 'un estudiante intenta asignar un tutor', () => updateDoc(A('stu1', 'A1'), { tutorId: 'tutor1', tutorNombre: 'Tutor Uno' }), 'DENY'],
+
+  // ── TP · rol "tutor" Fase 3: delegación de asistencia y observaciones. A3
+  // ya tiene tutorId:'tutor1' asignado. El cruce es en VIVO contra
+  // asignaciones_cupo.tutorId (esTutorDeAsignacion), no un campo congelado. ──
+  ['TP1', 'registro (A3): lo lee el tutor asignado', () => getDoc(RG3('tutor1')), 'ALLOW'],
+  ['TP2', 'registro (A3): NO lo lee un tutor ajeno', () => getDoc(RG3('tutor2')), 'DENY'],
+  ['TP3', 'registro (A3): el tutor asignado confirma la salida', () => updateDoc(RG3('tutor1'), SALIDA()), 'ALLOW'],
+  ['TP4', 'registro (A3): el tutor asignado intenta colar `estado` junto con la salida', () => updateDoc(RG3('tutor1'), { ...SALIDA(), estado: 'tarde' }), 'DENY'],
+  ['TP5', 'registro (A3): un tutor ajeno intenta confirmar la salida', () => updateDoc(RG3('tutor2'), SALIDA()), 'DENY'],
+  ['TP6', 'ajustes (A3): lo lee el tutor asignado', () => getDoc(AJ('tutor1', 'A3')), 'ALLOW'],
+  ['TP7', 'ajustes (A3): NO lo lee un tutor ajeno', () => getDoc(AJ('tutor2', 'A3')), 'DENY'],
+  ['TP8', 'ajustes (A3): el tutor asignado intenta ESCRIBIRLO (fuera de alcance de Fase 3)', () => updateDoc(AJ('tutor1', 'A3'), { dias: [{ fecha: '2026-09-22' }] }), 'DENY'],
+  ['TP9', 'observación (A3): la lee el tutor autor', () => getDoc(OT('tutor1', 'A3_2026-09-21')), 'ALLOW'],
+  ['TP10', 'observación (A3): la lee la empresa dueña (sigue viendo todo)', () => getDoc(OT('emp1', 'A3_2026-09-21')), 'ALLOW'],
+  ['TP11', 'observación (A3): NO la lee un tutor ajeno', () => getDoc(OT('tutor2', 'A3_2026-09-21')), 'DENY'],
+  ['TP12', 'observación (A3): NO la lee el propio estudiante (fuera de alcance, nota interna)', () => getDoc(OT('stu1', 'A3_2026-09-21')), 'DENY'],
+  ['TP13', 'observación: un cliente (el propio tutor) intenta escribirla directo (solo la Cloud Function)', () => setDoc(OT('tutor1', 'A3_2026-09-22'), { asignacionId: 'A3', fecha: '2026-09-22', tutorId: 'tutor1', texto: 'x' }), 'DENY'],
+  ['TP14', 'observación: SERVIDOR (Admin SDK) la crea/actualiza', () => setDoc(OT('owner', 'A3_2026-09-22'), { asignacionId: 'A3', fecha: '2026-09-22', tutorId: 'tutor1', texto: 'x' }), 'ALLOW'],
 ];
 
 // ── Ejecución ────────────────────────────────────────────────────────────

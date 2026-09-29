@@ -2695,6 +2695,9 @@ export const TUTOR_SEED_EN: Record<string, string> = {
   "Registrar tutor": "Register tutor",
   "Faltan datos": "Missing information",
   "Completa nombre, correo, cargo y carnet de trabajo.": "Fill in name, email, position, and employee ID.",
+  "Este campo es obligatorio.": "This field is required.",
+  "Ingresa un correo válido (debe llevar @ y un dominio, ej. nombre@empresa.com).":
+    "Enter a valid email (it needs an @ and a domain, e.g. name@company.com).",
   "Tutor registrado": "Tutor registered",
   "La cuenta quedó creada, pero no pudimos enviarle el correo con sus datos de acceso. Avísale por otro medio.":
     "The account was created, but we couldn't send the email with their access details. Let them know some other way.",
@@ -2743,4 +2746,23 @@ export const TUTOR_SEED_EN: Record<string, string> = {
   "Cambiar tutor": "Change tutor",
   "Tutor asignado": "Tutor assigned",
   "No se pudo asignar": "Couldn't assign",
+
+  // Fase 3 del rol "tutor" — dashboard operativo (SeccionPasantesTutor.tsx,
+  // PanelPasanteTutor.tsx, HistorialPasantesTutor.tsx, CalendarioPasanteTutor.tsx).
+  "Mis pasantes": "My interns",
+  "Mi perfil": "My profile",
+  "Registrar asistencia": "Log attendance",
+  "Todavía no tienes pasantes asignados.": "You don't have any assigned interns yet.",
+  "Historial de pasantes": "Intern history",
+  "Todavía no tienes pasantes finalizados.": "You don't have any finished interns yet.",
+  "Aún no se ha registrado la entrada de hoy.": "Today's check-in hasn't been logged yet.",
+  "Observación de hoy": "Today's note",
+  "Escribe una nota sobre el día de hoy…": "Write a note about today…",
+  "Guardar observación": "Save note",
+  "Confirmar salida": "Confirm departure",
+  "Salida anticipada": "Early departure",
+  "Este día quedó marcado como no computado.": "This day was marked as not counted.",
+  "Registrar asistencia de este día": "Log attendance for this day",
+  "No hay asistencia registrada este día.": "No attendance logged for this day.",
+  "Observación": "Note",
 };

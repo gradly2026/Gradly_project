@@ -140,6 +140,9 @@ export async function registrarAsistenciaConCodigo(codigo: string): Promise<Conf
 export interface RegistroAsistenciaDia {
   estado: 'presente' | 'tarde';
   tardanzaMin: number;
+  /** Milisegundos (epoch) de la hora real de entrada, o null si no se guardó
+   *  (registros muy antiguos, antes de que el servidor empezara a escribirla). */
+  horaEntrada: number | null;
   salidaConfirmada: boolean;
   /** Milisegundos (epoch), o null si aún no se confirmó. */
   salidaConfirmadaAt: number | null;
@@ -165,6 +168,7 @@ function mapRegistro(data: any): RegistroAsistenciaDia {
   return {
     estado: data.estado === 'tarde' ? 'tarde' : 'presente',
     tardanzaMin: Number(data.tardanzaMin) || 0,
+    horaEntrada: typeof data.horaEntrada?.toMillis === 'function' ? data.horaEntrada.toMillis() : null,
     salidaConfirmada: data.salidaConfirmada === true,
     salidaConfirmadaAt: typeof data.salidaConfirmadaAt?.toMillis === 'function' ? data.salidaConfirmadaAt.toMillis() : null,
     salidaAnticipada: data.salidaAnticipada === true,

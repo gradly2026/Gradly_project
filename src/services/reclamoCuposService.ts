@@ -1101,12 +1101,16 @@ export async function asignarTutor(params: {
     );
   }
   if (tutorId !== datos.tutorIdAnterior) {
+    // Fase 3 del rol "tutor": ya existe "Mis pasantes" para consumir un deep
+    // link real — a diferencia de la notificación al tutor SALIENTE (arriba),
+    // que sigue apuntando a la ruta plana porque ese pasante ya no aparece en
+    // su lista.
     await enviarNotificacion(
       tutorId,
       'Tienes un nuevo pasante asignado',
       `Ahora eres el tutor de ${quien} en "${cual}".`,
       'success',
-      '/dashboard-tutor',
+      `pasanteTutor:${asignacionId}`,
     );
   }
 }
