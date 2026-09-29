@@ -100,6 +100,7 @@ import {
 
 
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput, useAutoText } from "../src/components/AutoText";
@@ -112,6 +113,7 @@ import BandejaIncidencias from '../src/components/BandejaIncidencias';
 // estudiante y la empresa; la prop `rol` decide qué puede hacer cada uno —
 // aquí es el único de los tres que puede escalar un caso al equipo de Gradly.
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
+import DashboardTopBar from '../src/components/DashboardTopBar';
 import UniversidadHomeCards from '../src/components/UniversidadHomeCards';
 import ComprobantePasantiaCard from '../src/components/ComprobantePasantiaCard';
 import RecordatorioCalificacionCard from '../src/components/RecordatorioCalificacionCard';
@@ -552,6 +554,11 @@ export default function DashboardUniversidad() {
   // así, ChatThread ya dibuja su propia píldora de notificaciones/idioma/
   // tema en la cabecera — mostrar también la de este dashboard la duplicaría.
   const [chatAbiertoEnMensajes, setChatAbiertoEnMensajes] = useState(false);
+  // Laptop/tablet (>=768): la navegación vive arriba, siempre visible
+  // (DashboardTopBar) — el menú inferior flotante (FloatingNavBar) queda
+  // reservado para pantallas angostas, como ya era.
+  const { width: anchoVentana } = useWindowDimensions();
+  const isWide = anchoVentana >= 768;
   const [perfil,       setPerfil]       = useState<PerfilUni | null>(null);
   const [estudiantes,  setEstudiantes]  = useState<EstudianteRow[]>([]);
   const [apps,         setApps]         = useState<Aplicacion[]>([]);
@@ -1124,49 +1131,31 @@ export default function DashboardUniversidad() {
 
       {/* ── CONTENIDO ── */}
       <View style={styles.main}>
-        {/* Header superior — se oculta entero en "Mensajes": InboxList ya
-            dibuja su propio título "Mensajes" (con notificaciones/idioma/
-            tema a la derecha) y ChatThread el suyo al abrir una conversación,
-            así que este header quedaría duplicado. En el resto de secciones
-            no cambia nada. */}
-        {seccion !== 'mensajes' && (
-        <View style={styles.mainHeader}>
-              <TouchableOpacity onPress={() => setSeccion('perfil')} activeOpacity={0.8}>
-                <StorageAvatar
-                  url={perfil?.logo_url}
-                  storagePath={user ? `logos/${user.uid}` : null}
-                  size={40}
-                  fallbackIcon="school"
-                />
-              </TouchableOpacity>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                {/* En Inicio el título es el nombre de la universidad; el subtítulo
-                    se oculta para no repetirlo justo debajo. */}
-                {/* El nombre de la universidad es nombre propio → `noTranslate`. */}
-                {seccion === 'inicio' ? (
-                  <Text style={styles.mainTitle} numberOfLines={1} noTranslate>
-                    {nombreUni || 'Inicio'}
-                  </Text>
-                ) : (
-                  <>
-                    <Text style={styles.mainTitle} numberOfLines={1}>
-                      {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
-                    </Text>
-                    <Text style={styles.mainSubtitle} numberOfLines={1} noTranslate>{nombreUni}</Text>
-                  </>
-                )}
-              </View>
-        </View>
+        {/* Header superior — logo Gradly + "Gradly" (ya no el nombre de la
+            universidad) y, en laptop/tablet, el menú de secciones siempre
+            visible en fila (DashboardTopBar). En angosto se oculta entero en
+            "Mensajes" porque InboxList ya dibuja su propio título "Mensajes"
+            ahí abajo; en ancho se queda SIEMPRE visible (también en
+            "Mensajes"), porque ahí es la única navegación que queda — el
+            menú inferior flotante se oculta por completo en ese ancho. */}
+        {(seccion !== 'mensajes' || isWide) && (
+          <DashboardTopBar
+            items={navItems}
+            activeKey={seccion}
+            onChange={(k) => setSeccion(k as SeccionUni)}
+            isWide={isWide}
+            userId={user?.uid}
+          />
         )}
         {renderSeccion()}
       </View>
 
       {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ──
-          Ocultos en TODA la sección "Mensajes": a nivel de bandeja ahora los
+          Ocultos en TODA la sección "Mensajes" (a nivel de bandeja ahora los
           dibuja InboxList en su propia cabecera, y con un chat abierto los
-          dibuja ChatThread en la suya — mostrar también esta píldora los
-          duplicaría en ambos casos. */}
-      {seccion !== 'mensajes' && (
+          dibuja ChatThread en la suya) y ocultos en ancho: ahí esos mismos 3
+          botones ya van DENTRO de DashboardTopBar, en su misma fila. */}
+      {seccion !== 'mensajes' && !isWide && (
         <FloatingTopBar userId={user?.uid} />
       )}
 
@@ -1180,10 +1169,12 @@ export default function DashboardUniversidad() {
       {seccion !== 'mensajes' && <AsistenteGradly />}
 
       {/* ── MENÚ FLOTANTE (Glassmorphism) ──
-          Se queda visible en la bandeja de "Mensajes" (para poder salir sin
-          necesitar una flecha aparte); solo se oculta con una conversación
-          ABIERTA, para que se vea limpia sin el menú superpuesto. */}
-      {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
+          Solo en angosto: en laptop/tablet la navegación ya vive arriba,
+          siempre visible (DashboardTopBar), así que este queda oculto del
+          todo para no duplicarla. En angosto se queda visible en la bandeja
+          de "Mensajes" (para poder salir sin necesitar una flecha aparte) y
+          solo se oculta con una conversación ABIERTA. */}
+      {!isWide && !(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
         <FloatingNavBar
           items={navItems}
           activeKey={seccion}
@@ -2904,7 +2895,6 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.white4, marginLeft: 8,
   },
-  mainSubtitle: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
   sidebar: {
     width: 240, backgroundColor: COLORS.backgroundCard,
     borderRightWidth: 1, borderRightColor: COLORS.border,
@@ -2950,14 +2940,6 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   // definidos sin aplicar).
 
   main: { flex: 1 },
-  mainHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 56 : 40,
-    paddingLeft: 20, paddingRight: 150, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.backgroundCard,
-  },
-  mainTitle: { fontSize: 20, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
 
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.65)',

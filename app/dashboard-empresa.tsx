@@ -57,7 +57,6 @@ import { showConfirm, showAlert } from '../src/components/AppAlert';
 // normales en todo el JSX, pero en realidad son AutoText/AutoTextInput (se
 // traducen solos). `useAutoText` traduce un string suelto fuera del JSX.
 import { AutoText, AutoText as Text, AutoTextInput as TextInput, useAutoText } from '../src/components/AutoText';
-import StorageAvatar from '../src/components/StorageAvatar';
 import {
   ActivityIndicator,
   Alert,
@@ -70,6 +69,7 @@ import {
   Switch,
 
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useTranslation } from '../src/context/TranslationContext';
@@ -80,6 +80,7 @@ import FeedbackGate from '../src/components/FeedbackGate';
 import ModeracionVacanteGate from '../src/components/ModeracionVacanteGate';
 import AvisosGate from '../src/components/AvisosGate';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
+import DashboardTopBar from '../src/components/DashboardTopBar';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import EmpresaHomeCards from '../src/components/EmpresaHomeCards';
 import ComprobantePasantiaCard from '../src/components/ComprobantePasantiaCard';
@@ -777,6 +778,11 @@ export default function DashboardEmpresa() {
   // así, ChatThread ya dibuja su propia píldora de notificaciones/idioma/
   // tema en la cabecera — mostrar también la de este dashboard la duplicaría.
   const [chatAbiertoEnMensajes, setChatAbiertoEnMensajes] = useState(false);
+  // Laptop/tablet (>=768): la navegación vive arriba, siempre visible
+  // (DashboardTopBar) — el menú inferior flotante (FloatingNavBar) queda
+  // reservado para pantallas angostas, como ya era.
+  const { width: anchoVentana } = useWindowDimensions();
+  const isWide = anchoVentana >= 768;
   const [perfil,      setPerfil]      = useState<PerfilEmpresa | null>(null);
   // 🆕 NIT + documento del representante — colección aparte y protegida
   // (Fase 2 de la cola de aprobación de empresas, ver
@@ -2389,59 +2395,32 @@ export default function DashboardEmpresa() {
 
       {/* ── CONTENIDO ── */}
       <View style={styles.main}>
-        {/* Header superior — se oculta entero en "Mensajes": InboxList ya
-            dibuja su propio título "Mensajes" (con notificaciones/idioma/
-            tema a la derecha) y ChatThread el suyo al abrir una conversación,
-            así que este header quedaría duplicado. En el resto de secciones
-            no cambia nada. */}
-        {seccion !== 'mensajes' && (
-        <View style={styles.mainHeader}>
-              <TouchableOpacity onPress={() => setSeccion('perfil')} activeOpacity={0.8}>
-                <StorageAvatar
-                  url={perfil?.logo_url}
-                  storagePath={user ? `logos_empresas/${user.uid}/logo.jpg` : null}
-                  size={40}
-                  fallbackIcon="business"
-                />
-              </TouchableOpacity>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                {/* En Inicio el título es el nombre de la empresa (más identidad que
-                    un genérico "Inicio"); el subtítulo deja de repetirlo. */}
-                {/* En Inicio el título es el nombre de la empresa → `noTranslate`,
-                    es un nombre propio y no debe pasar por el traductor. */}
-                {seccion === 'inicio' ? (
-                  <Text style={styles.mainTitle} numberOfLines={1} noTranslate>
-                    {nombreEmpresa || 'Inicio'}
-                  </Text>
-                ) : (
-                  <Text style={styles.mainTitle} numberOfLines={1}>
-                    {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
-                  </Text>
-                )}
-                {seccion === 'inicio' ? (
-                  <Text style={styles.mainGreeting} numberOfLines={1} noTranslate>
-                    {planBadgeLabel}
-                  </Text>
-                ) : (
-                  <Text style={styles.mainGreeting} numberOfLines={1} noTranslate>
-                    {planBadgeLabel}
-                    {' · '}
-                    {nombreEmpresa}
-                  </Text>
-                )}
-              </View>
-        </View>
+        {/* Header superior — logo Gradly + "Gradly" (ya no el nombre de la
+            empresa) y, en laptop/tablet, el menú de secciones siempre
+            visible en fila (DashboardTopBar). En angosto se oculta entero en
+            "Mensajes" porque InboxList ya dibuja su propio título "Mensajes"
+            ahí abajo; en ancho se queda SIEMPRE visible (también en
+            "Mensajes"), porque ahí es la única navegación que queda — el
+            menú inferior flotante se oculta por completo en ese ancho. */}
+        {(seccion !== 'mensajes' || isWide) && (
+          <DashboardTopBar
+            items={navItems}
+            activeKey={seccion}
+            onChange={(k) => setSeccion(k as SeccionEmpresa)}
+            isWide={isWide}
+            userId={user?.uid}
+          />
         )}
 
         {renderSeccion()}
       </View>
 
       {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ──
-          Ocultos en TODA la sección "Mensajes": a nivel de bandeja ahora los
+          Ocultos en TODA la sección "Mensajes" (a nivel de bandeja ahora los
           dibuja InboxList en su propia cabecera, y con un chat abierto los
-          dibuja ChatThread en la suya — mostrar también esta píldora los
-          duplicaría en ambos casos. */}
-      {seccion !== 'mensajes' && (
+          dibuja ChatThread en la suya) y ocultos en ancho: ahí esos mismos 3
+          botones ya van DENTRO de DashboardTopBar, en su misma fila. */}
+      {seccion !== 'mensajes' && !isWide && (
         <FloatingTopBar userId={user?.uid} />
       )}
 
@@ -2461,10 +2440,12 @@ export default function DashboardEmpresa() {
       <AvisosGate />
 
       {/* ── MENÚ FLOTANTE (Glassmorphism) ──
-          Se queda visible en la bandeja de "Mensajes" (para poder salir sin
-          necesitar una flecha aparte); solo se oculta con una conversación
-          ABIERTA, para que se vea limpia sin el menú superpuesto. */}
-      {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
+          Solo en angosto: en laptop/tablet la navegación ya vive arriba,
+          siempre visible (DashboardTopBar), así que este queda oculto del
+          todo para no duplicarla. En angosto se queda visible en la bandeja
+          de "Mensajes" (para poder salir sin necesitar una flecha aparte) y
+          solo se oculta con una conversación ABIERTA. */}
+      {!isWide && !(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
         <FloatingNavBar
           items={navItems}
           activeKey={seccion}
@@ -4397,15 +4378,6 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 
   // Main
   main: { flex: 1 },
-  mainHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 56 : 40,
-    paddingLeft: 20, paddingRight: 150, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.backgroundCard,
-  },
-  mainTitle: { fontSize: 20, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
-  mainGreeting: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
 
   // Mi Perfil (cuenta)
   perfilCard: {
