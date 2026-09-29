@@ -23,7 +23,7 @@ import { signOut } from 'firebase/auth';
 import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import * as DocumentPicker from 'expo-document-picker';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput } from '../src/components/AutoText';
 import { showAlert } from '../src/components/AppAlert';
@@ -33,7 +33,7 @@ import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import SeccionPasantesTutor from '../src/components/SeccionPasantesTutor';
 import SeccionIncidenciasTutor from '../src/components/SeccionIncidenciasTutor';
 import SeccionMensajes from '../src/components/SeccionMensajes';
-import FloatingTopBar from '../src/components/FloatingTopBar';
+import FloatingTopBar, { type FloatingTopBarHandle } from '../src/components/FloatingTopBar';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { useAuth } from '../src/context/AuthContext';
@@ -58,6 +58,12 @@ export default function DashboardTutor() {
   // Oculta la campanita mientras se ve un chat abierto en "Mensajes" — ChatThread
   // ya trae la suya propia (mismo criterio que dashboard-empresa.tsx).
   const [chatAbiertoEnMensajes, setChatAbiertoEnMensajes] = useState(false);
+  // La píldora de FloatingTopBar va oculta (ver más abajo, mostrarCampana=
+  // false): sus 3 íconos se movieron/quitaron de enfrente. Este `ref`
+  // deja abrir su mismo panel de notificaciones desde el botón nuevo de
+  // la barra inferior, y `unreadCount` refleja su contador para el badge.
+  const topBarRef = useRef<FloatingTopBarHandle>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
   const params = useLocalSearchParams<{ verPasante?: string; seccion?: string }>();
 
   // Deep link desde la campanita ("Tienes un nuevo pasante asignado",
@@ -210,8 +216,20 @@ export default function DashboardTutor() {
       {/* El tutor no tenía campanita en ningún lado hasta la Fase 4 — sin
           esto, ni siquiera las notificaciones ya existentes de Fase 2/3
           ("nuevo pasante asignado") se veían nunca. */}
+      {/* mostrarCampana/mostrarIdioma/mostrarTema en false: la campanita se
+          movió a la barra inferior (ver FloatingNavBar más abajo,
+          extraButton) y traducción/tema ya viven en "Mi Perfil" — aquí no
+          se dibuja ningún ícono, pero el componente se queda montado para
+          seguir escuchando notificaciones y poder abrir su mismo panel. */}
       {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
-        <FloatingTopBar userId={user?.uid} />
+        <FloatingTopBar
+          ref={topBarRef}
+          userId={user?.uid}
+          mostrarCampana={false}
+          mostrarIdioma={false}
+          mostrarTema={false}
+          onUnreadChange={setUnreadCount}
+        />
       )}
 
       {seccion === 'pasantes' ? (
@@ -365,6 +383,12 @@ export default function DashboardTutor() {
           items={navItems}
           activeKey={seccion}
           onChange={(k) => setSeccion(k)}
+          extraButton={{
+            icon: 'notifications-outline',
+            label: 'Notificaciones',
+            badge: unreadCount,
+            onPress: () => topBarRef.current?.abrirNotificaciones(),
+          }}
         />
       )}
     </View>

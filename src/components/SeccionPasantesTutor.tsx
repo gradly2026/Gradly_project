@@ -136,6 +136,7 @@ const makeStyles = (C: GradlyColors) =>
     },
     btnPrimarioTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: '#fff' },
     btnSecundario: {
+      flex: 1,
       borderWidth: 1, borderColor: C.border, borderRadius: 12,
       paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center',
     },

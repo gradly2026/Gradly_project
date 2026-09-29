@@ -31,6 +31,17 @@ interface FloatingNavBarProps<K extends string = string> {
   items: NavItem<K>[];
   activeKey: K;
   onChange: (key: K) => void;
+  /**
+   * Botón extra al final de la barra (p. ej. notificaciones): mismo
+   * tamaño/espaciado que los demás botones, pero NO participa de la
+   * píldora deslizante ni cambia `activeKey` — solo dispara `onPress`.
+   */
+  extraButton?: {
+    icon: keyof typeof Ionicons.glyphMap;
+    label: string;
+    badge?: number;
+    onPress: () => void;
+  };
 }
 
 // Configuración de muelle compartida → animación fluida tipo iOS
@@ -43,13 +54,17 @@ export default function FloatingNavBar<K extends string = string>({
   items,
   activeKey,
   onChange,
+  extraButton,
 }: FloatingNavBarProps<K>) {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const [barWidth, setBarWidth] = useState(0);
 
   const activeIndex = Math.max(0, items.findIndex(i => i.key === activeKey));
-  const itemWidth = barWidth > 0 ? barWidth / items.length : 0;
+  // El botón extra ocupa un espacio más en la fila, pero no entra en la
+  // píldora deslizante (esa solo se mueve entre `items`).
+  const slotCount = items.length + (extraButton ? 1 : 0);
+  const itemWidth = barWidth > 0 ? barWidth / slotCount : 0;
 
   // Posición animada del indicador deslizante (bolita)
   const indicatorX = useSharedValue(0);
@@ -103,6 +118,7 @@ export default function FloatingNavBar<K extends string = string>({
             onPress={() => handlePress(item)}
           />
         ))}
+        {extraButton && <ExtraNavButton item={extraButton} />}
       </BlurView>
     </View>
   );
@@ -163,6 +179,41 @@ function NavButton<K extends string>({
       <Animated.Text numberOfLines={1} style={[styles.label, labelStyle]}>
         {labelText}
       </Animated.Text>
+    </Pressable>
+  );
+}
+
+// ─────────────────────────────────────────────
+// BOTÓN EXTRA (sin animación de "activo" — p. ej. notificaciones)
+// ─────────────────────────────────────────────
+function ExtraNavButton({
+  item,
+}: {
+  item: { icon: keyof typeof Ionicons.glyphMap; label: string; badge?: number; onPress: () => void };
+}) {
+  const { colors } = useTheme();
+  const labelText = useAutoText(item.label);
+
+  const handlePress = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    item.onPress();
+  };
+
+  return (
+    <Pressable style={styles.button} onPress={handlePress} hitSlop={8}>
+      <View>
+        <Ionicons name={item.icon} size={24} color={colors.textMuted} />
+        {!!item.badge && item.badge > 0 && (
+          <View style={[styles.badge, { backgroundColor: colors.error }]}>
+            <Text style={styles.badgeText}>{item.badge > 99 ? '99+' : item.badge}</Text>
+          </View>
+        )}
+      </View>
+      <Text numberOfLines={1} style={[styles.label, { color: colors.textMuted }]}>
+        {labelText}
+      </Text>
     </Pressable>
   );
 }

@@ -72,7 +72,7 @@ import {
 //     para no seguir escuchando cambios en el vacío y desperdiciar datos/
 //     batería.
 
-import { useEffect, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 // Hooks de React ya conocidos de los Contexts.
 
 import {
@@ -196,6 +196,29 @@ interface FloatingTopBarProps {
    * mismo sitio de la barra, sin importar qué pantalla montó el chat).
    */
   variant?: 'floating' | 'inline';
+  /**
+   * Muestra/oculta cada uno de los 3 íconos de la píldora, por separado.
+   * Todos por defecto en `true` (el comportamiento de siempre). El
+   * dashboard del tutor los pone en `false` los tres: la campanita se
+   * movió a la barra inferior (ver `abrirNotificaciones` más abajo) y
+   * traducción/tema ya viven en "Mi Perfil", así que ahí no hace falta
+   * dibujar la píldora en absoluto.
+   */
+  mostrarCampana?: boolean;
+  mostrarIdioma?: boolean;
+  mostrarTema?: boolean;
+  /**
+   * Se llama cada vez que cambia la cantidad de notificaciones sin leer,
+   * incluso con `mostrarCampana={false}` — así un botón externo (p. ej. el
+   * de la barra inferior del tutor) puede mostrar su propio badge.
+   */
+  onUnreadChange?: (unread: number) => void;
+}
+
+/** Métodos que un padre puede invocar vía `ref` (ver `mostrarCampana`). */
+export interface FloatingTopBarHandle {
+  /** Abre la pantalla completa de notificaciones desde afuera. */
+  abrirNotificaciones: () => void;
 }
 
 // Endónimos: cada idioma se muestra en su propio nombre (no se traducen).
@@ -208,11 +231,23 @@ const LANGS: { code: 'es' | 'en'; label: string }[] = [
 // traduce a "Inglés" aunque la app esté en español — así lo reconoce
 // cualquier hablante, sin importar qué idioma tenga activo).
 
-export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floating' }: FloatingTopBarProps) {
-  // "export default function Nombre(props) { ... }" es la forma estándar
-  // de definir un componente de función en React. "{ userId }" extrae
-  // directamente la prop `userId` del objeto de props recibido
-  // (destructuring, igual concepto que vimos en otros archivos).
+const FloatingTopBar = forwardRef<FloatingTopBarHandle, FloatingTopBarProps>(function FloatingTopBar(
+  {
+    userId,
+    offsetY = 0,
+    variant = 'floating',
+    mostrarCampana = true,
+    mostrarIdioma = true,
+    mostrarTema = true,
+    onUnreadChange,
+  },
+  ref,
+) {
+  // "forwardRef((props, ref) => {...})" es la forma estándar de exponer,
+  // desde AFUERA del componente (con un `ref`), métodos propios de este
+  // (aquí, `abrirNotificaciones`) — ver `useImperativeHandle` más abajo.
+  // "{ userId }" extrae directamente la prop `userId` del objeto de props
+  // recibido (destructuring, igual concepto que vimos en otros archivos).
 
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -232,6 +267,19 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const [unread, setUnread] = useState(0);
   // Estado: cuántas notificaciones sin leer hay (se muestra como
   // "badge" numérico sobre la campanita).
+
+  useImperativeHandle(ref, () => ({
+    abrirNotificaciones: () => setNotifOpen(true),
+  }), []);
+  // Expone `abrirNotificaciones()` al padre que tenga un `ref` apuntando
+  // a este componente — así un botón fuera de la píldora (p. ej. en la
+  // barra inferior del tutor) puede abrir el mismo panel de siempre.
+
+  useEffect(() => {
+    onUnreadChange?.(unread);
+  }, [unread, onUnreadChange]);
+  // Avisa al padre cada vez que cambia el contador, para que pueda
+  // mostrar su propio badge aunque la campanita de aquí esté oculta.
 
   // ── Modales de detalle abiertos por deep link de notificación ──────
   const [vacanteModalId, setVacanteModalId] = useState<string | null>(null);
@@ -482,6 +530,9 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
   const pillHeight = isInline ? 40 : 46;
   const iconBoxSize = isInline ? 36 : 40;
   const iconSize = isInline ? 20 : 22;
+  const mostrarPill = mostrarCampana || mostrarIdioma || mostrarTema;
+  // Si el padre ocultó los 3 íconos (caso del tutor, que los movió a otro
+  // lado), no tiene sentido dibujar la píldora de vidrio vacía.
 
   const tap = (fn: () => void) => () => {
     // `tap` es una función que ENVUELVE otra función: recibe la acción
@@ -508,6 +559,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
           hermanos (View, Modal, los 4 modales de detalle) sin tener que
           envolverlos en un <View> extra innecesario, ya que una función
           de React solo puede devolver UN elemento raíz. */}
+      {mostrarPill && (
       <View
         style={[
           isInline ? styles.inlineWrap : styles.wrap,
@@ -540,6 +592,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
               en ambos temas. */}
 
           {/* Notificaciones */}
+          {mostrarCampana && (
           <Pressable
             style={[styles.iconBtn, { width: iconBoxSize, height: iconBoxSize }]}
             onPress={tap(() => setNotifOpen(true))}
@@ -563,10 +616,14 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
               </View>
             )}
           </Pressable>
+          )}
 
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          {mostrarCampana && (mostrarIdioma || mostrarTema) && (
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          )}
 
           {/* Traducción */}
+          {mostrarIdioma && (
           <Pressable
             style={[styles.iconBtn, { width: iconBoxSize, height: iconBoxSize }]}
             onPress={tap(() => setLangOpen(v => !v))}
@@ -577,11 +634,15 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
                 ThemeContext.tsx. */}
             <Ionicons name="language-outline" size={iconSize} color={colors.textPrimary} />
           </Pressable>
+          )}
 
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          {mostrarIdioma && mostrarTema && (
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          )}
 
           {/* Tema claro/oscuro — ícono compartido (ver ThemeToggleButton.tsx),
               el mismo que usan login, registro y el resto de dashboards. */}
+          {mostrarTema && (
           <Pressable
             style={[styles.iconBtn, { width: iconBoxSize, height: iconBoxSize }]}
             onPress={tap(toggleTheme)}
@@ -589,6 +650,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
           >
             <ThemeToggleIcon size={iconSize} />
           </Pressable>
+          )}
         </BlurView>
 
         {/* Menú de idioma — Español / Inglés. En `inline` se ancla como
@@ -642,6 +704,7 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
           </View>
         )}
       </View>
+      )}
 
       {/* ── Vista de notificaciones (pantalla completa con flecha de retorno) ── */}
       <Modal
@@ -814,7 +877,9 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
       />
     </>
   );
-}
+});
+
+export default FloatingTopBar;
 
 // ── ESTILOS ──────────────────────────────────────────────────────────
 // StyleSheet.create({...}) define todos los estilos usados arriba, con
