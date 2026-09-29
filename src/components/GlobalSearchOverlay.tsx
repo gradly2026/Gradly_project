@@ -120,6 +120,11 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
 
   const [texto, setTexto] = useState('');
   const [raw, setRaw] = useState<SearchItem[]>([]);
+  // "Tus tutores" (solo empresa) — sección propia, SIEMPRE visible, aparte del
+  // listado filtrado/ordenado por afinidad: son datos privados de la empresa
+  // (perfiles_tutores solo lo puede leer su propia empresa), no un directorio
+  // público como estudiantes/universidades/vacantes.
+  const [misTutores, setMisTutores] = useState<{ id: string; nombre: string; foto?: string | null }[]>([]);
   const [cargando, setCargando] = useState(false);
   const [perfil, setPerfil] = useState<{ tipo: ProfileTipo; id: string } | null>(null);
   // Pasantía/vacante cuyo detalle se abre sobre el buscador.
@@ -146,6 +151,7 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
       setTexto(''); setRaw([]); setVacDetalle(null); setAccionCargando(false);
       setEstadoEst(null); setMiPerfilData(null);
       setMisAreasEmpresa(new Set()); setMiCarreraEstudiante(null); setEmpresaAreasMap(new Map());
+      setMisTutores([]);
       return;
     }
     // No ejecutar consultas a Firestore sin sesión activa.
@@ -175,10 +181,11 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
           emp.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'empresa', titulo: x.nombre_empresa ?? 'Empresa', subtitulo: x.industria ?? '', foto: x.logo_url, verificado: x.verificado ?? false, empresaTier: tierEmpresa(x) }); });
           est.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'estudiante', titulo: x.nombre_completo ?? 'Estudiante', subtitulo: x.carrera ?? '', carrera: x.carrera, foto: x.foto_url }); });
         } else if (rol === 'empresa') {
-          const [uni, est, vacPropias] = await Promise.all([
+          const [uni, est, vacPropias, tutores] = await Promise.all([
             getDocs(query(collection(db, 'perfiles_universidades'), limit(50))),
             getDocs(query(collection(db, 'perfiles_estudiantes'), limit(100))),
             getDocs(query(collection(db, 'vacantes'), where('empresa_id', '==', user.uid), where('activa', '==', true), limit(50))),
+            getDocs(query(collection(db, 'perfiles_tutores'), where('empresa_id', '==', user.uid))),
           ]);
           uni.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'universidad', titulo: x.nombre_universidad ?? 'Universidad', subtitulo: x.dominio_correo ?? '', foto: x.logo_url }); });
           est.docs.forEach((d: any) => { const x = d.data(); items.push({ id: d.id, tipo: 'estudiante', titulo: x.nombre_completo ?? 'Estudiante', subtitulo: x.carrera ?? '', carrera: x.carrera, foto: x.foto_url }); });
@@ -188,6 +195,12 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
           const areas = new Set<string>();
           vacPropias.docs.forEach((d: any) => { const a = d.data()?.area; if (a) areas.add(a); });
           if (!cancel) setMisAreasEmpresa(areas);
+          if (!cancel) {
+            setMisTutores(tutores.docs.map((d: any) => {
+              const x = d.data();
+              return { id: d.id, nombre: String(x.nombre_completo ?? 'Tutor'), foto: x.foto_url ?? null };
+            }));
+          }
         } else {
           // Estudiante (y otros roles): empresas · universidades
           const [emp, uni, miPerfil, vacActivas, misCupos] = await Promise.all([
@@ -450,6 +463,33 @@ export default function GlobalSearchOverlay({ visible, onClose, onResultPress }:
                 keyboardShouldPersistTaps="handled"
                 style={webScrollStyle(colors)}
                 contentContainerStyle={{ padding: 16, paddingBottom: 60, gap: 8 }}
+                ListHeaderComponent={misTutores.length > 0 ? (
+                  <View style={{ marginBottom: 14, gap: 8 }}>
+                    <Text style={styles.seccionTutoresTitulo}>Tus tutores</Text>
+                    {misTutores.map(t => (
+                      <TouchableOpacity
+                        key={t.id}
+                        style={styles.resultRow}
+                        activeOpacity={0.8}
+                        onPress={() => { onClose(); void iniciarChat({ uid: t.id, nombre: t.nombre, rol: 'tutor' }); }}
+                      >
+                        <StorageAvatar url={t.foto} size={44} fallbackIcon="person" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.resultTitle} numberOfLines={1} noTranslate>{t.nombre}</Text>
+                          <Text style={styles.resultSub} numberOfLines={1}>Tutor</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.chatBtn}
+                          onPress={() => { onClose(); void iniciarChat({ uid: t.id, nombre: t.nombre, rol: 'tutor' }); }}
+                          hitSlop={8}
+                          accessibilityLabel={`Chatear con ${t.nombre}`}
+                        >
+                          <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
+                        </TouchableOpacity>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
                 ListEmptyComponent={
                   <View style={styles.center}>
                     <Ionicons name="search" size={40} color={colors.textMuted} />
@@ -574,6 +614,10 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   },
   resultTitle: { fontSize: 14, fontFamily: FONTS.interSemiBold, color: COLORS.textPrimary },
   resultSub: { fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted, marginTop: 2 },
+  seccionTutoresTitulo: {
+    fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2,
+  },
   afinBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     marginTop: 6, alignSelf: 'flex-start',

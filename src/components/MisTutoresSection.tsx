@@ -7,12 +7,18 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text, AutoTextInput as TextInput } from './AutoText';
 import { showAlert, showConfirm } from './AppAlert';
+import ProfileViewerModal from './ProfileViewerModal';
 import StorageAvatar from './StorageAvatar';
+import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
+import { abrirChatDirectoUsuarios } from '../services/chatService';
+import { COLECCION_ASIGNACIONES, type AsignacionCupo } from '../services/reclamoCuposService';
 import {
   crearTutor,
   desactivarTutor,
@@ -23,6 +29,7 @@ import {
 
 interface Props {
   empresaId: string;
+  empresaNombre: string;
 }
 
 /** Solo letras (con tildes/ñ) y espacios — se aplica mientras se escribe, así
@@ -44,9 +51,10 @@ function campoBorde(s: ReturnType<typeof makeStyles>, tocado: boolean, error?: s
   return error ? s.inputError : s.inputOk;
 }
 
-export default function MisTutoresSection({ empresaId }: Props) {
+export default function MisTutoresSection({ empresaId, empresaNombre }: Props) {
   const { colors } = useTheme();
   const s = makeStyles(colors);
+  const router = useRouter();
 
   const [tutores, setTutores] = useState<PerfilTutor[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -58,8 +66,62 @@ export default function MisTutoresSection({ empresaId }: Props) {
   const [tocados, setTocados] = useState<Partial<Record<CampoTutor, boolean>>>({});
   const [guardando, setGuardando] = useState(false);
   const [cambiandoId, setCambiandoId] = useState<string | null>(null);
+  const [chateandoId, setChateandoId] = useState<string | null>(null);
+  const [expandidoId, setExpandidoId] = useState<string | null>(null);
+  const [perfilEstudianteId, setPerfilEstudianteId] = useState<string | null>(null);
 
   useEffect(() => suscribirTutoresDeEmpresa(empresaId, setTutores), [empresaId]);
+
+  // Todos los cupos de la empresa, agrupados por tutor (activos + historial) —
+  // UNA sola suscripción para todas las tarjetas, en vez de una por tutor.
+  // Mismo query que ya usa AsignarTutorModal.tsx para su propio contador.
+  const [cupos, setCupos] = useState<AsignacionCupo[]>([]);
+  useEffect(() => {
+    if (!empresaId) { setCupos([]); return; }
+    const unsub = onSnapshot(
+      query(collection(db, COLECCION_ASIGNACIONES), where('empresaId', '==', empresaId)),
+      snap => setCupos(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as AsignacionCupo))),
+      () => setCupos([]),
+    );
+    return unsub;
+  }, [empresaId]);
+
+  const cuposPorTutor = useMemo(() => {
+    const m = new Map<string, AsignacionCupo[]>();
+    cupos.forEach(c => {
+      if (!c.tutorId) return;
+      const arr = m.get(c.tutorId) ?? [];
+      arr.push(c);
+      m.set(c.tutorId, arr);
+    });
+    // Activos primero, luego historial; dentro de cada grupo, por nombre.
+    m.forEach(arr => arr.sort((a, b) => {
+      const activoA = a.estado === 'tomado' && a.finalizada !== true;
+      const activoB = b.estado === 'tomado' && b.finalizada !== true;
+      if (activoA !== activoB) return activoA ? -1 : 1;
+      return String(a.estudianteNombre ?? '').localeCompare(String(b.estudianteNombre ?? ''));
+    }));
+    return m;
+  }, [cupos]);
+
+  const cantidadActivos = (tutorId: string) =>
+    (cuposPorTutor.get(tutorId) ?? []).filter(c => c.estado === 'tomado' && c.finalizada !== true).length;
+
+  const chatearConTutor = async (tutor: PerfilTutor) => {
+    if (chateandoId) return;
+    setChateandoId(tutor.id);
+    try {
+      const chatId = await abrirChatDirectoUsuarios({
+        yo: { uid: empresaId, nombre: empresaNombre || 'Empresa', rol: 'empresa' },
+        otro: { uid: tutor.id, nombre: tutor.nombre_completo || 'Tutor', rol: 'tutor' },
+      });
+      router.push({ pathname: '/ChatScreen', params: { chatId, peerName: tutor.nombre_completo || 'Tutor' } } as any);
+    } catch {
+      showAlert('Error', 'No se pudo abrir el chat con el tutor.');
+    } finally {
+      setChateandoId(null);
+    }
+  };
 
   const limpiarFormulario = () => {
     setNombreCompleto('');
@@ -152,41 +214,102 @@ export default function MisTutoresSection({ empresaId }: Props) {
       {tutores.length === 0 ? (
         <Text style={s.vacio}>Todavía no has registrado ningún tutor.</Text>
       ) : (
-        tutores.map((tutor) => (
+        tutores.map((tutor) => {
+          const pasantes = cuposPorTutor.get(tutor.id) ?? [];
+          const expandido = expandidoId === tutor.id;
+          return (
           <View key={tutor.id} style={s.fila}>
-            <StorageAvatar
-              url={tutor.foto_url}
-              storagePath={`fotos_tutores/${tutor.id}/foto.jpg`}
-              size={44}
-              fallbackIcon="person"
-            />
-            <View style={{ flex: 1 }}>
-              <Text style={s.nombre} noTranslate>{tutor.nombre_completo}</Text>
-              <Text style={s.cargo} noTranslate>{tutor.cargo}</Text>
+            <View style={s.filaTop}>
+              <StorageAvatar
+                url={tutor.foto_url}
+                storagePath={`fotos_tutores/${tutor.id}/foto.jpg`}
+                size={44}
+                fallbackIcon="person"
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={s.nombre} noTranslate>{tutor.nombre_completo}</Text>
+                <Text style={s.cargo} noTranslate>{tutor.cargo}</Text>
+              </View>
+              <View style={[s.badge, tutor.activo ? s.badgeOk : s.badgeOff]}>
+                <Text style={[s.badgeTxt, tutor.activo ? s.badgeTxtOk : s.badgeTxtOff]}>
+                  {tutor.activo ? 'Activo' : 'Inactivo'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={s.accionBtn}
+                onPress={() => cambiarEstado(tutor)}
+                disabled={cambiandoId === tutor.id}
+                activeOpacity={0.8}
+              >
+                {cambiandoId === tutor.id ? (
+                  <ActivityIndicator size="small" color={colors.primaryLight} />
+                ) : (
+                  <Ionicons
+                    name={tutor.activo ? 'pause-circle-outline' : 'play-circle-outline'}
+                    size={22}
+                    color={tutor.activo ? colors.error : colors.success}
+                  />
+                )}
+              </TouchableOpacity>
             </View>
-            <View style={[s.badge, tutor.activo ? s.badgeOk : s.badgeOff]}>
-              <Text style={[s.badgeTxt, tutor.activo ? s.badgeTxtOk : s.badgeTxtOff]}>
-                {tutor.activo ? 'Activo' : 'Inactivo'}
-              </Text>
+
+            <View style={s.filaBottom}>
+              <TouchableOpacity
+                style={s.chatBtn}
+                onPress={() => chatearConTutor(tutor)}
+                disabled={chateandoId === tutor.id}
+                activeOpacity={0.85}
+              >
+                {chateandoId === tutor.id ? (
+                  <ActivityIndicator size="small" color={colors.primaryLight} />
+                ) : (
+                  <Ionicons name="chatbubbles-outline" size={16} color={colors.primaryLight} />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={s.pasantesBtn}
+                onPress={() => setExpandidoId(expandido ? null : tutor.id)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="people-outline" size={14} color={colors.textMuted} />
+                <Text style={s.pasantesBtnTxt} noTranslate>{cantidadActivos(tutor.id)}</Text>
+                <Ionicons name={expandido ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={s.accionBtn}
-              onPress={() => cambiarEstado(tutor)}
-              disabled={cambiandoId === tutor.id}
-              activeOpacity={0.8}
-            >
-              {cambiandoId === tutor.id ? (
-                <ActivityIndicator size="small" color={colors.primaryLight} />
-              ) : (
-                <Ionicons
-                  name={tutor.activo ? 'pause-circle-outline' : 'play-circle-outline'}
-                  size={22}
-                  color={tutor.activo ? colors.error : colors.success}
-                />
-              )}
-            </TouchableOpacity>
+
+            {expandido && (
+              <View style={s.listaPasantes}>
+                {pasantes.length === 0 ? (
+                  <Text style={s.listaVacia}>Todavía no tiene pasantes asignados.</Text>
+                ) : (
+                  pasantes.map(c => {
+                    const activo = c.estado === 'tomado' && c.finalizada !== true;
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={s.pasanteRow}
+                        activeOpacity={0.7}
+                        onPress={() => setPerfilEstudianteId(c.estudianteId)}
+                      >
+                        <Text style={s.pasanteNombre} numberOfLines={1} noTranslate>
+                          {c.estudianteNombre || 'Estudiante'}
+                        </Text>
+                        <View style={[s.pasanteBadge, activo ? s.badgeOk : s.badgeOff]}>
+                          <Text style={[s.pasanteBadgeTxt, activo ? s.badgeTxtOk : s.badgeTxtOff]}>
+                            {activo ? 'Activo' : 'Finalizado'}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </View>
+            )}
           </View>
-        ))
+          );
+        })
       )}
 
       <TouchableOpacity style={s.addBtn} onPress={() => setModalOpen(true)} activeOpacity={0.85}>
@@ -274,6 +397,15 @@ export default function MisTutoresSection({ empresaId }: Props) {
           </View>
         </View>
       </Modal>
+
+      {!!perfilEstudianteId && (
+        <ProfileViewerModal
+          visible
+          tipo="estudiante"
+          profileId={perfilEstudianteId}
+          onClose={() => setPerfilEstudianteId(null)}
+        />
+      )}
     </View>
   );
 }
@@ -282,13 +414,12 @@ const makeStyles = (C: GradlyColors) =>
   StyleSheet.create({
     vacio: { color: C.white60, fontSize: 13.5, textAlign: 'center', paddingVertical: 10 },
     fila: {
-      flexDirection: 'row',
-      alignItems: 'center',
       gap: 10,
       backgroundColor: C.white8,
       borderRadius: 14,
       padding: 10,
     },
+    filaTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     nombre: { color: C.textPrimary, fontSize: 14, fontFamily: FONTS.interSemiBold },
     cargo: { color: C.white60, fontSize: 12, marginTop: 1 },
     badge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10 },
@@ -298,6 +429,30 @@ const makeStyles = (C: GradlyColors) =>
     badgeTxtOk: { color: C.success },
     badgeTxtOff: { color: C.error },
     accionBtn: { padding: 2 },
+    filaBottom: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      borderTopWidth: 1, borderTopColor: C.border, paddingTop: 10,
+    },
+    chatBtn: {
+      width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+      borderWidth: 1, borderColor: C.primary35, backgroundColor: C.primary12,
+    },
+    pasantesBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      borderWidth: 1, borderColor: C.border, borderRadius: 10,
+      paddingHorizontal: 10, paddingVertical: 7,
+    },
+    pasantesBtnTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: C.textMuted },
+    listaPasantes: { gap: 6, paddingTop: 2 },
+    listaVacia: { color: C.white60, fontSize: 12, fontStyle: 'italic', paddingVertical: 4 },
+    pasanteRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      backgroundColor: C.backgroundSurface, borderRadius: 10,
+      paddingHorizontal: 10, paddingVertical: 8,
+    },
+    pasanteNombre: { flex: 1, fontSize: 12.5, fontFamily: FONTS.interRegular, color: C.textPrimary },
+    pasanteBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+    pasanteBadgeTxt: { fontSize: 10, fontFamily: FONTS.interSemiBold },
     addBtn: {
       flexDirection: 'row',
       alignItems: 'center',

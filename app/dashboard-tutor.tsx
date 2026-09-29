@@ -7,6 +7,10 @@
 // pestaña "Incidencias" (SeccionIncidenciasTutor) — paridad total con la
 // empresa, acotada a sus propios pasantes. También en esta fase se agrega
 // FloatingTopBar (el tutor no tenía campanita en ningún lado hasta ahora).
+// Chat con el tutor: cuarta pestaña "Mensajes" (SeccionMensajes, el mismo
+// componente que ya usan empresa/universidad) — sin esto, el tutor no podía
+// ver ni responder los chats que le llegan desde los nuevos puntos de
+// entrada (Mi Progreso del estudiante, la lupa de la empresa, etc.).
 //
 // Mismo patrón config-driven que dashboard-empresa.tsx/dashboard-
 // universidad.tsx para el perfil: PerfilMasterDetail con un array `sections`.
@@ -28,6 +32,7 @@ import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import SeccionPasantesTutor from '../src/components/SeccionPasantesTutor';
 import SeccionIncidenciasTutor from '../src/components/SeccionIncidenciasTutor';
+import SeccionMensajes from '../src/components/SeccionMensajes';
 import FloatingTopBar from '../src/components/FloatingTopBar';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { useAuth } from '../src/context/AuthContext';
@@ -37,8 +42,8 @@ import type { HorarioPasantia } from '../src/data/disponibilidad';
 import type { PerfilTutor } from '../src/services/tutorService';
 import { uploadDocumentoVerificacion } from '../src/services/storageUploads';
 
-type SeccionTutor = 'pasantes' | 'incidencias' | 'perfil';
-const SECCIONES_VALIDAS: SeccionTutor[] = ['pasantes', 'incidencias', 'perfil'];
+type SeccionTutor = 'pasantes' | 'incidencias' | 'mensajes' | 'perfil';
+const SECCIONES_VALIDAS: SeccionTutor[] = ['pasantes', 'incidencias', 'mensajes', 'perfil'];
 
 export default function DashboardTutor() {
   useAuthGuard('tutor');
@@ -49,6 +54,9 @@ export default function DashboardTutor() {
 
   const [seccion, setSeccion] = useState<SeccionTutor>('pasantes');
   const [pasanteAAbrirId, setPasanteAAbrirId] = useState<string | null>(null);
+  // Oculta la campanita mientras se ve un chat abierto en "Mensajes" — ChatThread
+  // ya trae la suya propia (mismo criterio que dashboard-empresa.tsx).
+  const [chatAbiertoEnMensajes, setChatAbiertoEnMensajes] = useState(false);
   const params = useLocalSearchParams<{ verPasante?: string; seccion?: string }>();
 
   // Deep link desde la campanita ("Tienes un nuevo pasante asignado",
@@ -191,7 +199,9 @@ export default function DashboardTutor() {
       {/* El tutor no tenía campanita en ningún lado hasta la Fase 4 — sin
           esto, ni siquiera las notificaciones ya existentes de Fase 2/3
           ("nuevo pasante asignado") se veían nunca. */}
-      <FloatingTopBar userId={user?.uid} />
+      {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
+        <FloatingTopBar userId={user?.uid} />
+      )}
 
       <View style={s.tabBar}>
         <TouchableOpacity
@@ -209,6 +219,14 @@ export default function DashboardTutor() {
         >
           <Ionicons name="alert-circle-outline" size={17} color={seccion === 'incidencias' ? colors.primaryLight : colors.white60} />
           <Text style={[s.tabTxt, seccion === 'incidencias' && s.tabTxtActivo]}>Incidencias</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.tabBtn, seccion === 'mensajes' && s.tabBtnActivo]}
+          activeOpacity={0.85}
+          onPress={() => setSeccion('mensajes')}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={17} color={seccion === 'mensajes' ? colors.primaryLight : colors.white60} />
+          <Text style={[s.tabTxt, seccion === 'mensajes' && s.tabTxtActivo]}>Mensajes</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[s.tabBtn, seccion === 'perfil' && s.tabBtnActivo]}
@@ -232,6 +250,8 @@ export default function DashboardTutor() {
         <View style={{ flex: 1, padding: 16 }}>
           <SeccionIncidenciasTutor tutorId={user!.uid} tutorNombre={perfil.nombre_completo} />
         </View>
+      ) : seccion === 'mensajes' ? (
+        <SeccionMensajes onChatOpenChange={setChatAbiertoEnMensajes} />
       ) : (
       <PerfilMasterDetail
         name={perfil.nombre_completo}

@@ -2771,4 +2771,14 @@ export const TUTOR_SEED_EN: Record<string, string> = {
   // estudiante (CalendarioEventos.tsx).
   "Ver calendario y observaciones": "View calendar and notes",
   "Observación del tutor": "Tutor's note",
+
+  // Chat con el tutor — 4 puntos de entrada (Mi Progreso del estudiante, la
+  // lupa y el buscador de Mensajes de la empresa, FechaPresentacionModal,
+  // MisTutoresSection.tsx) + bandeja del tutor (dashboard-tutor.tsx).
+  "Chatear con el tutor": "Chat with the tutor",
+  "Tus tutores": "Your tutors",
+  "Tutor": "Tutor",
+  "Toca un tutor para chatear.": "Tap a tutor to chat.",
+  "Todavía no tiene pasantes asignados.": "Doesn't have any assigned interns yet.",
+  "Finalizado": "Finished",
 };

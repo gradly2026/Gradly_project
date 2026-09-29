@@ -1,14 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from './AutoText';
 import { showAlert } from './AppAlert';
 import CalendarPickerModal from './CalendarPickerModal';
+import { db } from '../config/firebaseConfig';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 import { textoHorario } from '../data/disponibilidad';
-import { abrirChatDirectoEmpresaEstudiante } from '../services/chatService';
-import { fijarFechaPresentacion, type AsignacionCupo } from '../services/reclamoCuposService';
+import { abrirChatDirectoEmpresaEstudiante, abrirChatDirectoUsuarios } from '../services/chatService';
+import { COLECCION_ASIGNACIONES, fijarFechaPresentacion, type AsignacionCupo } from '../services/reclamoCuposService';
 
 interface Props {
   visible: boolean;
@@ -60,6 +62,24 @@ export default function FechaPresentacionModal({
   const [calAbierto, setCalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [abriendoChat, setAbriendoChat] = useState(false);
+  const [abriendoChatTutor, setAbriendoChatTutor] = useState(false);
+
+  // Cuántos pasantes tiene A CARGO ahora mismo el tutor asignado — declarado
+  // ANTES del early return de abajo para no romper las reglas de hooks.
+  // No reutiliza useInscripcionesActivas: ese hook no excluye los cupos ya
+  // finalizada:true, y aquí hace falta el mismo criterio exacto que ya usa
+  // AsignarTutorModal.tsx para su propio contador.
+  const tutorId = asignacion?.tutorId ?? null;
+  const [cantidadPasantesTutor, setCantidadPasantesTutor] = useState(0);
+  useEffect(() => {
+    if (!tutorId) { setCantidadPasantesTutor(0); return; }
+    const unsub = onSnapshot(
+      query(collection(db, COLECCION_ASIGNACIONES), where('tutorId', '==', tutorId), where('estado', '==', 'tomado')),
+      snap => setCantidadPasantesTutor(snap.docs.filter(d => (d.data() as any).finalizada !== true).length),
+      () => setCantidadPasantesTutor(0),
+    );
+    return unsub;
+  }, [tutorId]);
 
   if (!visible || !asignacion) return null;
 
@@ -113,6 +133,23 @@ export default function FechaPresentacionModal({
     }
   };
 
+  const chatearConTutor = async () => {
+    if (!tutorId || abriendoChatTutor) return;
+    setAbriendoChatTutor(true);
+    try {
+      const chatId = await abrirChatDirectoUsuarios({
+        yo: { uid: empresaId, nombre: empresaNombre || 'Empresa', rol: 'empresa' },
+        otro: { uid: tutorId, nombre: asignacion.tutorNombre || 'Tutor', rol: 'tutor' },
+      });
+      onClose();
+      router.push({ pathname: '/ChatScreen', params: { chatId, peerName: asignacion.tutorNombre || 'Tutor' } } as any);
+    } catch {
+      showAlert('Error', 'No se pudo abrir el chat con el tutor.');
+    } finally {
+      setAbriendoChatTutor(false);
+    }
+  };
+
   return (
     <>
       <Modal visible transparent animationType="none" onRequestClose={onClose}>
@@ -155,21 +192,47 @@ export default function FechaPresentacionModal({
                 primer día a propósito: la empresa debe elegir tutor antes de
                 poder fijar el Día 1 por primera vez. */}
             {!!onAsignarTutor && (
-              <TouchableOpacity
-                style={s.tutorBox}
-                activeOpacity={0.8}
-                onPress={() => onAsignarTutor(asignacion)}
-              >
-                <Ionicons
-                  name={asignacion.tutorId ? 'person' : 'person-add-outline'}
-                  size={17}
-                  color={asignacion.tutorId ? colors.success : colors.warning}
-                />
-                <Text style={[s.tutorTxt, asignacion.tutorId && { color: colors.textPrimary }]} noTranslate>
-                  {asignacion.tutorId ? `Tutor: ${asignacion.tutorNombre}` : 'Sin tutor asignado'}
-                </Text>
-                <Text style={s.tutorAccion}>{asignacion.tutorId ? 'Cambiar' : 'Asignar tutor'}</Text>
-              </TouchableOpacity>
+              <View style={s.tutorBox}>
+                <TouchableOpacity
+                  style={s.tutorBoxFila}
+                  activeOpacity={0.8}
+                  onPress={() => onAsignarTutor(asignacion)}
+                >
+                  <Ionicons
+                    name={asignacion.tutorId ? 'person' : 'person-add-outline'}
+                    size={17}
+                    color={asignacion.tutorId ? colors.success : colors.warning}
+                  />
+                  <Text style={[s.tutorTxt, asignacion.tutorId && { color: colors.textPrimary }]} noTranslate>
+                    {asignacion.tutorId ? `Tutor: ${asignacion.tutorNombre}` : 'Sin tutor asignado'}
+                  </Text>
+                  <Text style={s.tutorAccion}>{asignacion.tutorId ? 'Cambiar' : 'Asignar tutor'}</Text>
+                </TouchableOpacity>
+
+                {!!asignacion.tutorId && (
+                  <View style={s.tutorBoxFila2}>
+                    <TouchableOpacity
+                      style={[s.tutorChatBtn, abriendoChatTutor && { opacity: 0.6 }]}
+                      activeOpacity={0.85}
+                      disabled={abriendoChatTutor}
+                      onPress={chatearConTutor}
+                    >
+                      {abriendoChatTutor
+                        ? <ActivityIndicator size="small" color={colors.primaryLight} />
+                        : (
+                          <>
+                            <Ionicons name="chatbubbles-outline" size={15} color={colors.primaryLight} />
+                            <Text style={s.tutorChatBtnTxt}>Chatear</Text>
+                          </>
+                        )}
+                    </TouchableOpacity>
+                    <View style={s.tutorContador}>
+                      <Ionicons name="people-outline" size={13} color={colors.textMuted} />
+                      <Text style={s.tutorContadorTxt} noTranslate>{cantidadPasantesTutor}</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
             )}
 
             <TouchableOpacity
@@ -298,13 +361,25 @@ const makeStyles = (COLORS: GradlyColors) =>
     },
     fechaTxt: { flex: 1, fontSize: 13, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted },
     tutorBox: {
-      flexDirection: 'row', alignItems: 'center', gap: 8,
       backgroundColor: COLORS.backgroundSurface,
       borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
-      paddingHorizontal: 13, paddingVertical: 11, marginTop: 10,
+      paddingHorizontal: 13, paddingVertical: 11, marginTop: 10, gap: 10,
+    },
+    tutorBoxFila: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    tutorBoxFila2: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 10,
     },
     tutorTxt: { flex: 1, fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted },
     tutorAccion: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+    tutorChatBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      borderWidth: 1, borderColor: COLORS.primary35, borderRadius: 10,
+      paddingHorizontal: 11, paddingVertical: 7, backgroundColor: COLORS.primary12,
+    },
+    tutorChatBtnTxt: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+    tutorContador: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    tutorContadorTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: COLORS.textMuted },
     tutorHint: { fontSize: 11, fontFamily: FONTS.interRegular, color: COLORS.warning, marginTop: 6, textAlign: 'center' },
     btnPrimary: {
       marginTop: 14, backgroundColor: COLORS.primary,

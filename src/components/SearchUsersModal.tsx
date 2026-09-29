@@ -103,6 +103,12 @@ export default function SearchUsersModal({
   const [nombreGrupo, setNombreGrupo] = useState("");
   const [creandoGrupo, setCreandoGrupo] = useState(false);
 
+  // ── Modo "Tus tutores" (solo empresa) — mucho más simple que el de
+  // universidad: sin selección múltiple ni grupo, un tutor es 1:1. ──
+  const [modoTutores, setModoTutores] = useState(false);
+  const [tutores, setTutores] = useState<UserResult[]>([]);
+  const [loadingTutores, setLoadingTutores] = useState(false);
+
   const esEmpresa = rol === "empresa";
   const esUniversidad = rol === "universidad";
 
@@ -123,6 +129,8 @@ export default function SearchUsersModal({
       setModoEstudiantes(false);
       setSeleccion(new Set());
       setNombreGrupo("");
+      setModoTutores(false);
+      setTutores([]);
       return;
     }
 
@@ -207,6 +215,39 @@ export default function SearchUsersModal({
     const otroRol: UserRole = esEmpresa ? "estudiante" : "empresa";
     onClose();
     void iniciarChat({ uid: item.id, nombre: item.nombre, rol: otroRol });
+  };
+
+  // ── "Tus tutores" (solo empresa): carga los tutores registrados ──
+  const onCargarTutores = async () => {
+    if (!user?.uid) return;
+    setModoTutores(true);
+    setLoadingTutores(true);
+    try {
+      const snap = await getDocs(
+        query(collection(db, "perfiles_tutores"), where("empresa_id", "==", user.uid)),
+      );
+      const items: UserResult[] = snap.docs.map((d) => {
+        const data = d.data() as any;
+        return {
+          id: d.id,
+          nombre: String(data.nombre_completo ?? "Tutor"),
+          detalle: String(data.cargo ?? "Tutor"),
+          foto: data.foto_url ?? null,
+        };
+      });
+      items.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      setTutores(items);
+    } catch (error) {
+      console.warn("Error cargando tutores:", error);
+      setTutores([]);
+    } finally {
+      setLoadingTutores(false);
+    }
+  };
+
+  const chatearConTutor = (t: UserResult) => {
+    onClose();
+    void iniciarChat({ uid: t.id, nombre: t.nombre, rol: "tutor" as UserRole });
   };
 
   // ── "Chatea con tus estudiantes": carga los estudiantes de la universidad ──
@@ -299,7 +340,54 @@ export default function SearchUsersModal({
         <View style={styles.container}>
           <View style={styles.handle} />
 
-          {modoEstudiantes ? (
+          {modoTutores ? (
+            // ════════ MODO: Tus tutores (solo empresa) ════════
+            <>
+              <View style={styles.estHeader}>
+                <TouchableOpacity onPress={() => setModoTutores(false)} hitSlop={8}>
+                  <Ionicons name="chevron-back" size={22} color={C.text} />
+                </TouchableOpacity>
+                <Text style={styles.estTitle}>Tus tutores</Text>
+                <TouchableOpacity onPress={onClose} hitSlop={8}>
+                  <Ionicons name="close" size={22} color={C.textMuted} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.estHint}>Toca un tutor para chatear.</Text>
+
+              {loadingTutores ? (
+                <View style={styles.center}>
+                  <ActivityIndicator color={C.accent} />
+                </View>
+              ) : (
+                <FlatList
+                  data={tutores}
+                  keyExtractor={(it) => it.id}
+                  keyboardShouldPersistTaps="handled"
+                  style={webScrollStyle(colors)}
+                  contentContainerStyle={{ paddingVertical: 8, gap: 8 }}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.resultItem}
+                      activeOpacity={0.8}
+                      onPress={() => chatearConTutor(item)}
+                    >
+                      <StorageAvatar url={item.foto} size={42} fallbackIcon="person" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.resultName} numberOfLines={1} noTranslate>{item.nombre}</Text>
+                        <Text style={styles.resultDetail} numberOfLines={1} noTranslate>{item.detalle}</Text>
+                      </View>
+                      <Ionicons name="chatbubble-outline" size={18} color={C.accent70} />
+                    </TouchableOpacity>
+                  )}
+                  ListEmptyComponent={
+                    <View style={styles.center}>
+                      <Text style={styles.emptyText}>Todavía no has registrado ningún tutor.</Text>
+                    </View>
+                  }
+                />
+              )}
+            </>
+          ) : modoEstudiantes ? (
             // ════════ MODO: Chatea con tus estudiantes ════════
             <>
               <View style={styles.estHeader}>
@@ -434,6 +522,17 @@ export default function SearchUsersModal({
                   <Ionicons name="close" size={22} color={C.textMuted} />
                 </TouchableOpacity>
               </View>
+
+              {esEmpresa && (
+                <TouchableOpacity
+                  style={styles.bulkBtn}
+                  onPress={onCargarTutores}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="people" size={16} color="#fff" />
+                  <Text style={styles.bulkBtnText}>Tus tutores</Text>
+                </TouchableOpacity>
+              )}
 
               {loading ? (
                 <View style={styles.center}>

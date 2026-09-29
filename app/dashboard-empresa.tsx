@@ -2224,7 +2224,7 @@ export default function DashboardEmpresa() {
             subtitle: 'Encargados on-site de tus pasantes',
             icon: 'person-add-outline' as const,
             tone: 'blue' as const,
-            render: () => <MisTutoresSection empresaId={user?.uid ?? ''} />,
+            render: () => <MisTutoresSection empresaId={user?.uid ?? ''} empresaNombre={nombreEmpresa} />,
           },
           {
             id: 'plan',

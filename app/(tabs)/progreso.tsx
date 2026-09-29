@@ -33,7 +33,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { useTranslation } from '../../src/context/TranslationContext';
 import { db } from '../../src/config/firebaseConfig';
 import { COLORS, FONTS, useTheme, webScrollStyle, type GradlyColors } from '../../src/context/ThemeContext';
-import { abrirChatDirectoEmpresaEstudiante } from '../../src/services/chatService';
+import { abrirChatDirectoEmpresaEstudiante, abrirChatDirectoUsuarios } from '../../src/services/chatService';
 import { getFeedbackPendiente, type FeedbackPendiente } from '../../src/services/feedbackService';
 import CalificarPasantiaModal from '../../src/components/CalificarPasantiaModal';
 import { progresoPorFechas } from '../../src/utils/progresoPasantia';
@@ -347,6 +347,7 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
   const { styles } = useThemedStyles();
   const router = useRouter();
   const [abriendoChat, setAbriendoChat] = useState(false);
+  const [abriendoChatTutor, setAbriendoChatTutor] = useState(false);
   const horario = textoHorario(asignacion.horario);
   const sinFecha = !asignacion.fechaPresentacion;
 
@@ -428,6 +429,25 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
       setAbriendoChat(false);
     }
   };
+
+  // Chat directo con el tutor asignado (rol "tutor"). Sin atajo especial de id
+  // determinístico como el de empresa↔estudiante: se usa la función genérica,
+  // ya agnóstica al rol de ambas partes.
+  const chatearConTutor = async () => {
+    if (abriendoChatTutor || !asignacion.tutorId || !asignacion.estudianteId) return;
+    setAbriendoChatTutor(true);
+    try {
+      const chatId = await abrirChatDirectoUsuarios({
+        yo: { uid: asignacion.estudianteId, nombre: asignacion.estudianteNombre || 'Estudiante', rol: 'estudiante' },
+        otro: { uid: asignacion.tutorId, nombre: asignacion.tutorNombre || 'Tutor', rol: 'tutor' },
+      });
+      router.push({ pathname: '/ChatScreen', params: { chatId, peerName: asignacion.tutorNombre || 'Tutor' } } as any);
+    } catch {
+      void showAlert('Error', 'No se pudo abrir el chat con el tutor.');
+    } finally {
+      setAbriendoChatTutor(false);
+    }
+  };
   const completado = ledger?.completado ?? false;
   const pct = ledger?.pct ?? 0;
   const badge = completado
@@ -499,6 +519,32 @@ function MiInscripcionCard({ asignacion, ledger, diasExcluidos }: {
             Primer día: {asignacion.fechaPresentacion}
             {ledger?.fechaFin ? `  ·  último ~${ledger.fechaFin.toISOString().slice(0, 10)}` : ''}
           </Text>
+        </View>
+      )}
+
+      {!!asignacion.tutorId && (
+        <View style={{ gap: 6 }}>
+          <View style={styles.miPasanRow}>
+            <Ionicons name="person-outline" size={15} color={COLORS.textMuted} />
+            <Text style={styles.miPasanText} noTranslate>
+              Tutor: {asignacion.tutorNombre || 'Sin nombre'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.tutorChatBtn}
+            onPress={chatearConTutor}
+            disabled={abriendoChatTutor}
+            activeOpacity={0.85}
+          >
+            {abriendoChatTutor
+              ? <ActivityIndicator size="small" color={COLORS.primaryLight} />
+              : (
+                <>
+                  <Ionicons name="chatbubbles-outline" size={16} color={COLORS.primaryLight} />
+                  <Text style={styles.tutorChatBtnTxt}>Chatear con el tutor</Text>
+                </>
+              )}
+          </TouchableOpacity>
         </View>
       )}
 
@@ -1318,6 +1364,12 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   miPasanRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   miPasanText: { flex: 1, fontSize: 12, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
   miPasanRestante: { fontSize: 11, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
+  tutorChatBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    borderWidth: 1, borderColor: COLORS.primary35, borderRadius: 11,
+    paddingVertical: 9, backgroundColor: COLORS.primary12,
+  },
+  tutorChatBtnTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight },
 
   // Historial
   historialCard: {
