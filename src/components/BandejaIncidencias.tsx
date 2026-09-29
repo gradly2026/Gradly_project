@@ -8,6 +8,8 @@
 //
 //   · estudiante  → abre incidencias y escribe en el hilo. No mueve el estado.
 //   · empresa     → responde y mueve el estado (atender / resolver).
+//   · tutor       → rol "tutor" Fase 4: paridad total con la empresa, acotada
+//                   a los pasantes que tiene asignados.
 //   · universidad → lo mismo que la empresa, y además puede ESCALAR al admin.
 //
 // Por eso es un solo componente con una prop `rol` y no tres pantallas
@@ -34,7 +36,7 @@ import {
   type Incidencia,
 } from '../services/incidenciaService';
 
-type RolBandeja = 'estudiante' | 'universidad' | 'empresa';
+type RolBandeja = 'estudiante' | 'universidad' | 'empresa' | 'tutor';
 
 /**
  * Color e ícono por estado.
@@ -221,7 +223,10 @@ function DetalleIncidencia({
   if (!incidencia) return null;
 
   const deEmpresa = incidencia.origen === 'empresa';
-  const puedeGestionar = rol === 'universidad' || rol === 'empresa';
+  // Rol "tutor" Fase 4: paridad total con la empresa (Atender/Resolver),
+  // acotada a sus propios pasantes por la regla de Firestore — nunca ve una
+  // incidencia que no tenga su `tutor_id`, así que basta con sumarlo aquí.
+  const puedeGestionar = rol === 'universidad' || rol === 'empresa' || rol === 'tutor';
   const puedeEscalar = rol === 'universidad' && incidencia.estado !== 'escalada';
   // "Notificar al estudiante": solo la universidad, solo en incidencias que
   // abrió la empresa y que el estudiante aún no ha visto.
@@ -330,7 +335,7 @@ function DetalleIncidencia({
                   style={[s.btn, (!respuesta.trim() || enviando) && s.btnOff]}
                   disabled={!respuesta.trim() || enviando}
                   onPress={() => correr(async () => {
-                    await responderIncidencia(incidencia.id, respuesta, { nombre: nombreUsuario, rol });
+                    await responderIncidencia(incidencia.id, respuesta, { nombre: nombreUsuario, rol }, incidencia.tutor_id);
                     setRespuesta('');
                   })}
                 >
@@ -350,7 +355,7 @@ function DetalleIncidencia({
                 disabled={enviando}
                 onPress={() => correr(() => notificarEstudianteIncidencia(
                   incidencia.id,
-                  { motivo: incidencia.motivo, estudiante_id: incidencia.estudiante_id, estado: incidencia.estado },
+                  { motivo: incidencia.motivo, estudiante_id: incidencia.estudiante_id, estado: incidencia.estado, tutor_id: incidencia.tutor_id },
                   nombreUsuario,
                 ))}
               >
@@ -379,7 +384,7 @@ function DetalleIncidencia({
                     style={s.btnSec}
                     disabled={enviando}
                     onPress={() => correr(() => cambiarEstadoIncidencia(incidencia.id, 'en_seguimiento', {
-                      estudianteId: incidencia.estudiante_id, motivo: incidencia.motivo,
+                      estudianteId: incidencia.estudiante_id, motivo: incidencia.motivo, tutorId: incidencia.tutor_id,
                     }))}
                   >
                     <Text style={s.btnSecTxt}>{t('inc_accion_atender')}</Text>
@@ -421,6 +426,7 @@ function DetalleIncidencia({
                           resolucion,
                           estudianteId: incidencia.estudiante_id,
                           motivo: incidencia.motivo,
+                          tutorId: incidencia.tutor_id,
                         });
                         onClose();
                       })}

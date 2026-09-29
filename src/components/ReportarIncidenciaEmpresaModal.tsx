@@ -18,19 +18,24 @@ import { showAlert } from './AppAlert';
 import { db } from '../config/firebaseConfig';
 import { useTranslation } from '../context/TranslationContext';
 import { FONTS, useTheme, webScrollStyle, type GradlyColors } from '../context/ThemeContext';
-import { crearIncidenciaEmpresa, MOTIVOS_INCIDENCIA_EMPRESA } from '../services/incidenciaService';
+import { crearIncidenciaEmpresa, crearIncidenciaTutor, MOTIVOS_INCIDENCIA_EMPRESA } from '../services/incidenciaService';
 
-/** Un pasante reportable — se arma en dashboard-empresa a partir de cupos,
- *  grupos y contrataciones individuales activas. */
+/** Un pasante reportable — se arma en dashboard-empresa (a partir de cupos,
+ *  grupos y contrataciones individuales activas) o en SeccionIncidenciasTutor
+ *  (Fase 4 del rol "tutor", a partir de sus propios pasantes). */
 export interface PasanteReportable {
   id: string;
   nombre: string;
   /** Si ya se conoce (cupos/grupo/aplicación lo traen); si no, se resuelve del perfil. */
   universidadId?: string | null;
+  /** Solo pasantes de CUPO: su asignación (hace falta si reporta el tutor, y
+   *  para que la empresa también congele el tutor en la incidencia). */
+  asignacionId?: string | null;
+  tutorId?: string | null;
 }
 
 export default function ReportarIncidenciaEmpresaModal({
-  visible, onClose, onCreada, empresaId, empresaNombre, estudiantes,
+  visible, onClose, onCreada, empresaId, empresaNombre, estudiantes, tutorId,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -38,6 +43,9 @@ export default function ReportarIncidenciaEmpresaModal({
   empresaId: string;
   empresaNombre: string;
   estudiantes: PasanteReportable[];
+  /** Rol "tutor" Fase 4: si viene, este modal reporta como TUTOR (llama
+   *  `crearIncidenciaTutor`) en vez de como empresa. */
+  tutorId?: string;
 }) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -85,15 +93,28 @@ export default function ReportarIncidenciaEmpresaModal({
       }
 
       await Promise.race([
-        crearIncidenciaEmpresa({
-          estudianteId: elegido.id,
-          estudianteNombre: elegido.nombre,
-          universidadId,
-          empresaId,
-          empresaNombre,
-          motivo: motivoFinal,
-          descripcion,
-        }),
+        tutorId
+          ? crearIncidenciaTutor({
+              estudianteId: elegido.id,
+              estudianteNombre: elegido.nombre,
+              universidadId,
+              empresaId,
+              empresaNombre,
+              asignacionId: elegido.asignacionId ?? '',
+              motivo: motivoFinal,
+              descripcion,
+            })
+          : crearIncidenciaEmpresa({
+              estudianteId: elegido.id,
+              estudianteNombre: elegido.nombre,
+              universidadId,
+              empresaId,
+              empresaNombre,
+              asignacionId: elegido.asignacionId,
+              tutorId: elegido.tutorId,
+              motivo: motivoFinal,
+              descripcion,
+            }),
         new Promise((_, rej) => setTimeout(() => rej(new Error(t('error_generico'))), 15000)),
       ]);
       onCreada?.();

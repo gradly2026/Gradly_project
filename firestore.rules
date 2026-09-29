@@ -852,23 +852,33 @@ service cloud.firestore {
     // y la universidad TIENEN que poder ver, porque son quienes lo arreglan.
     // Ver src/services/incidenciaService.ts para el ciclo de vida completo.
     match /incidencias/{incidenciaId} {
-      // Las 3 partes implicadas y el admin. Nadie más: una incidencia nombra a
-      // un estudiante y describe un conflicto: no es información pública.
+      // Las 3 partes implicadas, el admin, y (Fase 4 del rol "tutor") el tutor
+      // que estaba asignado al pasante AL CREARSE la incidencia (`tutor_id`,
+      // congelado — ver más abajo). Nadie más: una incidencia nombra a un
+      // estudiante y describe un conflicto: no es información pública.
       allow read: if request.auth != null && (
         resource.data.estudiante_id == request.auth.uid
         || resource.data.universidad_id == request.auth.uid
         || resource.data.empresa_id == request.auth.uid
+        || resource.data.tutor_id == request.auth.uid
         || esAdmin()
       );
 
-      // Dos formas de abrir una incidencia, siempre en 'abierta' (nadie la crea
-      // ya "resuelta") y con el hilo vacío:
+      // Tres formas de abrir una incidencia, siempre en 'abierta' (nadie la
+      // crea ya "resuelta") y con el hilo vacío:
       //   · el ESTUDIANTE, a su propio nombre (problema de su práctica); o
       //   · la EMPRESA, sobre un estudiante suyo (llegadas tarde, tareas sin
-      //     cumplir, ausencias…). Nace `origen:'empresa'` y oculta al estudiante
-      //     (`visible_estudiante:false`); la universidad la ve de una y decide
-      //     si notificar al estudiante o escalar al admin — solo entonces el
-      //     estudiante la ve y recibe el aviso.
+      //     cumplir, ausencias…); o
+      //   · (Fase 4 del rol "tutor") el TUTOR, sobre uno de SUS pasantes —
+      //     mismo cruce en vivo contra asignaciones_cupo que ya usan
+      //     asignarTutor (Fase 2) y esTutorDeAsignacion (Fase 3): el
+      //     `asignacion_id` que se guarda de una vez debe ser una asignación
+      //     donde ese tutor esté puesto Y que nombre al mismo estudiante y
+      //     empresa que trae la incidencia — así no puede reportar a nombre
+      //     de un pasante ajeno inventando el resto de los campos.
+      //   Las dos últimas nacen `origen:'empresa'` y ocultas al estudiante
+      //   (`visible_estudiante:false`); la universidad las ve de una y decide
+      //   si notificar al estudiante o escalar al admin.
       allow create: if (
           esRol('estudiante')
           && request.resource.data.estudiante_id == request.auth.uid
@@ -881,20 +891,36 @@ service cloud.firestore {
           && request.resource.data.estado == 'abierta'
           && request.resource.data.visible_estudiante == false
           && request.resource.data.seguimiento.size() == 0
+        ) || (
+          esRol('tutor')
+          && request.resource.data.tutor_id == request.auth.uid
+          && request.resource.data.origen == 'empresa'
+          && request.resource.data.estado == 'abierta'
+          && request.resource.data.visible_estudiante == false
+          && request.resource.data.seguimiento.size() == 0
+          && get(/databases/$(database)/documents/asignaciones_cupo/$(request.resource.data.asignacion_id)).data.tutorId == request.auth.uid
+          && get(/databases/$(database)/documents/asignaciones_cupo/$(request.resource.data.asignacion_id)).data.estudianteId == request.resource.data.estudiante_id
+          && get(/databases/$(database)/documents/asignaciones_cupo/$(request.resource.data.asignacion_id)).data.empresaId == request.resource.data.empresa_id
         );
 
       // Las partes no se pueden reasignar NUNCA: sin este candado, la empresa
       // señalada podría cambiar `empresa_id` por el de otra y quitarse el caso
-      // de encima, o esconderlo de la universidad.
+      // de encima, o esconderlo de la universidad — mismo candado ahora sobre
+      // `tutor_id`/`asignacion_id` (Fase 4), para que un tutor con permiso de
+      // update no pueda reescribirse fuera del caso ni inventar otro tutor.
       allow update: if request.auth != null
         && request.resource.data.estudiante_id == resource.data.estudiante_id
         && request.resource.data.universidad_id == resource.data.universidad_id
         && request.resource.data.empresa_id == resource.data.empresa_id
+        && request.resource.data.tutor_id == resource.data.tutor_id
+        && request.resource.data.asignacion_id == resource.data.asignacion_id
         && (
-          // Empresa señalada, universidad responsable y admin: pueden responder
-          // y mover el estado.
+          // Empresa señalada, universidad responsable, el tutor (Fase 4:
+          // misma paridad que la empresa) y admin: pueden responder y mover
+          // el estado.
           resource.data.universidad_id == request.auth.uid
           || resource.data.empresa_id == request.auth.uid
+          || resource.data.tutor_id == request.auth.uid
           || esAdmin()
           // El estudiante puede escribir en el hilo, pero NO tocar el estado ni
           // la resolución: nadie declara resuelto su propio problema.

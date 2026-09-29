@@ -3921,7 +3921,14 @@ function SeccionActivas({ apps, solicitudesGrupo, onVerPerfil, empresaId, empres
       if (a.estudiante_id) map.set(a.estudiante_id, { id: a.estudiante_id, nombre: a.estudiante_nombre || 'Estudiante', universidadId: a.universidad_id ?? null });
     });
     cuposActivos.forEach(c => {
-      if (c.estudianteId) map.set(c.estudianteId, { id: c.estudianteId, nombre: c.estudianteNombre || 'Estudiante', universidadId: c.universidadId ?? null });
+      if (c.estudianteId) {
+        map.set(c.estudianteId, {
+          id: c.estudianteId, nombre: c.estudianteNombre || 'Estudiante', universidadId: c.universidadId ?? null,
+          // Rol "tutor" Fase 4: si este cupo ya tiene tutor, se congela en la
+          // incidencia que la empresa reporte sobre él.
+          asignacionId: c.id, tutorId: c.tutorId ?? null,
+        });
+      }
     });
     return [...map.values()];
   }, [apps, cuposActivos]);

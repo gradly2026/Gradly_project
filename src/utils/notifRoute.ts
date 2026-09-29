@@ -39,7 +39,8 @@ export type NotifRefKind =
   | 'ticketSoporte'
   | 'completarPerfil'
   | 'terminacionPasantia'
-  | 'pasanteTutor';
+  | 'pasanteTutor'
+  | 'incidenciaTutor';
 // Tipo de TypeScript que limita `kind` a exactamente estos valores de
 // texto posibles. Cada uno corresponde a un modal de detalle distinto:
 //   'vacante'              → VacanteDetailByIdModal.tsx
@@ -84,6 +85,14 @@ export type NotifRefKind =
 //                           que 'certificarPasante'). Lo consume
 //                           app/dashboard-tutor.tsx vía el parámetro de ruta
 //                           `verPasante`.
+//   'incidenciaTutor'     → NO abre IncidenciaAvisoModal (ese modal está
+//                           escrito con textos específicos para el
+//                           estudiante). Lleva al TUTOR a su panel, pestaña
+//                           "Incidencias" (rol "tutor", Fase 4), donde ve la
+//                           misma bandeja en vivo que empresa/universidad y
+//                           abre ahí la incidencia. El id es el de
+//                           `incidencias`; se consume vía el parámetro de
+//                           ruta genérico `seccion`.
 
 export interface NotifRef {
   // Forma del resultado "ya interpretado": qué tipo de entidad es, y cuál
@@ -92,7 +101,7 @@ export interface NotifRef {
   id: string;
 }
 
-const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'certificarPasante', 'feedbackPendiente', 'postulacionRechazada', 'contratoAviso', 'ofertaEmpleo', 'ofertaRespondida', 'incidencia', 'ticketSoporte', 'completarPerfil', 'terminacionPasantia', 'pasanteTutor'];
+const KINDS: NotifRefKind[] = ['vacante', 'grupo', 'aplicacionGrupo', 'reclamo', 'comprobante', 'certificarPasante', 'feedbackPendiente', 'postulacionRechazada', 'contratoAviso', 'ofertaEmpleo', 'ofertaRespondida', 'incidencia', 'ticketSoporte', 'completarPerfil', 'terminacionPasantia', 'pasanteTutor', 'incidenciaTutor'];
 // La MISMA lista de valores que el tipo NotifRefKind de arriba, pero como
 // un ARRAY real (no solo un tipo). Se necesita en tiempo de ejecución
 // (los tipos de TypeScript desaparecen al compilar, no existen dentro del

@@ -124,6 +124,16 @@ export interface Incidencia {
   resolucion: string;
   fecha: any;
   fecha_actualizacion: any;
+  /**
+   * Rol "tutor" Fase 4: el tutor que estaba asignado al pasante AL CREARSE la
+   * incidencia (y la asignación a la que pertenece). Se fijan una sola vez y
+   * quedan inmutables (ver firestore.rules) — una reasignación posterior del
+   * tutor no cambia qué incidencias ve cada uno. Ausentes cuando la incidencia
+   * no es sobre un pasante de cupo con tutor (contratos laborales, o cupos sin
+   * tutor asignado todavía).
+   */
+  tutor_id?: string | null;
+  asignacion_id?: string | null;
 }
 
 /** Datos que el estudiante aporta al abrir una incidencia. */
@@ -135,6 +145,33 @@ export interface CrearIncidenciaParams {
   categoria: CategoriaIncidencia;
   motivo: string;
   descripcion: string;
+}
+
+/**
+ * Rol "tutor" Fase 4: resuelve la asignación de cupo ACTIVA de un estudiante
+ * (y su tutor, si tiene) para congelarlos en una incidencia nueva sobre esa
+ * empresa. Mismo query que ya usa useProgresoInscripcion — de haber varias
+ * (no debería), toma la primera no finalizada. `null` si no tiene ninguna
+ * (aplicación individual, acuerdo de grupo, o sin tutor asignado todavía).
+ */
+async function resolverAsignacionYTutor(
+  estudianteId: string,
+): Promise<{ asignacionId: string | null; tutorId: string | null }> {
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'asignaciones_cupo'),
+        where('estudianteId', '==', estudianteId),
+        where('estado', '==', 'tomado'),
+      ),
+    );
+    const activa = snap.docs
+      .map(d => ({ id: d.id, ...(d.data() as any) }))
+      .find(a => a.finalizada !== true);
+    return { asignacionId: activa?.id ?? null, tutorId: activa?.tutorId ?? null };
+  } catch {
+    return { asignacionId: null, tutorId: null };
+  }
 }
 
 /**
@@ -162,6 +199,13 @@ export async function crearIncidencia(p: CrearIncidenciaParams): Promise<string>
   const universidadId = p.universidadId ?? '';
   const esSobreEmpresa = p.categoria === 'empresa' && !!p.empresaId;
 
+  // Rol "tutor" Fase 4: si el reporte es sobre la empresa, el tutor asignado
+  // en este momento "entra en tutela de juicio" — se congela en la incidencia
+  // igual que si la hubiera creado la propia empresa.
+  const { asignacionId, tutorId } = esSobreEmpresa
+    ? await resolverAsignacionYTutor(uid)
+    : { asignacionId: null, tutorId: null };
+
   const ref = await addDoc(collection(db, COLECCION_INCIDENCIAS), {
     estudiante_id: uid,
     estudiante_nombre: p.estudianteNombre ?? '',
@@ -171,6 +215,8 @@ export async function crearIncidencia(p: CrearIncidenciaParams): Promise<string>
     // recibe el aviso es `categoria`, no este campo.
     empresa_id: p.empresaId ?? '',
     empresa_nombre: p.empresaNombre ?? '',
+    tutor_id: tutorId,
+    asignacion_id: asignacionId,
     categoria: p.categoria,
     motivo: p.motivo.trim(),
     descripcion: p.descripcion.trim(),
@@ -188,6 +234,7 @@ export async function crearIncidencia(p: CrearIncidenciaParams): Promise<string>
   const avisos: Promise<any>[] = [];
   if (universidadId) avisos.push(enviarNotificacion(universidadId, titulo, mensaje, 'warning'));
   if (esSobreEmpresa) avisos.push(enviarNotificacion(p.empresaId!, titulo, mensaje, 'warning'));
+  if (tutorId) avisos.push(enviarNotificacion(tutorId, titulo, mensaje, 'warning', `incidenciaTutor:${ref.id}`));
   // El admin ve TODA incidencia nueva (no solo las escaladas), vía la misma
   // cola que usa el panel — `escalarIncidencia`. Best-effort: si las reglas no
   // dejan a un estudiante escribir ahí, la incidencia sigue visible en la
@@ -217,6 +264,11 @@ export interface CrearIncidenciaEmpresaParams {
   empresaNombre: string;
   motivo: string;
   descripcion: string;
+  /** Rol "tutor" Fase 4: si ese pasante tiene tutor asignado, se congela en
+   *  la incidencia — así también él la ve, aunque haya sido la empresa quien
+   *  reportó. Van juntos: sin `asignacionId` no tiene sentido guardar `tutorId`. */
+  asignacionId?: string | null;
+  tutorId?: string | null;
 }
 
 /**
@@ -247,6 +299,8 @@ export async function crearIncidenciaEmpresa(p: CrearIncidenciaEmpresaParams): P
     universidad_id: universidadId,
     empresa_id: p.empresaId,
     empresa_nombre: p.empresaNombre ?? '',
+    tutor_id: p.tutorId ?? null,
+    asignacion_id: p.asignacionId ?? null,
     categoria: 'estudiante' as CategoriaIncidencia,
     origen: 'empresa' as OrigenIncidencia,
     visible_estudiante: false,
@@ -259,12 +313,94 @@ export async function crearIncidenciaEmpresa(p: CrearIncidenciaEmpresaParams): P
     fecha_actualizacion: serverTimestamp(),
   });
 
-  // Aviso a la universidad (best-effort: la incidencia ya quedó registrada).
+  // Avisos a la universidad y (Fase 4 del rol "tutor") al tutor asignado —
+  // best-effort: la incidencia ya quedó registrada.
   if (universidadId) {
     try {
       await enviarNotificacion(
         universidadId,
         'Una empresa reportó a un estudiante',
+        `${p.empresaNombre || 'Una empresa'} reportó a ${p.estudianteNombre || 'un estudiante'}: ${p.motivo.trim()}`,
+        'warning',
+        `incidencia:${ref.id}`,
+      );
+    } catch { /* no-op */ }
+  }
+  if (p.tutorId) {
+    try {
+      await enviarNotificacion(
+        p.tutorId,
+        'Tu empresa reportó a un pasante',
+        `${p.empresaNombre || 'Tu empresa'} reportó a ${p.estudianteNombre || 'un pasante'}: ${p.motivo.trim()}`,
+        'warning',
+        `incidenciaTutor:${ref.id}`,
+      );
+    } catch { /* no-op */ }
+  }
+
+  return ref.id;
+}
+
+/** Datos que el TUTOR aporta al reportar a uno de sus pasantes (rol "tutor",
+ *  Fase 4). `asignacionId` es obligatorio (no opcional como en la versión de
+ *  empresa): la regla de Firestore lo necesita para confirmar que ese tutor
+ *  de verdad está puesto en esa asignación, y que nombra al mismo estudiante
+ *  y empresa que el resto del documento. */
+export interface CrearIncidenciaTutorParams {
+  estudianteId: string;
+  estudianteNombre: string;
+  universidadId: string;
+  empresaId: string;
+  empresaNombre: string;
+  asignacionId: string;
+  motivo: string;
+  descripcion: string;
+}
+
+/**
+ * El TUTOR abre una incidencia sobre uno de sus propios pasantes — misma
+ * forma que `crearIncidenciaEmpresa` (paridad total, decisión del usuario),
+ * solo que `tutor_id` es quien llama, no la empresa. Nace oculta al
+ * estudiante igual que la de la empresa; la universidad decide si notificar
+ * o escalar.
+ */
+export async function crearIncidenciaTutor(p: CrearIncidenciaTutorParams): Promise<string> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Sesión no válida.');
+  if (!p.asignacionId) throw new Error('No se pudo identificar la pasantía.');
+  if (!p.estudianteId) throw new Error('Elige al estudiante.');
+  if (!p.motivo.trim()) throw new Error('Selecciona un motivo.');
+  if (p.descripcion.trim().length < 10) {
+    throw new Error('Cuéntanos un poco más: al menos 10 caracteres.');
+  }
+
+  const universidadId = p.universidadId ?? '';
+
+  const ref = await addDoc(collection(db, COLECCION_INCIDENCIAS), {
+    estudiante_id: p.estudianteId,
+    estudiante_nombre: p.estudianteNombre ?? '',
+    universidad_id: universidadId,
+    empresa_id: p.empresaId,
+    empresa_nombre: p.empresaNombre ?? '',
+    tutor_id: uid,
+    asignacion_id: p.asignacionId,
+    categoria: 'estudiante' as CategoriaIncidencia,
+    origen: 'empresa' as OrigenIncidencia,
+    visible_estudiante: false,
+    motivo: p.motivo.trim(),
+    descripcion: p.descripcion.trim(),
+    estado: 'abierta' as EstadoIncidencia,
+    seguimiento: [],
+    resolucion: '',
+    fecha: serverTimestamp(),
+    fecha_actualizacion: serverTimestamp(),
+  });
+
+  if (universidadId) {
+    try {
+      await enviarNotificacion(
+        universidadId,
+        'Un tutor reportó a un estudiante',
         `${p.empresaNombre || 'Una empresa'} reportó a ${p.estudianteNombre || 'un estudiante'}: ${p.motivo.trim()}`,
         'warning',
         `incidencia:${ref.id}`,
@@ -284,7 +420,7 @@ export async function crearIncidenciaEmpresa(p: CrearIncidenciaEmpresaParams): P
  * además que las reglas de seguridad validen cada caso por separado.
  */
 export function suscribirIncidencias(
-  rol: 'estudiante' | 'universidad' | 'empresa',
+  rol: 'estudiante' | 'universidad' | 'empresa' | 'tutor',
   uid: string,
   onChange: (lista: Incidencia[]) => void,
   onError?: () => void,
@@ -294,6 +430,7 @@ export function suscribirIncidencias(
   const campo =
     rol === 'estudiante' ? 'estudiante_id'
     : rol === 'universidad' ? 'universidad_id'
+    : rol === 'tutor' ? 'tutor_id'
     : 'empresa_id';
 
   const q = query(
@@ -343,11 +480,15 @@ export async function getIncidenciasDeEstudiante(
     );
 }
 
-/** Agrega un mensaje al hilo. Lo puede hacer cualquiera de las partes. */
+/** Agrega un mensaje al hilo. Lo puede hacer cualquiera de las partes.
+ *  `tutorId` (rol "tutor" Fase 4): si la incidencia tiene tutor asignado y
+ *  no es quien está respondiendo, se le avisa — "está al tanto" también
+ *  cuando la conversación avanza sin él. */
 export async function responderIncidencia(
   incidenciaId: string,
   texto: string,
   autor: { nombre: string; rol: string },
+  tutorId?: string | null,
 ): Promise<void> {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Sesión no válida.');
@@ -363,6 +504,18 @@ export async function responderIncidencia(
     }),
     fecha_actualizacion: serverTimestamp(),
   });
+
+  if (tutorId && tutorId !== uid) {
+    try {
+      await enviarNotificacion(
+        tutorId,
+        'Nueva respuesta en una incidencia',
+        `${autor.nombre || 'Alguien'} respondió en una incidencia de tu pasante.`,
+        'info',
+        `incidenciaTutor:${incidenciaId}`,
+      );
+    } catch { /* no-op */ }
+  }
 }
 
 /**
@@ -386,6 +539,9 @@ export async function cambiarEstadoIncidencia(
     notifRef?: string;
     /** Reemplaza el texto por defecto del aviso al estudiante. */
     mensajeEstudiante?: string;
+    /** Rol "tutor" Fase 4: si la incidencia tiene tutor asignado y no es
+     *  quien está gestionando, se le avisa del cambio de estado. */
+    tutorId?: string | null;
   } = {},
 ): Promise<void> {
   const uid = auth.currentUser?.uid;
@@ -401,20 +557,33 @@ export async function cambiarEstadoIncidencia(
     fecha_actualizacion: serverTimestamp(),
   });
 
+  const textos: Record<EstadoIncidencia, string> = {
+    abierta: 'se reabrió.',
+    en_seguimiento: 'está siendo atendida.',
+    escalada: 'se escaló al equipo de Gradly.',
+    resuelta: 'se marcó como resuelta.',
+  };
+
   if (opts.estudianteId) {
-    const textos: Record<EstadoIncidencia, string> = {
-      abierta: 'Tu incidencia se reabrió.',
-      en_seguimiento: 'Tu incidencia está siendo atendida.',
-      escalada: 'Tu incidencia se escaló al equipo de Gradly.',
-      resuelta: 'Tu incidencia se marcó como resuelta.',
-    };
     try {
       await enviarNotificacion(
         opts.estudianteId,
         'Actualización de tu incidencia',
-        opts.mensajeEstudiante ?? `${textos[estado]}${opts.motivo ? ` (${opts.motivo})` : ''}`,
+        opts.mensajeEstudiante ?? `Tu incidencia ${textos[estado]}${opts.motivo ? ` (${opts.motivo})` : ''}`,
         estado === 'resuelta' ? 'success' : 'info',
         opts.notifRef ?? null,
+      );
+    } catch { /* no-op */ }
+  }
+
+  if (opts.tutorId && opts.tutorId !== uid) {
+    try {
+      await enviarNotificacion(
+        opts.tutorId,
+        'Actualización de una incidencia',
+        `Una incidencia de tu pasante ${textos[estado]}${opts.motivo ? ` (${opts.motivo})` : ''}`,
+        estado === 'resuelta' ? 'success' : 'info',
+        `incidenciaTutor:${incidenciaId}`,
       );
     } catch { /* no-op */ }
   }
@@ -427,12 +596,13 @@ export async function cambiarEstadoIncidencia(
  */
 export async function escalarIncidencia(
   incidenciaId: string,
-  inc: Pick<Incidencia, 'motivo' | 'estudiante_id' | 'estudiante_nombre' | 'origen'>,
+  inc: Pick<Incidencia, 'motivo' | 'estudiante_id' | 'estudiante_nombre' | 'origen' | 'tutor_id'>,
 ): Promise<void> {
   const deEmpresa = inc.origen === 'empresa';
   await cambiarEstadoIncidencia(incidenciaId, 'escalada', {
     estudianteId: inc.estudiante_id,
     motivo: inc.motivo,
+    tutorId: inc.tutor_id,
     // Solo las incidencias de la empresa se revelan al estudiante al escalarlas
     // y abren el modal de acuse; las que abrió el propio estudiante siguen igual.
     ...(deEmpresa
@@ -467,7 +637,7 @@ export async function escalarIncidencia(
  */
 export async function notificarEstudianteIncidencia(
   incidenciaId: string,
-  inc: Pick<Incidencia, 'motivo' | 'estudiante_id' | 'estado'>,
+  inc: Pick<Incidencia, 'motivo' | 'estudiante_id' | 'estado' | 'tutor_id'>,
   universidadNombre: string,
 ): Promise<void> {
   const uid = auth.currentUser?.uid;
@@ -495,4 +665,16 @@ export async function notificarEstudianteIncidencia(
       `incidencia:${incidenciaId}`,
     );
   } catch { /* no-op */ }
+
+  if (inc.tutor_id && inc.tutor_id !== uid) {
+    try {
+      await enviarNotificacion(
+        inc.tutor_id,
+        'Tu universidad respondió una incidencia',
+        `La universidad notificó formalmente al pasante sobre el reporte: ${inc.motivo}.`,
+        'info',
+        `incidenciaTutor:${incidenciaId}`,
+      );
+    } catch { /* no-op */ }
+  }
 }

@@ -29,7 +29,7 @@ const path = require('path');
 const { initializeApp, deleteApp } = require('firebase/app');
 const {
   getFirestore, connectFirestoreEmulator, terminate, doc, getDoc, setDoc, updateDoc, deleteDoc,
-  runTransaction, serverTimestamp, deleteField, FieldPath, setLogLevel,
+  runTransaction, serverTimestamp, deleteField, FieldPath, Timestamp, setLogLevel,
 } = require('firebase/firestore');
 
 setLogLevel('silent');
@@ -80,6 +80,15 @@ const RP = (uid, id) => doc(dbDe(uid), `reportes/${id}`);
 const NUEVO_REPORTE = (yo, extra = {}) => ({
   reportado_id: 'stu2', reportante_id: yo, reportador_id: yo, motivo: 'Contenido inapropiado',
   tipo: 'usuario', descripcion: 'x', estado: 'abierto', fecha: serverTimestamp(), ...extra,
+});
+const IN = (uid, id) => doc(dbDe(uid), `incidencias/${id}`);
+// Incidencia tal cual la crea crearIncidenciaTutor (Fase 4 del rol "tutor") —
+// misma forma que crearIncidenciaEmpresa, pero con tutor_id/asignacion_id.
+const NUEVA_INC_TUTOR = (extra = {}) => ({
+  estudiante_id: 'stu1', universidad_id: 'uni1', empresa_id: 'emp1',
+  tutor_id: 'tutor1', asignacion_id: 'A3',
+  categoria: 'estudiante', origen: 'empresa', visible_estudiante: false,
+  motivo: 'x', descripcion: 'y', estado: 'abierta', seguimiento: [], ...extra,
 });
 const diaAsist = (dia) => new FieldPath('asistencias', dia);
 
@@ -132,6 +141,7 @@ async function reiniciar() {
     poner('perfiles_publicos_estudiantes/stu2', { nombre_completo: 'Estudiante Dos', calificacion_promedio: 5 }),
     poner('comprobantes_publicos/A1', { estudianteNombre: 'Estudiante Uno', estado: 'enviado' }),
     poner('reportes/R1', { reportado_id: 'stu2', reportante_id: 'stu1', reportador_id: 'stu1', motivo: 'x', tipo: 'usuario', estado: 'abierto' }),
+    poner('incidencias/I1', NUEVA_INC_TUTOR()),
     poner('verificaciones_empresa/emp1', { nit: '0614-010101-101-1', contacto_documento_tipo: 'dui', contacto_documento_numero: '000000000' }),
   ]);
 }
@@ -379,6 +389,25 @@ const CASOS = [
   ['TP15', 'observación (A3): la lee la universidad dueña', () => getDoc(OT('uni1', 'A3_2026-09-21')), 'ALLOW'],
   ['TP16', 'observación (A3): NO la lee OTRA universidad', () => getDoc(OT('uni2', 'A3_2026-09-21')), 'DENY'],
   ['TP17', 'observación (A3): NO la lee OTRO estudiante', () => getDoc(OT('stu2', 'A3_2026-09-21')), 'DENY'],
+
+  // ── TI · incidencias: rol "tutor" Fase 4 (paridad total con la empresa,
+  // acotado a sus propios pasantes). A3 tiene tutorId:'tutor1'; A1 no tiene
+  // ningún tutor asignado. I1 ya existe con tutor_id:'tutor1'/asignacion_id:'A3'. ──
+  ['TI1', 'tutor1 crea una incidencia nueva contra SU pasante (A3)', () => setDoc(IN('tutor1', 'N1'), NUEVA_INC_TUTOR()), 'ALLOW'],
+  ['TI2', 'tutor1 intenta crear apuntando a A1 (sin tutor asignado)', () => setDoc(IN('tutor1', 'N2'), NUEVA_INC_TUTOR({ asignacion_id: 'A1' })), 'DENY'],
+  ['TI3', 'tutor2 intenta crear usando el asignacion_id de A3 (tutor de OTRA empresa)', () => setDoc(IN('tutor2', 'N3'), NUEVA_INC_TUTOR({ tutor_id: 'tutor2' })), 'DENY'],
+  ['TI4', 'tutor1 intenta crear apuntando a A3 pero con OTRO estudiante (inventa el resto)', () => setDoc(IN('tutor1', 'N4'), NUEVA_INC_TUTOR({ estudiante_id: 'stu2' })), 'DENY'],
+  ['TI5', 'tutor1 lee la incidencia de su pasante (I1)', () => getDoc(IN('tutor1', 'I1')), 'ALLOW'],
+  ['TI6', 'tutor2 (ajeno) intenta leer I1', () => getDoc(IN('tutor2', 'I1')), 'DENY'],
+  // serverTimestamp() no se puede anidar DENTRO de un array (limitación del
+  // SDK, no de las reglas) — `fecha` del seguimiento usa Timestamp.now(),
+  // igual que ya lo hace responderIncidencia() en el código real.
+  ['TI7', 'tutor1 responde en el hilo de I1', () => updateDoc(IN('tutor1', 'I1'), { seguimiento: [{ autor_id: 'tutor1', autor_nombre: 'Tutor Uno', autor_rol: 'tutor', texto: 'Ya hablé con el pasante.', fecha: Timestamp.now() }], fecha_actualizacion: serverTimestamp() }), 'ALLOW'],
+  ['TI8', 'tutor1 gestiona I1 (paridad con empresa: cambia el estado)', () => updateDoc(IN('tutor1', 'I1'), { estado: 'en_seguimiento', fecha_actualizacion: serverTimestamp() }), 'ALLOW'],
+  ['TI9', 'tutor2 (ajeno) intenta actualizar I1', () => updateDoc(IN('tutor2', 'I1'), { estado: 'en_seguimiento' }), 'DENY'],
+  ['TI10', 'tutor1 intenta reescribir tutor_id de I1 (guardia de inmutabilidad)', () => updateDoc(IN('tutor1', 'I1'), { tutor_id: 'tutor2' }), 'DENY'],
+  ['TI11', 'tutor1 intenta reescribir asignacion_id de I1 (guardia de inmutabilidad)', () => updateDoc(IN('tutor1', 'I1'), { asignacion_id: 'A1' }), 'DENY'],
+  ['TI12', 'la empresa sigue pudiendo crear una incidencia con tutor_id/asignacion_id ya incluidos (compatibilidad)', () => setDoc(IN('emp1', 'N5'), { estudiante_id: 'stu1', universidad_id: 'uni1', empresa_id: 'emp1', tutor_id: 'tutor1', asignacion_id: 'A3', categoria: 'estudiante', origen: 'empresa', visible_estudiante: false, motivo: 'x', descripcion: 'y', estado: 'abierta', seguimiento: [] }), 'ALLOW'],
 ];
 
 // ── Ejecución ────────────────────────────────────────────────────────────

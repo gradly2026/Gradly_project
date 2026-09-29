@@ -252,12 +252,16 @@ async function avisarTardanzaReiterada(asignacionId: string, a: any, estudianteI
       .get();
     if (tardesSnap.size !== TARDANZAS_PARA_INCIDENCIA) return;
     const ahora = admin.firestore.FieldValue.serverTimestamp();
-    await db.collection("incidencias").add({
+    const incRef = await db.collection("incidencias").add({
       estudiante_id: a.estudianteId ?? estudianteId,
       estudiante_nombre: a.estudianteNombre ?? "",
       universidad_id: a.universidadId ?? "",
       empresa_id: a.empresaId ?? "",
       empresa_nombre: a.empresaNombre ?? "",
+      // Fase 4 del rol "tutor": el tutor asignado EN ESTE MOMENTO queda
+      // congelado en la incidencia, igual que al crearla un humano.
+      tutor_id: a.tutorId ?? null,
+      asignacion_id: asignacionId,
       categoria: "estudiante",
       origen: "empresa",
       visible_estudiante: false,
@@ -274,6 +278,13 @@ async function avisarTardanzaReiterada(asignacionId: string, a: any, estudianteI
         a.universidadId, "Llegadas tarde reiteradas",
         `${a.estudianteNombre || "Un estudiante"} acumula ${TARDANZAS_PARA_INCIDENCIA} llegadas tarde en su pasantía.`,
         "warning", "/dashboard-universidad",
+      );
+    }
+    if (a.tutorId) {
+      await notificar(
+        a.tutorId, "Llegadas tarde reiteradas",
+        `${a.estudianteNombre || "Tu pasante"} acumula ${TARDANZAS_PARA_INCIDENCIA} llegadas tarde en su pasantía.`,
+        "warning", `incidenciaTutor:${incRef.id}`,
       );
     }
   } catch (e) {

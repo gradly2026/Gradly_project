@@ -1,10 +1,12 @@
 // ═════════════════════════════════════════════════════════════════
 // DASHBOARD TUTOR — panel del rol "tutor". Fase 1 (fundación): solo el
-// perfil propio. Fase 3 (dashboard operativo): pasa a tener pestañas
-// propias — "Mis pasantes" (nueva, ver SeccionPasantesTutor: lista de
-// pasantes a cargo, validador de código, calendario + observaciones) y
-// "Mi perfil" (el PerfilMasterDetail de siempre, sin cambios, solo movido
-// bajo una pestaña). Observaciones/Incidencias-para-tutor: ver Fase 4.
+// perfil propio. Fase 3 (dashboard operativo): pestañas propias — "Mis
+// pasantes" (SeccionPasantesTutor: lista de pasantes a cargo, validador de
+// código, calendario + observaciones) y "Mi perfil" (el PerfilMasterDetail de
+// siempre, sin cambios, solo movido bajo una pestaña). Fase 4: tercera
+// pestaña "Incidencias" (SeccionIncidenciasTutor) — paridad total con la
+// empresa, acotada a sus propios pasantes. También en esta fase se agrega
+// FloatingTopBar (el tutor no tenía campanita en ningún lado hasta ahora).
 //
 // Mismo patrón config-driven que dashboard-empresa.tsx/dashboard-
 // universidad.tsx para el perfil: PerfilMasterDetail con un array `sections`.
@@ -25,6 +27,8 @@ import SalirSesionModal from '../src/components/SalirSesionModal';
 import PerfilMasterDetail from '../src/components/PerfilMasterDetail';
 import HorarioVacanteSelector from '../src/components/HorarioVacanteSelector';
 import SeccionPasantesTutor from '../src/components/SeccionPasantesTutor';
+import SeccionIncidenciasTutor from '../src/components/SeccionIncidenciasTutor';
+import FloatingTopBar from '../src/components/FloatingTopBar';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { useAuth } from '../src/context/AuthContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
@@ -33,7 +37,8 @@ import type { HorarioPasantia } from '../src/data/disponibilidad';
 import type { PerfilTutor } from '../src/services/tutorService';
 import { uploadDocumentoVerificacion } from '../src/services/storageUploads';
 
-type SeccionTutor = 'pasantes' | 'perfil';
+type SeccionTutor = 'pasantes' | 'incidencias' | 'perfil';
+const SECCIONES_VALIDAS: SeccionTutor[] = ['pasantes', 'incidencias', 'perfil'];
 
 export default function DashboardTutor() {
   useAuthGuard('tutor');
@@ -44,7 +49,7 @@ export default function DashboardTutor() {
 
   const [seccion, setSeccion] = useState<SeccionTutor>('pasantes');
   const [pasanteAAbrirId, setPasanteAAbrirId] = useState<string | null>(null);
-  const params = useLocalSearchParams<{ verPasante?: string }>();
+  const params = useLocalSearchParams<{ verPasante?: string; seccion?: string }>();
 
   // Deep link desde la campanita ("Tienes un nuevo pasante asignado",
   // asignarTutor() en reclamoCuposService.ts): salta a "Mis pasantes" y abre
@@ -58,6 +63,17 @@ export default function DashboardTutor() {
     router.setParams({ verPasante: '' } as any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.verPasante]);
+
+  // Deep link genérico a una pestaña (rol "tutor" Fase 4: notificaciones de
+  // incidencias, `incidenciaTutor:{id}`, mandan aquí) — mismo patrón de
+  // "consumir el parámetro" que ya usa dashboard-universidad.tsx con `?seccion=`.
+  useEffect(() => {
+    const sec = params.seccion ? String(params.seccion) : '';
+    if (!sec || !SECCIONES_VALIDAS.includes(sec as SeccionTutor)) return;
+    setSeccion(sec as SeccionTutor);
+    router.setParams({ seccion: '' } as any);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.seccion]);
 
   const [perfil, setPerfil] = useState<PerfilTutor | null>(null);
   const [documentoNumero, setDocumentoNumero] = useState('');
@@ -172,6 +188,10 @@ export default function DashboardTutor() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.backgroundDark }}>
       <StatusBar style="light" />
+      {/* El tutor no tenía campanita en ningún lado hasta la Fase 4 — sin
+          esto, ni siquiera las notificaciones ya existentes de Fase 2/3
+          ("nuevo pasante asignado") se veían nunca. */}
+      <FloatingTopBar userId={user?.uid} />
 
       <View style={s.tabBar}>
         <TouchableOpacity
@@ -181,6 +201,14 @@ export default function DashboardTutor() {
         >
           <Ionicons name="people-outline" size={17} color={seccion === 'pasantes' ? colors.primaryLight : colors.white60} />
           <Text style={[s.tabTxt, seccion === 'pasantes' && s.tabTxtActivo]}>Mis pasantes</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.tabBtn, seccion === 'incidencias' && s.tabBtnActivo]}
+          activeOpacity={0.85}
+          onPress={() => setSeccion('incidencias')}
+        >
+          <Ionicons name="alert-circle-outline" size={17} color={seccion === 'incidencias' ? colors.primaryLight : colors.white60} />
+          <Text style={[s.tabTxt, seccion === 'incidencias' && s.tabTxtActivo]}>Incidencias</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[s.tabBtn, seccion === 'perfil' && s.tabBtnActivo]}
@@ -199,6 +227,10 @@ export default function DashboardTutor() {
             pasanteAAbrirId={pasanteAAbrirId}
             onConsumidoPasanteAAbrir={() => setPasanteAAbrirId(null)}
           />
+        </View>
+      ) : seccion === 'incidencias' ? (
+        <View style={{ flex: 1, padding: 16 }}>
+          <SeccionIncidenciasTutor tutorId={user!.uid} tutorNombre={perfil.nombre_completo} />
         </View>
       ) : (
       <PerfilMasterDetail

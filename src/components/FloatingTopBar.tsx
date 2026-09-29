@@ -424,6 +424,18 @@ export default function FloatingTopBar({ userId, offsetY = 0, variant = 'floatin
         }
         return;
       }
+      // ── Caso especial: al TUTOR (rol "tutor", Fase 4) le llegó una
+      // incidencia nueva o una actualización de una que ya tenía. No abre
+      // IncidenciaAvisoModal (redactado solo para el estudiante) — lo manda
+      // directo a su pestaña "Incidencias", donde ve la bandeja en vivo.
+      if (ref.kind === 'incidenciaTutor') {
+        if (rol === 'tutor') {
+          try {
+            router.navigate({ pathname: '/dashboard-tutor', params: { seccion: 'incidencias' } } as any);
+          } catch { /* ruta inválida → no navega */ }
+        }
+        return;
+      }
       const ruta = dashboardDelRol();
       if (ruta) { try { router.push(ruta as any); } catch { /* ya estamos ahí, o ruta inválida */ } }
       // Primero navega al dashboard correspondiente al rol del usuario
