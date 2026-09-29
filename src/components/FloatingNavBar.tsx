@@ -42,6 +42,14 @@ interface FloatingNavBarProps<K extends string = string> {
     badge?: number;
     onPress: () => void;
   };
+  /**
+   * `'floating'` (por defecto): la píldora flota fija abajo de toda la
+   * pantalla (`position: absolute`) — el uso de siempre en móvil/app.
+   * `'inline'`: se dibuja como una fila normal, en el lugar exacto donde se
+   * la coloque en el JSX del padre, sin posición absoluta ni el margen de
+   * zona segura inferior (usado por DashboardTopBar, para laptop/tablet).
+   */
+  variant?: 'floating' | 'inline';
 }
 
 // Configuración de muelle compartida → animación fluida tipo iOS
@@ -55,10 +63,12 @@ export default function FloatingNavBar<K extends string = string>({
   activeKey,
   onChange,
   extraButton,
+  variant = 'floating',
 }: FloatingNavBarProps<K>) {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const [barWidth, setBarWidth] = useState(0);
+  const isInline = variant === 'inline';
 
   const activeIndex = Math.max(0, items.findIndex(i => i.key === activeKey));
   // El botón extra ocupa un espacio más en la fila, pero no entra en la
@@ -87,39 +97,46 @@ export default function FloatingNavBar<K extends string = string>({
     onChange(item.key);
   };
 
+  const bar = (
+    <BlurView
+      intensity={40}
+      tint={isDark ? 'dark' : 'light'}
+      style={[
+        styles.bar,
+        isInline && styles.barInline,
+        {
+          backgroundColor: isDark ? 'rgba(26,16,48,0.55)' : 'rgba(255,255,255,0.6)',
+          borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(124,58,237,0.18)',
+        },
+      ]}
+      onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
+    >
+      {/* Indicador deslizante (bolita / píldora) */}
+      {itemWidth > 0 && (
+        <Animated.View style={[styles.indicatorTrack, indicatorStyle, { pointerEvents: 'none' }]}>
+          <View style={[styles.indicatorPill, { backgroundColor: colors.primary20, borderColor: colors.primary35 }]} />
+        </Animated.View>
+      )}
+
+      {items.map((item, index) => (
+        <NavButton
+          key={item.key}
+          item={item}
+          active={index === activeIndex}
+          onPress={() => handlePress(item)}
+        />
+      ))}
+      {extraButton && <ExtraNavButton item={extraButton} />}
+    </BlurView>
+  );
+
+  if (isInline) return bar;
+
   return (
     <View
       style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12), pointerEvents: 'box-none' }]}
     >
-      <BlurView
-        intensity={40}
-        tint={isDark ? 'dark' : 'light'}
-        style={[
-          styles.bar,
-          {
-            backgroundColor: isDark ? 'rgba(26,16,48,0.55)' : 'rgba(255,255,255,0.6)',
-            borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(124,58,237,0.18)',
-          },
-        ]}
-        onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
-      >
-        {/* Indicador deslizante (bolita / píldora) */}
-        {itemWidth > 0 && (
-          <Animated.View style={[styles.indicatorTrack, indicatorStyle, { pointerEvents: 'none' }]}>
-            <View style={[styles.indicatorPill, { backgroundColor: colors.primary20, borderColor: colors.primary35 }]} />
-          </Animated.View>
-        )}
-
-        {items.map((item, index) => (
-          <NavButton
-            key={item.key}
-            item={item}
-            active={index === activeIndex}
-            onPress={() => handlePress(item)}
-          />
-        ))}
-        {extraButton && <ExtraNavButton item={extraButton} />}
-      </BlurView>
+      {bar}
     </View>
   );
 }
@@ -242,6 +259,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(26,16,48,0.55)',
     // Sombra suave (multiplataforma)
     ...shadow({ color: '#000', y: 2, blur: 12, opacity: 0.35, elevation: 8 }),
+  },
+  // Variante `inline` (dentro de DashboardTopBar): sin el margen horizontal
+  // que tiene al flotar (ese margen viene del lado del padre) y `flex: 1`
+  // para ocupar el espacio disponible entre la marca y los 3 íconos.
+  // `alignSelf: 'auto'` cancela el `alignSelf: 'stretch'` de `bar` — en la
+  // fila horizontal del padre eso estiraría el ALTO en vez del ancho.
+  barInline: {
+    marginHorizontal: 0,
+    alignSelf: 'auto',
+    flex: 1,
   },
   indicatorTrack: {
     position: 'absolute',
