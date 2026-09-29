@@ -34,6 +34,7 @@ import SeccionPasantesTutor from '../src/components/SeccionPasantesTutor';
 import SeccionIncidenciasTutor from '../src/components/SeccionIncidenciasTutor';
 import SeccionMensajes from '../src/components/SeccionMensajes';
 import FloatingTopBar from '../src/components/FloatingTopBar';
+import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { useAuth } from '../src/context/AuthContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
@@ -82,6 +83,16 @@ export default function DashboardTutor() {
     router.setParams({ seccion: '' } as any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.seccion]);
+
+  // Menú flotante inferior (mismo componente que ya usan empresa/universidad/
+  // estudiante) — antes el tutor tenía una barra de pestañas propia arriba,
+  // distinta al resto de la app.
+  const navItems: NavItem<SeccionTutor>[] = [
+    { key: 'pasantes', label: 'Mis pasantes', icon: 'people-outline' },
+    { key: 'incidencias', label: 'Incidencias', icon: 'alert-circle-outline' },
+    { key: 'mensajes', label: 'Mensajes', icon: 'chatbubble-ellipses-outline' },
+    { key: 'perfil', label: 'Mi Perfil', icon: 'person-circle-outline' },
+  ];
 
   const [perfil, setPerfil] = useState<PerfilTutor | null>(null);
   const [documentoNumero, setDocumentoNumero] = useState('');
@@ -203,43 +214,8 @@ export default function DashboardTutor() {
         <FloatingTopBar userId={user?.uid} />
       )}
 
-      <View style={s.tabBar}>
-        <TouchableOpacity
-          style={[s.tabBtn, seccion === 'pasantes' && s.tabBtnActivo]}
-          activeOpacity={0.85}
-          onPress={() => setSeccion('pasantes')}
-        >
-          <Ionicons name="people-outline" size={17} color={seccion === 'pasantes' ? colors.primaryLight : colors.white60} />
-          <Text style={[s.tabTxt, seccion === 'pasantes' && s.tabTxtActivo]}>Mis pasantes</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[s.tabBtn, seccion === 'incidencias' && s.tabBtnActivo]}
-          activeOpacity={0.85}
-          onPress={() => setSeccion('incidencias')}
-        >
-          <Ionicons name="alert-circle-outline" size={17} color={seccion === 'incidencias' ? colors.primaryLight : colors.white60} />
-          <Text style={[s.tabTxt, seccion === 'incidencias' && s.tabTxtActivo]}>Incidencias</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[s.tabBtn, seccion === 'mensajes' && s.tabBtnActivo]}
-          activeOpacity={0.85}
-          onPress={() => setSeccion('mensajes')}
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={17} color={seccion === 'mensajes' ? colors.primaryLight : colors.white60} />
-          <Text style={[s.tabTxt, seccion === 'mensajes' && s.tabTxtActivo]}>Mensajes</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[s.tabBtn, seccion === 'perfil' && s.tabBtnActivo]}
-          activeOpacity={0.85}
-          onPress={() => setSeccion('perfil')}
-        >
-          <Ionicons name="person-outline" size={17} color={seccion === 'perfil' ? colors.primaryLight : colors.white60} />
-          <Text style={[s.tabTxt, seccion === 'perfil' && s.tabTxtActivo]}>Mi perfil</Text>
-        </TouchableOpacity>
-      </View>
-
       {seccion === 'pasantes' ? (
-        <View style={{ flex: 1, padding: 16 }}>
+        <View style={{ flex: 1, padding: 16, paddingBottom: 90 }}>
           <SeccionPasantesTutor
             tutorId={user!.uid}
             pasanteAAbrirId={pasanteAAbrirId}
@@ -247,7 +223,7 @@ export default function DashboardTutor() {
           />
         </View>
       ) : seccion === 'incidencias' ? (
-        <View style={{ flex: 1, padding: 16 }}>
+        <View style={{ flex: 1, padding: 16, paddingBottom: 90 }}>
           <SeccionIncidenciasTutor tutorId={user!.uid} tutorNombre={perfil.nombre_completo} />
         </View>
       ) : seccion === 'mensajes' ? (
@@ -379,6 +355,18 @@ export default function DashboardTutor() {
         }}
         onCancel={() => setLogoutVisible(false)}
       />
+
+      {/* Menú flotante inferior — oculto en "Mensajes" mientras hay un chat
+          abierto, mismo criterio que dashboard-empresa.tsx/dashboard-
+          universidad.tsx: la conversación debe verse limpia, sin el menú
+          superpuesto. */}
+      {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
+        <FloatingNavBar
+          items={navItems}
+          activeKey={seccion}
+          onChange={(k) => setSeccion(k)}
+        />
+      )}
     </View>
   );
 }
@@ -386,17 +374,6 @@ export default function DashboardTutor() {
 const makeStyles = (C: GradlyColors) =>
   StyleSheet.create({
     loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.backgroundDark },
-    tabBar: {
-      flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4,
-      backgroundColor: C.backgroundDark,
-    },
-    tabBtn: {
-      flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-      paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: 'transparent',
-    },
-    tabBtnActivo: { backgroundColor: C.primary + '22', borderColor: C.primary + '55' },
-    tabTxt: { fontSize: 12.5, fontFamily: FONTS.interSemiBold, color: C.white60 },
-    tabTxtActivo: { color: C.primaryLight },
     docHint: { color: C.white60, fontSize: 12.5, lineHeight: 17 },
     docInput: {
       backgroundColor: C.white8,
