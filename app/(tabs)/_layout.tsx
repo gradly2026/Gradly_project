@@ -15,7 +15,7 @@ import { Tabs, useRouter } from 'expo-router';
 // una barra de accesos directos siempre visible).
 
 import { useCallback, useEffect, useState } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import { View } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 // Tipo de las props que React Navigation le pasa a un componente de barra
 // de pestañas PERSONALIZADO (como GlassTabBar, definido más abajo) — trae
@@ -29,13 +29,13 @@ import FeedbackGate from '../../src/components/FeedbackGate';
 // del proyecto "Gamificación + feedback").
 
 import FloatingNavBar, { type NavItem } from '../../src/components/FloatingNavBar';
-import DashboardTopBar from '../../src/components/DashboardTopBar';
 // El componente visual real de la barra de pestañas flotante tipo
 // "Liquid Glass" (el mismo estilo visual que FloatingTopBar).
 
 import FloatingSearchButton from '../../src/components/FloatingSearchButton';
 import AsistenteGradly from '../../src/components/AsistenteGradly';
 import FloatingTopBar from '../../src/components/FloatingTopBar';
+import GradlyBrandHeader from '../../src/components/GradlyBrandHeader';
 import SalirSesionModal from '../../src/components/SalirSesionModal';
 import OnboardingDireccionGate from '../../src/components/OnboardingDireccionGate';
 import DatosPersonalesGate from '../../src/components/DatosPersonalesGate';
@@ -50,6 +50,7 @@ import { OnboardingBubble, useOnboarding } from '../../src/components/Onboarding
 // pestaña una por una.
 
 import { useAuth } from '../../src/context/AuthContext';
+import { useTheme } from '../../src/context/ThemeContext';
 import { useTranslation } from '../../src/context/TranslationContext';
 import { useAuthGuard } from '../../src/hooks/useAuthGuard';
 import { useAuthBackGuard } from '../../src/hooks/useSessionBackGuard';
@@ -129,19 +130,16 @@ const TOUR_PASOS: Record<TabKey, { titulo: string; texto: string }> = {
 function GlassTabBar({
   state,
   navigation,
-  items,
+  mensajesBadge,
   onActiveKeyChange,
-  chatPaneOpen,
-  isWide,
-}: BottomTabBarProps & { items: NavItem<TabKey>[]; onActiveKeyChange: (key: TabKey) => void; chatPaneOpen: boolean; isWide: boolean }) {
+}: BottomTabBarProps & { mensajesBadge: number; onActiveKeyChange: (key: TabKey) => void }) {
   // GlassTabBar es un COMPONENTE PERSONALIZADO que React Navigation usa
   // EN VEZ de su barra de pestañas por defecto (ver la prop `tabBar` del
   // componente <Tabs> más abajo). Recibe las props estándar de React
-  // Navigation (`state`, `navigation`, ...) MÁS varias props propias del
+  // Navigation (`state`, `navigation`, ...) MÁS 3 props propias del
   // proyecto, combinadas con el tipo "&" (intersección) que ya vimos en
-  // pasantiaService.ts. `items` ya viene armado desde TabLayout (con sus
-  // etiquetas traducidas) — así el mismo array sirve también para
-  // DashboardTopBar (laptop/tablet), sin construirlo dos veces.
+  // pasantiaService.ts.
+  const { t } = useTranslation();
   const activeKey = state.routes[state.index]?.name as TabKey;
   // `state.index` es la posición de la pestaña ACTUALMENTE activa dentro
   // de `state.routes` (la lista de todas las pestañas); de ahí se extrae
@@ -158,6 +156,21 @@ function GlassTabBar({
   // de OTRO componente directamente durante el render — hacerlo dentro de
   // un useEffect asegura que ocurra DESPUÉS de que este componente ya
   // terminó de dibujarse.
+
+  const items: NavItem<TabKey>[] = TAB_ITEMS.map(it => ({
+    key: it.key,
+    icon: it.icon,
+    label: t(it.labelKey),
+    // Aquí es donde la CLAVE de traducción (labelKey) se convierte
+    // finalmente en el TEXTO real, usando t() — recalculado en cada
+    // render, así que si el usuario cambia de idioma, las etiquetas de
+    // las pestañas cambian solas.
+    // Solo "Mensajes" muestra badge (mensajes sin leer). Antes "Vacantes"
+    // mostraba el TOTAL de vacantes activas de la plataforma, que se veía
+    // como un contador rojo de notificaciones aunque el estudiante no
+    // tuviera ninguna — se quitó.
+    badge: it.key === 'mensajes' ? mensajesBadge : undefined,
+  }));
 
   const handleChange = (key: TabKey) => {
     // Se ejecuta cuando el usuario TOCA una pestaña en la barra visual.
@@ -179,22 +192,17 @@ function GlassTabBar({
     }
   };
 
-  // En laptop/tablet la navegación ya vive arriba, siempre visible
-  // (DashboardTopBar) — este menú inferior queda oculto del todo para no
-  // duplicarla. En angosto se queda visible en la pestaña "Mensajes"
-  // mientras se ve la bandeja de chats (para poder salir sin necesitar una
-  // flecha aparte); solo se oculta con una conversación ABIERTA, para que
-  // se vea limpia sin el menú superpuesto.
-  if (isWide) return null;
-  if (activeKey === 'mensajes' && chatPaneOpen) return null;
+  // Oculta en la pestaña "Mensajes": la sección de chat debe verse limpia,
+  // sin menú inferior superpuesto sobre la conversación.
+  if (activeKey === 'mensajes') return null;
 
   return <FloatingNavBar items={items} activeKey={activeKey} onChange={handleChange} />;
 }
 
 export default function TabLayout() {
-  const { user, userProfile } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
-  const { t } = useTranslation();
+  const { colors } = useTheme();
   // Red de seguridad: si por lo que sea esta pantalla llegara a mostrarse
   // sin sesión (p. ej. tras un "atrás" que quedara detrás de un cierre de
   // sesión), redirige a login de inmediato — mismo hook que ya usan los
@@ -224,28 +232,6 @@ export default function TabLayout() {
   // (actualizada por GlassTabBar vía onActiveKeyChange) — se necesita
   // arriba, en este nivel, porque el tour de bienvenida (más abajo)
   // también depende de saber en qué pestaña está el usuario ahora.
-
-  // Laptop/tablet (>=768): la navegación vive arriba, siempre visible
-  // (DashboardTopBar) — el menú inferior flotante (GlassTabBar) queda
-  // reservado para pantallas angostas, como ya era.
-  const { width: anchoVentana } = useWindowDimensions();
-  const isWide = anchoVentana >= 768;
-
-  // Mismos `items` para DashboardTopBar (arriba, ancho) y GlassTabBar
-  // (abajo, angosto) — un solo array, para no construirlo dos veces ni
-  // arriesgar que se desincronicen sus iconos/etiquetas.
-  const items: NavItem<TabKey>[] = TAB_ITEMS.map(it => ({
-    key: it.key,
-    icon: it.icon,
-    label: t(it.labelKey),
-    badge: it.key === 'mensajes' ? mensajesNoLeidos : undefined,
-  }));
-
-  // "Hola, {nombre}" — mismo cálculo que ya usaba app/(tabs)/index.tsx en
-  // su feed; ahora vive en la cabecera persistente, visible en las 5
-  // pestañas, así que se quitó de ahí para no repetirlo.
-  const primerNombre = (userProfile as any)?.nombre_completo?.split(' ')[0] ?? t('feed_estudiante');
-  const saludo = t('feed_saludo', { nombre: primerNombre });
 
   // Badge: total de mensajes no leídos del usuario
   useEffect(() => {
@@ -277,25 +263,10 @@ export default function TabLayout() {
 
   return (
     <>
-      {/* Cabecera de marca (logo Gradly + "Gradly"): reemplaza cualquier
-          identificación de institución que hubiera antes en esta pantalla y,
-          en laptop/tablet, agrega el menú de secciones siempre visible en
-          fila (DashboardTopBar) — el saludo va siempre debajo, en las 5
-          pestañas. En angosto se oculta entero en "Mensajes" porque
-          InboxList ya dibuja su propio título "Mensajes" ahí abajo; en
-          ancho se queda SIEMPRE visible (también en "Mensajes"), porque ahí
-          es la única navegación que queda — GlassTabBar se oculta del todo
-          en ese ancho. */}
-      {(activeKey !== 'mensajes' || isWide) && (
-        <DashboardTopBar
-          items={items}
-          activeKey={activeKey}
-          onChange={(k) => router.navigate(TOUR_RUTAS[k] as any)}
-          isWide={isWide}
-          greeting={saludo}
-          userId={user?.uid}
-        />
-      )}
+      {/* Marca Gradly, siempre visible arriba de las 5 pestañas — lo único
+          que quedó del rediseño de navegación para laptop/tablet que se
+          revirtió (ver GradlyBrandHeader.tsx). */}
+      <GradlyBrandHeader colors={colors} />
       <View style={{ flex: 1 }}>
       <Tabs
         screenOptions={{ headerShown: false }}
@@ -318,10 +289,8 @@ export default function TabLayout() {
           // como las 3 propias del proyecto.
           <GlassTabBar
             {...props}
-            items={items}
+            mensajesBadge={mensajesNoLeidos}
             onActiveKeyChange={setActiveKey}
-            chatPaneOpen={chatPaneOpen}
-            isWide={isWide}
           />
         )}
       >
@@ -334,13 +303,11 @@ export default function TabLayout() {
       </View>
 
       {/* Botones flotantes superiores (notificaciones · idioma · tema).
-          Ocultos en TODA la pestaña "Mensajes" (a nivel de bandeja ahora los
-          dibuja InboxList en su propia cabecera, y con un chat abierto los
-          dibuja ChatThread en la suya) y ocultos en ancho: ahí esos mismos 3
-          botones ya van DENTRO de DashboardTopBar, en su misma fila. En otra
-          pestaña angosta siguen visibles aunque SeccionMensajes quede
-          montada de fondo (las tabs no se desmontan al cambiar). */}
-      {!enMensajes && !isWide && <FloatingTopBar userId={user?.uid} />}
+          Se ocultan SOLO cuando el usuario está en la pestaña Mensajes CON un
+          chat abierto: ChatThread ya trae esos 3 botones en su cabecera. En
+          otra pestaña siguen visibles aunque SeccionMensajes quede montada de
+          fondo (las tabs no se desmontan al cambiar). */}
+      {!(chatPaneOpen && enMensajes) && <FloatingTopBar userId={user?.uid} />}
       {/* Al estar aquí, FUERA de <Tabs> pero dentro del mismo Fragment,
           esta barra flota SOBRE cualquiera de las 5 pestañas, sin tener
           que repetirla dentro de cada archivo individual. */}

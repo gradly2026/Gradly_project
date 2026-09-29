@@ -51,12 +51,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import AsistenteGradly from '../src/components/AsistenteGradly';
 import FloatingTopBar from '../src/components/FloatingTopBar';
+import GradlyBrandHeader from '../src/components/GradlyBrandHeader';
 import SalirSesionModal from '../src/components/SalirSesionModal';
 import { showConfirm, showAlert } from '../src/components/AppAlert';
 // Truco de renombrado ya visto en otros dashboards: se usa <Text>/<TextInput>
 // normales en todo el JSX, pero en realidad son AutoText/AutoTextInput (se
 // traducen solos). `useAutoText` traduce un string suelto fuera del JSX.
 import { AutoText, AutoText as Text, AutoTextInput as TextInput, useAutoText } from '../src/components/AutoText';
+import StorageAvatar from '../src/components/StorageAvatar';
 import {
   ActivityIndicator,
   Alert,
@@ -80,7 +82,6 @@ import FeedbackGate from '../src/components/FeedbackGate';
 import ModeracionVacanteGate from '../src/components/ModeracionVacanteGate';
 import AvisosGate from '../src/components/AvisosGate';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
-import DashboardTopBar from '../src/components/DashboardTopBar';
 import CalendarioEventos from '../src/components/CalendarioEventos';
 import EmpresaHomeCards from '../src/components/EmpresaHomeCards';
 import ComprobantePasantiaCard from '../src/components/ComprobantePasantiaCard';
@@ -770,6 +771,16 @@ export default function DashboardEmpresa() {
     section: seccion,
     onSectionBack: setSeccion,
   });
+  // Header superior simplificado en "Mensajes": una fila fina con solo la
+  // flecha "atrás" — la MISMA que la pestaña "Mensajes" del estudiante
+  // (app/(tabs)/mensajes.tsx). Va en TODOS los anchos: en móvil el menú
+  // flotante se oculta en esta sección, así que sin esta flecha no había
+  // salida visible. En tablet/web la fila va pegada arriba (a la altura de
+  // la píldora flotante); en móvil se separa de la barra de estado igual
+  // que el header normal (`headerChatCompacto` distingue los dos casos).
+  const { width: anchoVentana } = useWindowDimensions();
+  const headerChatSimplificado = seccion === 'mensajes';
+  const headerChatCompacto = headerChatSimplificado && anchoVentana > 768;
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
   // Chat a abrir de inmediato dentro de la sección "Mensajes" embebida (p. ej.
   // al pulsar "Chatear con Candidato"), en vez de navegar a otra pantalla.
@@ -778,11 +789,6 @@ export default function DashboardEmpresa() {
   // así, ChatThread ya dibuja su propia píldora de notificaciones/idioma/
   // tema en la cabecera — mostrar también la de este dashboard la duplicaría.
   const [chatAbiertoEnMensajes, setChatAbiertoEnMensajes] = useState(false);
-  // Laptop/tablet (>=768): la navegación vive arriba, siempre visible
-  // (DashboardTopBar) — el menú inferior flotante (FloatingNavBar) queda
-  // reservado para pantallas angostas, como ya era.
-  const { width: anchoVentana } = useWindowDimensions();
-  const isWide = anchoVentana >= 768;
   const [perfil,      setPerfil]      = useState<PerfilEmpresa | null>(null);
   // 🆕 NIT + documento del representante — colección aparte y protegida
   // (Fase 2 de la cola de aprobación de empresas, ver
@@ -2393,34 +2399,80 @@ export default function DashboardEmpresa() {
     <View style={[styles.root, { backgroundColor: 'transparent' }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
+      {/* Marca Gradly, siempre visible arriba de todo (incluida "Mensajes") —
+          lo único que quedó del rediseño de navegación para laptop/tablet
+          que se revirtió (ver GradlyBrandHeader.tsx). */}
+      <GradlyBrandHeader colors={colors} />
+
       {/* ── CONTENIDO ── */}
       <View style={styles.main}>
-        {/* Header superior — logo Gradly + "Gradly" (ya no el nombre de la
-            empresa) y, en laptop/tablet, el menú de secciones siempre
-            visible en fila (DashboardTopBar). En angosto se oculta entero en
-            "Mensajes" porque InboxList ya dibuja su propio título "Mensajes"
-            ahí abajo; en ancho se queda SIEMPRE visible (también en
-            "Mensajes"), porque ahí es la única navegación que queda — el
-            menú inferior flotante se oculta por completo en ese ancho. */}
-        {(seccion !== 'mensajes' || isWide) && (
-          <DashboardTopBar
-            items={navItems}
-            activeKey={seccion}
-            onChange={(k) => setSeccion(k as SeccionEmpresa)}
-            isWide={isWide}
-            userId={user?.uid}
-          />
-        )}
+        {/* Header superior — en "Mensajes" se reemplaza por una fila delgada
+            con una flecha "atrás" (la misma que usa la pestaña "Mensajes"
+            del estudiante). En tablet/web va pegada arriba, a la altura de
+            la píldora flotante; en móvil se separa de la barra de estado
+            como el header normal. En el resto de secciones no cambia nada. */}
+        <View
+          style={[
+            headerChatSimplificado ? styles.mainHeaderChat : styles.mainHeader,
+            headerChatSimplificado && !headerChatCompacto && styles.mainHeaderChatMovil,
+          ]}
+        >
+          {headerChatSimplificado ? (
+            <TouchableOpacity
+              onPress={() => setSeccion('inicio')}
+              style={styles.mainHeaderBackBtn}
+              accessibilityLabel="Volver a Inicio"
+              hitSlop={8}
+            >
+              <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity onPress={() => setSeccion('perfil')} activeOpacity={0.8}>
+                <StorageAvatar
+                  url={perfil?.logo_url}
+                  storagePath={user ? `logos_empresas/${user.uid}/logo.jpg` : null}
+                  size={40}
+                  fallbackIcon="business"
+                />
+              </TouchableOpacity>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                {/* En Inicio el título es el nombre de la empresa (más identidad que
+                    un genérico "Inicio"); el subtítulo deja de repetirlo. */}
+                {/* En Inicio el título es el nombre de la empresa → `noTranslate`,
+                    es un nombre propio y no debe pasar por el traductor. */}
+                {seccion === 'inicio' ? (
+                  <Text style={styles.mainTitle} numberOfLines={1} noTranslate>
+                    {nombreEmpresa || 'Inicio'}
+                  </Text>
+                ) : (
+                  <Text style={styles.mainTitle} numberOfLines={1}>
+                    {seccion === 'perfil' ? 'Mi Perfil' : (MENU.find(m => m.key === seccion)?.label ?? 'Inicio')}
+                  </Text>
+                )}
+                {seccion === 'inicio' ? (
+                  <Text style={styles.mainGreeting} numberOfLines={1} noTranslate>
+                    {planBadgeLabel}
+                  </Text>
+                ) : (
+                  <Text style={styles.mainGreeting} numberOfLines={1} noTranslate>
+                    {planBadgeLabel}
+                    {' · '}
+                    {nombreEmpresa}
+                  </Text>
+                )}
+              </View>
+            </>
+          )}
+        </View>
 
         {renderSeccion()}
       </View>
 
       {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ──
-          Ocultos en TODA la sección "Mensajes" (a nivel de bandeja ahora los
-          dibuja InboxList en su propia cabecera, y con un chat abierto los
-          dibuja ChatThread en la suya) y ocultos en ancho: ahí esos mismos 3
-          botones ya van DENTRO de DashboardTopBar, en su misma fila. */}
-      {seccion !== 'mensajes' && !isWide && (
+          Ocultos mientras se ve un chat abierto en "Mensajes": ChatThread ya
+          trae su propia versión de estos mismos 3 botones en su cabecera. */}
+      {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
         <FloatingTopBar userId={user?.uid} />
       )}
 
@@ -2440,12 +2492,9 @@ export default function DashboardEmpresa() {
       <AvisosGate />
 
       {/* ── MENÚ FLOTANTE (Glassmorphism) ──
-          Solo en angosto: en laptop/tablet la navegación ya vive arriba,
-          siempre visible (DashboardTopBar), así que este queda oculto del
-          todo para no duplicarla. En angosto se queda visible en la bandeja
-          de "Mensajes" (para poder salir sin necesitar una flecha aparte) y
-          solo se oculta con una conversación ABIERTA. */}
-      {!isWide && !(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
+          Oculto en "Mensajes": la sección de chat debe verse limpia, sin
+          menú inferior superpuesto sobre la conversación. */}
+      {seccion !== 'mensajes' && (
         <FloatingNavBar
           items={navItems}
           activeKey={seccion}
@@ -4378,6 +4427,34 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
 
   // Main
   main: { flex: 1 },
+  mainHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 56 : 40,
+    paddingLeft: 20, paddingRight: 150, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.backgroundCard,
+  },
+  // Header simplificado de "Mensajes": una fila delgada en vez del bloque de
+  // avatar/nombre. En tablet/web el paddingTop chico deja la flecha "atrás"
+  // a la misma altura que la píldora flotante de arriba.
+  mainHeaderChat: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingTop: 8, paddingLeft: 12, paddingRight: 150, paddingBottom: 8,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.backgroundCard,
+  },
+  // En móvil la misma fila fina, pero separada de la barra de estado igual
+  // que `mainHeader` (este archivo no usa safe-area insets; el patrón aquí
+  // es el padding fijo por plataforma).
+  mainHeaderChatMovil: {
+    paddingTop: Platform.OS === 'ios' ? 56 : 40,
+  },
+  mainHeaderBackBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mainTitle: { fontSize: 20, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  mainGreeting: { fontSize: 13, fontFamily: FONTS.interRegular, color: COLORS.textMuted },
 
   // Mi Perfil (cuenta)
   perfilCard: {

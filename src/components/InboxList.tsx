@@ -10,7 +10,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
 import { AutoText, AutoText as Text } from "./AutoText";
-import FloatingTopBar from "./FloatingTopBar";
 import {
   FONTS,
   useTheme,
@@ -172,10 +171,11 @@ export default function InboxList({
           <Text style={styles.headerTitle}>Mensajes</Text>
           <Text style={styles.headerSub}>Tus conversaciones activas</Text>
         </View>
-        {/* Notificaciones · Traducción · Tema, directo en la cabecera (en vez
-            del ícono decorativo fijo de antes) — así el usuario no depende de
-            ningún menú flotante aparte para llegar a ellos desde "Mensajes". */}
-        <FloatingTopBar userId={user?.uid} variant="inline" />
+        <Ionicons
+          name="chatbubble-ellipses-outline"
+          size={24}
+          color={colors.primaryLight}
+        />
       </View>
 
       {onOpenSearch ? (

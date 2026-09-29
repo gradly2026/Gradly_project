@@ -586,6 +586,12 @@ export default function FeedVacantes() {
   }, [filtrosContentW, filtrosScrollX, filtrosViewportW]);
   const toastY        = useRef(new Animated.Value(20)).current;
 
+  // Nombre del estudiante
+  const nombre = (userProfile as any)?.nombre_completo?.split(' ')[0] ?? t('feed_estudiante');
+  // .split(' ')[0] toma solo la PRIMERA palabra del nombre completo (el
+  // primer nombre), para un saludo más cercano ("Hola, Ana!" en vez de
+  // "Hola, Ana María Pérez López!").
+
   // ── Firebase: vacantes activas ──────────────────────────────────
   useEffect(() => {
     if (!user) return;
@@ -1166,12 +1172,14 @@ export default function FeedVacantes() {
               : { maxWidth: 640, alignSelf: 'center', width: '100%' }
           }
         >
-        {/* Frase motivacional rotativa — el saludo "Hola, {nombre}" se
-            quitó de aquí: ahora vive en la cabecera persistente (arriba de
-            todo, junto al logo Gradly), visible en las 5 pestañas, no solo
-            en esta. */}
+        {/* Saludo */}
         <View style={styles.greetingRow}>
           <View>
+            <Text style={styles.greeting} noTranslate>{t('feed_saludo', { nombre })}</Text>
+            {/* noTranslate: el texto ya viene traducido por t(), y además
+                lleva dentro un NOMBRE PROPIO — sin esto, AutoText lo
+                mandaría al traductor y podría devolver el nombre del
+                estudiante "traducido". */}
             <Animated.Text style={[styles.phrase, { opacity: phraseOpacity }]}>
               {t(FRASES[phraseIdx])}
               {/* Antes esto era useAutoText(FRASES[idx]): la frase estaba
@@ -1586,6 +1594,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 14,
   },
+  greeting: { fontSize: 20, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
   phrase: {
     fontSize: 12,
     fontFamily: FONTS.interRegular,
