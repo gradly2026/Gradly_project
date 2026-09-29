@@ -29,11 +29,11 @@ Córrelas **antes de cada `firebase deploy --only firestore:rules`**. Sale con c
 
 Para ver qué cambia una modificación de reglas, prueba también la versión anterior: `git show HEAD:firestore.rules > /tmp/anterior.rules` y luego `RULES_TEST_REGLAS=/tmp/anterior.rules npm run test:rules`. Los casos que fallen ahí son justo los comportamientos que tu cambio modificó.
 
-## Qué cubren (177 casos)
+## Qué cubren (181 casos)
 
 | Grupo | Colección | Qué comprueba |
 | --- | --- | --- |
-| `C`, `E`, `U`, `M`, `D`, `S`, `R` | `asignaciones_cupo` | Creación por el estudiante; cierre por horas (transacción) con y sin el mapa; la empresa fija el Día 1 y cierra; **el campo `asistencias` está cerrado a estudiante, universidad, empresa y admin** (solo lo escribe el servidor); lecturas de las tres partes y del admin; nadie ajeno lee ni edita. |
+| `C`, `E`, `U`, `M`, `D`, `S`, `R` | `asignaciones_cupo` | Creación por el estudiante; cierre por horas (transacción) con y sin el mapa; la empresa fija el Día 1 y cierra; **el campo `asistencias` está cerrado a estudiante, universidad, empresa y admin** (solo lo escribe el servidor); lecturas de las tres partes, del tutor asignado y del admin; nadie ajeno lee ni edita. `R8`-`R11` son un bug real que reportó el usuario: a la regla le faltaba la rama `tutorId` desde la Fase 2/3 del rol "tutor" — sin ella, cualquier CONSULTA (no un get puntual) filtrada por `tutorId` quedaba rechazada de plano, así fallaba en silencio "Mis pasantes" del propio tutor. |
 | `G` | `registros_asistencia` | Lo lee el trío + admin; solo el servidor lo crea; la empresa solo puede confirmar la salida (no tocar `estado` ni `tardanzaMin`). |
 | `H` | `ajustes_asistencia` | Días no computados: los crean/actualizan empresa o universidad de esa inscripción (validado con `get()`); el estudiante no. |
 | `K` | `codigos_asistencia` | Cerrada a todo cliente. |

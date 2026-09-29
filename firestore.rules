@@ -439,10 +439,20 @@ service cloud.firestore {
     // 🆕 Colección nueva. Un doc por estudiante que eligió empresa desde su
     //    tablero. `cancelarCupo` la marca 'cancelado' y devuelve el cupo al lote.
     match /asignaciones_cupo/{asignacionId} {
+      // 🆕 Rol "tutor": faltaba desde la Fase 2/3 — sin esto, CUALQUIER consulta
+      // que filtre por `tutorId` (el propio "Mis pasantes" del tutor, su
+      // "Incidencias", su libro de horas vía useInscripcionesActivas) Firestore
+      // la rechaza de plano: para una LISTA (no un get puntual), las reglas se
+      // validan contra el "conjunto potencial" que el query podría devolver, no
+      // solo contra los docs reales — y si el query no filtra por un campo que
+      // la regla reconoce, Firestore no puede probar que el resultado completo
+      // sea seguro y deniega la consulta entera, aunque cada doc individual sí
+      // cumpliera la condición.
       allow read: if request.auth != null
         && (request.auth.uid == resource.data.estudianteId
             || request.auth.uid == resource.data.universidadId
             || request.auth.uid == resource.data.empresaId
+            || request.auth.uid == resource.data.tutorId
             || esAdmin());
       // Solo el propio estudiante toma su cupo, y nace siempre 'tomado'.
       // 🆕 `asistencias` (libro de asistencia por día, ver `update`) NO puede

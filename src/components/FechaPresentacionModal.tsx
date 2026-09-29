@@ -69,17 +69,30 @@ export default function FechaPresentacionModal({
   // No reutiliza useInscripcionesActivas: ese hook no excluye los cupos ya
   // finalizada:true, y aquí hace falta el mismo criterio exacto que ya usa
   // AsignarTutorModal.tsx para su propio contador.
+  //
+  // OJO: el query filtra por `empresaId` (no por `tutorId`) y el tutor se
+  // filtra en CLIENTE — a propósito, mismo patrón que AsignarTutorModal.tsx.
+  // Para una lista (no un get puntual), Firestore valida la regla contra el
+  // "conjunto potencial" que el query podría devolver: un query filtrado por
+  // `tutorId` sin que la empresa también filtre por su propio `empresaId`
+  // queda fuera de lo que la regla puede probar como seguro, y Firestore
+  // rechaza la consulta entera — aunque cada doc individual sí cumpliera.
   const tutorId = asignacion?.tutorId ?? null;
   const [cantidadPasantesTutor, setCantidadPasantesTutor] = useState(0);
   useEffect(() => {
     if (!tutorId) { setCantidadPasantesTutor(0); return; }
     const unsub = onSnapshot(
-      query(collection(db, COLECCION_ASIGNACIONES), where('tutorId', '==', tutorId), where('estado', '==', 'tomado')),
-      snap => setCantidadPasantesTutor(snap.docs.filter(d => (d.data() as any).finalizada !== true).length),
+      query(collection(db, COLECCION_ASIGNACIONES), where('empresaId', '==', empresaId), where('estado', '==', 'tomado')),
+      snap => setCantidadPasantesTutor(
+        snap.docs.filter(d => {
+          const data = d.data() as any;
+          return data.tutorId === tutorId && data.finalizada !== true;
+        }).length,
+      ),
       () => setCantidadPasantesTutor(0),
     );
     return unsub;
-  }, [tutorId]);
+  }, [tutorId, empresaId]);
 
   if (!visible || !asignacion) return null;
 

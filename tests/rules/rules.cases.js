@@ -28,8 +28,9 @@ const fs = require('fs');
 const path = require('path');
 const { initializeApp, deleteApp } = require('firebase/app');
 const {
-  getFirestore, connectFirestoreEmulator, terminate, doc, getDoc, setDoc, updateDoc, deleteDoc,
+  getFirestore, connectFirestoreEmulator, terminate, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   runTransaction, serverTimestamp, deleteField, FieldPath, Timestamp, setLogLevel,
+  collection, query, where,
 } = require('firebase/firestore');
 
 setLogLevel('silent');
@@ -209,6 +210,15 @@ const CASOS = [
   ['R5', 'lee OTRO estudiante', () => getDoc(A('stu2', 'A2')), 'DENY'],
   ['R6', 'lee OTRA empresa', () => getDoc(A('emp2', 'A2')), 'DENY'],
   ['R7', 'lee OTRA universidad', () => getDoc(A('uni2', 'A2')), 'DENY'],
+  ['R8', 'tutor1 lee por id su propio pasante (A3, tutorId:tutor1)', () => getDoc(A('tutor1', 'A3')), 'ALLOW'],
+  ['R9', 'tutor2 (ajeno) intenta leer A3 por id', () => getDoc(A('tutor2', 'A3')), 'DENY'],
+  // Estas dos últimas son el bug real que reportó el usuario: para una
+  // CONSULTA (no un get puntual), Firestore valida la regla contra lo que el
+  // query PODRÍA devolver — sin la rama `tutorId` de arriba, esta consulta
+  // quedaba rechazada de plano aunque cada doc individual cumpliera la regla
+  // (así fallaba, en silencio, "Mis pasantes" del propio tutor desde la Fase 3).
+  ['R10', 'tutor1 consulta (query) sus propios cupos por tutorId', () => getDocs(query(collection(dbDe('tutor1'), 'asignaciones_cupo'), where('tutorId', '==', 'tutor1'))), 'ALLOW'],
+  ['R11', 'tutor2 intenta la misma consulta apuntando al tutorId de OTRO tutor', () => getDocs(query(collection(dbDe('tutor2'), 'asignaciones_cupo'), where('tutorId', '==', 'tutor1'))), 'DENY'],
 
   // ── registros_asistencia: lo lee el trío, lo crea solo el servidor, la empresa solo confirma la salida ──
   ['G1', 'registro: lo lee el estudiante', () => getDoc(RG('stu1')), 'ALLOW'],
