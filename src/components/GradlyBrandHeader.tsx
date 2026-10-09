@@ -32,6 +32,11 @@ const makeStyles = (C: GradlyColors) =>
       flexDirection: 'row', alignItems: 'center', gap: 8,
       paddingTop: Platform.OS === 'ios' ? 20 : 14,
       paddingHorizontal: 20, paddingBottom: 6,
+      // Fondo propio del tema: en el estudiante esta franja vive en el layout
+      // de pestañas, fuera de cualquier LiquidBackground, y sin color se veía
+      // blanca (con el texto claro invisible encima).
+      backgroundColor: C.backgroundCard,
+      borderBottomWidth: 1, borderBottomColor: C.border,
     },
     logo: { width: 28, height: 28 },
     word: { fontSize: 15, fontFamily: FONTS.soraBold, color: C.textPrimary },
