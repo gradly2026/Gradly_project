@@ -10,11 +10,11 @@ import { shadow } from "../utils/shadow";
 //  Tokens de diseño oscuro (glassmorphism violeta)
 // ══════════════════════════════════════════════════════════════════
 const C = {
-  bg: "rgba(13,11,30,0.92)",
-  accent: "#8b5cf6",
-  accent70: "rgba(167,139,250,1)",
-  accent20: "rgba(139,92,246,0.16)",
-  border: "rgba(139,92,246,0.45)",
+  bg: "rgba(11,11,15,0.92)",
+  accent: "#5963C4",
+  accent70: "rgba(136,144,213,1)",
+  accent20: "rgba(136,144,213,0.16)",
+  border: "rgba(136,144,213,0.45)",
   text: "#ffffff",
   textSub: "rgba(255,255,255,0.72)",
   textMuted: "rgba(255,255,255,0.45)",

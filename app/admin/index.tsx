@@ -5667,7 +5667,7 @@ export default function AdminPreview() {
       backgroundGradientFromOpacity: 0,
       backgroundGradientToOpacity: 0,
       decimalPlaces: 0,
-      color: (opacity = 1) => `rgba(139,92,246,${opacity})`,
+      color: (opacity = 1) => `rgba(136,144,213,${opacity})`,
       labelColor: (opacity = 1) => C.textMuted,
       barPercentage: 0.6,
       propsForBackgroundLines: { stroke: C.border },

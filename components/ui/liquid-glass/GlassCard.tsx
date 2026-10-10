@@ -16,12 +16,12 @@ export const GlassCard: React.FC<GlassCardProps> = ({ children, style, contentSt
 
   const cardBg = isDark
     ? Platform.OS === 'android'
-      ? 'rgba(25, 10, 45, 0.75)'
-      : 'rgba(20, 10, 35, 0.35)'
+      ? 'rgba(19,19,24, 0.75)'
+      : 'rgba(19,19,24, 0.35)'
     : Platform.OS === 'android'
     ? 'rgba(255, 255, 255, 0.80)'
     : 'rgba(255, 255, 255, 0.45)';
-  const borderColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(124, 58, 237, 0.12)';
+  const borderColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(136,144,213, 0.12)';
   const highlightColor = isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(255, 255, 255, 0.35)';
 
   return (

@@ -8,11 +8,11 @@ import { AutoText as Text } from './AutoText';
 
 const C = {
   overlay: 'rgba(7,5,15,0.92)',
-  surface: '#0d0b1e',
-  border: 'rgba(139,92,246,0.25)',
-  text: '#f4f1ff',
+  surface: '#0B0B0F',
+  border: 'rgba(136,144,213,0.25)',
+  text: '#F4F4F8',
   textSub: 'rgba(255,255,255,0.65)',
-  accent: '#8b5cf6',
+  accent: '#5963C4',
   green: '#34d399',
 };
 
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: 'rgba(139,92,246,0.12)',
+    backgroundColor: 'rgba(136,144,213,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,

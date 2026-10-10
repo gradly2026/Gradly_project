@@ -208,10 +208,10 @@ const SECTORES_ALIADOS = [
 // hacer zoom. Sin `filter`, no hay esa capa compuesta aparte que se pueda
 // desincronizar.
 const HALO_POS: Record<'tl' | 'tr' | 'bl' | 'br', any> = {
-  tl: { top: -220, left: -180, width: 640, height: 640, background: 'radial-gradient(circle, rgba(124,58,237,.34) 0%, rgba(124,58,237,.18) 35%, transparent 70%)' },
-  br: { bottom: -240, right: -200, width: 620, height: 620, background: 'radial-gradient(circle, rgba(167,139,250,.20) 0%, rgba(167,139,250,.10) 35%, transparent 70%)' },
-  tr: { top: -180, right: -160, width: 520, height: 520, background: 'radial-gradient(circle, rgba(124,58,237,.26) 0%, rgba(124,58,237,.13) 35%, transparent 70%)' },
-  bl: { bottom: -180, left: -140, width: 520, height: 520, background: 'radial-gradient(circle, rgba(167,139,250,.17) 0%, rgba(167,139,250,.08) 35%, transparent 70%)' },
+  tl: { top: -220, left: -180, width: 640, height: 640, background: 'radial-gradient(circle, rgba(136,144,213,.34) 0%, rgba(136,144,213,.18) 35%, transparent 70%)' },
+  br: { bottom: -240, right: -200, width: 620, height: 620, background: 'radial-gradient(circle, rgba(136,144,213,.20) 0%, rgba(136,144,213,.10) 35%, transparent 70%)' },
+  tr: { top: -180, right: -160, width: 520, height: 520, background: 'radial-gradient(circle, rgba(136,144,213,.26) 0%, rgba(136,144,213,.13) 35%, transparent 70%)' },
+  bl: { bottom: -180, left: -140, width: 520, height: 520, background: 'radial-gradient(circle, rgba(136,144,213,.17) 0%, rgba(136,144,213,.08) 35%, transparent 70%)' },
 };
 
 function Halo({ corner }: { corner: 'tl' | 'tr' | 'bl' | 'br' }) {
@@ -237,7 +237,7 @@ function BgPhoto({ bg }: { bg: string }) {
           ...StyleSheet.absoluteFillObject,
           zIndex: 0,
           pointerEvents: 'none',
-          backgroundImage: `linear-gradient(180deg, rgba(15,10,30,.15) 0%, rgba(15,10,30,.55) 55%, ${bg} 100%), url("${HERO_URI}")`,
+          backgroundImage: `linear-gradient(180deg, rgba(11,11,15,.15) 0%, rgba(11,11,15,.55) 55%, ${bg} 100%), url("${HERO_URI}")`,
           backgroundSize: 'cover',
           backgroundPosition: 'center 30%',
         } as any
@@ -261,7 +261,7 @@ function DotsTexture() {
           ...StyleSheet.absoluteFillObject,
           zIndex: 0,
           pointerEvents: 'none',
-          backgroundImage: 'radial-gradient(circle, rgba(167,139,250,0.14) 1px, transparent 1px)',
+          backgroundImage: 'radial-gradient(circle, rgba(136,144,213,0.14) 1px, transparent 1px)',
           backgroundSize: '26px 26px',
         } as any
       }
@@ -855,7 +855,7 @@ const makeStyles = (COLORS: GradlyColors) =>
     ecoDesc: { fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,.75)', fontFamily: FONTS.interRegular, marginTop: 2 },
 
     section: { paddingHorizontal: 20, paddingVertical: 72, gap: 22, position: 'relative', overflow: 'hidden' },
-    sectionSurface: { backgroundColor: 'rgba(26,16,48,.55)' },
+    sectionSurface: { backgroundColor: 'rgba(19,19,24,.55)' },
     sectionHeader: { alignItems: 'center', gap: 10, marginBottom: 8, maxWidth: 700, alignSelf: 'center' },
     kicker: { fontSize: 13, fontFamily: FONTS.soraSemiBold, letterSpacing: 2, textTransform: 'uppercase' },
     sectionTitle: { fontSize: 32, textAlign: 'center', fontFamily: FONTS.soraExtraBold },

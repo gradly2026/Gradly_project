@@ -104,13 +104,13 @@ interface Props {
 }
 
 const C = {
-  card: "#0d0b1e",
-  border: "rgba(139,92,246,0.28)",
-  text: "#f4f1ff",
+  card: "#0B0B0F",
+  border: "rgba(136,144,213,0.28)",
+  text: "#F4F4F8",
   textSub: "rgba(255,255,255,0.66)",
   muted: "rgba(255,255,255,0.42)",
-  purple: "#a78bfa",
-  purpleDim: "rgba(139,92,246,0.14)",
+  purple: "#8890D5",
+  purpleDim: "rgba(136,144,213,0.14)",
   surface: "rgba(255,255,255,0.04)",
   green: "#22c55e",
   greenBg: "rgba(34,197,94,0.14)",
@@ -663,7 +663,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     padding: 14,
     borderRadius: 16,
-    backgroundColor: "rgba(26,22,43,0.55)",
+    backgroundColor: "rgba(19,19,24,0.55)",
     borderWidth: 1,
     borderColor: C.border,
   },

@@ -36,14 +36,14 @@ import { abrirConstancia, constanciaHtml } from "../utils/constanciaHtml";
 import { COLORS, webScrollStyle } from "../context/ThemeContext";
 
 const C = {
-  surface: "#0d0b1e",
+  surface: "#0B0B0F",
   card: "rgba(255,255,255,0.04)",
-  border: "rgba(139,92,246,0.22)",
-  text: "#f4f1ff",
+  border: "rgba(136,144,213,0.22)",
+  text: "#F4F4F8",
   textSub: "rgba(255,255,255,0.65)",
   muted: "rgba(255,255,255,0.40)",
-  accent: "#8b5cf6",
-  accentSoft: "rgba(139,92,246,0.15)",
+  accent: "#5963C4",
+  accentSoft: "rgba(136,144,213,0.15)",
   green: "#34d399",
   amber: "#f59e0b",
 };
@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
     borderColor: C.border,
   },
   avatarText: {
-    color: "#c4b5fd",
+    color: "#A9AFE3",
     fontSize: 20,
     fontWeight: "800",
   },

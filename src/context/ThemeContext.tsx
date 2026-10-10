@@ -103,44 +103,47 @@ export const DARK = {
   // los NOMBRES de color que usa toda la app; el valor de cada una es el
   // color hexadecimal/rgba que le corresponde EN MODO OSCURO.
 
-  // Morados principales
-  primary:          '#7C3AED', // color de marca principal (botones, iconos activos, links)
-  primaryLight:     '#A78BFA', // variante más clara de `primary` (hover, detalles suaves)
-  primaryDark:      '#5B21B6', // variante más oscura de `primary` (fondo de botones sólidos)
+  // Periwinkle de marca (paleta de la caja de la diseñadora, valores
+  // estimados de fotos hasta tener los hex oficiales). `primary` es el tono
+  // profundo para que el texto blanco sobre botones siga siendo legible.
+  primary:          '#5963C4', // color de marca principal (botones, iconos activos, links)
+  primaryLight:     '#8890D5', // periwinkle claro (texto, íconos y detalles sobre fondo oscuro)
+  primaryDark:      '#454EA8', // variante más oscura de `primary` (fondo de botones sólidos)
 
-  // Fondos (modo oscuro)
-  backgroundDark:   '#0F0A1E', // fondo general de toda la pantalla
-  backgroundCard:   '#1A1030', // fondo de "tarjetas" (Card) sobre el fondo general
-  backgroundSurface:'#241642', // fondo de superficies elevadas (un tono más sobre la tarjeta)
+  // Fondos (modo oscuro) — negro neutro, ya no morado
+  backgroundDark:   '#0B0B0F', // fondo general de toda la pantalla
+  backgroundCard:   '#131318', // fondo de "tarjetas" (Card) sobre el fondo general
+  backgroundSurface:'#1B1B22', // fondo de superficies elevadas (un tono más sobre la tarjeta)
 
   // Acento y semánticos
-  accent:           '#C4B5FD', // color de acento decorativo
+  accent:           '#A9AFE3', // color de acento decorativo
   success:          '#10B981', // verde: usado para mensajes de éxito / estados positivos
   warning:          '#F59E0B', // ámbar: usado para advertencias
   error:            '#EF4444', // rojo: usado para errores / acciones destructivas
 
   // Textos
-  textPrimary:      '#F5F3FF', // color de texto principal (el más legible/contrastado)
-  textSecondary:    '#A78BFA', // color de texto secundario (subtítulos, ayudas)
-  textMuted:        '#6B7280', // color de texto apagado (placeholders, texto deshabilitado)
+  textPrimary:      '#F4F4F8', // color de texto principal (el más legible/contrastado)
+  textSecondary:    '#A9AFE3', // color de texto secundario (subtítulos, ayudas)
+  textMuted:        '#9696A8', // color de texto apagado (placeholders, texto deshabilitado)
 
   // Bordes y dorado premium
-  border:           '#2D1F4E', // color de bordes/divisores sutiles
+  border:           '#2A2A34', // color de bordes/divisores sutiles
   gold:             '#D97706', // dorado, usado en insignias de plan Premium
 
   // Overlay transparencias frecuentes
-  // Estos 6 valores son el mismo morado/blanco pero con distintos niveles
+  // Estos 6 valores son el mismo periwinkle/blanco pero con distintos niveles
   // de transparencia (el número en el nombre = % de opacidad aproximado).
   // Se usan para fondos semitransparentes, resaltados al tocar, etc.
-  primary20:        'rgba(124,58,237,0.20)',
-  primary35:        'rgba(124,58,237,0.35)',
-  primary12:        'rgba(124,58,237,0.12)',
+  primary20:        'rgba(136,144,213,0.20)',
+  primary35:        'rgba(136,144,213,0.35)',
+  primary12:        'rgba(136,144,213,0.12)',
   white4:           'rgba(255,255,255,0.04)',
   white8:           'rgba(255,255,255,0.08)',
   white60:          'rgba(255,255,255,0.60)',
 
-  // Sombra del botón primario
-  btnShadow:        'rgba(124,58,237,0.55)', // color usado por shadow() para el botón principal
+  // Sombra del botón primario — transparente: el diseño nuevo es plano, sin
+  // brillo alrededor de los botones.
+  btnShadow:        'rgba(0,0,0,0)', // color usado por shadow() para el botón principal
 } as const;
 // "as const" le dice a TypeScript: "trata cada valor de este objeto como
 // un texto EXACTO (no como 'string' genérico), y no permitas modificar
@@ -156,41 +159,41 @@ export const LIGHT: GradlyColors = {
   // propiedad comparado con DARK (deben tener EXACTAMENTE las mismas
   // claves, solo cambia el color de cada una).
 
-  // Morados principales (un poco más profundos para contrastar sobre blanco)
-  primary:          '#7C3AED',
-  primaryLight:     '#7C3AED',
-  primaryDark:      '#6D28D9',
+  // Periwinkle de marca (un poco más profundo para contrastar sobre blanco)
+  primary:          '#5963C4',
+  primaryLight:     '#4F58B8',
+  primaryDark:      '#454EA8',
 
-  // Fondos claros — lavanda muy suave / blanco
-  backgroundDark:   '#F6F4FD',
+  // Fondos claros — gris azulado muy suave / blanco
+  backgroundDark:   '#F3F3F8',
   backgroundCard:   '#FFFFFF',
-  backgroundSurface:'#EFEAFB',
+  backgroundSurface:'#EEEEF4',
 
   // Acento y semánticos
-  accent:           '#7C3AED',
+  accent:           '#5963C4',
   success:          '#059669',
   warning:          '#D97706',
   error:            '#DC2626',
 
-  // Textos (tinta morada profunda en vez de negro puro)
-  textPrimary:      '#241B3D',
-  textSecondary:    '#6D28D9',
-  textMuted:        '#8A82A6',
+  // Textos (tinta casi negra con un leve tinte frío)
+  textPrimary:      '#14141B',
+  textSecondary:    '#4F58B8',
+  textMuted:        '#62627A',
 
   // Bordes y dorado premium
-  border:           '#E7E1F7',
+  border:           '#DEDEE8',
   gold:             '#B45309',
 
-  // Overlay transparencias frecuentes (tinte morado en vez de blanco)
-  primary20:        'rgba(124,58,237,0.16)',
-  primary35:        'rgba(124,58,237,0.28)',
-  primary12:        'rgba(124,58,237,0.08)',
-  white4:           'rgba(124,58,237,0.05)',
-  white8:           'rgba(124,58,237,0.08)',
-  white60:          'rgba(36,27,61,0.55)',
+  // Overlay transparencias frecuentes (tinte periwinkle en vez de blanco)
+  primary20:        'rgba(89,99,196,0.16)',
+  primary35:        'rgba(89,99,196,0.28)',
+  primary12:        'rgba(89,99,196,0.08)',
+  white4:           'rgba(89,99,196,0.05)',
+  white8:           'rgba(89,99,196,0.08)',
+  white60:          'rgba(20,20,27,0.55)',
 
-  // Sombra del botón primario
-  btnShadow:        'rgba(124,58,237,0.30)',
+  // Sombra del botón primario — transparente: el diseño nuevo es plano
+  btnShadow:        'rgba(0,0,0,0)',
 };
 
 export type GradlyColors = { readonly [K in keyof typeof DARK]: string };

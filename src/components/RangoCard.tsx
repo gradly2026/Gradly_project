@@ -53,8 +53,8 @@ export default function RangoCard({
   const dark = theme !== "light";
   const T = {
     card: dark ? "rgba(255,255,255,0.04)" : "#f8f9fa",
-    border: dark ? "rgba(139,92,246,0.22)" : "rgba(139,92,246,0.18)",
-    text: dark ? "#f4f1ff" : "#111827",
+    border: dark ? "rgba(136,144,213,0.22)" : "rgba(136,144,213,0.18)",
+    text: dark ? "#F4F4F8" : "#111827",
     sub: dark ? "rgba(255,255,255,0.55)" : "#6b7280",
     track: dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.08)",
     star: "#f5b50a",

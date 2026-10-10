@@ -20,10 +20,10 @@ const PARTICLE_COUNT = 12;
 
 // Paletas del fondo derivadas del tema activo. El gradiente y el tinte de las
 // partículas cambian con claro/oscuro para no romper el tema dinámico de Gradly.
-const DARK_GRADIENT = ['#1E0A3C', '#0A0214', '#030006'];
-const LIGHT_GRADIENT = ['#FFFFFF', '#F6F4FD', '#EFEAFB'];
-const DARK_PARTICLE = 'rgba(180, 100, 255, 0.35)';
-const LIGHT_PARTICLE = 'rgba(124, 58, 237, 0.18)';
+const DARK_GRADIENT = ['#17171F', '#0B0B0F', '#060608'];
+const LIGHT_GRADIENT = ['#FFFFFF', '#F3F3F8', '#EEEEF4'];
+const DARK_PARTICLE = 'rgba(136,144,213, 0.35)';
+const LIGHT_PARTICLE = 'rgba(136,144,213, 0.18)';
 
 // ─────────────────────────────────────────────────────────────
 // WEB: Skia/CanvasKit (WebAssembly) NO está configurado en este
@@ -40,7 +40,7 @@ const LiquidBackgroundWeb: React.FC<LiquidBackgroundProps> = ({ children, forceD
   const webGradient: any = {
     flex: 1,
     // Color sólido de respaldo si el navegador/RNW ignora backgroundImage.
-    backgroundColor: isDark ? '#0A0214' : colors.backgroundDark,
+    backgroundColor: isDark ? '#0B0B0F' : colors.backgroundDark,
     // Gradiente simulado con CSS (react-native-web lo aplica al <div>).
     backgroundImage: `linear-gradient(135deg, ${stops[0]} 0%, ${stops[1]} 50%, ${stops[2]} 100%)`,
   };

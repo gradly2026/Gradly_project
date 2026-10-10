@@ -5,15 +5,15 @@ import type { ModeracionVacantePendiente } from "../services/moderacionVacanteSe
 
 const C = {
   overlay: "rgba(7,5,15,0.75)",
-  card: "#0d0b1e",
-  border: "rgba(139,92,246,0.28)",
-  text: "#f4f1ff",
+  card: "#0B0B0F",
+  border: "rgba(136,144,213,0.28)",
+  text: "#F4F4F8",
   textSub: "rgba(255,255,255,0.66)",
   muted: "rgba(255,255,255,0.42)",
   red: "#f87171",
   redBg: "rgba(239,68,68,0.14)",
-  purple: "#a78bfa",
-  purpleDim: "rgba(139,92,246,0.14)",
+  purple: "#8890D5",
+  purpleDim: "rgba(136,144,213,0.14)",
 };
 
 interface Props {

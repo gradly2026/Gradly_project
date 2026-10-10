@@ -3109,12 +3109,12 @@ export default function DashboardEmpresa() {
       {/* MODAL DINÁMICO DE ESTADO DE GUARDADO */}
       <Modal transparent visible={estadoGuardado !== 'idle'} animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)', shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 15 }}>
+          <View style={{ backgroundColor: '#131318', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(136,144,213,0.3)', shadowColor: '#5963C4', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 15 }}>
 
             {/* ESTADO: CARGANDO */}
             {estadoGuardado === 'loading' && (
               <>
-                <ActivityIndicator size="large" color="#8b5cf6" style={{ transform: [{ scale: 1.5 }], marginBottom: 24 }} />
+                <ActivityIndicator size="large" color="#5963C4" style={{ transform: [{ scale: 1.5 }], marginBottom: 24 }} />
                 <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 8 }}>Procesando Vacante...</Text>
                 <Text style={{ color: 'rgba(255,255,255,0.6)', fontFamily: FONTS.interRegular, textAlign: 'center' }}>Registrando ubicación y datos en la base de datos.</Text>
               </>
@@ -3133,7 +3133,7 @@ export default function DashboardEmpresa() {
                     : 'La oferta ya está disponible para todos los estudiantes de la red.'}
                 </Text>
                 <TouchableOpacity
-                  style={{ backgroundColor: '#8b5cf6', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
+                  style={{ backgroundColor: '#5963C4', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
                   onPress={finalizarGuardadoExitoso}
                 >
                   <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 16 }}>Aceptar y Cerrar</Text>
@@ -3166,11 +3166,11 @@ export default function DashboardEmpresa() {
           por consistencia con el resto de este flujo. */}
       <Modal transparent visible={cascadaUbicOpen} animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 380, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)', shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 15 }}>
+          <View style={{ backgroundColor: '#131318', borderRadius: 24, padding: 30, width: '100%', maxWidth: 380, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(136,144,213,0.3)', shadowColor: '#5963C4', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 15 }}>
 
             {cascadaUbicFase === 'confirmar' && (
               <>
-                <Ionicons name="location" size={56} color="#8b5cf6" style={{ marginBottom: 16 }} />
+                <Ionicons name="location" size={56} color="#5963C4" style={{ marginBottom: 16 }} />
                 <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 8, textAlign: 'center' }}>
                   Actualizaste tu ubicación
                 </Text>
@@ -3178,7 +3178,7 @@ export default function DashboardEmpresa() {
                   Tienes {cascadaUbicMatches.length} publicación{cascadaUbicMatches.length === 1 ? '' : 'es'} usando tu ubicación anterior. ¿Cómo quieres actualizarla{cascadaUbicMatches.length === 1 ? '' : 's'}?
                 </Text>
                 <TouchableOpacity
-                  style={{ backgroundColor: '#8b5cf6', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center', marginBottom: 10 }}
+                  style={{ backgroundColor: '#5963C4', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center', marginBottom: 10 }}
                   onPress={ejecutarCascadaUbicacion}
                 >
                   <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 15 }}>Actualizarlas automáticamente</Text>
@@ -3194,13 +3194,13 @@ export default function DashboardEmpresa() {
 
             {cascadaUbicFase === 'progreso' && (
               <>
-                <ActivityIndicator size="large" color="#8b5cf6" style={{ transform: [{ scale: 1.5 }], marginBottom: 24 }} />
+                <ActivityIndicator size="large" color="#5963C4" style={{ transform: [{ scale: 1.5 }], marginBottom: 24 }} />
                 <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 12 }}>Actualizando ubicaciones…</Text>
                 <View style={{ width: '100%', height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden', marginBottom: 10 }}>
                   <View style={{
                     height: '100%',
                     borderRadius: 4,
-                    backgroundColor: '#8b5cf6',
+                    backgroundColor: '#5963C4',
                     width: `${cascadaUbicMatches.length ? Math.round((cascadaUbicHecho / cascadaUbicMatches.length) * 100) : 0}%` as any,
                   }} />
                 </View>
@@ -3218,7 +3218,7 @@ export default function DashboardEmpresa() {
                   Se actualizó la ubicación de {cascadaUbicMatches.length} publicación{cascadaUbicMatches.length === 1 ? '' : 'es'}.
                 </Text>
                 <TouchableOpacity
-                  style={{ backgroundColor: '#8b5cf6', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
+                  style={{ backgroundColor: '#5963C4', paddingVertical: 14, borderRadius: 14, width: '100%', alignItems: 'center' }}
                   onPress={() => setCascadaUbicOpen(false)}
                 >
                   <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 16 }}>Aceptar</Text>
@@ -3269,12 +3269,12 @@ export default function DashboardEmpresa() {
       {/* ── MODAL 1: SELECCIÓN DE PLAN (Mejorar) ──
           Todo este flujo de 4 modales tiene un diseño oscuro propio (texto
           blanco sobre superficies moradas translúcidas). Los modales 2-4 ya
-          fijan su tarjeta en oscuro (`#1a162b`); aquí se hace lo mismo para
+          fijan su tarjeta en oscuro (`#131318`); aquí se hace lo mismo para
           que en modo claro el texto blanco no quede invisible sobre la
           tarjeta clara del tema. */}
       <Modal visible={showPlanUpgradeModal} transparent animationType="none">
         <View style={styles.modalOverlay}>
-          <View style={[styles.sheetCard, { padding: 24, flex: 0.9, backgroundColor: '#1a162b', borderColor: 'rgba(139,92,246,0.3)' }]}>
+          <View style={[styles.sheetCard, { padding: 24, flex: 0.9, backgroundColor: '#131318', borderColor: 'rgba(136,144,213,0.3)' }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
               <TouchableOpacity onPress={() => setShowPlanUpgradeModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="arrow-back" size={24} color="#fff" />
@@ -3283,7 +3283,7 @@ export default function DashboardEmpresa() {
             </View>
 
             <TouchableOpacity style={s.changeTarjetaBtn} onPress={() => { setShowPlanUpgradeModal(false); abrirCardModal(); }}>
-              <Text style={[s.changeTarjetaText, { textAlign: 'center', fontSize: 13, paddingVertical: 4, color: '#a78bfa' }]}>Ver credenciales de pago</Text>
+              <Text style={[s.changeTarjetaText, { textAlign: 'center', fontSize: 13, paddingVertical: 4, color: '#8890D5' }]}>Ver credenciales de pago</Text>
             </TouchableOpacity>
 
             <Text style={[styles.fieldLabel, { marginTop: 20, marginBottom: 10, color: 'rgba(255,255,255,0.7)' }]}>Elige un nuevo plan</Text>
@@ -3291,13 +3291,13 @@ export default function DashboardEmpresa() {
             {/* Selector de período Mensual / Anual */}
             <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
               <TouchableOpacity
-                style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: periodoPlanes === 'mensual' ? '#8b5cf6' : 'transparent' }}
+                style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: periodoPlanes === 'mensual' ? '#5963C4' : 'transparent' }}
                 onPress={() => cambiarPeriodoPlanes('mensual')}
               >
                 <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 14 }}>Mensual</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: periodoPlanes === 'anual' ? '#8b5cf6' : 'transparent' }}
+                style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: periodoPlanes === 'anual' ? '#5963C4' : 'transparent' }}
                 onPress={() => cambiarPeriodoPlanes('anual')}
               >
                 <Text style={{ color: '#fff', fontFamily: FONTS.interSemiBold, fontSize: 14 }}>Anual</Text>
@@ -3320,13 +3320,13 @@ export default function DashboardEmpresa() {
                 <TouchableOpacity
                   key={p.id}
                   style={[
-                    { padding: 18, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.15)', marginBottom: 12 },
+                    { padding: 18, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(136,144,213,0.15)', marginBottom: 12 },
                     esPlanActual && { borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.05)' },
                     // La selección se pinta con el morado de la marca y un
                     // borde más grueso, para que se distinga de un vistazo del
                     // verde de "Tu plan actual" (que es un estado, no una
                     // elección).
-                    estaSeleccionado && { borderColor: '#8b5cf6', borderWidth: 2, backgroundColor: 'rgba(139,92,246,0.10)' },
+                    estaSeleccionado && { borderColor: '#5963C4', borderWidth: 2, backgroundColor: 'rgba(136,144,213,0.10)' },
                   ]}
                   onPress={() => {
                     // Tocar la tarjeta ya no compra: solo marca el plan. El
@@ -3341,11 +3341,11 @@ export default function DashboardEmpresa() {
                       <Ionicons
                         name={estaSeleccionado ? 'radio-button-on' : 'radio-button-off'}
                         size={18}
-                        color={estaSeleccionado ? '#a78bfa' : 'rgba(255,255,255,0.25)'}
+                        color={estaSeleccionado ? '#8890D5' : 'rgba(255,255,255,0.25)'}
                       />
                       <Text style={{ fontFamily: FONTS.soraBold, fontSize: 16, color: '#fff' }}>{p.nombre}</Text>
                     </View>
-                    <Text style={{ fontFamily: FONTS.soraBold, fontSize: 16, color: '#a78bfa' }}>{p.precio}</Text>
+                    <Text style={{ fontFamily: FONTS.soraBold, fontSize: 16, color: '#8890D5' }}>{p.precio}</Text>
                   </View>
                   <View style={{ marginTop: 10, gap: 5 }}>
                     {p.beneficios.map((ben, i) => (
@@ -3356,12 +3356,12 @@ export default function DashboardEmpresa() {
                     <Text style={{ color: '#10b981', fontFamily: FONTS.interSemiBold, fontSize: 12, marginTop: 8 }}>Tu plan actual</Text>
                   )}
                   {mismoPlanOtroCiclo && (
-                    <Text style={{ color: '#a78bfa', fontFamily: FONTS.interSemiBold, fontSize: 12, marginTop: 8 }}>
+                    <Text style={{ color: '#8890D5', fontFamily: FONTS.interSemiBold, fontSize: 12, marginTop: 8 }}>
                       {periodoPlanes === 'anual' ? 'Cambiar a facturación anual' : 'Cambiar a facturación mensual'}
                     </Text>
                   )}
                   {estaSeleccionado && (
-                    <Text style={{ color: '#a78bfa', fontFamily: FONTS.interSemiBold, fontSize: 12, marginTop: 8 }}>
+                    <Text style={{ color: '#8890D5', fontFamily: FONTS.interSemiBold, fontSize: 12, marginTop: 8 }}>
                       Seleccionado
                     </Text>
                   )}
@@ -3378,9 +3378,9 @@ export default function DashboardEmpresa() {
                 paddingVertical: 15,
                 borderRadius: 14,
                 alignItems: 'center',
-                backgroundColor: planSeleccionado ? '#8b5cf6' : 'rgba(255,255,255,0.06)',
+                backgroundColor: planSeleccionado ? '#5963C4' : 'rgba(255,255,255,0.06)',
                 borderWidth: 1,
-                borderColor: planSeleccionado ? '#8b5cf6' : 'rgba(255,255,255,0.10)',
+                borderColor: planSeleccionado ? '#5963C4' : 'rgba(255,255,255,0.10)',
               }}
               onPress={iniciarSuscripcion}
               disabled={!planSeleccionado}
@@ -3415,7 +3415,7 @@ export default function DashboardEmpresa() {
                   borderRadius: 24,
                 }}
               >
-                <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 28, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(245,158,11,0.35)' }}>
+                <View style={{ backgroundColor: '#131318', borderRadius: 24, padding: 28, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(245,158,11,0.35)' }}>
                   <Ionicons name="card-outline" size={54} color="#f59e0b" style={{ marginBottom: 14 }} />
                   <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 10, textAlign: 'center' }}>
                     Falta tu método de pago
@@ -3436,7 +3436,7 @@ export default function DashboardEmpresa() {
                     }}
                     activeOpacity={0.85}
                   >
-                    <Text style={{ color: '#1a162b', fontFamily: FONTS.interSemiBold, fontSize: 15 }}>Aceptar</Text>
+                    <Text style={{ color: '#131318', fontFamily: FONTS.interSemiBold, fontSize: 15 }}>Aceptar</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -3448,10 +3448,10 @@ export default function DashboardEmpresa() {
       {/* ── MODAL 2: CONFIRMAR COMPRA ── */}
       <Modal visible={showConfirmUpgradeModal} transparent animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' }}>
+          <View style={{ backgroundColor: '#131318', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(136,144,213,0.3)' }}>
             {upgradeProcessing ? (
               <>
-                <ActivityIndicator size="large" color="#8b5cf6" style={{ transform: [{ scale: 1.5 }], marginBottom: 24 }} />
+                <ActivityIndicator size="large" color="#5963C4" style={{ transform: [{ scale: 1.5 }], marginBottom: 24 }} />
                 <Text style={{ color: '#fff', fontSize: 18, fontFamily: FONTS.soraBold, marginBottom: 8 }}>Procesando pago...</Text>
                 <Text style={{ color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>Por favor espera, no cierres esta ventana.</Text>
               </>
@@ -3482,7 +3482,7 @@ export default function DashboardEmpresa() {
       {/* ── MODAL 3: COMPRA EXITOSA ── */}
       <Modal visible={showUpgradeSuccessModal} transparent animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)' }}>
+          <View style={{ backgroundColor: '#131318', borderRadius: 24, padding: 30, width: '100%', maxWidth: 340, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)' }}>
             <Ionicons name="checkmark-circle" size={80} color="#10b981" style={{ marginBottom: 16 }} />
             <Text style={{ color: '#fff', fontSize: 20, fontFamily: FONTS.soraBold, marginBottom: 8, textAlign: 'center' }}>¡Pago Realizado!</Text>
             <Text style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'center', fontFamily: FONTS.interRegular }}>Suscripción procesada correctamente.</Text>
@@ -3493,7 +3493,7 @@ export default function DashboardEmpresa() {
       {/* ── MODAL 4: BIENVENIDA NUEVO PLAN ── */}
       <Modal visible={showWelcomePlanModal} transparent animationType="none">
         <View style={{ flex: 1, backgroundColor: 'rgba(7,5,15,0.9)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1a162b', borderRadius: 24, padding: 30, width: '100%', maxWidth: 360, alignItems: 'center', borderWidth: 1, borderColor: COLORS.gold + '55' }}>
+          <View style={{ backgroundColor: '#131318', borderRadius: 24, padding: 30, width: '100%', maxWidth: 360, alignItems: 'center', borderWidth: 1, borderColor: COLORS.gold + '55' }}>
             <Ionicons name="star" size={60} color={COLORS.gold || '#eab308'} style={{ marginBottom: 16 }} />
             <Text style={{ color: '#fff', fontSize: 22, fontFamily: FONTS.soraBold, marginBottom: 8, textAlign: 'center' }}>
               ¡Felicidades!
@@ -4477,7 +4477,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   planBox: {
     borderRadius: 16, padding: 16, overflow: 'hidden',
     borderWidth: 1, borderColor: COLORS.primary35,
-    backgroundColor: 'rgba(139,92,246,0.08)', gap: 8,
+    backgroundColor: 'rgba(136,144,213,0.08)', gap: 8,
   },
   planBoxHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   planBoxLabel: { fontSize: 12, fontFamily: FONTS.interSemiBold, color: COLORS.primaryLight, letterSpacing: 0.5, textTransform: 'uppercase' },

@@ -19,13 +19,13 @@ import { COLORS, webScrollStyle } from '../context/ThemeContext';
 
 const C = {
   overlay: 'rgba(7,5,15,0.92)',
-  surface: '#0d0b1e',
+  surface: '#0B0B0F',
   card: 'rgba(255,255,255,0.04)',
-  border: 'rgba(139,92,246,0.25)',
-  text: '#f4f1ff',
+  border: 'rgba(136,144,213,0.25)',
+  text: '#F4F4F8',
   textSub: 'rgba(255,255,255,0.65)',
   muted: 'rgba(255,255,255,0.40)',
-  accent: '#8b5cf6',
+  accent: '#5963C4',
   green: '#34d399',
   // Colores del "papel" (documento formal).
   paper: '#fbfaf7',
@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 13,
-    backgroundColor: 'rgba(139,92,246,0.12)',
+    backgroundColor: 'rgba(136,144,213,0.12)',
     borderWidth: 1,
     borderColor: C.border,
     marginBottom: 14,

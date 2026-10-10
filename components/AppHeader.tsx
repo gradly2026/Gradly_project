@@ -103,19 +103,19 @@ export default function AppHeader({ hideLogo = false, style }: AppHeaderProps) {
 }
 
 const dark = {
-  bg: "rgba(13,11,30,0.95)",
-  border: "rgba(139,92,246,0.18)",
-  text: "#f4f1ff",
-  icon: "rgba(167,139,250,0.90)",
-  btnBg: "rgba(139,92,246,0.12)",
+  bg: "rgba(11,11,15,0.95)",
+  border: "rgba(136,144,213,0.18)",
+  text: "#F4F4F8",
+  icon: "rgba(136,144,213,0.90)",
+  btnBg: "rgba(136,144,213,0.12)",
 };
 
 const light = {
   bg: "rgba(248,250,252,0.97)",
-  border: "rgba(139,92,246,0.15)",
+  border: "rgba(136,144,213,0.15)",
   text: "#111827",
-  icon: "#7c3aed",
-  btnBg: "rgba(139,92,246,0.08)",
+  icon: "#5963C4",
+  btnBg: "rgba(136,144,213,0.08)",
 };
 
 const styles = StyleSheet.create({

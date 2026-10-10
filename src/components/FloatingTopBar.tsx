@@ -582,8 +582,8 @@ const FloatingTopBar = forwardRef<FloatingTopBarHandle, FloatingTopBarProps>(fun
             styles.pill,
             { height: pillHeight },
             {
-              backgroundColor: isDark ? 'rgba(26,16,48,0.55)' : 'rgba(255,255,255,0.55)',
-              borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(124,58,237,0.18)',
+              backgroundColor: isDark ? 'rgba(19,19,24,0.55)' : 'rgba(255,255,255,0.55)',
+              borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(136,144,213,0.18)',
             },
           ]}
         >

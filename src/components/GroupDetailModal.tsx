@@ -66,12 +66,12 @@ interface Props {
 
 const C = {
   bg: "#07050f",
-  surface: "#0d0b1e",
+  surface: "#0B0B0F",
   text: "#ffffff",
   muted: "rgba(255,255,255,0.65)",
   textMuted: "rgba(255,255,255,0.38)",
-  accent: "#8b5cf6",
-  border: "rgba(139,92,246,0.22)",
+  accent: "#5963C4",
+  border: "rgba(136,144,213,0.22)",
   card: "rgba(255,255,255,0.03)",
   green: "#34d399",
 };

@@ -69,9 +69,9 @@ export default function CertificadoGradly({
 }: Props) {
   const dark = theme !== "light";
   const T = {
-    bg: dark ? "#100a22" : "#fbfaff",
+    bg: dark ? "#0B0B0F" : "#fbfaff",
     sub: dark ? "rgba(255,255,255,0.55)" : "#6b7280",
-    text: dark ? "#f4f1ff" : "#1b1430",
+    text: dark ? "#F4F4F8" : "#1b1430",
     track: dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.08)",
     star: "#f5b50a",
   };

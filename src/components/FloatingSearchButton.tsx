@@ -50,7 +50,7 @@ export default function FloatingSearchButton(_props: FloatingSearchButtonProps) 
           style={[
             styles.btn,
             {
-              backgroundColor: isDark ? 'rgba(124,58,237,0.92)' : '#7C3AED',
+              backgroundColor: isDark ? 'rgba(89,99,196,0.92)' : '#5963C4',
               borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.35)',
             },
           ]}

@@ -1207,7 +1207,7 @@ function GlassCard({ children, colors, isDark, column }: {
         padding: 16,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(124,58,237,0.16)',
+        borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(136,144,213,0.16)',
         backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.6)',
       }}
     >

@@ -34,13 +34,13 @@ import { getComprobantePublico, type ComprobantePublico } from '../src/services/
 // sin cuenta ni preferencia de tema guardada.
 const C = {
   bg: '#07050f',
-  surface: '#0d0b1e',
-  accent: '#8b5cf6',
-  accent70: 'rgba(167,139,250,1)',
+  surface: '#0B0B0F',
+  accent: '#5963C4',
+  accent70: 'rgba(136,144,213,1)',
   text: '#ffffff',
   textSub: 'rgba(255,255,255,0.65)',
   textMuted: 'rgba(255,255,255,0.38)',
-  border: 'rgba(139,92,246,0.22)',
+  border: 'rgba(136,144,213,0.22)',
   hair: 'rgba(255,255,255,0.08)',
   red: '#ef4444',
   redBg: 'rgba(239,68,68,0.10)',
@@ -241,9 +241,9 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(139,92,246,0.12)',
+    backgroundColor: 'rgba(136,144,213,0.12)',
     borderWidth: 2,
-    borderColor: 'rgba(139,92,246,0.45)',
+    borderColor: 'rgba(136,144,213,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
 
   btnPrimary: {
     height: 46,
-    backgroundColor: '#7c3aed',
+    backgroundColor: '#5963C4',
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',

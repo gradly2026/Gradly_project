@@ -76,7 +76,7 @@ export default function UbicacionCardSV({
           <LinearGradient id="ucgrad" x1="0%" y1="0%" x2="100%" y2="100%">
             <Stop offset="0" stopColor={colors.primary} stopOpacity={1} />
             <Stop offset="0.55" stopColor={colors.primaryDark} stopOpacity={1} />
-            <Stop offset="1" stopColor="#140f2e" stopOpacity={1} />
+            <Stop offset="1" stopColor="#0F0F14" stopOpacity={1} />
           </LinearGradient>
         </Defs>
         <Rect x={0} y={0} width={VB_W} height={VB_H} fill="url(#ucgrad)" />

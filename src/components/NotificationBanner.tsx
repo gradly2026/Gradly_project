@@ -22,7 +22,7 @@ const CONFIG: Record<NotifType, { color: string; bg: string; icon: keyof typeof 
   success: { color: COLORS.success,     bg: 'rgba(16,185,129,0.15)',  icon: 'checkmark-circle' },
   warning: { color: COLORS.warning,     bg: 'rgba(245,158,11,0.15)',  icon: 'warning' },
   error:   { color: COLORS.error,       bg: 'rgba(239,68,68,0.15)',   icon: 'close-circle' },
-  info:    { color: COLORS.primaryLight, bg: 'rgba(167,139,250,0.15)', icon: 'information-circle' },
+  info:    { color: COLORS.primaryLight, bg: 'rgba(136,144,213,0.15)', icon: 'information-circle' },
 };
 
 // ─────────────────────────────────────────────

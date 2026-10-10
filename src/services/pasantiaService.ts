@@ -158,8 +158,8 @@ export function calcularNivelEstudiante(
   if (pct >= 100) return { nivel: 'graduado',    titulo: 'Certificado', icono: 'ribbon',    color: '#D97706', porcentaje: 100 };
   if (pct >= 76)  return { nivel: 'experto',     titulo: 'Experto',     icono: 'star',      color: '#F59E0B', porcentaje: pct };
   if (pct >= 51)  return { nivel: 'profesional', titulo: 'Profesional', icono: 'briefcase', color: '#10B981', porcentaje: pct };
-  if (pct >= 26)  return { nivel: 'practicante', titulo: 'Practicante', icono: 'bag',       color: '#A78BFA', porcentaje: pct };
-  return             { nivel: 'explorador',  titulo: 'Explorador',  icono: 'compass',   color: '#C4B5FD', porcentaje: pct };
+  if (pct >= 26)  return { nivel: 'practicante', titulo: 'Practicante', icono: 'bag',       color: '#8890D5', porcentaje: pct };
+  return             { nivel: 'explorador',  titulo: 'Explorador',  icono: 'compass',   color: '#A9AFE3', porcentaje: pct };
   // Una serie de "if" en cascada que revisan el porcentaje de mayor a
   // menor y devuelven el nivel correspondiente al primer umbral que se
   // cumple. Si ninguno de los "if" se cumple (menos de 26%), se devuelve

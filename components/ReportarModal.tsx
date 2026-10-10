@@ -35,8 +35,8 @@ interface Props {
 
 const DARK = {
   overlay: "rgba(0,0,0,0.75)",
-  bg: "#0d0b1e",
-  border: "rgba(139,92,246,0.30)",
+  bg: "#0B0B0F",
+  border: "rgba(136,144,213,0.30)",
   text: "#ffffff",
   textSub: "rgba(255,255,255,0.65)",
   textMuted: "rgba(255,255,255,0.38)",
@@ -44,9 +44,9 @@ const DARK = {
   chipBg: "rgba(255,255,255,0.04)",
   chipActiveBg: "rgba(239,68,68,0.15)",
   chipActiveBorder: "#ef4444",
-  label: "rgba(167,139,250,0.90)",
+  label: "rgba(136,144,213,0.90)",
   red: "#ef4444",
-  redBg: "#7c3aed",
+  redBg: "#5963C4",
   btnBg: "#ef4444",
   closeBg: "rgba(255,255,255,0.07)",
 };
@@ -54,7 +54,7 @@ const DARK = {
 const LIGHT = {
   overlay: "rgba(0,0,0,0.55)",
   bg: "#ffffff",
-  border: "rgba(139,92,246,0.25)",
+  border: "rgba(136,144,213,0.25)",
   text: "#111827",
   textSub: "#6b7280",
   textMuted: "#9ca3af",
@@ -62,9 +62,9 @@ const LIGHT = {
   chipBg: "#f3f4f6",
   chipActiveBg: "rgba(239,68,68,0.10)",
   chipActiveBorder: "#ef4444",
-  label: "#7c3aed",
+  label: "#5963C4",
   red: "#ef4444",
-  redBg: "#7c3aed",
+  redBg: "#5963C4",
   btnBg: "#ef4444",
   closeBg: "rgba(0,0,0,0.06)",
 };

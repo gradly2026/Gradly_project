@@ -35,13 +35,13 @@ export const JellyButton: React.FC<JellyButtonProps> = ({ children, style, conte
 
   const buttonBg = isDark
     ? Platform.OS === 'android'
-      ? 'rgba(40, 20, 70, 0.6)'
+      ? 'rgba(27,27,34, 0.6)'
       : 'rgba(255, 255, 255, 0.03)'
     : Platform.OS === 'android'
-    ? 'rgba(124, 58, 237, 0.12)'
-    : 'rgba(124, 58, 237, 0.08)';
-  const borderColor = isDark ? 'rgba(180, 100, 255, 0.2)' : 'rgba(124, 58, 237, 0.30)';
-  const glowColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(124, 58, 237, 0.15)';
+    ? 'rgba(136,144,213, 0.12)'
+    : 'rgba(136,144,213, 0.08)';
+  const borderColor = isDark ? 'rgba(136,144,213, 0.2)' : 'rgba(136,144,213, 0.30)';
+  const glowColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(136,144,213, 0.15)';
 
   return (
     <AnimatedPressable

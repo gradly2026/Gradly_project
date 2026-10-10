@@ -43,12 +43,12 @@ const LIMITE_DEFAULT = 20;
 function tokensPorTema(theme: "dark" | "light") {
   const dark = theme !== "light";
   return {
-    text: dark ? "#f4f1ff" : "#111827",
+    text: dark ? "#F4F4F8" : "#111827",
     sub: dark ? "rgba(255,255,255,0.55)" : "#6b7280",
     card: dark ? "rgba(255,255,255,0.04)" : "#f8f9fa",
-    border: dark ? "rgba(139,92,246,0.18)" : "rgba(139,92,246,0.14)",
+    border: dark ? "rgba(136,144,213,0.18)" : "rgba(136,144,213,0.14)",
     line: dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.08)",
-    surface: dark ? "#0d0b1e" : "#ffffff",
+    surface: dark ? "#0B0B0F" : "#ffffff",
     star: "#f5b50a",
   };
 }

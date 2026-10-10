@@ -19,12 +19,12 @@ import {
 
 const C = {
   bg: "rgba(7,5,15,0.75)",
-  surface: "#0d0b1e",
+  surface: "#0B0B0F",
   text: "#ffffff",
   textMuted: "rgba(255,255,255,0.45)",
-  accent: "#8b5cf6",
+  accent: "#5963C4",
   green: "#10b981",
-  border: "rgba(139,92,246,0.25)",
+  border: "rgba(136,144,213,0.25)",
   red: "#ef4444",
 };
 
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
-    backgroundColor: "rgba(139,92,246,0.1)",
+    backgroundColor: "rgba(136,144,213,0.1)",
     borderWidth: 1,
     borderColor: C.border,
     borderRadius: 12,

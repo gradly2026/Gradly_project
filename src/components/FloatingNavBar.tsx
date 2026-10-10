@@ -97,8 +97,8 @@ export default function FloatingNavBar<K extends string = string>({
         style={[
           styles.bar,
           {
-            backgroundColor: isDark ? 'rgba(26,16,48,0.55)' : 'rgba(255,255,255,0.6)',
-            borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(124,58,237,0.18)',
+            backgroundColor: isDark ? 'rgba(19,19,24,0.55)' : 'rgba(255,255,255,0.6)',
+            borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(136,144,213,0.18)',
           },
         ]}
         onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
     // Vidrio: fondo translúcido sobre el blur
-    backgroundColor: 'rgba(26,16,48,0.55)',
+    backgroundColor: 'rgba(19,19,24,0.55)',
     // Sombra suave (multiplataforma)
     ...shadow({ color: '#000', y: 2, blur: 12, opacity: 0.35, elevation: 8 }),
   },

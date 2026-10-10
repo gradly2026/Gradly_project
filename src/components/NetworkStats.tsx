@@ -644,7 +644,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
   bannerArrowDisabled: { opacity: 0.45 },
   rankCard: {
     borderRadius: 20, padding: 16, overflow: 'hidden',
-    borderWidth: 1, borderColor: 'rgba(124,58,237,0.18)',
+    borderWidth: 1, borderColor: 'rgba(136,144,213,0.18)',
     backgroundColor: COLORS.backgroundCard + 'cc',
     gap: 8,
   },
