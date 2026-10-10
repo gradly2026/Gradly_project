@@ -38,6 +38,6 @@ const makeStyles = (C: GradlyColors) =>
       backgroundColor: C.backgroundCard,
       borderBottomWidth: 1, borderBottomColor: C.border,
     },
-    logo: { width: 28, height: 28 },
-    word: { fontSize: 15, fontFamily: FONTS.soraBold, color: C.textPrimary },
+    logo: { width: 56, height: 56 },
+    word: { fontSize: 30, fontFamily: FONTS.soraBold, color: C.textPrimary },
   });
