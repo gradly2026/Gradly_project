@@ -103,6 +103,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Aún no tienes conversaciones.\nUsa el buscador de arriba para iniciar una.":
     "You don't have any conversations yet.\nUse the search bar above to start one.",
   "Buscar candidatos o vacantes...": "Search candidates or job posts...",
+  "Buscar estudiantes...": "Search students...",
   "Buscar carrera, tipo o modalidad…": "Search major, type or modality…",
   "Buscar vacantes...": "Search job posts...",
   "CV que enamora empresas": "A CV that wins companies over",

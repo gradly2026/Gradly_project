@@ -77,6 +77,7 @@ import FloatingSearchButton from '../src/components/FloatingSearchButton';
 import AsistenteGradly from '../src/components/AsistenteGradly';
 import FloatingTopBar from '../src/components/FloatingTopBar';
 import GradlyBrandHeader from '../src/components/GradlyBrandHeader';
+import AppShell, { useShellMode } from '../src/components/AppShell';
 import AvisosGate from '../src/components/AvisosGate';
 import SalirSesionModal from '../src/components/SalirSesionModal';
 import PeriodoPracticasField, {
@@ -554,6 +555,10 @@ export default function DashboardUniversidad() {
   // la píldora flotante); en móvil se separa de la barra de estado igual
   // que el header normal (`headerChatCompacto` distingue los dos casos).
   const { width: anchoVentana } = useWindowDimensions();
+  // Laptop/tablet: la navegación vive en la barra lateral del armazón (AppShell)
+  // y se ocultan el header, el menú inferior y la píldora flotante de abajo.
+  const shellMode = useShellMode();
+  const enShell = shellMode !== 'none';
   const headerChatSimplificado = seccion === 'mensajes';
   const headerChatCompacto = headerChatSimplificado && anchoVentana > 768;
   const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
@@ -1131,21 +1136,42 @@ export default function DashboardUniversidad() {
 
   return (
     <LiquidBackground>
-    <View style={[styles.root, { backgroundColor: 'transparent' }]}>
+    <View style={[styles.root, { backgroundColor: 'transparent' }, enShell && { paddingTop: 0 }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
+      {/* Armazón de laptop/tablet: barra lateral (siempre visible, también en
+          "Mensajes") + barra superior. En celular/app (`enShell` falso) no
+          dibuja nada y todo lo de abajo queda exactamente como estaba. */}
+      <AppShell
+        mode={shellMode}
+        items={navItems}
+        activeKey={seccion}
+        onChange={(k) => setSeccion(k as SeccionUni)}
+        userId={user?.uid}
+        userName={nombreUni}
+        userAvatar={
+          <StorageAvatar
+            url={perfil?.logo_url}
+            storagePath={user ? `logos/${user.uid}` : null}
+            size={40}
+            fallbackIcon="school"
+          />
+        }
+        onUserPress={() => setSeccion('perfil')}
+        searchPlaceholder="Buscar estudiantes..."
+      >
       {/* Marca Gradly, siempre visible arriba de todo (incluida "Mensajes") —
-          lo único que quedó del rediseño de navegación para laptop/tablet
-          que se revirtió (ver GradlyBrandHeader.tsx). */}
-      <GradlyBrandHeader colors={colors} />
+          en laptop/tablet la marca vive en la barra lateral del armazón. */}
+      {!enShell && <GradlyBrandHeader colors={colors} />}
 
       {/* ── CONTENIDO ── */}
       <View style={styles.main}>
         {/* Header superior — en "Mensajes" se reemplaza por una fila delgada
             con una flecha "atrás" (la misma que usa la pestaña "Mensajes"
-            del estudiante). En tablet/web va pegada arriba, a la altura de
-            la píldora flotante; en móvil se separa de la barra de estado
-            como el header normal. En el resto de secciones no cambia nada. */}
+            del estudiante). En móvil se separa de la barra de estado como el
+            header normal. En laptop/tablet no se dibuja: lo reemplaza la
+            barra superior del armazón. */}
+        {!enShell && (
         <View
           style={[
             headerChatSimplificado ? styles.mainHeaderChat : styles.mainHeader,
@@ -1191,29 +1217,35 @@ export default function DashboardUniversidad() {
             </>
           )}
         </View>
+        )}
         {renderSeccion()}
       </View>
+      </AppShell>
 
       {/* ── BOTONES FLOTANTES SUPERIORES (Glassmorphism) ──
           Ocultos mientras se ve un chat abierto en "Mensajes": ChatThread ya
-          trae su propia versión de estos mismos 3 botones en su cabecera. */}
-      {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
+          trae su propia versión de estos mismos 3 botones en su cabecera. En
+          laptop/tablet esos botones viven en la barra superior del armazón. */}
+      {!enShell && !(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
         <FloatingTopBar userId={user?.uid} />
       )}
 
       {/* ── AVISOS AL INICIAR SESIÓN (estudiantes que se inscribieron a un cupo) ── */}
       <AvisosGate />
 
-      {/* ── BÚSQUEDA FLOTANTE (oculta en "Mis Estudiantes", "Mi Perfil" y "Mensajes") ── */}
-      {seccion !== 'estudiantes' && seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
+      {/* ── BÚSQUEDA FLOTANTE (oculta en "Mis Estudiantes", "Mi Perfil" y
+          "Mensajes"; en laptop/tablet la reemplaza el buscador de la barra superior) ── */}
+      {!enShell && seccion !== 'estudiantes' && seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
 
-      {/* ── ASISTENTE GRADLY (bot de ayuda) — apilado sobre el botón de búsqueda ── */}
-      {seccion !== 'mensajes' && <AsistenteGradly />}
+      {/* ── ASISTENTE GRADLY (bot de ayuda) — apilado sobre el botón de búsqueda
+          (en laptop/tablet, sin botón de búsqueda debajo, va pegado abajo) ── */}
+      {seccion !== 'mensajes' && <AsistenteGradly bottom={enShell ? 24 : undefined} />}
 
       {/* ── MENÚ FLOTANTE (Glassmorphism) ──
           Oculto en "Mensajes": la sección de chat debe verse limpia, sin
-          menú inferior superpuesto sobre la conversación. */}
-      {seccion !== 'mensajes' && (
+          menú inferior superpuesto sobre la conversación. En laptop/tablet la
+          navegación vive en la barra lateral del armazón. */}
+      {!enShell && seccion !== 'mensajes' && (
         <FloatingNavBar
           items={navItems}
           activeKey={seccion}
