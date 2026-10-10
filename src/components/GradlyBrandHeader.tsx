@@ -39,5 +39,5 @@ const makeStyles = (C: GradlyColors) =>
       borderBottomWidth: 1, borderBottomColor: C.border,
     },
     logo: { width: 56, height: 56 },
-    word: { fontSize: 30, fontFamily: FONTS.soraBold, color: C.textPrimary },
+    word: { fontSize: 25.5, fontFamily: FONTS.soraBold, color: C.textPrimary },
   });
