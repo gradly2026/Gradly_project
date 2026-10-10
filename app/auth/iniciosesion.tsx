@@ -787,7 +787,7 @@ export default function InicioSesion() {
                 isDesktopWeb. */}
             <View style={styles.brand}>
               <Image
-                source={require("../../assets/images/LogoGradly.png")}
+                source={require("../../assets/images/LogoGradlyRecorte.png")}
                 style={styles.brandLogo}
                 resizeMode="contain"
               />

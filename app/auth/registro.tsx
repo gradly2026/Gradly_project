@@ -3794,7 +3794,7 @@ const makeStyles = (C: Tokens) =>
   modalOverlay: {
     flex: 1,
     // Scrim del modal: oscuro en ambos modos por convención.
-    backgroundColor: "rgba(7,5,15,0.80)",
+    backgroundColor: "rgba(7,7,9,0.80)",
     justifyContent: "center",
     paddingHorizontal: 18,
   },
@@ -4013,7 +4013,7 @@ const makeStyles = (C: Tokens) =>
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(7,5,15,0.70)",
+    backgroundColor: "rgba(7,7,9,0.70)",
     alignItems: "center",
     justifyContent: "center",
     padding: 20,

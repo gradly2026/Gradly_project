@@ -67,7 +67,7 @@ export default function AppHeader({ hideLogo = false, style }: AppHeaderProps) {
       {!hideLogo ? (
         <Logo style={styles.left} {...logoProps}>
           <Image
-            source={require("../assets/images/LogoGradly.png")}
+            source={require("../assets/images/LogoGradlyRecorte.png")}
             style={styles.logo}
             resizeMode="contain"
           />

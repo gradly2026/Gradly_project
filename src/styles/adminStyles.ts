@@ -11,12 +11,13 @@ const WEB_GLASS = Platform.OS === "web"
 
 // ══════════════════════════════════════════════════════════════════
 //  Paleta del panel admin — theme-aware (claro / oscuro).
-//  El modo OSCURO conserva EXACTAMENTE el diseño original (morados
-//  profundos). El modo CLARO deriva una variante legible equivalente.
+//  Mismos valores de la paleta global (ThemeContext): negro neutro con
+//  periwinkle de marca en oscuro; gris azulado claro con periwinkle
+//  profundo en claro.
 // ══════════════════════════════════════════════════════════════════
 export const makeC = (isDark: boolean) => ({
   // Alineado con la paleta global de la app (ThemeContext) para que el admin
-  // se sienta parte del mismo producto, manteniendo el morado como identidad.
+  // se sienta parte del mismo producto, con el periwinkle como identidad.
   bg: isDark ? "#0B0B0F" : "#F3F3F8",
   surface: isDark ? "rgba(19,19,24,0.92)" : "rgba(255,255,255,0.92)",
   surfaceAlt: isDark ? "rgba(27,27,34,0.72)" : "rgba(238,238,244,0.92)",

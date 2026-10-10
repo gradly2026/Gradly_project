@@ -36,7 +36,7 @@ import {
   type CalificacionPlataforma,
 } from '../src/services/calificacionPlataformaService';
 
-const LOGO = require('../assets/images/LogoGradly.png');
+const LOGO = require('../assets/images/LogoGradlyRecorte.png');
 // Foto de fondo de la portada — va empotrada en base64 (no `require()`) a
 // propósito: en la build de producción (`expo export`, la que usa
 // Netlify), `Image.resolveAssetSource()` para esta imagen devolvía por
