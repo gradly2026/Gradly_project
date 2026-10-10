@@ -1,6 +1,5 @@
 import React from 'react';
-import { StyleProp, StyleSheet, View, ViewProps, ViewStyle, Platform } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { StyleProp, StyleSheet, View, ViewProps, ViewStyle } from 'react-native';
 import { useTheme } from '../../../src/context/ThemeContext';
 
 interface GlassCardProps extends ViewProps {
@@ -9,29 +8,17 @@ interface GlassCardProps extends ViewProps {
   contentStyle?: StyleProp<ViewStyle>;
 }
 
+// El nombre se queda (64 usos en 19 archivos) pero el diseño nuevo es plano:
+// fondo sólido de tarjeta + borde fino, sin desenfoque ni brillo superior.
+// Los colores salen de los tokens del tema, así que siguen al modo claro/oscuro.
 export const GlassCard: React.FC<GlassCardProps> = ({ children, style, contentStyle, ...props }) => {
-  // Theme-aware: en claro el cristal usa tinte claro y fondo blanquecino para no
-  // verse como un bloque oscuro sobre el fondo lavanda. Estructura intacta.
-  const { isDark } = useTheme();
-
-  const cardBg = isDark
-    ? Platform.OS === 'android'
-      ? 'rgba(19,19,24, 0.75)'
-      : 'rgba(19,19,24, 0.35)'
-    : Platform.OS === 'android'
-    ? 'rgba(255, 255, 255, 0.80)'
-    : 'rgba(255, 255, 255, 0.45)';
-  const borderColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(136,144,213, 0.12)';
-  const highlightColor = isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(255, 255, 255, 0.35)';
+  const { colors } = useTheme();
 
   return (
-    <View {...props} style={[styles.card, { backgroundColor: cardBg, borderColor }, style]}>
-      <BlurView
-        intensity={Platform.OS === 'ios' ? 25 : 65}
-        tint={isDark ? 'dark' : 'light'}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={[styles.highlight, { backgroundColor: highlightColor }]} />
+    <View
+      {...props}
+      style={[styles.card, { backgroundColor: colors.backgroundCard, borderColor: colors.border }, style]}
+    >
       <View style={[styles.content, contentStyle]}>{children}</View>
     </View>
   );
@@ -39,10 +26,9 @@ export const GlassCard: React.FC<GlassCardProps> = ({ children, style, contentSt
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 20,
+    borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
   },
-  highlight: { position: 'absolute', top: 0, left: 0, right: 0, height: '30%' },
   content: { padding: 16 },
 });

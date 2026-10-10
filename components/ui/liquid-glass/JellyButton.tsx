@@ -1,6 +1,5 @@
 import React from 'react';
-import { StyleProp, StyleSheet, Pressable, PressableProps, Platform, View, ViewStyle } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { StyleProp, StyleSheet, Pressable, PressableProps, View, ViewStyle } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { useTheme } from '../../../src/context/ThemeContext';
 
@@ -13,9 +12,11 @@ interface JellyButtonProps extends PressableProps {
 }
 
 export const JellyButton: React.FC<JellyButtonProps> = ({ children, style, contentStyle, ...props }) => {
-  // Theme-aware: el tinte del cristal y el fondo siguen al tema activo. La física
-  // de gelatina (spring scaleX/scaleY) se mantiene idéntica.
-  const { isDark } = useTheme();
+  // Diseño plano: sin desenfoque ni aro de brillo, así un botón con su propio
+  // `backgroundColor` muestra su color real. Lo que se conserva es la física de
+  // gelatina (spring scaleX/scaleY) y el override de estilo de cada pantalla.
+  // El relleno/borde por defecto (botón secundario) sale de los tokens del tema.
+  const { colors } = useTheme();
   const scaleX = useSharedValue(1);
   const scaleY = useSharedValue(1);
 
@@ -33,29 +34,18 @@ export const JellyButton: React.FC<JellyButtonProps> = ({ children, style, conte
     transform: [{ scaleX: scaleX.value }, { scaleY: scaleY.value }],
   }));
 
-  const buttonBg = isDark
-    ? Platform.OS === 'android'
-      ? 'rgba(27,27,34, 0.6)'
-      : 'rgba(255, 255, 255, 0.03)'
-    : Platform.OS === 'android'
-    ? 'rgba(136,144,213, 0.12)'
-    : 'rgba(136,144,213, 0.08)';
-  const borderColor = isDark ? 'rgba(136,144,213, 0.2)' : 'rgba(136,144,213, 0.30)';
-  const glowColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(136,144,213, 0.15)';
-
   return (
     <AnimatedPressable
       {...props}
       onPressIn={onPressIn}
       onPressOut={onPressOut}
-      style={[styles.button, { backgroundColor: buttonBg, borderColor }, animatedStyle, style as any]}
+      style={[
+        styles.button,
+        { backgroundColor: colors.primary12, borderColor: colors.primary35 },
+        animatedStyle,
+        style as any,
+      ]}
     >
-      <BlurView
-        intensity={Platform.OS === 'ios' ? 20 : 50}
-        tint={isDark ? 'dark' : 'light'}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={[styles.glow, { borderColor: glowColor }]} />
       <View style={[styles.content, contentStyle]}>{children}</View>
     </AnimatedPressable>
   );
@@ -67,6 +57,5 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
   },
-  glow: { ...StyleSheet.absoluteFillObject, borderWidth: 1, borderRadius: 14 },
   content: { paddingVertical: 12, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' },
 });
