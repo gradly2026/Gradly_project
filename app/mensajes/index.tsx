@@ -48,7 +48,7 @@ const BREAKPOINT = 768;
 // el diseño cambia de comportamiento — 768px es un umbral típico para
 // distinguir "celular" de "tablet/escritorio".
 
-const GRADLY_LOGO = require("../../assets/images/LogoGradly.png");
+const GRADLY_LOGO = require("../../assets/images/LogoGradlyRecorte.png");
 // require(...) (a diferencia de `import`) es la forma en que React
 // Native/Metro (el empaquetador de la app) referencia ARCHIVOS estáticos
 // como imágenes — el resultado es un identificador especial que se le
@@ -251,9 +251,10 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 12,
   },
+  // Logo recortado (sin margen transparente): caja de 56 en vez de 70.
   logo: {
-    width: 70,
-    height: 70,
+    width: 56,
+    height: 56,
   },
   brand: {
     fontSize: 24,

@@ -920,7 +920,7 @@ export default function AdminPreview() {
   const [meEmail, setMeEmail] = useState<string | null>(null);
   const [dataIssues, setDataIssues] = useState<Partial<Record<DataIssueKey, string>>>({});
 
-  const gradlyLogo = require("../../assets/images/LogoGradly.png");
+  const gradlyLogo = require("../../assets/images/LogoGradlyRecorte.png");
   const empresaLogo = require("../../assets/images/logo.png");
 
   const labelRole = (r: Role) =>

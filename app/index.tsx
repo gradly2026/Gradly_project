@@ -254,7 +254,7 @@ export default function Index() {
         ]}
       >
         <Image
-          source={require('../assets/images/LogoGradly.png')}
+          source={require('../assets/images/LogoGradlyRecorte.png')}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -312,9 +312,11 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  // El PNG recortado no trae margen transparente (el anterior dejaba el
+  // emblema en menos de la mitad de la caja), así que la caja baja de 100 a 80.
   logo: {
-    width: 100,
-    height: 100,
+    width: 80,
+    height: 80,
   },
   brandName: {
     fontSize: 52,

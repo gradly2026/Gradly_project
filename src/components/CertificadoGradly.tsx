@@ -6,7 +6,7 @@ import {
   progresoRango,
 } from "../services/feedbackService";
 
-const GRADLY_LOGO = require("../../assets/images/LogoGradly.png");
+const GRADLY_LOGO = require("../../assets/images/LogoGradlyRecorte.png");
 
 interface Props {
   /** Puntos de experiencia acumulados (`puntos_experiencia`). */

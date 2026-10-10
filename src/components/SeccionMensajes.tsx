@@ -11,7 +11,7 @@ import { chatTitle, type ChatListItem } from "../services/chatService";
 /** Umbral de escritorio: a partir de aquí se usa layout de dos paneles. */
 const BREAKPOINT = 768;
 
-const GRADLY_LOGO = require("../../assets/images/LogoGradly.png");
+const GRADLY_LOGO = require("../../assets/images/LogoGradlyRecorte.png");
 
 export interface SeccionMensajesProps {
   /**
@@ -181,9 +181,10 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 12,
   },
+  // Logo recortado (sin margen transparente): caja de 56 en vez de 70.
   logo: {
-    width: 70,
-    height: 70,
+    width: 56,
+    height: 56,
   },
   brand: {
     fontSize: 24,

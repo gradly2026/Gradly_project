@@ -187,7 +187,7 @@ export default function OnboardingInicial() {
           <ScrollView contentContainerStyle={styles.slidePad} showsVerticalScrollIndicator={false}>
             <View style={styles.brand}>
               <Image
-                source={require("../assets/images/LogoGradly.png")}
+                source={require("../assets/images/LogoGradlyRecorte.png")}
                 style={styles.brandLogo}
                 resizeMode="contain"
               />
@@ -360,15 +360,18 @@ const makeStyles = (C: GradlyColors) =>
       gap: 8,
     },
 
-    brand: { flexDirection: "row", alignItems: "center", marginBottom: 22 },
+    // minHeight 84: con el PNG anterior la fila medía 84 por la altura de la
+    // imagen (que traía margen transparente); se conserva para que nada de lo
+    // que va debajo se mueva.
+    brand: { flexDirection: "row", alignItems: "center", marginBottom: 22, minHeight: 84 },
     // Ancho fijo en vez de `aspectRatio` a propósito: en react-native-web,
     // <Image> con solo height+aspectRatio (sin width) resuelve el ancho al
-    // tamaño NATIVO del archivo (421px) en vez de calcularlo — se calcula
-    // el ancho a mano igual que en nativo. El PNG trae además ~23% de
-    // relleno transparente pegado a su borde derecho (medido a pixel en el
-    // boceto aprobado), compensado con el mismo margin-right negativo,
-    // escalado a esta altura desde el boceto (154px→-16px ⇒ 84px→-11px).
-    brandLogo: { height: 84, width: 84 * (421 / 593), marginRight: -11 },
+    // tamaño NATIVO del archivo en vez de calcularlo — se calcula el ancho a
+    // mano igual que en nativo. Se usa el logo RECORTADO (236×277, sin margen
+    // transparente): 40 de alto deja el emblema visible del mismo tamaño que
+    // tenía en el boceto aprobado (~39), y marginRight 3 reemplaza al margen
+    // negativo que compensaba el relleno del PNG anterior.
+    brandLogo: { height: 40, width: 40 * (236 / 277), marginRight: 3 },
     brandName: { fontSize: 28, fontFamily: FONTS.soraExtraBold, color: C.textPrimary },
 
     slideTitle: {
