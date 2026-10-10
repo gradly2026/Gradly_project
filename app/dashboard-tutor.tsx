@@ -36,6 +36,8 @@ import SeccionIncidenciasTutor from '../src/components/SeccionIncidenciasTutor';
 import SeccionMensajes from '../src/components/SeccionMensajes';
 import FloatingTopBar, { type FloatingTopBarHandle } from '../src/components/FloatingTopBar';
 import FloatingNavBar, { type NavItem } from '../src/components/FloatingNavBar';
+import AppShell, { useShellMode } from '../src/components/AppShell';
+import StorageAvatar from '../src/components/StorageAvatar';
 import { auth, db, storage } from '../src/config/firebaseConfig';
 import { useAuth } from '../src/context/AuthContext';
 import { useAuthGuard } from '../src/hooks/useAuthGuard';
@@ -53,6 +55,10 @@ export default function DashboardTutor() {
   const router = useRouter();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  // Laptop/tablet: la navegación vive en la barra lateral del armazón
+  // (AppShell); se oculta el menú inferior y el componente de la campanita.
+  const shellMode = useShellMode();
+  const enShell = shellMode !== 'none';
   const s = makeStyles(colors);
 
   const [seccion, setSeccion] = useState<SeccionTutor>('pasantes');
@@ -223,7 +229,11 @@ export default function DashboardTutor() {
           extraButton) y traducción/tema ya viven en "Mi Perfil" — aquí no
           se dibuja ningún ícono, pero el componente se queda montado para
           seguir escuchando notificaciones y poder abrir su mismo panel. */}
-      {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
+      {/* En laptop/tablet (`enShell`) la campanita, el idioma y el tema viven
+          en la barra superior del armazón (con su propio panel de
+          notificaciones), así que este componente oculto solo se monta en
+          celular/app, donde alimenta el botón de campanita del menú inferior. */}
+      {!enShell && !(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
         <FloatingTopBar
           ref={topBarRef}
           userId={user?.uid}
@@ -234,8 +244,29 @@ export default function DashboardTutor() {
         />
       )}
 
+      {/* Armazón de laptop/tablet: barra lateral (siempre visible, también en
+          "Mensajes") + barra superior. En celular/app (`enShell` falso) no
+          dibuja nada y todo lo de abajo queda exactamente como estaba. */}
+      <AppShell
+        mode={shellMode}
+        items={navItems}
+        activeKey={seccion}
+        onChange={(k) => setSeccion(k)}
+        userId={user.uid}
+        userName={perfil.nombre_completo}
+        userSubtitle={perfil.cargo}
+        userAvatar={
+          <StorageAvatar
+            url={perfil.foto_url}
+            storagePath={`fotos_tutores/${user.uid}/foto.jpg`}
+            size={40}
+            fallbackIcon="person"
+          />
+        }
+        onUserPress={() => setSeccion('perfil')}
+      >
       {seccion === 'pasantes' ? (
-        <View style={{ flex: 1, padding: 16, paddingTop: insets.top + 16, paddingBottom: 90 }}>
+        <View style={{ flex: 1, padding: 16, paddingTop: insets.top + 16, paddingBottom: enShell ? 16 : 90 }}>
           <SeccionPasantesTutor
             tutorId={user!.uid}
             pasanteAAbrirId={pasanteAAbrirId}
@@ -243,7 +274,7 @@ export default function DashboardTutor() {
           />
         </View>
       ) : seccion === 'incidencias' ? (
-        <View style={{ flex: 1, padding: 16, paddingTop: insets.top + 16, paddingBottom: 90 }}>
+        <View style={{ flex: 1, padding: 16, paddingTop: insets.top + 16, paddingBottom: enShell ? 16 : 90 }}>
           <SeccionIncidenciasTutor tutorId={user!.uid} tutorNombre={perfil.nombre_completo} />
         </View>
       ) : seccion === 'mensajes' ? (
@@ -365,6 +396,7 @@ export default function DashboardTutor() {
         ]}
       />
       )}
+      </AppShell>
 
       <SalirSesionModal
         visible={logoutVisible}
@@ -379,8 +411,9 @@ export default function DashboardTutor() {
       {/* Menú flotante inferior — oculto en "Mensajes" mientras hay un chat
           abierto, mismo criterio que dashboard-empresa.tsx/dashboard-
           universidad.tsx: la conversación debe verse limpia, sin el menú
-          superpuesto. */}
-      {!(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
+          superpuesto. En laptop/tablet la navegación vive en la barra lateral
+          del armazón. */}
+      {!enShell && !(seccion === 'mensajes' && chatAbiertoEnMensajes) && (
         <FloatingNavBar
           items={navItems}
           activeKey={seccion}
