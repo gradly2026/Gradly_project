@@ -22,6 +22,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AutoText as Text } from '../../src/components/AutoText';
+import Titular from '../../src/components/Titular';
 import MiInstitucionCard, { useInstitucion, fechaCorta, fechaCortaDate } from '../../src/components/MiInstitucionCard';
 import { GlassCard } from '../../components/ui/liquid-glass/GlassCard';
 import { LiquidBackground } from '../../components/ui/liquid-glass/LiquidBackground';
@@ -209,7 +210,7 @@ export default function InstitucionTab() {
         <StatusBar style="light" />
 
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>{t('inst_titulo')}</Text>
+          <Titular style={styles.headerTitle} noTranslate>{t('inst_titulo')}</Titular>
         </View>
 
         <ScrollView
@@ -476,7 +477,7 @@ const makeStyles = (COLORS: GradlyColors) =>
       paddingTop: 56, paddingHorizontal: 20, paddingBottom: 16,
       borderBottomWidth: 1, borderBottomColor: COLORS.border,
     },
-    headerTitle: { fontSize: 22, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+    headerTitle: { fontSize: 22, fontFamily: FONTS.soraExtraBold, color: COLORS.textPrimary },
 
     scroll: { padding: 16, paddingBottom: 100, width: '100%', maxWidth: 760, alignSelf: 'center' },
     sectionTitle: {

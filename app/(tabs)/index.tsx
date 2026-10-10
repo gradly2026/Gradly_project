@@ -121,6 +121,7 @@ import MercadoLaboralStats from '../../src/components/MercadoLaboralStats';
 // vacantes hay, en qué áreas, etc.) — se ve cuando el estudiante está en
 // modo solo-lectura (situación 2 de arriba).
 import { AutoText, AutoText as Text, AutoTextInput as TextInput } from '../../src/components/AutoText';
+import Titular from '../../src/components/Titular';
 // Aquí se importa AutoText de 2 formas: como `AutoText` (nombre normal) y
 // como alias `Text`, para que cada <Text> de la pantalla se auto-traduzca.
 // Ojo con el reparto de responsabilidades en este archivo: AutoText queda
@@ -1175,7 +1176,7 @@ export default function FeedVacantes() {
         {/* Saludo */}
         <View style={styles.greetingRow}>
           <View>
-            <Text style={styles.greeting} noTranslate>{t('feed_saludo', { nombre })}</Text>
+            <Titular style={styles.greeting} acento={nombre} noTranslate>{t('feed_saludo', { nombre })}</Titular>
             {/* noTranslate: el texto ya viene traducido por t(), y además
                 lleva dentro un NOMBRE PROPIO — sin esto, AutoText lo
                 mandaría al traductor y podría devolver el nombre del
@@ -1594,7 +1595,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 14,
   },
-  greeting: { fontSize: 20, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  greeting: { fontSize: 20, fontFamily: FONTS.soraExtraBold, color: COLORS.textPrimary },
   phrase: {
     fontSize: 12,
     fontFamily: FONTS.interRegular,

@@ -28,6 +28,7 @@ import {
   View,
 } from 'react-native';
 import { AutoText as Text } from "../../src/components/AutoText";
+import Titular from "../../src/components/Titular";
 import { showAlert } from "../../src/components/AppAlert";
 import { useAuth } from '../../src/context/AuthContext';
 import { useTranslation } from '../../src/context/TranslationContext';
@@ -964,7 +965,7 @@ export default function ProgresoTab() {
       <StatusBar style="light" />
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Mi progreso</Text>
+        <Titular style={styles.headerTitle}>Mi progreso</Titular>
       </View>
 
       {/* ── Toggle: Puesto de trabajo / Pasantía culminada ──
@@ -1244,7 +1245,7 @@ const makeStyles = (COLORS: GradlyColors) => StyleSheet.create({
     paddingTop: 56, paddingHorizontal: 20, paddingBottom: 16,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  headerTitle: { fontSize: 22, fontFamily: FONTS.soraBold, color: COLORS.textPrimary },
+  headerTitle: { fontSize: 22, fontFamily: FONTS.soraExtraBold, color: COLORS.textPrimary },
 
   // Toggle "Puesto de trabajo" / "Pasantía culminada"
   vistaToggle: {

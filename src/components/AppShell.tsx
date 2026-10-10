@@ -19,6 +19,7 @@ import { AutoText, useAutoText } from './AutoText';
 import type { NavItem } from './FloatingNavBar';
 import FloatingTopBar from './FloatingTopBar';
 import GlobalSearchOverlay from './GlobalSearchOverlay';
+import Titular from './Titular';
 import { FONTS, useTheme, type GradlyColors } from '../context/ThemeContext';
 
 const LOGO = require('../../assets/images/LogoGradlyRecorte.png');
@@ -107,7 +108,7 @@ export default function AppShell<K extends string = string>({
 
       <View style={s.col}>
         <View style={s.top}>
-          <Text style={s.title} numberOfLines={1}>{activeLabel}</Text>
+          <Titular style={s.title} numberOfLines={1} noTranslate>{activeLabel}</Titular>
           {searchPlaceholder ? (
             <Pressable style={s.search} onPress={() => setSearchOpen(true)} accessibilityLabel={searchLabel}>
               <Ionicons name="search" size={18} color={colors.textMuted} />
@@ -223,7 +224,7 @@ const makeStyles = (C: GradlyColors, full: boolean) =>
       // y debe quedar por encima del contenido que sigue.
       position: 'relative', zIndex: 5,
     },
-    title: { fontSize: 22, fontFamily: FONTS.soraBold, color: C.textPrimary, flexShrink: 1 },
+    title: { fontSize: 20, fontFamily: FONTS.soraExtraBold, color: C.textPrimary, flexShrink: 1 },
     search: {
       flex: 1, maxWidth: 420, marginLeft: 8, height: 44,
       flexDirection: 'row', alignItems: 'center', gap: 10,
