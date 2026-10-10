@@ -36,6 +36,8 @@ import FloatingSearchButton from '../../src/components/FloatingSearchButton';
 import AsistenteGradly from '../../src/components/AsistenteGradly';
 import FloatingTopBar from '../../src/components/FloatingTopBar';
 import GradlyBrandHeader from '../../src/components/GradlyBrandHeader';
+import AppShell, { useShellMode } from '../../src/components/AppShell';
+import StorageAvatar from '../../src/components/StorageAvatar';
 import SalirSesionModal from '../../src/components/SalirSesionModal';
 import OnboardingDireccionGate from '../../src/components/OnboardingDireccionGate';
 import DatosPersonalesGate from '../../src/components/DatosPersonalesGate';
@@ -130,16 +132,21 @@ const TOUR_PASOS: Record<TabKey, { titulo: string; texto: string }> = {
 function GlassTabBar({
   state,
   navigation,
-  mensajesBadge,
+  items,
+  ocultar,
   onActiveKeyChange,
-}: BottomTabBarProps & { mensajesBadge: number; onActiveKeyChange: (key: TabKey) => void }) {
+}: BottomTabBarProps & { items: NavItem<TabKey>[]; ocultar: boolean; onActiveKeyChange: (key: TabKey) => void }) {
   // GlassTabBar es un COMPONENTE PERSONALIZADO que React Navigation usa
   // EN VEZ de su barra de pestañas por defecto (ver la prop `tabBar` del
   // componente <Tabs> más abajo). Recibe las props estándar de React
-  // Navigation (`state`, `navigation`, ...) MÁS 3 props propias del
+  // Navigation (`state`, `navigation`, ...) MÁS varias props propias del
   // proyecto, combinadas con el tipo "&" (intersección) que ya vimos en
-  // pasantiaService.ts.
-  const { t } = useTranslation();
+  // pasantiaService.ts. `items` ya viene armado desde TabLayout (con sus
+  // etiquetas traducidas y el contador de mensajes) porque ese mismo arreglo
+  // lo usa también la barra lateral de laptop/tablet (AppShell). `ocultar`
+  // es verdadero cuando esa barra lateral está activa: este componente
+  // SIGUE montado (su efecto de abajo es el que avisa cuál pestaña está
+  // activa) pero no dibuja el menú inferior.
   const activeKey = state.routes[state.index]?.name as TabKey;
   // `state.index` es la posición de la pestaña ACTUALMENTE activa dentro
   // de `state.routes` (la lista de todas las pestañas); de ahí se extrae
@@ -156,21 +163,6 @@ function GlassTabBar({
   // de OTRO componente directamente durante el render — hacerlo dentro de
   // un useEffect asegura que ocurra DESPUÉS de que este componente ya
   // terminó de dibujarse.
-
-  const items: NavItem<TabKey>[] = TAB_ITEMS.map(it => ({
-    key: it.key,
-    icon: it.icon,
-    label: t(it.labelKey),
-    // Aquí es donde la CLAVE de traducción (labelKey) se convierte
-    // finalmente en el TEXTO real, usando t() — recalculado en cada
-    // render, así que si el usuario cambia de idioma, las etiquetas de
-    // las pestañas cambian solas.
-    // Solo "Mensajes" muestra badge (mensajes sin leer). Antes "Vacantes"
-    // mostraba el TOTAL de vacantes activas de la plataforma, que se veía
-    // como un contador rojo de notificaciones aunque el estudiante no
-    // tuviera ninguna — se quitó.
-    badge: it.key === 'mensajes' ? mensajesBadge : undefined,
-  }));
 
   const handleChange = (key: TabKey) => {
     // Se ejecuta cuando el usuario TOCA una pestaña en la barra visual.
@@ -192,17 +184,24 @@ function GlassTabBar({
     }
   };
 
-  // Oculta en la pestaña "Mensajes": la sección de chat debe verse limpia,
-  // sin menú inferior superpuesto sobre la conversación.
-  if (activeKey === 'mensajes') return null;
+  // En laptop/tablet el menú vive en la barra lateral (AppShell). Y en la
+  // pestaña "Mensajes" se oculta siempre: la sección de chat debe verse
+  // limpia, sin menú inferior superpuesto sobre la conversación.
+  if (ocultar || activeKey === 'mensajes') return null;
 
   return <FloatingNavBar items={items} activeKey={activeKey} onChange={handleChange} />;
 }
 
 export default function TabLayout() {
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const router = useRouter();
   const { colors } = useTheme();
+  const { t } = useTranslation();
+  // Laptop/tablet: la navegación vive en la barra lateral del armazón
+  // (AppShell); se ocultan la marca de arriba, el menú inferior y las
+  // píldoras/botones flotantes que ese armazón reemplaza.
+  const shellMode = useShellMode();
+  const enShell = shellMode !== 'none';
   // Red de seguridad: si por lo que sea esta pantalla llegara a mostrarse
   // sin sesión (p. ej. tras un "atrás" que quedara detrás de un cierre de
   // sesión), redirige a login de inmediato — mismo hook que ya usan los
@@ -232,6 +231,24 @@ export default function TabLayout() {
   // (actualizada por GlassTabBar vía onActiveKeyChange) — se necesita
   // arriba, en este nivel, porque el tour de bienvenida (más abajo)
   // también depende de saber en qué pestaña está el usuario ahora.
+
+  // Mismos `items` para el menú inferior (GlassTabBar, celular/app) y para la
+  // barra lateral (AppShell, laptop/tablet): un solo arreglo, así sus
+  // íconos, etiquetas y contador nunca se desincronizan.
+  const items: NavItem<TabKey>[] = TAB_ITEMS.map(it => ({
+    key: it.key,
+    icon: it.icon,
+    // Aquí es donde la CLAVE de traducción (labelKey) se convierte
+    // finalmente en el TEXTO real, usando t() — recalculado en cada
+    // render, así que si el usuario cambia de idioma, las etiquetas de
+    // las pestañas cambian solas.
+    label: t(it.labelKey),
+    // Solo "Mensajes" muestra badge (mensajes sin leer). Antes "Vacantes"
+    // mostraba el TOTAL de vacantes activas de la plataforma, que se veía
+    // como un contador rojo de notificaciones aunque el estudiante no
+    // tuviera ninguna — se quitó.
+    badge: it.key === 'mensajes' ? mensajesNoLeidos : undefined,
+  }));
 
   // Badge: total de mensajes no leídos del usuario
   useEffect(() => {
@@ -263,10 +280,31 @@ export default function TabLayout() {
 
   return (
     <>
-      {/* Marca Gradly, siempre visible arriba de las 5 pestañas — lo único
-          que quedó del rediseño de navegación para laptop/tablet que se
-          revirtió (ver GradlyBrandHeader.tsx). */}
-      <GradlyBrandHeader colors={colors} />
+      {/* Armazón de laptop/tablet: barra lateral (siempre visible, también en
+          "Mensajes") + barra superior. En celular/app (`enShell` falso) no
+          dibuja nada y todo lo de abajo queda exactamente como estaba. */}
+      <AppShell
+        mode={shellMode}
+        items={items}
+        activeKey={activeKey}
+        onChange={(k) => router.navigate(TOUR_RUTAS[k] as any)}
+        userId={user?.uid}
+        userName={(userProfile as any)?.nombre_completo ?? t('feed_estudiante')}
+        userSubtitle={t('feed_estudiante')}
+        userAvatar={
+          <StorageAvatar
+            url={(userProfile as any)?.foto_url}
+            storagePath={user ? `fotos_estudiantes/${user.uid}/perfil.jpg` : null}
+            size={40}
+            fallbackIcon="person"
+          />
+        }
+        onUserPress={() => router.navigate(TOUR_RUTAS.perfil as any)}
+        searchPlaceholder="Buscar vacantes..."
+      >
+      {/* Marca Gradly, siempre visible arriba de las 5 pestañas — en
+          laptop/tablet la marca vive en la barra lateral del armazón. */}
+      {!enShell && <GradlyBrandHeader colors={colors} />}
       <View style={{ flex: 1 }}>
       <Tabs
         screenOptions={{ headerShown: false }}
@@ -289,7 +327,8 @@ export default function TabLayout() {
           // como las 3 propias del proyecto.
           <GlassTabBar
             {...props}
-            mensajesBadge={mensajesNoLeidos}
+            items={items}
+            ocultar={enShell}
             onActiveKeyChange={setActiveKey}
           />
         )}
@@ -301,23 +340,26 @@ export default function TabLayout() {
         <Tabs.Screen name="perfil" />
       </Tabs>
       </View>
+      </AppShell>
 
       {/* Botones flotantes superiores (notificaciones · idioma · tema).
           Se ocultan SOLO cuando el usuario está en la pestaña Mensajes CON un
           chat abierto: ChatThread ya trae esos 3 botones en su cabecera. En
           otra pestaña siguen visibles aunque SeccionMensajes quede montada de
-          fondo (las tabs no se desmontan al cambiar). */}
-      {!(chatPaneOpen && enMensajes) && <FloatingTopBar userId={user?.uid} />}
+          fondo (las tabs no se desmontan al cambiar). En laptop/tablet esos
+          botones viven en la barra superior del armazón. */}
+      {!enShell && !(chatPaneOpen && enMensajes) && <FloatingTopBar userId={user?.uid} />}
       {/* Al estar aquí, FUERA de <Tabs> pero dentro del mismo Fragment,
           esta barra flota SOBRE cualquiera de las 5 pestañas, sin tener
           que repetirla dentro de cada archivo individual. */}
 
       {/* Botón flotante de búsqueda global — oculto en la pestaña Mensajes,
           que ya tiene su propio buscador dentro de la lista de chats. */}
-      {!enMensajes && <FloatingSearchButton />}
+      {!enShell && !enMensajes && <FloatingSearchButton />}
 
-      {/* Asistente Gradly (bot de ayuda) — apilado encima del botón de búsqueda. */}
-      {!enMensajes && <AsistenteGradly />}
+      {/* Asistente Gradly (bot de ayuda) — apilado encima del botón de búsqueda
+          (en laptop/tablet, sin botón de búsqueda debajo, va pegado abajo). */}
+      {!enMensajes && <AsistenteGradly bottom={enShell ? 24 : undefined} />}
 
       {/* Formulario obligatorio de experiencia (pasantías finalizadas) */}
       <FeedbackGate />

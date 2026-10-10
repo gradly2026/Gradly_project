@@ -29,6 +29,7 @@ import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LiquidBackground } from "../../components/ui/liquid-glass/LiquidBackground";
+import { useShellMode } from "../../src/components/AppShell";
 import SeccionMensajes from "../../src/components/SeccionMensajes";
 import { useTheme } from "../../src/context/ThemeContext";
 import { setChatPaneOpen } from "../../src/state/chatPaneOpen";
@@ -38,6 +39,9 @@ export default function MensajesTab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  // Laptop/tablet: la barra lateral (AppShell, en el layout de pestañas) ya
+  // permite salir de "Mensajes", así que la fila de "atrás" sobra.
+  const enShell = useShellMode() !== "none";
 
   // El buscador de usuarios (la lupa dentro de SeccionMensajes) delega en
   // `useIniciarChat`; estando ya en /mensajes, ese hook hace
@@ -67,7 +71,9 @@ export default function MensajesTab() {
 
       {/* Fila delgada con la flecha "atrás" — equivalente al header
           simplificado de "Mensajes" en los dashboards. `paddingRight` deja
-          hueco para la píldora flotante de notificaciones/idioma/tema. */}
+          hueco para la píldora flotante de notificaciones/idioma/tema. En
+          laptop/tablet no se dibuja: ahí la barra lateral ya permite salir. */}
+      {!enShell && (
       <View
         style={[
           styles.backBar,
@@ -83,6 +89,7 @@ export default function MensajesTab() {
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
+      )}
 
       <SeccionMensajes
         openChat={openChat}

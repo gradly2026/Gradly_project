@@ -215,6 +215,10 @@ const makeStyles = (C: GradlyColors, full: boolean) =>
       paddingHorizontal: full ? 28 : 20,
       paddingTop: Platform.OS === 'web' ? 14 : 36, paddingBottom: 14,
       borderBottomWidth: 1, borderBottomColor: C.border,
+      // Fondo propio: en el estudiante este armazón vive en el layout de
+      // pestañas, fuera de cualquier LiquidBackground, y sin color se vería
+      // el blanco por defecto de la página.
+      backgroundColor: C.backgroundDark,
       // zIndex: el menú de idioma de FloatingTopBar se despliega hacia abajo
       // y debe quedar por encima del contenido que sigue.
       position: 'relative', zIndex: 5,
