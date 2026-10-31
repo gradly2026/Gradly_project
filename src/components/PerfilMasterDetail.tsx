@@ -98,7 +98,7 @@ const LABELS_ES: PerfilMasterDetailLabels = {
   temaOscuro: 'Oscuro',
   idioma: 'Idioma',
   ayuda: 'Ayuda',
-  acerca: 'Acerca de Gradly',
+  acerca: 'Acerca de UniJober',
   calificarPlataforma: 'Calificar la plataforma',
   cerrarSesion: 'Cerrar sesión',
   cuenta: 'Cuenta',

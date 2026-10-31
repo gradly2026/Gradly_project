@@ -186,7 +186,7 @@ export default function AsistenteGradly({ bottom }: Props) {
         style={[s.fab, { bottom: fabBottom, backgroundColor: colors.primary }]}
         onPress={() => setOpen(true)}
         activeOpacity={0.85}
-        accessibilityLabel="Abrir el asistente de Gradly"
+        accessibilityLabel="Abrir el asistente de UniJober"
       >
         <Ionicons name="chatbubble-ellipses" size={22} color="#fff" />
       </TouchableOpacity>
@@ -207,7 +207,7 @@ export default function AsistenteGradly({ bottom }: Props) {
                 <Ionicons name="chatbubble-ellipses" size={16} color={colors.primaryLight} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={s.headerTitle}>Asistente Gradly</Text>
+                <Text style={s.headerTitle}>Asistente UniJober</Text>
                 <Text style={s.headerSub}>Te ayudo a moverte por la app</Text>
               </View>
               <TouchableOpacity onPress={() => setOpen(false)} hitSlop={10}>
@@ -223,7 +223,7 @@ export default function AsistenteGradly({ bottom }: Props) {
             >
               <View style={[s.burbuja, s.burbujaBot]}>
                 <Text style={s.burbujaBotTxt}>
-                  ¡Hola! Soy el asistente de Gradly. Pregúntame cómo hacer algo o qué significa
+                  ¡Hola! Soy el asistente de UniJober. Pregúntame cómo hacer algo o qué significa
                   un término y te oriento.
                 </Text>
               </View>
@@ -269,7 +269,7 @@ export default function AsistenteGradly({ bottom }: Props) {
                 style={s.input}
                 value={input}
                 onChangeText={setInput}
-                placeholder="Pregúntame sobre Gradly…"
+                placeholder="Pregúntame sobre UniJober…"
                 placeholderTextColor={colors.textMuted}
                 multiline
                 editable={!cargando}

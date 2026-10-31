@@ -342,7 +342,7 @@ const TOUR_PASOS: Record<SeccionEmpresa, { titulo: string; texto: string }> = {
   perfil: {
     titulo: 'Mi Perfil',
     texto:
-      'Consulta tu rango, tu plan, tu método de pago y tus estadísticas, y ajusta tus preferencias. Si tienes dudas de cómo usar Gradly, toca la burbuja del Asistente Gradly que flota en tus pantallas.',
+      'Consulta tu rango, tu plan, tu método de pago y tus estadísticas, y ajusta tus preferencias. Si tienes dudas de cómo usar UniJober, toca la burbuja del Asistente UniJober que flota en tus pantallas.',
   },
   mensajes: {
     titulo: 'Mensajes',
@@ -2281,7 +2281,7 @@ export default function DashboardEmpresa() {
                       <View style={{ flex: 1, paddingRight: 10 }}>
                         <Text style={styles.planRenewTitle}>Renovación automática</Text>
                         <Text style={styles.planRenewDesc}>
-                          Gradly renueva tu plan {(perfil?.cicloFacturacion ?? 'mensual') === 'mensual' ? 'cada mes' : 'cada año'} sin que tengas que hacer nada.
+                          UniJober renueva tu plan {(perfil?.cicloFacturacion ?? 'mensual') === 'mensual' ? 'cada mes' : 'cada año'} sin que tengas que hacer nada.
                         </Text>
                       </View>
                       <Switch
@@ -2426,7 +2426,7 @@ export default function DashboardEmpresa() {
         onUserPress={() => setSeccion('perfil')}
         searchPlaceholder="Buscar candidatos o vacantes..."
       >
-      {/* Marca Gradly, siempre visible arriba de todo (incluida "Mensajes") —
+      {/* Marca UniJober, siempre visible arriba de todo (incluida "Mensajes") —
           en laptop/tablet la marca vive en la barra lateral del armazón. */}
       {!enShell && <GradlyBrandHeader colors={colors} />}
 
@@ -2510,7 +2510,7 @@ export default function DashboardEmpresa() {
           laptop/tablet la reemplaza el buscador de la barra superior) ── */}
       {!enShell && seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar candidatos o vacantes..." />}
 
-      {/* ── ASISTENTE GRADLY (bot de ayuda) — apilado sobre el botón de búsqueda
+      {/* ── ASISTENTE UNIJOBER (bot de ayuda) — apilado sobre el botón de búsqueda
           (en laptop/tablet, sin botón de búsqueda debajo, va pegado abajo) ── */}
       {seccion !== 'mensajes' && <AsistenteGradly bottom={enShell ? 24 : undefined} />}
 
@@ -2617,7 +2617,7 @@ export default function DashboardEmpresa() {
                     <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
                     <Text style={s.avisoEdicionTxt}>
                       Informativo. La negociación final se realiza de forma privada entre la
-                      empresa y el postulante, fuera de Gradly.
+                      empresa y el postulante, fuera de UniJober.
                     </Text>
                   </View>
                 </View>
@@ -2884,7 +2884,7 @@ export default function DashboardEmpresa() {
                     <Text style={s.avisoEdicionTxt}>
                       El salario es informativo y queda a discreción tuya publicarlo. La negociación
                       final de las condiciones económicas se realiza de forma privada entre la
-                      empresa y el postulante, fuera de Gradly.
+                      empresa y el postulante, fuera de UniJober.
                     </Text>
                   </View>
                 </View>
@@ -3607,7 +3607,7 @@ function SeccionInicio({ metricas, apps, perfil, empresaId, vacantes, solicitude
 
   return (
     <ScrollView style={webScrollStyle(colors)} contentContainerStyle={s.scroll}>
-      {/* ── Estadísticas de la Red Gradly ── */}
+      {/* ── Estadísticas de la Red UniJober ── */}
       <RedGradlyBanner />
 
       {/* Banner */}

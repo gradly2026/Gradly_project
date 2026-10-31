@@ -560,7 +560,7 @@ export async function cambiarEstadoIncidencia(
   const textos: Record<EstadoIncidencia, string> = {
     abierta: 'se reabrió.',
     en_seguimiento: 'está siendo atendida.',
-    escalada: 'se escaló al equipo de Gradly.',
+    escalada: 'se escaló al equipo de UniJober.',
     resuelta: 'se marcó como resuelta.',
   };
 
@@ -609,7 +609,7 @@ export async function escalarIncidencia(
       ? {
           extra: { visible_estudiante: true },
           notifRef: `incidencia:${incidenciaId}`,
-          mensajeEstudiante: `Tu universidad elevó al equipo de Gradly el reporte de la empresa (${inc.motivo}). Es una situación grave: revísala y toma medidas.`,
+          mensajeEstudiante: `Tu universidad elevó al equipo de UniJober el reporte de la empresa (${inc.motivo}). Es una situación grave: revísala y toma medidas.`,
         }
       : {}),
   });

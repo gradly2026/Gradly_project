@@ -454,7 +454,7 @@ export default function PerfilPublicoModal({
                     rango y el sello "Empresa Nueva" ya no se muestran aquí. El
                     sello sigue apareciendo en el buscador y en las tarjetas de
                     vacante; el rango propio se ve en "Mi rango" del dashboard. */}
-                {/* ── "Certificación Gradly" del estudiante: OCULTA por ahora
+                {/* ── "Certificación UniJober" del estudiante: OCULTA por ahora
                        (pedido del usuario, 2026-09-01). Descomentar para volver
                        a mostrarla en el perfil público.
                 {rol === "talento" || rol === "alumno" ? (

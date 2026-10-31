@@ -92,7 +92,7 @@ export default function VerificarComprobante() {
       <View style={styles.card}>
         <View style={styles.brandRow}>
           <Ionicons name="shield-checkmark-outline" size={16} color={C.accent70} />
-          <Text style={styles.brandText}>VERIFICACIÓN GRADLY</Text>
+          <Text style={styles.brandText}>VERIFICACIÓN UNIJOBER</Text>
         </View>
 
         {fase === 'cargando' && (
@@ -111,7 +111,7 @@ export default function VerificarComprobante() {
             </View>
             <Text style={styles.title}>Comprobante no encontrado</Text>
             <Text style={styles.sub}>
-              Este enlace no corresponde a ningún comprobante emitido por Gradly.
+              Este enlace no corresponde a ningún comprobante emitido por UniJober.
             </Text>
           </View>
         )}
@@ -183,7 +183,7 @@ function ComprobanteEncontrado({ comp }: { comp: ComprobantePublico }) {
       />
 
       <Text style={styles.footNote}>
-        Este comprobante fue emitido a través de Gradly y corresponde a una pasantía real registrada
+        Este comprobante fue emitido a través de UniJober y corresponde a una pasantía real registrada
         en la plataforma.
       </Text>
     </View>

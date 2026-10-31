@@ -71,7 +71,7 @@ export function constanciaHtml(d: DatosConstancia, extra?: ConstanciaExtra): str
     .firma .name { font-weight: bold; }
   </style></head><body>
     <h1>Constancia de finalización de pasantía</h1>
-    <div class="brand">GRADLY</div>
+    <div class="brand">UNIJOBER</div>
 
     <div class="lugar">San Salvador, El Salvador, a ${hoy}.</div>
 

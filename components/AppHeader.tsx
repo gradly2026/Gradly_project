@@ -71,7 +71,7 @@ export default function AppHeader({ hideLogo = false, style }: AppHeaderProps) {
             style={styles.logo}
             resizeMode="contain"
           />
-          <Text style={[styles.brand, { color: C.text }]}>Gradly</Text>
+          <Text style={[styles.brand, { color: C.text }]}>UniJober</Text>
         </Logo>
       ) : (
         <View style={styles.left} />

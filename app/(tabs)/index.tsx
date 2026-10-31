@@ -1200,7 +1200,7 @@ export default function FeedVacantes() {
             — se auto-oculta si no hay ninguna pendiente. */}
         {user?.uid && <RecordatorioCalificacionCard rol="estudiante" uid={user.uid} />}
 
-        {/* Estadísticas de la Red Gradly: Top Empresas, Top Universidades y Top 3
+        {/* Estadísticas de la Red UniJober: Top Empresas, Top Universidades y Top 3
             estudiantes de la plataforma — los mismos cuadros de los dashboards de
             empresa y universidad (pedido del usuario, 2026-09-23: que el estudiante
             vea cómo funciona la plataforma y se motive). Va DEBAJO de la institución

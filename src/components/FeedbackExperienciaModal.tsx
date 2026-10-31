@@ -201,7 +201,7 @@ export default function FeedbackExperienciaModal({
           {/* Cabecera */}
           <View style={styles.headerBadge}>
             <Ionicons name="ribbon" size={18} color={C.accent} />
-            <Text style={styles.headerBadgeText}>Formulario de Experiencia Gradly</Text>
+            <Text style={styles.headerBadgeText}>Formulario de Experiencia UniJober</Text>
           </View>
 
           {resultado ? (
@@ -247,7 +247,7 @@ export default function FeedbackExperienciaModal({
               <Text style={styles.titulo}>{titulo}</Text>
               <Text style={styles.subtitulo}>
                 Tu evaluación es obligatoria y ayuda a mantener la confianza de la
-                comunidad Gradly.
+                comunidad UniJober.
               </Text>
 
               {incidencias.length > 0 ? (

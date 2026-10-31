@@ -258,7 +258,7 @@ export default function Index() {
           style={styles.logo}
           resizeMode="contain"
         />
-        <Text style={styles.brandName}>Gradly</Text>
+        <Text style={styles.brandName}>UniJober</Text>
         <Text style={styles.tagline}>Conectando talento con oportunidades</Text>
       </Animated.View>
 

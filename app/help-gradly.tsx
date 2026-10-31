@@ -219,8 +219,8 @@ export default function HelpGradlyScreen() {
           <GlassCard contentStyle={styles.heroCard}>
             <View style={styles.heroBadge}>
               <Ionicons name="help-circle-outline" size={18} color={colors.primaryLight} />
-              <Text style={styles.heroBadgeText}>Gradly</Text>
-              {/* "Gradly" se escribe literal, sin t() ni AutoText — es el
+              <Text style={styles.heroBadgeText}>UniJober</Text>
+              {/* "UniJober" se escribe literal, sin t() ni AutoText — es el
                   nombre propio de la marca, nunca debe traducirse. */}
             </View>
             <Text style={styles.sectionTitle}>{t('help_screen_contact_title')}</Text>
@@ -249,7 +249,7 @@ export default function HelpGradlyScreen() {
             />
           </View>
 
-          {/* ── Mensajes de soporte 1-a-1 con el equipo de Gradly ── */}
+          {/* ── Mensajes de soporte 1-a-1 con el equipo de UniJober ── */}
           {puedeSoporte && (
             <GlassCard contentStyle={styles.soporteCard}>
               <View style={styles.soporteHeadRow}>
@@ -288,7 +288,7 @@ export default function HelpGradlyScreen() {
                           </Text>
                           {!!ultimo?.texto && (
                             <Text style={styles.ticketSnippet} numberOfLines={1} noTranslate>
-                              {ultimo.autor === 'admin' ? 'Gradly: ' : ''}
+                              {ultimo.autor === 'admin' ? 'UniJober: ' : ''}
                               {ultimo.texto}
                             </Text>
                           )}
@@ -324,7 +324,7 @@ export default function HelpGradlyScreen() {
           )}
 
           {/* ── Preguntas frecuentes (config/faq, la misma que usa el
-              Asistente Gradly) — solo lectura, en acordeón. ── */}
+              Asistente UniJober) — solo lectura, en acordeón. ── */}
           {faqEntradas.length > 0 && (
             <View style={styles.faqSection}>
               <Text style={styles.sectionTitle}>Preguntas frecuentes</Text>

@@ -216,10 +216,10 @@ export default function CalificarPlataformaScreen() {
           <GlassCard contentStyle={styles.heroCard}>
             <View style={styles.heroBadge}>
               <Ionicons name="star-outline" size={18} color={colors.primaryLight} />
-              <Text style={styles.heroBadgeText} noTranslate>Gradly</Text>
+              <Text style={styles.heroBadgeText} noTranslate>UniJober</Text>
             </View>
             <Text style={styles.sectionTitle}>
-              {yaCalifico ? 'Tu calificación' : '¿Qué te parece Gradly?'}
+              {yaCalifico ? 'Tu calificación' : '¿Qué te parece UniJober?'}
             </Text>
             <Text style={styles.paragraph}>
               Tu opinión nos ayuda a mejorar la plataforma. Califica estos aspectos, deja un
@@ -271,7 +271,7 @@ export default function CalificarPlataformaScreen() {
                 </View>
                 <Text style={styles.correccionAyuda}>
                   Cuéntanos un error o problema puntual que hayas tenido con la plataforma. Esto
-                  solo lo ve el equipo de Gradly, no aparece en la lista pública de abajo.
+                  solo lo ve el equipo de UniJober, no aparece en la lista pública de abajo.
                 </Text>
                 <TextInput
                   style={styles.input}

@@ -21,7 +21,7 @@ export default function GradlyBrandHeader({ colors }: { colors: GradlyColors }) 
   return (
     <View style={styles.wrap}>
       <Image source={GRADLY_LOGO} style={styles.logo} resizeMode="contain" />
-      <AutoText style={styles.word} noTranslate>Gradly</AutoText>
+      <AutoText style={styles.word} noTranslate>UniJober</AutoText>
     </View>
   );
 }

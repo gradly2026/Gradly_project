@@ -129,7 +129,7 @@ export default function SeccionMensajes({
                 resizeMode="contain"
               />
               <Text style={[styles.brand, { color: colors.textPrimary }]}>
-                Gradly
+                UniJober
               </Text>
               <Text style={[styles.emptyHint, { color: colors.textMuted }]}>
                 Selecciona una conversación para empezar a chatear.

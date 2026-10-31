@@ -124,9 +124,9 @@ const OPORTUNIDADES: Record<Rol, Oportunidad[]> = {
   ],
 };
 const OPORTUNIDADES_HEADER: Record<Rol, { kicker: string; titulo: string; nota: string }> = {
-  estudiante: { kicker: 'Vacantes', titulo: 'Así se ven las oportunidades en Gradly', nota: 'Tarjetas ilustrativas — al crear tu cuenta verás las vacantes reales de tu carrera.' },
-  empresa: { kicker: 'Talento', titulo: 'Así ves a tus candidatos en Gradly', nota: 'Tarjetas ilustrativas — al publicar tu pasantía o vacante verás tus propios aplicantes.' },
-  universidad: { kicker: 'Cupos', titulo: 'Así ves tus cupos y alianzas en Gradly', nota: 'Tarjetas ilustrativas — al registrar a tus estudiantes verás tus cupos y empresas aliadas reales.' },
+  estudiante: { kicker: 'Vacantes', titulo: 'Así se ven las oportunidades en UniJober', nota: 'Tarjetas ilustrativas — al crear tu cuenta verás las vacantes reales de tu carrera.' },
+  empresa: { kicker: 'Talento', titulo: 'Así ves a tus candidatos en UniJober', nota: 'Tarjetas ilustrativas — al publicar tu pasantía o vacante verás tus propios aplicantes.' },
+  universidad: { kicker: 'Cupos', titulo: 'Así ves tus cupos y alianzas en UniJober', nota: 'Tarjetas ilustrativas — al registrar a tus estudiantes verás tus cupos y empresas aliadas reales.' },
 };
 
 type Caso = { badge: string; empleo?: boolean; texto: string; meta: string };
@@ -148,8 +148,8 @@ const CASOS: Record<Rol, Caso[]> = {
   ],
 };
 const CASOS_SUB: Record<Rol, string> = {
-  estudiante: 'Así se ve cuando una pasantía en Gradly se convierte en experiencia real.',
-  empresa: 'Así encuentran las empresas talento real a través de Gradly.',
+  estudiante: 'Así se ve cuando una pasantía en UniJober se convierte en experiencia real.',
+  empresa: 'Así encuentran las empresas talento real a través de UniJober.',
   universidad: 'Así acompañan las universidades a sus estudiantes de principio a fin.',
 };
 
@@ -172,7 +172,7 @@ const FEATURES: { icon: IconName; title: string; desc: string }[] = [
   { icon: 'time-outline', title: 'Asistencia y horas', desc: 'Marcas tu código de asistencia cada día que te toca. Tus horas avanzan según el horario acordado y se ajustan solas si faltas con permiso.' },
   { icon: 'chatbubble-outline', title: 'Chat integrado', desc: 'Coordina con la empresa sin salir de la app — todo el historial queda en un solo lugar.' },
   { icon: 'checkmark-circle-outline', title: 'Certificación digital', desc: 'Al terminar, la empresa emite el comprobante y tu universidad lo valida.' },
-  { icon: 'chatbubble-ellipses-outline', title: 'Asistente Gradly', desc: 'Un asistente dentro de la app resuelve tus dudas sobre cómo funciona todo.' },
+  { icon: 'chatbubble-ellipses-outline', title: 'Asistente UniJober', desc: 'Un asistente dentro de la app resuelve tus dudas sobre cómo funciona todo.' },
   { icon: 'shield-checkmark-outline', title: 'Reportes e incidencias', desc: 'Un canal directo para reportar problemas durante la pasantía, con seguimiento de tu universidad.' },
 ];
 
@@ -409,7 +409,7 @@ function BienvenidaContenido() {
       <View style={[styles.header, { backgroundColor: colors.backgroundCard, borderBottomColor: colors.border }]}>
         <View style={styles.brand}>
           <Image source={LOGO} style={styles.brandLogo} resizeMode="contain" />
-          <Text style={[styles.brandText, { color: colors.textPrimary }]} noTranslate>Gradly</Text>
+          <Text style={[styles.brandText, { color: colors.textPrimary }]} noTranslate>UniJober</Text>
         </View>
         {wide && (
           <View style={styles.navLinks}>
@@ -462,7 +462,7 @@ function BienvenidaContenido() {
           </View>
           <Text style={styles.heroTitle}>Conecta tu talento con oportunidades reales.</Text>
           <Text style={styles.heroSub}>
-            Gradly une a estudiantes universitarios, universidades y empresas en un solo lugar: tu pasantía durante la carrera, y tu primer empleo al graduarte.
+            UniJober une a estudiantes universitarios, universidades y empresas en un solo lugar: tu pasantía durante la carrera, y tu primer empleo al graduarte.
           </Text>
           <View style={styles.ctaRow}>
             <Pressable onPress={irARegistro} style={[styles.btnPrimaryLg, { backgroundColor: colors.primary }]}>
@@ -493,11 +493,11 @@ function BienvenidaContenido() {
           </View>
         </View>
 
-        {/* ── ¿Qué es Gradly? ── */}
+        {/* ── ¿Qué es UniJober? ── */}
         <View style={[styles.section, styles.sectionSurface]}>
           <Halo corner="tl" />
           <Halo corner="br" />
-          <SectionHeader kicker="La plataforma" title="¿Qué es Gradly?" colors={colors} styles={styles} />
+          <SectionHeader kicker="La plataforma" title="¿Qué es UniJober?" colors={colors} styles={styles} />
           <GlassCard style={styles.fullWidthCard} contentStyle={styles.aboutLead}>
             <View>
               <Text style={[styles.paragraphLabel, { color: colors.textPrimary }]}>Misión</Text>
@@ -529,7 +529,7 @@ function BienvenidaContenido() {
 
         {/* ── Beneficios ── */}
         <View style={styles.section}>
-          <SectionHeader kicker="Ventajas" title="¿Por qué elegir Gradly?" colors={colors} styles={styles} />
+          <SectionHeader kicker="Ventajas" title="¿Por qué elegir UniJober?" colors={colors} styles={styles} />
           {chunk(BENEFICIOS, cols).map((row, i) => (
             <View key={i} style={styles.cardRow}>
               {row.map((b) => (
@@ -552,7 +552,7 @@ function BienvenidaContenido() {
 
         {/* ── Cómo funciona (por rol) ── */}
         <View style={styles.section} onLayout={registrarSeccion('como-funciona')}>
-          <SectionHeader kicker="El proceso" title="¿Cómo funciona Gradly?" sub={PASOS_SUB[rolPasos]} colors={colors} styles={styles} />
+          <SectionHeader kicker="El proceso" title="¿Cómo funciona UniJober?" sub={PASOS_SUB[rolPasos]} colors={colors} styles={styles} />
           <RoleTabs value={rolPasos} onChange={setRolPasos} colors={colors} styles={styles} />
           {chunk(PASOS[rolPasos], stepCols).map((row, i) => (
             <View key={i} style={styles.cardRow}>
@@ -639,7 +639,7 @@ function BienvenidaContenido() {
 
         {/* ── Testimonios (por rol) — calificaciones REALES de la plataforma ── */}
         <View style={styles.section}>
-          <SectionHeader kicker="Comunidad" title="Lo que podrían decir en Gradly" colors={colors} styles={styles} />
+          <SectionHeader kicker="Comunidad" title="Lo que podrían decir en UniJober" colors={colors} styles={styles} />
           <RoleTabs value={rolTesti} onChange={setRolTesti} colors={colors} styles={styles} />
           {testimoniosReales.length === 0 ? (
             <GlassCard contentStyle={styles.testiVacioCard}>
@@ -701,7 +701,7 @@ function BienvenidaContenido() {
           <SectionHeader
             kicker="Alianzas"
             title="Empresas de distintos sectores"
-            sub="Estos son algunos de los sectores con empresas registradas en Gradly."
+            sub="Estos son algunos de los sectores con empresas registradas en UniJober."
             colors={colors}
             styles={styles}
           />
@@ -721,7 +721,7 @@ function BienvenidaContenido() {
           <Halo corner="bl" />
           <SectionHeader
             kicker="El equipo"
-            title="El equipo detrás de Gradly"
+            title="El equipo detrás de UniJober"
             sub="Desarrollado por estudiantes de la Universidad Don Bosco, El Salvador"
             colors={colors}
             styles={styles}
@@ -742,9 +742,9 @@ function BienvenidaContenido() {
           ))}
           <GlassCard style={styles.fullWidthCard} contentStyle={styles.quoteCard}>
             <Text style={[styles.quoteText, { color: colors.textSecondary }]}>
-              &ldquo;Somos cuatro estudiantes que creen que el talento salvadoreño no debería buscar oportunidades, las oportunidades deberían encontrar al talento. Eso es Gradly.&rdquo;
+              &ldquo;Somos cuatro estudiantes que creen que el talento salvadoreño no debería buscar oportunidades, las oportunidades deberían encontrar al talento. Eso es UniJober.&rdquo;
             </Text>
-            <Text style={[styles.quoteAuthor, { color: colors.textMuted }]}>— Equipo Gradly, Soyapango, El Salvador</Text>
+            <Text style={[styles.quoteAuthor, { color: colors.textMuted }]}>— Equipo UniJober, Soyapango, El Salvador</Text>
           </GlassCard>
         </View>
 
@@ -752,7 +752,7 @@ function BienvenidaContenido() {
         <View style={[styles.footer, { borderTopColor: colors.border }]}>
           <View style={[styles.footerRow, { flexDirection: wide ? 'row' : 'column' }]}>
             <View style={{ flex: 1.4 }}>
-              <Text style={[styles.footerLogo, { color: colors.textPrimary }]} noTranslate>Gradly</Text>
+              <Text style={[styles.footerLogo, { color: colors.textPrimary }]} noTranslate>UniJober</Text>
               <Text style={[styles.footerDesc, { color: colors.textMuted }]}>
                 La plataforma que conecta estudiantes universitarios, universidades y empresas en El Salvador para hacer pasantías reales.
               </Text>
@@ -771,7 +771,7 @@ function BienvenidaContenido() {
             </View>
           </View>
           <Text style={[styles.footerBottom, { color: colors.textMuted, borderTopColor: colors.border }]}>
-            © 2026 Gradly — Soyapango, El Salvador
+            © 2026 UniJober — Soyapango, El Salvador
           </Text>
         </View>
       </ScrollView>

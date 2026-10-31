@@ -220,7 +220,7 @@ export default function CalendarioEventos({
   // ── Ensamblado de eventos ──
   const eventos = useMemo(() => {
     const out: Evento[] = [];
-    if (registro) out.push({ fecha: registro, tipo: 'registro', titulo: 'Te uniste a Gradly' });
+    if (registro) out.push({ fecha: registro, tipo: 'registro', titulo: 'Te uniste a UniJober' });
 
     if (esEmpresa) {
       vacantes.forEach(v => {

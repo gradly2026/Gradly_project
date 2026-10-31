@@ -104,7 +104,7 @@ function generarPasswordTemporal(): string {
   const bytes = crypto.randomBytes(12);
   let out = "";
   for (let i = 0; i < 12; i++) out += alfabeto[bytes[i] % alfabeto.length];
-  return `Gradly-${out}!`;
+  return `UniJober-${out}!`;
 }
 
 // ── LA EMPRESA REGISTRA UN TUTOR ────────────────────────────────────

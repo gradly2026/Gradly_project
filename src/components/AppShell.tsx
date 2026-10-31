@@ -78,7 +78,7 @@ export default function AppShell<K extends string = string>({
       <View style={s.side}>
         <View style={s.brand}>
           <Image source={LOGO} style={s.logo} resizeMode="contain" />
-          {full && <AutoText style={s.word} noTranslate>Gradly</AutoText>}
+          {full && <AutoText style={s.word} noTranslate>UniJober</AutoText>}
         </View>
 
         <ScrollView style={s.navScroll} contentContainerStyle={s.navList} showsVerticalScrollIndicator={false}>

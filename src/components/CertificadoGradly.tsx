@@ -38,7 +38,7 @@ const TIER_ICON = {
 
 /** Etiqueta de prestigio por tier. */
 const TIER_SELLO = {
-  bronce: "Talento Gradly",
+  bronce: "Talento UniJober",
   plata: "Talento Profesional",
   oro: "Talento Destacado",
 } as const;
@@ -101,11 +101,11 @@ export default function CertificadoGradly({
       <View style={[styles.corner, styles.cornerTL, { borderColor: rango.color }]} />
       <View style={[styles.corner, styles.cornerBR, { borderColor: rango.color }]} />
 
-      {/* Encabezado: marca Gradly + verificación */}
+      {/* Encabezado: marca UniJober + verificación */}
       <View style={styles.header}>
         <Image source={GRADLY_LOGO} style={styles.logo} resizeMode="contain" />
         <Text style={[styles.brand, { color: T.sub }]}>
-          CERTIFICACIÓN GRADLY
+          CERTIFICACIÓN UNIJOBER
         </Text>
         <View style={[styles.sello, { borderColor: rango.color }]}>
           <Ionicons name="shield-checkmark" size={12} color={rango.color} />
@@ -168,7 +168,7 @@ export default function CertificadoGradly({
       <View style={styles.footer}>
         <Ionicons name="checkmark-circle" size={14} color={rango.color} />
         <Text style={[styles.footerText, { color: T.sub }]}>
-          Verificado por Gradly · El Salvador
+          Verificado por UniJober · El Salvador
         </Text>
       </View>
     </View>

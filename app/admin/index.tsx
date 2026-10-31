@@ -2234,7 +2234,7 @@ export default function AdminPreview() {
         setSelected((prev) => (prev?.id === u.id ? { ...prev, status: nextStatus } : prev));
         const msg =
           nextStatus === "active"
-            ? "Ya puede volver a entrar a Gradly con normalidad."
+            ? "Ya puede volver a entrar a UniJober con normalidad."
             : nextStatus === "pending"
               ? "La cuenta queda en revisión. Su información sigue intacta mientras tanto."
               : "La cuenta queda inactiva y no podrá iniciar sesión. Puedes reactivarla cuando quieras desde esta misma ficha.";
@@ -2321,7 +2321,7 @@ export default function AdminPreview() {
               ? "Cuenta de vuelta en revisión"
               : "Cuenta rechazada",
           (nextApprovalStatus === "active"
-            ? "La institución ya puede usar Gradly con todas sus funciones."
+            ? "La institución ya puede usar UniJober con todas sus funciones."
             : nextApprovalStatus === "pending"
               ? "Queda otra vez en la lista de pendientes, esperando una decisión."
               : "La cuenta queda inactiva. Si fue un error, puedes volver a aprobarla desde esta misma ficha.") +
@@ -2546,7 +2546,7 @@ export default function AdminPreview() {
           banned ? "advertencia" : "exito",
           banned ? "Usuario baneado" : "Usuario reactivado",
           banned
-            ? "Ya no puede acceder a Gradly y el motivo quedó registrado en su ficha. Si hace falta, puedes reactivarlo desde aquí mismo."
+            ? "Ya no puede acceder a UniJober y el motivo quedó registrado en su ficha. Si hace falta, puedes reactivarlo desde aquí mismo."
             : "Recuperó su acceso a la plataforma y puede volver a entrar cuando quiera.",
         );
       } catch (error) {
@@ -3458,7 +3458,7 @@ export default function AdminPreview() {
           <View style={[s.heroTopRow, isPhone && s.heroTopRowCompact]}>
             <View style={[{ flex: 1 }, isPhone && { width: "100%" }]}>
               <Text style={s.heroEyebrow}>Centro de control</Text>
-              <Text style={s.heroTitle}>Administra Gradly con una vista más clara y moderna</Text>
+              <Text style={s.heroTitle}>Administra UniJober con una vista más clara y moderna</Text>
               <Text style={s.heroSubtitle}>
                 Supervisa usuarios, incidencias, actividad y permisos desde un panel con
                 jerarquía visual más marcada y accesos rápidos al trabajo más importante.
@@ -3513,7 +3513,7 @@ export default function AdminPreview() {
           </View>
         </View>
 
-        {/* Estadísticas de la Red Gradly (Top Empresas / Universidades /
+        {/* Estadísticas de la Red UniJober (Top Empresas / Universidades /
             Estudiantes) — mismas tarjetas que ven empresa y universidad. */}
         <RedGradlyBanner />
 
@@ -4216,7 +4216,7 @@ export default function AdminPreview() {
           return;
         }
         await responderIncidencia(inc.id, incidenciaRespuesta, {
-          nombre: meName || "Equipo Gradly",
+          nombre: meName || "Equipo UniJober",
           rol: "admin",
         });
         setIncidenciaRespuesta("");
@@ -5680,7 +5680,7 @@ export default function AdminPreview() {
             <Text style={s.kicker}>Ingresos</Text>
             <Text style={s.pageTitle}>Suscripciones</Text>
             <Text style={[s.textMuted, { marginTop: 6 }]}>
-              Pagos de planes de Gradly: qué plan eligió cada empresa, cuánto pagó e ingresos totales a la plataforma.
+              Pagos de planes de UniJober: qué plan eligió cada empresa, cuánto pagó e ingresos totales a la plataforma.
             </Text>
           </View>
           <TouchableOpacity style={s.btnOutline} onPress={fetchSuscripciones} activeOpacity={0.8}>
@@ -6005,7 +6005,7 @@ export default function AdminPreview() {
                           </Text>
                           {!!ultimo?.texto && (
                             <Text style={[s.itemSub, { marginTop: 6 }]} numberOfLines={2}>
-                              {ultimo.autor === "admin" ? "Gradly: " : ""}
+                              {ultimo.autor === "admin" ? "UniJober: " : ""}
                               {ultimo.texto}
                             </Text>
                           )}
@@ -6324,9 +6324,9 @@ export default function AdminPreview() {
         </TouchableOpacity>
       </Card>
 
-      {/* ── Asistente Gradly (burbuja del chatbot de ayuda) ── */}
+      {/* ── Asistente UniJober (burbuja del chatbot de ayuda) ── */}
       <Card style={{ marginBottom: 14 }}>
-        <Text style={s.cardTitle}>Asistente Gradly</Text>
+        <Text style={s.cardTitle}>Asistente UniJober</Text>
         <Text style={[s.textMuted, { marginTop: 6 }]}>
           Controla si la burbuja del asistente de ayuda se ve en los dashboards de estudiantes,
           empresas y universidades. Empieza oculta hasta que la actives aquí.

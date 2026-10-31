@@ -414,7 +414,7 @@ export default function VacanteDetailModal({
             )}
 
             {/* Rango salarial (opcional, solo 'Vacante'): informativo, con nota
-                de que la negociación final ocurre fuera de Gradly. */}
+                de que la negociación final ocurre fuera de UniJober. */}
             {textoSalario(vacante.salario_min, vacante.salario_max) && (
               <View style={styles.horarioBox}>
                 <Text style={styles.horarioLabel}>Salario estimado</Text>
@@ -425,7 +425,7 @@ export default function VacanteDetailModal({
                   <Ionicons name="information-circle-outline" size={14} color={C.muted} />
                   <Text style={styles.salarioNotaTxt}>
                     Informativo. La negociación final se realiza de forma privada entre la
-                    empresa y el postulante, fuera de Gradly.
+                    empresa y el postulante, fuera de UniJober.
                   </Text>
                 </View>
               </View>

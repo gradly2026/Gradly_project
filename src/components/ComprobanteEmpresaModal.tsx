@@ -198,7 +198,7 @@ export default function ComprobanteEmpresaModal({ asignacion, onListo }: Props) 
             {/* ── El "papel": constancia con formato de documento formal ── */}
             <View style={styles.paper}>
               <Text style={styles.pTitulo}>Constancia de finalización de pasantía</Text>
-              <Text style={styles.pBrand}>GRADLY</Text>
+              <Text style={styles.pBrand}>UNIJOBER</Text>
               <View style={styles.pRule} />
 
               <Text style={styles.pLugar} noTranslate>

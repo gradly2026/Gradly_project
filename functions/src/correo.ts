@@ -15,7 +15,7 @@ import { Resend } from "resend";
 
 export const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 
-const REMITENTE = "Gradly <notificaciones@send.gradly.website>";
+const REMITENTE = "UniJober <notificaciones@send.gradly.website>";
 const URL_LOGIN = "https://gradly.website/auth/iniciosesion";
 // Los @gradly.app que la app tenía como contacto no existen como buzón: el
 // usuario pidió usar este, que sí es real y lo lee él. Es el mismo que ahora
@@ -41,14 +41,14 @@ export interface ContenidoCorreo {
 const envoltorio = (contenido: string): string => `
   <div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#0f172a">
     ${contenido}
-    <p style="margin:24px 0 0;color:#94a3b8;font-size:12px">Gradly</p>
+    <p style="margin:24px 0 0;color:#94a3b8;font-size:12px">UniJober</p>
   </div>
 `;
 
 export function correoCuentaAprobada(nombreEmpresa: string): ContenidoCorreo {
   const nombre = nombreEmpresa.trim() || "tu empresa";
   return {
-    asunto: "Tu cuenta de empresa en Gradly ya está activa",
+    asunto: "Tu cuenta de empresa en UniJober ya está activa",
     html: envoltorio(`
     <h2 style="margin:0 0 8px">Cuenta aprobada</h2>
     <p style="margin:0 0 16px;color:#475569">Revisamos los datos y los documentos de <strong>${escaparHtml(nombre)}</strong> y tu cuenta de empresa ya está activa.</p>
@@ -69,7 +69,7 @@ export function correoCuentaAprobada(nombreEmpresa: string): ContenidoCorreo {
 export function correoCuentaRechazada(nombreEmpresa: string): ContenidoCorreo {
   const nombre = nombreEmpresa.trim() || "tu empresa";
   return {
-    asunto: "Sobre el registro de tu empresa en Gradly",
+    asunto: "Sobre el registro de tu empresa en UniJober",
     html: envoltorio(`
     <h2 style="margin:0 0 8px">No pudimos aprobar tu cuenta</h2>
     <p style="margin:0 0 16px;color:#475569">Revisamos los datos y los documentos que enviaste para <strong>${escaparHtml(nombre)}</strong> y, por ahora, no pudimos verificarlos, así que la cuenta no fue activada.</p>
@@ -98,10 +98,10 @@ export function correoCredencialesTutor(
   const saludo = nombre ? `Hola, ${escaparHtml(nombre)}.` : "Hola.";
   const saludoTexto = nombre ? `Hola, ${nombre}.` : "Hola.";
   return {
-    asunto: "Te registraron como tutor en Gradly",
+    asunto: "Te registraron como tutor en UniJober",
     html: envoltorio(`
-    <h2 style="margin:0 0 8px">Ya tienes acceso a Gradly</h2>
-    <p style="margin:0 0 16px;color:#475569">${saludo} Una empresa te registró como tutor de sus pasantes en Gradly. Ya puedes iniciar sesión con estos datos:</p>
+    <h2 style="margin:0 0 8px">Ya tienes acceso a UniJober</h2>
+    <p style="margin:0 0 16px;color:#475569">${saludo} Una empresa te registró como tutor de sus pasantes en UniJober. Ya puedes iniciar sesión con estos datos:</p>
     <p style="margin:0 0 8px;color:#0f172a"><strong>Correo:</strong> ${escaparHtml(correo)}</p>
     <p style="margin:0 0 24px;color:#0f172a"><strong>Contraseña temporal:</strong> ${escaparHtml(passwordTemporal)}</p>
     <p style="margin:0 0 24px"><a href="${URL_LOGIN}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px">Iniciar sesión</a></p>
@@ -109,7 +109,7 @@ export function correoCredencialesTutor(
     <p style="margin:0;color:#64748b;font-size:14px">Si no esperabas este correo, escríbenos a ${CORREO_SOPORTE}.</p>
   `),
     texto:
-      `Ya tienes acceso a Gradly\n\n${saludoTexto} Una empresa te registró como tutor de sus pasantes en Gradly. Ya puedes iniciar sesión con estos datos:\n\n` +
+      `Ya tienes acceso a UniJober\n\n${saludoTexto} Una empresa te registró como tutor de sus pasantes en UniJober. Ya puedes iniciar sesión con estos datos:\n\n` +
       `Correo: ${correo}\nContraseña temporal: ${passwordTemporal}\n\n` +
       `Iniciar sesión: ${URL_LOGIN}\n\n` +
       `También puedes entrar sin contraseña, con un código que te enviamos a este mismo correo ("Acceso sin contraseña" en la pantalla de inicio de sesión). Si prefieres cambiar la contraseña, usa "Olvidé mi contraseña" una vez dentro.\n\n` +

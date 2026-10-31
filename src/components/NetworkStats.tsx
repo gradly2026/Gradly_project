@@ -287,7 +287,7 @@ export function RedGradlyBanner({ disposicion = 'carrusel' }: { disposicion?: 'c
   const tituloBanner = (estilo?: object) => (
     <View style={[styles.bannerTitulo, estilo]}>
       <Ionicons name="globe-outline" size={18} color={colors.primaryLight} />
-      <Text style={[styles.bannerHeading, { marginBottom: 0, flexShrink: 1 }]}>Estadísticas de la Red Gradly</Text>
+      <Text style={[styles.bannerHeading, { marginBottom: 0, flexShrink: 1 }]}>Estadísticas de la Red UniJober</Text>
     </View>
   );
 

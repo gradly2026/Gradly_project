@@ -49,7 +49,7 @@ export default function MantenimientoGate() {
     <View style={s.root} pointerEvents="auto">
       <Ionicons name="construct-outline" size={54} color={colors.warning} />
       <Text style={s.titulo}>Plataforma en mantenimiento</Text>
-      <Text style={s.sub}>Estamos haciendo trabajos en Gradly. Vuelve a intentarlo en un rato.</Text>
+      <Text style={s.sub}>Estamos haciendo trabajos en UniJober. Vuelve a intentarlo en un rato.</Text>
       {!!estado.motivo && (
         <View style={s.motivoBox}>
           <Text style={s.motivo} noTranslate>{estado.motivo}</Text>

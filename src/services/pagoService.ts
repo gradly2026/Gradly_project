@@ -21,7 +21,7 @@ export function generarReciboTexto(params: {
 }): string {
   return [
     '═══════════════════════════════',
-    '    RECIBO DE PAGO — GRADLY   ',
+    '    RECIBO DE PAGO — UNIJOBER   ',
     '═══════════════════════════════',
     '',
     `Referencia: ${params.referencia}`,
@@ -35,7 +35,7 @@ export function generarReciboTexto(params: {
     'ESTADO:     ✓ COMPLETADO',
     '',
     '═══════════════════════════════',
-    'Pago simulado — Plataforma educativa Gradly.',
+    'Pago simulado — Plataforma educativa UniJober.',
     'No representa una transacción financiera real.',
     '═══════════════════════════════',
   ].join('\n');

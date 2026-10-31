@@ -791,7 +791,7 @@ export default function InicioSesion() {
                 style={styles.brandLogo}
                 resizeMode="contain"
               />
-              <Text style={styles.brandName}>Gradly</Text>
+              <Text style={styles.brandName}>UniJober</Text>
             </View>
 
             <Text style={styles.slogan}>{t('login_slogan')}</Text>

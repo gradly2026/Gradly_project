@@ -3173,7 +3173,7 @@ export default function Registro() {
           {/* ═════ PASO 0 — Selector de rol ═════ */}
           {step === 0 && (
             <View style={s.card}>
-              <Text style={s.stepTitle}>¿Cómo quieres usar Gradly?</Text>
+              <Text style={s.stepTitle}>¿Cómo quieres usar UniJober?</Text>
               <Text style={s.stepSubtitle}>Selecciona el tipo de cuenta.</Text>
 
               <View style={s.roleCards}>
@@ -3365,7 +3365,7 @@ function TermsRow({
           {checked && <Text style={s.checkmark}>✓</Text>}
         </View>
         <Text style={s.termsText}>
-          Acepto los términos y condiciones y la política de privacidad de Gradly.
+          Acepto los términos y condiciones y la política de privacidad de UniJober.
         </Text>
       </TouchableOpacity>
       {!!error && <Text style={s.errText}>{error}</Text>}

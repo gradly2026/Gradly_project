@@ -73,7 +73,7 @@ const CONTENIDO: Record<Rol, ItemContenido[]> = {
     },
     {
       titulo: "Tus horas de pasantía cuentan con tu asistencia",
-      sub: "Marca tu código de asistencia cada día y coordina tu pasantía por chat, sin salir de Gradly.",
+      sub: "Marca tu código de asistencia cada día y coordina tu pasantía por chat, sin salir de UniJober.",
     },
     {
       titulo: "Certifica tu pasantía y da el siguiente paso",
@@ -191,12 +191,12 @@ export default function OnboardingInicial() {
                 style={styles.brandLogo}
                 resizeMode="contain"
               />
-              <Text style={styles.brandName}>Gradly</Text>
+              <Text style={styles.brandName}>UniJober</Text>
             </View>
 
             <Text style={styles.slideTitle}>Antes de empezar</Text>
             <Text style={styles.slideSub}>
-              Elige cómo quieres ver Gradly. Puedes cambiarlo cuando quieras desde tu perfil.
+              Elige cómo quieres ver UniJober. Puedes cambiarlo cuando quieras desde tu perfil.
             </Text>
 
             <View style={styles.settingsBlock}>
@@ -258,7 +258,7 @@ export default function OnboardingInicial() {
         {/* 1. Rol */}
         <View style={{ width }}>
           <ScrollView contentContainerStyle={styles.slidePad} showsVerticalScrollIndicator={false}>
-            <Text style={styles.slideTitle}>¿Cómo vas a usar Gradly?</Text>
+            <Text style={styles.slideTitle}>¿Cómo vas a usar UniJober?</Text>
             <Text style={styles.slideSub}>
               Así te mostramos lo que más te importa. Puedes cambiarlo cuando quieras.
             </Text>

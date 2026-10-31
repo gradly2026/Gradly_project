@@ -99,13 +99,13 @@ export const solicitarOtp = onCall(
 
       const resend = new Resend(RESEND_API_KEY.value());
       const { error: errorResend } = await resend.emails.send({
-        from: "Gradly <notificaciones@send.gradly.website>",
+        from: "UniJober <notificaciones@send.gradly.website>",
         to: email,
-        subject: `Tu código de acceso Gradly: ${codigo}`,
+        subject: `Tu código de acceso UniJober: ${codigo}`,
         html: `
           <div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#0f172a">
             <h2 style="margin:0 0 8px">Código de acceso</h2>
-            <p style="margin:0 0 20px;color:#475569">Usa este código para iniciar sesión en Gradly:</p>
+            <p style="margin:0 0 20px;color:#475569">Usa este código para iniciar sesión en UniJober:</p>
             <p style="font-size:36px;font-weight:800;letter-spacing:10px;margin:0 0 20px;color:#0f172a">${codigo}</p>
             <p style="margin:0;color:#64748b;font-size:14px">Válido por 5 minutos. Si no lo solicitaste, ignora este correo.</p>
           </div>

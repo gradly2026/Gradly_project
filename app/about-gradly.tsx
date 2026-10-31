@@ -94,7 +94,7 @@ export default function AboutGradlyScreen() {
           <GlassCard contentStyle={styles.heroCard}>
             <View style={styles.heroBadge}>
               <Ionicons name="information-circle-outline" size={18} color={colors.primaryLight} />
-              <Text style={styles.heroBadgeText}>Gradly</Text>
+              <Text style={styles.heroBadgeText}>UniJober</Text>
             </View>
             <Text style={styles.sectionTitle}>{t('about_screen_about_title')}</Text>
             <Text style={styles.paragraph}>{t('about_screen_about_p1')}</Text>

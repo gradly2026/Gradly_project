@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Gradly",
-    "slug": "Gradly",
+    "name": "UniJober",
+    "slug": "UniJober",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -61,15 +61,15 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Gradly usa tu ubicación para marcar el lugar de trabajo de una vacante.",
-          "locationWhenInUsePermission": "Gradly usa tu ubicación para marcar el lugar de trabajo de una vacante.",
+          "locationAlwaysAndWhenInUsePermission": "UniJober usa tu ubicación para marcar el lugar de trabajo de una vacante.",
+          "locationWhenInUsePermission": "UniJober usa tu ubicación para marcar el lugar de trabajo de una vacante.",
           "isAndroidBackgroundLocationEnabled": false
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Gradly necesita acceso a tu galería para subir imágenes."
+          "photosPermission": "UniJober necesita acceso a tu galería para subir imágenes."
         }
       ],
       [

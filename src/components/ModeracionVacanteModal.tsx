@@ -45,7 +45,7 @@ export default function ModeracionVacanteModal({ pendiente, onCerrar }: Props) {
           </Text>
           <Text style={styles.subtitulo}>
             {esEliminada
-              ? `"${pendiente.titulo}" ya no está visible en Gradly para nadie, incluido tu perfil.`
+              ? `"${pendiente.titulo}" ya no está visible en UniJober para nadie, incluido tu perfil.`
               : `"${pendiente.titulo}" ya no es visible para otros usuarios mientras siga deshabilitada.`}
           </Text>
 

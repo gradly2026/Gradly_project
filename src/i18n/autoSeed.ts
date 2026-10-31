@@ -85,7 +85,7 @@
  * mayúsculas, signos y espacios incluidos), o no habrá coincidencia.
  */
 export const AUTO_SEED_EN: Record<string, string> = {
-  "Academia Gradly": "Gradly Academy",
+  "Academia UniJober": "UniJober Academy",
   "Aceptar": "Accept",
   "Afín a tu carrera": "Matches your major",
   "Afín a tus vacantes": "Matches your job posts",
@@ -196,8 +196,8 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Firmar constancia": "Sign certificate",
   "Gestiona los pagos a estudiantes y administra tu método de pago de forma segura.": "Manage student payments and your payment method securely.",
   "Gestiona tu empresa desde aquí": "Manage your company from here",
-  "Gradly renueva tu plan cada año sin que tengas que hacer nada.": "Gradly renews your plan every year without you having to do anything.",
-  "Gradly renueva tu plan cada mes sin que tengas que hacer nada.": "Gradly renews your plan every month without you having to do anything.",
+  "UniJober renueva tu plan cada año sin que tengas que hacer nada.": "UniJober renews your plan every year without you having to do anything.",
+  "UniJober renueva tu plan cada mes sin que tengas que hacer nada.": "UniJober renews your plan every month without you having to do anything.",
   "Gestiona y valida el progreso de horas de práctica de tus estudiantes.": "Manage and validate your students' practice-hours progress.",
   "Guardar tarjeta": "Save card",
   "Guías rápidas": "Quick guides",
@@ -292,7 +292,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Qué esperar en tu primera pasantía": "What to expect in your first internship",
   "Rechazar": "Reject",
   "Recibo": "Receipt",
-  "Recibo Gradly": "Gradly receipt",
+  "Recibo UniJober": "UniJober receipt",
   "Reclutamiento": "Recruitment",
   "Redirigiendo a tu panel…": "Redirecting to your dashboard…",
 
@@ -369,8 +369,8 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "Plan Gratuito": "Free Plan",
   "Gratuito": "Free",
   "Plan Premium": "Premium Plan",
-  "Pagos de planes de Gradly: qué plan eligió cada empresa, cuánto pagó e ingresos totales a la plataforma.":
-    "Gradly plan payments: which plan each company chose, how much they paid, and total platform revenue.",
+  "Pagos de planes de UniJober: qué plan eligió cada empresa, cuánto pagó e ingresos totales a la plataforma.":
+    "UniJober plan payments: which plan each company chose, how much they paid, and total platform revenue.",
   "Sitio web": "Website",
   "Sitio web (opcional)": "Website (optional)",
   "Skills (separadas por coma)*": "Skills (comma-separated)*",
@@ -439,7 +439,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   "¡Meta alcanzada! Ya estás certificado.": "Goal reached! You're now certified.",
   "¡Pago Realizado!": "Payment completed!",
   "¡Vacante Publicada!": "Job posted!",
-  "¿Cómo quieres usar Gradly?": "How do you want to use Gradly?",
+  "¿Cómo quieres usar UniJober?": "How do you want to use UniJober?",
   "¿Estás seguro de que deseas salir de tu cuenta?": "Are you sure you want to sign out of your account?",
   "¿Ya tienes cuenta?": "Already have an account?",
   "Área*": "Area*",
@@ -467,7 +467,7 @@ export const AUTO_SEED_EN: Record<string, string> = {
   // ya tenían sus propios pasos sembrados; estos son los que faltaban
   // (estudiante es nuevo, y 'historial'/'perfil' de empresa y 'perfil' de
   // universidad quedaban fuera del recorrido antes de este cambio). ──
-  "¡Bienvenido a Gradly!": "Welcome to Gradly!",
+  "¡Bienvenido a UniJober!": "Welcome to UniJober!",
   "Aquí verás vacantes o pasantías según el momento de tu práctica: cupos asegurados por tu universidad, pasantías afines a tu carrera, o vacantes cuando ya te gradúes.":
     "Here you'll see job postings or internships depending on where you are in your internship: slots secured by your university, internships matching your major, or job postings once you graduate.",
   "Mi Progreso": "My Progress",
@@ -568,7 +568,7 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "Los datos quedaron como estaban, no se dañó nada. Puedes volver a intentarlo cuando quieras.":
     "The data stayed as it was — nothing was damaged. You can try again whenever you want.",
   "Centro de control": "Control center",
-  "Administra Gradly con una vista más clara y moderna": "Manage Gradly with a clearer, more modern view",
+  "Administra UniJober con una vista más clara y moderna": "Manage UniJober with a clearer, more modern view",
   "Abierto": "Open",
   "Abiertos": "Open",
   "Abre directamente el rol con perfiles pendientes de revisión.": "Opens the role with profiles pending review directly.",
@@ -754,7 +754,7 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   //    Reemplazan a los antiguos Alert.alert de un botón, así que todo este
   //    bloque es texto nuevo que antes no existía en la UI. ──
   "Listo, cambio aplicado": "Done, change applied",
-  "Ya puede volver a entrar a Gradly con normalidad.": "They can log back into Gradly as usual.",
+  "Ya puede volver a entrar a UniJober con normalidad.": "They can log back into UniJober as usual.",
   "La cuenta queda en revisión. Su información sigue intacta mientras tanto.":
     "The account is under review. Their information stays untouched in the meantime.",
   "La cuenta queda inactiva y no podrá iniciar sesión. Puedes reactivarla cuando quieras desde esta misma ficha.":
@@ -766,8 +766,8 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "El flujo de aprobación es solo para cuentas de empresa y universidad. Esta cuenta ya está lista para usarse tal como está.":
     "The approval flow only applies to company and university accounts. This one is ready to use as it is.",
   "Cuenta aprobada": "Account approved",
-  "La institución ya puede usar Gradly con todas sus funciones.":
-    "The institution can now use Gradly with all of its features.",
+  "La institución ya puede usar UniJober con todas sus funciones.":
+    "The institution can now use UniJober with all of its features.",
   "Cuenta de vuelta en revisión": "Account back under review",
   "Queda otra vez en la lista de pendientes, esperando una decisión.":
     "It's back on the pending list, waiting for a decision.",
@@ -776,10 +776,10 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   // lleva al final una frase según si el correo salió o no.
   "La cuenta queda inactiva. Si fue un error, puedes volver a aprobarla desde esta misma ficha.":
     "The account is now inactive. If that was a mistake, you can approve it again from this same record.",
-  "La institución ya puede usar Gradly con todas sus funciones. Le enviamos un correo con la decisión.":
-    "The institution can now use Gradly with all of its features. We sent them an email with the decision.",
-  "La institución ya puede usar Gradly con todas sus funciones. Ojo: no pudimos enviarle el correo con la decisión — avísale por otro medio.":
-    "The institution can now use Gradly with all of its features. Heads up: we couldn't send them the email with the decision — let them know another way.",
+  "La institución ya puede usar UniJober con todas sus funciones. Le enviamos un correo con la decisión.":
+    "The institution can now use UniJober with all of its features. We sent them an email with the decision.",
+  "La institución ya puede usar UniJober con todas sus funciones. Ojo: no pudimos enviarle el correo con la decisión — avísale por otro medio.":
+    "The institution can now use UniJober with all of its features. Heads up: we couldn't send them the email with the decision — let them know another way.",
   "La cuenta queda inactiva. Si fue un error, puedes volver a aprobarla desde esta misma ficha. Le enviamos un correo con la decisión.":
     "The account is now inactive. If that was a mistake, you can approve it again from this same record. We sent them an email with the decision.",
   "La cuenta queda inactiva. Si fue un error, puedes volver a aprobarla desde esta misma ficha. Ojo: no pudimos enviarle el correo con la decisión — avísale por otro medio.":
@@ -803,8 +803,8 @@ export const ADMIN_SEED_EN: Record<string, string> = {
   "Escribe por qué se banea a esta persona antes de continuar. Ese motivo queda registrado y es lo que respalda la decisión más adelante.":
     "Write why this person is being banned before continuing. That reason is recorded and is what backs up the decision later on.",
   "Usuario baneado": "User banned",
-  "Ya no puede acceder a Gradly y el motivo quedó registrado en su ficha. Si hace falta, puedes reactivarlo desde aquí mismo.":
-    "They can no longer access Gradly and the reason is saved in their record. If needed, you can reactivate them right here.",
+  "Ya no puede acceder a UniJober y el motivo quedó registrado en su ficha. Si hace falta, puedes reactivarlo desde aquí mismo.":
+    "They can no longer access UniJober and the reason is saved in their record. If needed, you can reactivate them right here.",
   "Usuario reactivado": "User reactivated",
   "Recuperó su acceso a la plataforma y puede volver a entrar cuando quiera.":
     "They got their access back and can log in again whenever they want.",
@@ -1295,11 +1295,11 @@ export const CUPOS_SEED_EN: Record<string, string> = {
   "Salario mínimo inválido.": "Invalid minimum salary.",
   "Salario máximo inválido.": "Invalid maximum salary.",
   "El mínimo no puede ser mayor que el máximo.": "The minimum can't be greater than the maximum.",
-  "El salario es informativo y queda a discreción tuya publicarlo. La negociación final de las condiciones económicas se realiza de forma privada entre la empresa y el postulante, fuera de Gradly.":
-    "Salary is informational and it's up to you whether to publish it. Final negotiation of economic terms happens privately between the company and the applicant, outside Gradly.",
+  "El salario es informativo y queda a discreción tuya publicarlo. La negociación final de las condiciones económicas se realiza de forma privada entre la empresa y el postulante, fuera de UniJober.":
+    "Salary is informational and it's up to you whether to publish it. Final negotiation of economic terms happens privately between the company and the applicant, outside UniJober.",
   "Salario estimado": "Estimated salary",
-  "Informativo. La negociación final se realiza de forma privada entre la empresa y el postulante, fuera de Gradly.":
-    "Informational. Final negotiation happens privately between the company and the applicant, outside Gradly.",
+  "Informativo. La negociación final se realiza de forma privada entre la empresa y el postulante, fuera de UniJober.":
+    "Informational. Final negotiation happens privately between the company and the applicant, outside UniJober.",
   "Horario*": "Schedule*",
   "Horario (opcional)": "Schedule (optional)",
 
@@ -1563,7 +1563,7 @@ export const UBICACION_SEED_EN: Record<string, string> = {
   "Dirección específica (opcional)": "Specific address (optional)",
   "Colonia, calle, referencia…": "Neighborhood, street, landmark…",
   "Un último paso": "One last step",
-  "¡Bienvenido/a a Gradly!": "Welcome to Gradly!",
+  "¡Bienvenido/a a UniJober!": "Welcome to UniJober!",
   "¿Dónde vivís?": "Where do you live?",
   "Nos falta tu ubicación para mostrarte a empresas y universidades cercanas a vos. Es obligatorio completarlo una sola vez.":
     "We're missing your location to show you nearby companies and universities. It's mandatory to complete this once.",
@@ -1763,10 +1763,10 @@ export const RESUMEN_HOME_SEED_EN: Record<string, string> = {
 // GrupoDetailViewerModal/AplicacionGrupoDetailModal/ReclamoDetailModal. ──
 export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   // ComunicadosGate / MantenimientoGate (avisos globales del admin)
-  "Comunicado de Gradly": "Announcement from Gradly",
+  "Comunicado de UniJober": "Announcement from UniJober",
   "Plataforma en mantenimiento": "Platform under maintenance",
-  "Estamos haciendo trabajos en Gradly. Vuelve a intentarlo en un rato.":
-    "We're doing maintenance on Gradly. Please try again shortly.",
+  "Estamos haciendo trabajos en UniJober. Vuelve a intentarlo en un rato.":
+    "We're doing maintenance on UniJober. Please try again shortly.",
   // GrupoDetailViewerModal
   "No se encontró este grupo.": "This group was not found.",
   "Egresado": "Graduated",
@@ -1824,8 +1824,8 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   "Mis mensajes": "My messages",
   "¿Tienes un problema con tu cuenta, una pasantía o algo que no funciona? Escríbenos y te respondemos por aquí mismo.":
     "Having a problem with your account, an internship, or something that isn't working? Write to us and we'll reply right here.",
-  "Cuéntale al equipo de Gradly qué está pasando. Te responderán aquí mismo y te avisaremos cuando lo hagan.":
-    "Tell the Gradly team what's going on. They'll reply right here and we'll let you know when they do.",
+  "Cuéntale al equipo de UniJober qué está pasando. Te responderán aquí mismo y te avisaremos cuando lo hagan.":
+    "Tell the UniJober team what's going on. They'll reply right here and we'll let you know when they do.",
   "¿Sobre qué es?": "What's it about?",
   "Cuéntanos qué pasó": "Tell us what happened",
   "Adjuntar imagen (opcional)": "Attach an image (optional)",
@@ -1866,10 +1866,10 @@ export const NOTIF_MODALES_SEED_EN: Record<string, string> = {
   "No se pudo enviar la imagen. Intenta de nuevo.": "Couldn't send the image. Please try again.",
 
   // Asistente Gradly (chatbot de ayuda)
-  "Asistente Gradly": "Gradly Assistant",
+  "Asistente UniJober": "UniJober Assistant",
   "Te ayudo a moverte por la app": "I help you get around the app",
-  "¡Hola! Soy el asistente de Gradly. Pregúntame cómo hacer algo o qué significa un término y te oriento.":
-    "Hi! I'm the Gradly assistant. Ask me how to do something or what a term means and I'll point you in the right direction.",
+  "¡Hola! Soy el asistente de UniJober. Pregúntame cómo hacer algo o qué significa un término y te oriento.":
+    "Hi! I'm the UniJober assistant. Ask me how to do something or what a term means and I'll point you in the right direction.",
   "El asistente no está disponible ahora. Intenta de nuevo.": "The assistant isn't available right now. Please try again.",
   "Llegaste al límite de consultas del asistente por hoy. Vuelve mañana.":
     "You've reached today's assistant limit. Try again tomorrow.",
@@ -2073,7 +2073,7 @@ export const RECLUTAMIENTO_SEED_EN: Record<string, string> = {
   "Experto": "Expert",
   // Sello de prestigio de la Certificación Gradly (TIER_SELLO). Sin siembra, el
   // traductor leía "Gradly" como "gradually" → "Talento Gradualmente".
-  "Talento Gradly": "Gradly Talent",
+  "Talento UniJober": "UniJober Talent",
   "Talento Profesional": "Professional Talent",
   "Talento Destacado": "Featured Talent",
   "Mi institución": "My institution",
@@ -2284,8 +2284,8 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
   // Hero
   "Pasantías y empleo, en tus manos": "Internships and jobs, in your hands",
   "Conecta tu talento con oportunidades reales.": "Connect your talent with real opportunities.",
-  "Gradly une a estudiantes universitarios, universidades y empresas en un solo lugar: tu pasantía durante la carrera, y tu primer empleo al graduarte.":
-    "Gradly brings together university students, universities, and companies in one place: your internship during your degree, and your first job after you graduate.",
+  "UniJober une a estudiantes universitarios, universidades y empresas en un solo lugar: tu pasantía durante la carrera, y tu primer empleo al graduarte.":
+    "UniJober brings together university students, universities, and companies in one place: your internship during your degree, and your first job after you graduate.",
   "Crear mi cuenta": "Create my account",
   "Ya tengo cuenta": "I already have an account",
   "Haz tu pasantía y consigue tu primer empleo": "Do your internship and land your first job",
@@ -2296,7 +2296,7 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
 
   // ¿Qué es Gradly?
   "La plataforma": "The platform",
-  "¿Qué es Gradly?": "What is Gradly?",
+  "¿Qué es UniJober?": "What is UniJober?",
   "Misión": "Mission",
   "Eliminar la distancia entre estudiar y trabajar — que cualquier estudiante universitario en El Salvador pueda hacer una pasantía real durante su carrera, sin depender de contactos.":
     "Close the gap between studying and working — so any university student in El Salvador can do a real internship during their degree, without depending on connections.",
@@ -2315,7 +2315,7 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
   "Certificación digital": "Digital certification",
   "Al terminar, la empresa emite el comprobante y tu universidad lo valida.":
     "When you finish, the company issues the proof document and your university validates it.",
-  "Asistente Gradly": "Gradly Assistant",
+  "Asistente UniJober": "UniJober Assistant",
   "Un asistente dentro de la app resuelve tus dudas sobre cómo funciona todo.":
     "An assistant inside the app answers your questions about how everything works.",
   "Reportes e incidencias": "Reports and incidents",
@@ -2324,7 +2324,7 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
 
   // Beneficios
   "Ventajas": "Advantages",
-  "¿Por qué elegir Gradly?": "Why choose Gradly?",
+  "¿Por qué elegir UniJober?": "Why choose UniJober?",
   "Para Estudiantes": "For Students",
   "Perfil validado por tu universidad": "Profile validated by your university",
   "Pasantías y vacantes reales, no simulacros": "Real internships and job posts, not simulations",
@@ -2340,7 +2340,7 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
 
   // Cómo funciona
   "El proceso": "The process",
-  "¿Cómo funciona Gradly?": "How does Gradly work?",
+  "¿Cómo funciona UniJober?": "How does UniJober work?",
   "Cuatro pasos para tu próxima oportunidad": "Four steps to your next opportunity",
   "Cuatro pasos para encontrar a tu próximo talento": "Four steps to find your next talent",
   "Cuatro pasos para acompañar a tus estudiantes": "Four steps to support your students",
@@ -2381,15 +2381,15 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
 
   // Oportunidades
   "Vacantes": "Job posts",
-  "Así se ven las oportunidades en Gradly": "This is what opportunities look like on Gradly",
+  "Así se ven las oportunidades en UniJober": "This is what opportunities look like on UniJober",
   "Tarjetas ilustrativas — al crear tu cuenta verás las vacantes reales de tu carrera.":
     "Illustrative cards — once you create your account you'll see the real job posts for your major.",
   "Talento": "Talent",
-  "Así ves a tus candidatos en Gradly": "This is how you see your candidates on Gradly",
+  "Así ves a tus candidatos en UniJober": "This is how you see your candidates on UniJober",
   "Tarjetas ilustrativas — al publicar tu pasantía o vacante verás tus propios aplicantes.":
     "Illustrative cards — once you post your internship or job listing you'll see your own applicants.",
   "Cupos": "Spots",
-  "Así ves tus cupos y alianzas en Gradly": "This is how you see your spots and partnerships on Gradly",
+  "Así ves tus cupos y alianzas en UniJober": "This is how you see your spots and partnerships on UniJober",
   "Tarjetas ilustrativas — al registrar a tus estudiantes verás tus cupos y empresas aliadas reales.":
     "Illustrative cards — once you register your students you'll see your real spots and partner companies.",
   "Analista de Datos Jr. (Pasantía)": "Jr. Data Analyst (Internship)",
@@ -2421,9 +2421,9 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
   // Casos de éxito
   "Resultados": "Results",
   "Casos de éxito": "Success stories",
-  "Así se ve cuando una pasantía en Gradly se convierte en experiencia real.":
-    "This is what it looks like when an internship on Gradly turns into real experience.",
-  "Así encuentran las empresas talento real a través de Gradly.": "This is how companies find real talent through Gradly.",
+  "Así se ve cuando una pasantía en UniJober se convierte en experiencia real.":
+    "This is what it looks like when an internship on UniJober turns into real experience.",
+  "Así encuentran las empresas talento real a través de UniJober.": "This is how companies find real talent through UniJober.",
   "Así acompañan las universidades a sus estudiantes de principio a fin.":
     "This is how universities support their students from start to finish.",
   "Certificado": "Certified",
@@ -2458,7 +2458,7 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
 
   // Testimonios
   "Comunidad": "Community",
-  "Lo que podrían decir en Gradly": "What people might say on Gradly",
+  "Lo que podrían decir en UniJober": "What people might say on UniJober",
   "Conseguí mi pasantía sin depender de conocidos — todo el proceso fue claro desde la app, desde postular hasta certificarme.":
     "I got my internship without relying on connections — the whole process was clear from the app, from applying to getting certified.",
   "Marco mi asistencia con un código todos los días y veo mis horas avanzar en tiempo real, sin tener que preguntar cómo voy.":
@@ -2492,8 +2492,8 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
   // Empresas aliadas
   "Alianzas": "Partnerships",
   "Empresas de distintos sectores": "Companies from different sectors",
-  "Estos son algunos de los sectores con empresas registradas en Gradly.":
-    "These are some of the sectors with companies registered on Gradly.",
+  "Estos son algunos de los sectores con empresas registradas en UniJober.":
+    "These are some of the sectors with companies registered on UniJober.",
   "Empresa de Retail": "Retail Company",
   "Empresa de Construcción": "Construction Company",
   "Empresa de Logística": "Logistics Company",
@@ -2502,14 +2502,14 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
 
   // Nosotros
   "El equipo": "The team",
-  "El equipo detrás de Gradly": "The team behind Gradly",
+  "El equipo detrás de UniJober": "The team behind UniJober",
   "Desarrollado por estudiantes de la Universidad Don Bosco, El Salvador":
     "Built by students from Universidad Don Bosco, El Salvador",
   "Backend Developer & Arquitecto": "Backend Developer & Architect",
   "Ingeniería en Sistemas, UDB": "Systems Engineering, UDB",
-  "“Somos cuatro estudiantes que creen que el talento salvadoreño no debería buscar oportunidades, las oportunidades deberían encontrar al talento. Eso es Gradly.”":
-    "“We are four students who believe Salvadoran talent shouldn't have to look for opportunities — opportunities should find the talent. That's Gradly.”",
-  "— Equipo Gradly, Soyapango, El Salvador": "— Gradly Team, Soyapango, El Salvador",
+  "“Somos cuatro estudiantes que creen que el talento salvadoreño no debería buscar oportunidades, las oportunidades deberían encontrar al talento. Eso es UniJober.”":
+    "“We are four students who believe Salvadoran talent shouldn't have to look for opportunities — opportunities should find the talent. That's UniJober.”",
+  "— Equipo UniJober, Soyapango, El Salvador": "— UniJober Team, Soyapango, El Salvador",
 
   // Footer
   "La plataforma que conecta estudiantes universitarios, universidades y empresas en El Salvador para hacer pasantías reales.":
@@ -2533,7 +2533,7 @@ export const BIENVENIDA_SEED_EN: Record<string, string> = {
 export const CALIFICAR_PLATAFORMA_SEED_EN: Record<string, string> = {
   "Calificar la plataforma": "Rate the platform",
   "Tu calificación": "Your rating",
-  "¿Qué te parece Gradly?": "What do you think of Gradly?",
+  "¿Qué te parece UniJober?": "What do you think of UniJober?",
   "Tu opinión nos ayuda a mejorar la plataforma. Califica estos aspectos, deja un comentario si quieres, y si algo no funcionó como debía, cuéntanoslo abajo.":
     "Your feedback helps us improve the platform. Rate these aspects, leave a comment if you'd like, and if something didn't work as it should, tell us below.",
   "Facilidad de uso": "Ease of use",
@@ -2543,8 +2543,8 @@ export const CALIFICAR_PLATAFORMA_SEED_EN: Record<string, string> = {
   "Comentario (opcional)": "Comment (optional)",
   "¿Qué te gusta o qué mejorarías?": "What do you like, or what would you improve?",
   "¿Algo que corregir? (opcional)": "Anything to fix? (optional)",
-  "Cuéntanos un error o problema puntual que hayas tenido con la plataforma. Esto solo lo ve el equipo de Gradly, no aparece en la lista pública de abajo.":
-    "Tell us about a specific bug or problem you ran into with the platform. Only the Gradly team sees this — it doesn't show up in the public list below.",
+  "Cuéntanos un error o problema puntual que hayas tenido con la plataforma. Esto solo lo ve el equipo de UniJober, no aparece en la lista pública de abajo.":
+    "Tell us about a specific bug or problem you ran into with the platform. Only the UniJober team sees this — it doesn't show up in the public list below.",
   "Describe el problema (opcional)": "Describe the problem (optional)",
   "Completa las 4 estrellas antes de enviar.": "Fill in all 4 star ratings before submitting.",
   "Sesión no válida.": "Invalid session.",
@@ -2571,15 +2571,15 @@ export const ONBOARDING_INICIAL_SEED_EN: Record<string, string> = {
 
   // Diapositiva 0 — idioma/tema
   "Antes de empezar": "Before we start",
-  "Elige cómo quieres ver Gradly. Puedes cambiarlo cuando quieras desde tu perfil.":
-    "Choose how you want to see Gradly. You can change this anytime from your profile.",
+  "Elige cómo quieres ver UniJober. Puedes cambiarlo cuando quieras desde tu perfil.":
+    "Choose how you want to see UniJober. You can change this anytime from your profile.",
   "Idioma": "Language",
   "Tema": "Theme",
   "Claro": "Light",
   "Oscuro": "Dark",
 
   // Diapositiva 1 — rol
-  "¿Cómo vas a usar Gradly?": "How will you use Gradly?",
+  "¿Cómo vas a usar UniJober?": "How will you use UniJober?",
   "Así te mostramos lo que más te importa. Puedes cambiarlo cuando quieras.":
     "This helps us show you what matters most. You can change it anytime.",
   "Estudiante": "Student",
@@ -2591,8 +2591,8 @@ export const ONBOARDING_INICIAL_SEED_EN: Record<string, string> = {
   "Tu universidad te asigna un cupo de pasantía, o aplicás directo a una pasantía — todo desde la app.":
     "Your university assigns you an internship spot, or apply directly to an internship — all from the app.",
   "Tus horas de pasantía cuentan con tu asistencia": "Your internship hours count when you mark attendance",
-  "Marca tu código de asistencia cada día y coordina tu pasantía por chat, sin salir de Gradly.":
-    "Mark your attendance code every day and coordinate your internship by chat, without leaving Gradly.",
+  "Marca tu código de asistencia cada día y coordina tu pasantía por chat, sin salir de UniJober.":
+    "Mark your attendance code every day and coordinate your internship by chat, without leaving UniJober.",
   "Certifica tu pasantía y da el siguiente paso": "Certify your internship, take the next step",
   "Al terminar tu pasantía, tu empresa emite el comprobante y tu universidad lo valida.":
     "When your internship ends, your company issues the certificate and your university validates it.",
@@ -2631,7 +2631,7 @@ export const SIN_EMOJIS_SEED_EN: Record<string, string> = {
   "La fecha debe ser al menos 5 días después de hoy, con un plazo máximo de 3 meses.": "The date must be at least 5 days from today, with a maximum of 3 months.",
   "Cuántos estudiantes puedes recibir. Las universidades reservan cupos para sus grupos hasta agotarlos.": "How many students you can take. Universities reserve spots for their groups until they run out.",
   "Los estudiantes ven este horario antes de postularse, y el sistema avisa a las universidades cuántos de sus alumnos pueden cumplirlo.": "Students see this schedule before applying, and the system tells universities how many of their students can meet it.",
-  "Estadísticas de la Red Gradly": "Gradly Network Statistics",
+  "Estadísticas de la Red UniJober": "UniJober Network Statistics",
   "¡Subiste de rango!": "You ranked up!",
   "Foto": "Photo",
   "Propuesta de cambio de horario": "Schedule change proposal",
@@ -2642,11 +2642,11 @@ export const SIN_EMOJIS_SEED_EN: Record<string, string> = {
 // app/verificar.tsx (página pública sin sesión, a donde lleva el código QR
 // del comprobante) + el botón nuevo de backfill en el panel admin (Config).
 export const VERIFICAR_SEED_EN: Record<string, string> = {
-  "VERIFICACIÓN GRADLY": "GRADLY VERIFICATION",
+  "VERIFICACIÓN UNIJOBER": "UNIJOBER VERIFICATION",
   "Verificando comprobante…": "Verifying document…",
   "Comprobante no encontrado": "Document not found",
-  "Este enlace no corresponde a ningún comprobante emitido por Gradly.":
-    "This link does not correspond to any document issued by Gradly.",
+  "Este enlace no corresponde a ningún comprobante emitido por UniJober.":
+    "This link does not correspond to any document issued by UniJober.",
   "No se pudo verificar": "Could not verify",
   "No se pudo verificar el documento. Revisa tu conexión e intenta de nuevo.":
     "The document could not be verified. Check your connection and try again.",
@@ -2658,8 +2658,8 @@ export const VERIFICAR_SEED_EN: Record<string, string> = {
   "Puesto": "Position",
   "Período": "Period",
   "Horas cumplidas": "Hours completed",
-  "Este comprobante fue emitido a través de Gradly y corresponde a una pasantía real registrada en la plataforma.":
-    "This document was issued through Gradly and corresponds to a real internship registered on the platform.",
+  "Este comprobante fue emitido a través de UniJober y corresponde a una pasantía real registrada en la plataforma.":
+    "This document was issued through UniJober and corresponds to a real internship registered on the platform.",
   "Verificación pública de comprobantes": "Public document verification",
   "El comprobante de finalización de una pasantía por cupo ahora trae un código QR que lleva a una página pública, sin necesidad de cuenta, para confirmar que es real. Los comprobantes enviados antes de este cambio no tienen QR en su PDF, pero igual pueden hacerse verificables con este botón. Es seguro repetirlo.":
     "The completion document for a slot-based internship now includes a QR code linking to a public page, no account needed, to confirm it's real. Documents sent before this change don't have a QR in their PDF, but can still be made verifiable with this button. It's safe to repeat.",
@@ -2715,8 +2715,8 @@ export const TUTOR_SEED_EN: Record<string, string> = {
   "Completa tú mismo estos datos.": "Fill in this information yourself.",
   "Documento (DUI)": "ID document",
   "Opcional": "Optional",
-  "Tu DUI es opcional y solo lo puedes ver tú (y el admin de Gradly, si hace falta verificar algo).":
-    "Your ID document is optional and only you can see it (and Gradly's admin, if something needs verifying).",
+  "Tu DUI es opcional y solo lo puedes ver tú (y el admin de UniJober, si hace falta verificar algo).":
+    "Your ID document is optional and only you can see it (and UniJober's admin, if something needs verifying).",
   "Número de DUI": "ID document number",
   "Subir foto del DUI": "Upload ID document photo",
   "Listo": "Done",

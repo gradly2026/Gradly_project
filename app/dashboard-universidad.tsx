@@ -414,7 +414,7 @@ function buscarValor(row: ExcelRow, patrones: string[]): string {
 /** Contraseña genérica: "Gradly" + 4 dígitos aleatorios + "!". Ej: Gradly4821! */
 function generarPassword(): string {
   const n = Math.floor(1000 + Math.random() * 9000);
-  return `Gradly${n}!`;
+  return `UniJober${n}!`;
   // Genera un número aleatorio entre 1000 y 9999 (4 dígitos siempre) y lo
   // inserta en una plantilla fija — más simple que el generarPassword()
   // de services/authService.ts (que mezcla mayúsculas/minúsculas/números
@@ -484,7 +484,7 @@ const TOUR_PASOS: Record<SeccionUni, { titulo: string; texto: string }> = {
   perfil: {
     titulo: 'Mi Perfil',
     texto:
-      'Consulta y edita los datos de tu institución, revisa tus estadísticas y ajusta tus preferencias. Si tienes dudas de cómo usar Gradly, toca la burbuja del Asistente Gradly que flota en tus pantallas.',
+      'Consulta y edita los datos de tu institución, revisa tus estadísticas y ajusta tus preferencias. Si tienes dudas de cómo usar UniJober, toca la burbuja del Asistente UniJober que flota en tus pantallas.',
   },
   mensajes: {
     titulo: 'Mensajes',
@@ -1018,7 +1018,7 @@ export default function DashboardUniversidad() {
             {
               id: 'contacto',
               title: 'Contacto / Responsable',
-              subtitle: 'Persona responsable ante Gradly',
+              subtitle: 'Persona responsable ante UniJober',
               icon: 'person-outline',
               tone: 'green',
               fields: [
@@ -1160,7 +1160,7 @@ export default function DashboardUniversidad() {
         onUserPress={() => setSeccion('perfil')}
         searchPlaceholder="Buscar estudiantes..."
       >
-      {/* Marca Gradly, siempre visible arriba de todo (incluida "Mensajes") —
+      {/* Marca UniJober, siempre visible arriba de todo (incluida "Mensajes") —
           en laptop/tablet la marca vive en la barra lateral del armazón. */}
       {!enShell && <GradlyBrandHeader colors={colors} />}
 
@@ -1237,7 +1237,7 @@ export default function DashboardUniversidad() {
           "Mensajes"; en laptop/tablet la reemplaza el buscador de la barra superior) ── */}
       {!enShell && seccion !== 'estudiantes' && seccion !== 'perfil' && seccion !== 'mensajes' && <FloatingSearchButton placeholder="Buscar estudiantes..." />}
 
-      {/* ── ASISTENTE GRADLY (bot de ayuda) — apilado sobre el botón de búsqueda
+      {/* ── ASISTENTE UNIJOBER (bot de ayuda) — apilado sobre el botón de búsqueda
           (en laptop/tablet, sin botón de búsqueda debajo, va pegado abajo) ── */}
       {seccion !== 'mensajes' && <AsistenteGradly bottom={enShell ? 24 : undefined} />}
 
@@ -1305,7 +1305,7 @@ function SeccionInicio({ metricas, perfil, nombreUni, uid, estudiantes, apps, so
   const inscripcionesActivas = useInscripcionesActivas('universidadId', uid);
   return (
     <ScrollView style={webScrollStyle(colors)} contentContainerStyle={s.scroll}>
-      {/* ── Estadísticas de la Red Gradly ── */}
+      {/* ── Estadísticas de la Red UniJober ── */}
       <RedGradlyBanner />
 
       <GlassCard style={{ marginBottom: 16 }} contentStyle={{ flexDirection: 'row', alignItems: 'center', padding: 20 }}>
@@ -2724,7 +2724,7 @@ function SeccionPracticas({ solicitudes, asignacionesCupo, apps, estudiantes, ui
       </ScrollView>
 
       {/* ── Incidencias — lo único que puede estar esperando una respuesta de la
-          universidad ahora mismo, y la única bandeja que puede ESCALAR a Gradly. */}
+          universidad ahora mismo, y la única bandeja que puede ESCALAR a UniJober. */}
       {filtro === 'incidencias' && (
         <BandejaIncidencias rol="universidad" uid={uid} nombreUsuario={nombreUni} />
       )}

@@ -90,7 +90,7 @@ export default function OnboardingDireccionModal({ uid, onGuardado }: Props) {
         <View style={s.sheet}>
           <View style={s.headerBadge}>
             <Ionicons name="sparkles" size={18} color={colors.primaryLight} />
-            <Text style={s.headerBadgeText}>¡Bienvenido/a a Gradly!</Text>
+            <Text style={s.headerBadgeText}>¡Bienvenido/a a UniJober!</Text>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={webScrollStyle(colors)}>

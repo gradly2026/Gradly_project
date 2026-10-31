@@ -238,7 +238,7 @@ export async function responderTicket(p: ResponderTicketParams): Promise<void> {
     id: nuevoIdMensaje(),
     autor: p.comoAdmin ? 'admin' : 'usuario',
     autor_id: uid,
-    autor_nombre: p.autorNombre || (p.comoAdmin ? 'Soporte Gradly' : 'Usuario'),
+    autor_nombre: p.autorNombre || (p.comoAdmin ? 'Soporte UniJober' : 'Usuario'),
     texto,
     imagenes,
     fecha: Date.now(),
@@ -257,7 +257,7 @@ export async function responderTicket(p: ResponderTicketParams): Promise<void> {
       await enviarNotificacion(
         p.notificarA,
         'Respuesta de soporte',
-        'El equipo de Gradly respondió a tu mensaje. Toca para verlo.',
+        'El equipo de UniJober respondió a tu mensaje. Toca para verlo.',
         'info',
         `ticketSoporte:${p.ticketId}`,
       );
@@ -286,7 +286,7 @@ export async function marcarTicketResuelto(
       await enviarNotificacion(
         notificarA,
         'Tu solicitud de soporte se resolvió',
-        'El equipo de Gradly marcó tu mensaje como resuelto. Toca para ver la conversación.',
+        'El equipo de UniJober marcó tu mensaje como resuelto. Toca para ver la conversación.',
         'success',
         `ticketSoporte:${ticketId}`,
       );

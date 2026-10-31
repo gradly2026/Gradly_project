@@ -110,7 +110,7 @@ export default function ComunicadosGate() {
         <View style={s.sheet}>
           <View style={s.header}>
             <Ionicons name="megaphone-outline" size={18} color={colors.primaryLight} />
-            <Text style={s.badge}>Comunicado de Gradly</Text>
+            <Text style={s.badge}>Comunicado de UniJober</Text>
             <TouchableOpacity onPress={cerrar} hitSlop={10}>
               <Ionicons name="close" size={20} color={colors.textMuted} />
             </TouchableOpacity>

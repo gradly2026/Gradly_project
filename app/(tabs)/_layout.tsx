@@ -103,7 +103,7 @@ const TOUR_RUTAS: Record<TabKey, string> = {
 // que NAVEGAR de verdad a la siguiente (ver handleTourContinuar más abajo).
 const TOUR_PASOS: Record<TabKey, { titulo: string; texto: string }> = {
   index: {
-    titulo: '¡Bienvenido a Gradly!',
+    titulo: '¡Bienvenido a UniJober!',
     texto:
       'Aquí verás vacantes o pasantías según el momento de tu práctica: cupos asegurados por tu universidad, pasantías afines a tu carrera, o vacantes cuando ya te gradúes.',
   },
@@ -122,7 +122,7 @@ const TOUR_PASOS: Record<TabKey, { titulo: string; texto: string }> = {
   },
   perfil: {
     titulo: 'Mi Perfil',
-    texto: 'Consulta tu certificación, tu CV, tus habilidades y ajusta tus preferencias. Si tienes dudas de cómo usar Gradly, toca la burbuja del Asistente Gradly que flota en tus pantallas.',
+    texto: 'Consulta tu certificación, tu CV, tus habilidades y ajusta tus preferencias. Si tienes dudas de cómo usar UniJober, toca la burbuja del Asistente UniJober que flota en tus pantallas.',
   },
 };
 // El TEXTO real (título + explicación) que se muestra en cada "parada"
@@ -302,7 +302,7 @@ export default function TabLayout() {
         onUserPress={() => router.navigate(TOUR_RUTAS.perfil as any)}
         searchPlaceholder="Buscar vacantes..."
       >
-      {/* Marca Gradly, siempre visible arriba de las 5 pestañas — en
+      {/* Marca UniJober, siempre visible arriba de las 5 pestañas — en
           laptop/tablet la marca vive en la barra lateral del armazón. */}
       {!enShell && <GradlyBrandHeader colors={colors} />}
       <View style={{ flex: 1 }}>
@@ -357,7 +357,7 @@ export default function TabLayout() {
           que ya tiene su propio buscador dentro de la lista de chats. */}
       {!enShell && !enMensajes && <FloatingSearchButton />}
 
-      {/* Asistente Gradly (bot de ayuda) — apilado encima del botón de búsqueda
+      {/* Asistente UniJober (bot de ayuda) — apilado encima del botón de búsqueda
           (en laptop/tablet, sin botón de búsqueda debajo, va pegado abajo). */}
       {!enMensajes && <AsistenteGradly bottom={enShell ? 24 : undefined} />}
 

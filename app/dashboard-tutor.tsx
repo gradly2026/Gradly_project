@@ -340,7 +340,7 @@ export default function DashboardTutor() {
             render: () => (
               <View style={{ gap: 12 }}>
                 <Text style={s.docHint}>
-                  Tu DUI es opcional y solo lo puedes ver tú (y el admin de Gradly, si hace falta verificar algo).
+                  Tu DUI es opcional y solo lo puedes ver tú (y el admin de UniJober, si hace falta verificar algo).
                 </Text>
                 <TextInput
                   style={s.docInput}

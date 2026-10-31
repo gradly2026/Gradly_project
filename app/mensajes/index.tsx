@@ -207,7 +207,7 @@ export default function MensajesScreen() {
                   // disponible (sin recortarse ni deformarse).
                 />
                 <Text style={[styles.brand, { color: colors.textPrimary }]}>
-                  Gradly
+                  UniJober
                 </Text>
                 <Text style={[styles.emptyHint, { color: colors.textMuted }]}>
                   Selecciona una conversación para empezar a chatear.

@@ -72,7 +72,7 @@ export default function SoporteTicketModal({
   onCreado,
   marcarLeidoAlAbrir,
   modoAdmin = false,
-  adminNombre = 'Soporte Gradly',
+  adminNombre = 'Soporte UniJober',
 }: Props) {
   const { colors } = useTheme();
   const s = makeStyles(colors);
@@ -306,7 +306,7 @@ export default function SoporteTicketModal({
                             {mio
                               ? 'Tú'
                               : m.autor_nombre ||
-                                (m.autor === 'admin' ? 'Soporte Gradly' : 'Usuario')}
+                                (m.autor === 'admin' ? 'Soporte UniJober' : 'Usuario')}
                           </Text>
                           {!!m.texto && (
                             <Text style={s.burbujaTexto} noTranslate>{m.texto}</Text>
@@ -368,7 +368,7 @@ export default function SoporteTicketModal({
               // ── MODO CREAR ───────────────────────────────────────────
               <>
                 <Text style={s.parrafo}>
-                  Cuéntale al equipo de Gradly qué está pasando. Te responderán aquí mismo y
+                  Cuéntale al equipo de UniJober qué está pasando. Te responderán aquí mismo y
                   te avisaremos cuando lo hagan.
                 </Text>
 
