@@ -84,6 +84,7 @@ import NotificationBanner from '../src/components/NotificationBanner';
 import { AppAlertHost } from '../src/components/AppAlert';
 import ComunicadosGate from '../src/components/ComunicadosGate';
 import MantenimientoGate from '../src/components/MantenimientoGate';
+import UniJoberIntro from '../src/components/UniJoberIntro';
 import SoporteGate from '../src/components/SoporteGate';
 // Avisos/confirmaciones propios (Modal) que SÍ funcionan en web, a diferencia
 // de Alert.alert. Ver src/components/AppAlert.tsx.
@@ -248,6 +249,8 @@ export default function RootLayout() {
                 <ComunicadosGate />
                 <SoporteGate />
                 <MantenimientoGate />
+                {/* Animación de carga de UniJober (solo web; una vez por sesión) */}
+                <UniJoberIntro />
                 {/* Al estar aquí, FUERA del <Stack> pero DENTRO de todos
                     los Providers, este banner puede aparecer flotando
                     sobre CUALQUIER pantalla de la app sin importar en cuál

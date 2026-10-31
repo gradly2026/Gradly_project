@@ -25,6 +25,23 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="google" content="notranslate" />
 
         <ScrollViewStyleReset />
+
+        {/* Animación de carga de UniJober (src/components/UniJoberIntro.tsx):
+            si la intro va a jugar, la app arranca invisible (#root con
+            opacity 0) para que no parpadee la página antes de la animación.
+            La propia intro quita la clase cuando termina. */}
+        <style
+          dangerouslySetInnerHTML={{
+            __html:
+              'html.uj-intro-on #root{opacity:0}html.uj-intro-on,html.uj-intro-on body{background:#08080c}html.uj-intro-on:not(.uj-ready) body{overflow:hidden}',
+          }}
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;if(/[?&]intro=1/.test(location.search)||!sessionStorage.getItem('uj:intro'))document.documentElement.classList.add('uj-intro-on');}catch(e){}})();",
+          }}
+        />
       </head>
       <body>{children}</body>
     </html>
