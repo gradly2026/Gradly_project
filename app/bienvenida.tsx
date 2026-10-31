@@ -15,6 +15,8 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
+  ImageBackground,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -51,6 +53,16 @@ import {
 // patrón "vistaAncha" — una sola bandera ancho/angosto, sin niveles
 // intermedios de tablet.
 const BREAKPOINT_ANCHO = 768;
+
+// Fotos de la sección "Así se ve" (ejemplos, sin marca de agua) y sus créditos,
+// que también se listan en el pie de página. Todas con licencia abierta:
+// CC0 (dominio público) o Creative Commons con atribución.
+const FOTOS: { src: any; titulo: string; sub: string; credito: string; url: string }[] = [
+  { src: require('../assets/images/landing/estudiantes.jpg'), titulo: 'Estudiantes en su primera pasantía', sub: 'Trabajo en equipo desde el primer día', credito: '"Team Meeting" — Startup Stock Photos, vía StockSnap. Licencia CC0 (dominio público).', url: 'https://stocksnap.io/photo/team-meeting-JBW2PXDOL6' },
+  { src: require('../assets/images/landing/equipo.jpg'), titulo: 'Equipos que forman talento', sub: 'Empresas aliadas', credito: '"Business People" — Direct Media, vía StockSnap. Licencia CC0 (dominio público).', url: 'https://stocksnap.io/photo/business-people-IS1XRUWYW4' },
+  { src: require('../assets/images/landing/aula.jpg'), titulo: 'Universidades que acompañan', sub: 'Seguimiento cercano a cada estudiante', credito: '"Students in a university classroom in Tennessee 05" — Harrison Keely, Wikimedia Commons. Licencia CC BY 4.0.', url: 'https://commons.wikimedia.org/w/index.php?curid=164182624' },
+  { src: require('../assets/images/landing/graduada.jpg'), titulo: 'Del aula al primer empleo', sub: 'Certificado y contratación', credito: '"Graduated!" — Ralph Daily, Wikimedia Commons. Licencia CC BY 2.0 (recortada).', url: 'https://commons.wikimedia.org/w/index.php?curid=20068096' },
+];
 
 type IconName = keyof typeof Ionicons.glyphMap;
 type Rol = 'estudiante' | 'empresa' | 'universidad';
@@ -570,6 +582,25 @@ function BienvenidaContenido() {
           ))}
         </View>
 
+        {/* ── Así se ve: fotos de ejemplo con créditos en el pie de página ── */}
+        <View {...REV} style={styles.section}>
+          <SectionHeader kicker="Así se ve" title="Personas reales, primeras oportunidades" sub="Imágenes de ejemplo; los créditos están en el pie de página." colors={colors} styles={styles} />
+          {chunk(FOTOS, 2).map((row, ri) => (
+            <View key={ri} style={[styles.fotoRow, { flexDirection: wide ? 'row' : 'column' }]}>
+              {row.map((f, ci) => (
+                <View key={f.titulo} {...FX} style={[styles.fotoCard, { flex: wide ? ((ri + ci) % 2 === 0 ? 7 : 5) : undefined, minHeight: wide ? 320 : 240 }]}>
+                  <ImageBackground source={f.src} resizeMode="cover" style={styles.fotoImg} accessibilityLabel={f.titulo}>
+                    <View style={[styles.fotoShade, Platform.OS === 'web' && ({ backgroundImage: 'linear-gradient(transparent 35%, rgba(11,11,15,.9))' } as any)]}>
+                      <Text style={styles.fotoTitulo}>{f.titulo}</Text>
+                      <Text style={styles.fotoSub}>{f.sub}</Text>
+                    </View>
+                  </ImageBackground>
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+
         {/* ── Casos de éxito (por rol) ── */}
         <View {...REV} style={[styles.section, styles.sectionSurface]}>
           <Halo corner="tl" />
@@ -723,6 +754,15 @@ function BienvenidaContenido() {
                 <Text key={l} style={[styles.footerLink, { color: colors.textMuted }]}>{l}</Text>
               ))}
             </View>
+          </View>
+          <View style={[styles.creditos, { borderColor: colors.border }]}>
+            <Text style={[styles.footerColTitle, { color: colors.textPrimary }]}>Créditos de imágenes</Text>
+            {FOTOS.map((f) => (
+              <Text key={f.url} style={[styles.creditoLinea, { color: colors.textMuted }]} onPress={() => Linking.openURL(f.url)}>
+                {f.credito}
+              </Text>
+            ))}
+            <Text style={[styles.creditoLinea, { color: colors.textMuted }]}>Sin marca de agua. El emblema y las ilustraciones son de UniJober.</Text>
           </View>
           <Text style={[styles.footerBottom, { color: colors.textMuted, borderTopColor: colors.border }]}>
             © 2026 UniJober — Soyapango, El Salvador
@@ -912,5 +952,13 @@ const makeStyles = (COLORS: GradlyColors) =>
     footerDesc: { fontSize: 13, lineHeight: 20, fontFamily: FONTS.interRegular, maxWidth: 320 },
     footerColTitle: { fontSize: 13, fontFamily: FONTS.interSemiBold, marginBottom: 10 },
     footerLink: { fontSize: 13, fontFamily: FONTS.interRegular, marginBottom: 8 },
+    fotoRow: { gap: 16 },
+    fotoCard: { borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+    fotoImg: { flex: 1, justifyContent: 'flex-end' },
+    fotoShade: { padding: 18, paddingTop: 70, justifyContent: 'flex-end' },
+    fotoTitulo: { color: '#fff', fontSize: 17, fontFamily: FONTS.soraExtraBold },
+    fotoSub: { color: 'rgba(255,255,255,.78)', fontSize: 13, fontFamily: FONTS.interRegular, marginTop: 2 },
+    creditos: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 14, padding: 14, gap: 4 },
+    creditoLinea: { fontSize: 12, lineHeight: 18, fontFamily: FONTS.interRegular },
     footerBottom: { fontSize: 12, textAlign: 'center', borderTopWidth: 1, paddingTop: 20, fontFamily: FONTS.interRegular },
   });
