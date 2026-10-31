@@ -45,7 +45,6 @@ html.uj-js [data-uj-rev].uj-in{opacity:1;transform:none}
 [data-uj=gc]{will-change:transform;animation:ujfloat 7s ease-in-out infinite}
 @keyframes ujfloat{50%{margin-top:-14px}}
 [data-uj=brandtxt]{display:flex;letter-spacing:-.02em;padding-bottom:.12em}
-[data-uj=brandtxt] span{display:inline-block;background:linear-gradient(110deg,#fff 0%,#c9cdf5 30%,#8890D5 55%,#5963C4 100%) 0 0/220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent}
 @media (prefers-reduced-motion:reduce){[data-uj=floor],[data-uj=gc]{animation:none!important}html.uj-js [data-uj-rev]{opacity:1;transform:none}}
 `;
 
@@ -236,7 +235,7 @@ export function UJBrandMark({ color = '#F4F4F8' }: { color?: string }) {
     `style="height:35px;width:auto;display:block;flex:none"><defs>${defs}</defs><g>${inner}</g></svg>`;
   const letters = 'UniJober'
     .split('')
-    .map((c) => `<span>${c}</span>`)
+    .map((c, i) => `<span style="color:${i < 3 ? '#F4F4F8' : '#8890D5'}">${c}</span>`)
     .join('');
   const txt =
     `<div id="uj-brand-txt" data-uj="brandtxt" aria-label="UniJober" ` +

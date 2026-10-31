@@ -33,7 +33,7 @@ export default function Root({ children }: PropsWithChildren) {
         <style
           dangerouslySetInnerHTML={{
             __html:
-              'html.uj-intro-on #root{opacity:0}html.uj-intro-on,html.uj-intro-on body{background:#08080c}html.uj-intro-on:not(.uj-ready) body{overflow:hidden}',
+              'html.uj-intro-on #root{opacity:0}html.uj-intro-on,html.uj-intro-on body{background:#08080c}html.uj-intro-on:not(.uj-ready) body{overflow:hidden}html.uj-intro-on #uj-brand-emb,html.uj-intro-on #uj-brand-txt{opacity:0}',
           }}
         />
         <script

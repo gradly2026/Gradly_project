@@ -48,7 +48,10 @@ const CSS = `
 #uj-intro .skip{position:absolute;right:18px;bottom:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);color:#aab;border-radius:99px;padding:8px 14px;font:600 13px Inter,sans-serif;cursor:pointer}
 #uj-intro .bar{position:absolute;left:50%;bottom:9%;width:min(220px,50vw);height:3px;border-radius:3px;background:rgba(255,255,255,.08);transform:translateX(-50%);overflow:hidden}
 #uj-intro .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#5963C4,#8890D5);border-radius:3px}
-#uj-intro .fly{transition:transform 1.15s cubic-bezier(.65,0,.2,1)}
+#uj-intro .fly{transition:transform 1.15s cubic-bezier(.65,0,.2,1),filter 1.15s ease}
+#uj-word.final span{animation:none!important;opacity:1;transform:none;filter:none;background:none;-webkit-text-fill-color:#8890D5;color:#8890D5}
+#uj-word.final span:nth-child(-n+3){-webkit-text-fill-color:#F4F4F8;color:#F4F4F8}
+html.uj-intro-on #uj-brand-emb,html.uj-intro-on #uj-brand-txt{opacity:0}
 html.uj-intro-on #root{opacity:0}
 html.uj-intro-on.uj-ready #root{opacity:1;transition:opacity 1.3s ease .1s}
 `;
@@ -196,14 +199,20 @@ function jugar(root: HTMLElement, alTerminar: () => void) {
     const wTop = bT && bT.height > 0 ? bT.top : tE.top + tE.height / 2 - (wR.height * sW) / 2;
     emb.classList.add('fly');
     word.classList.add('fly');
+    // colores finales de la marca: Uni en blanco, Jober en el lila de la página
+    word.classList.add('final');
+    emb.style.filter = 'none';
     emb.style.transform = `translate(${tE.left - eR.left}px,${tE.top - eR.top}px) scale(${sE})`;
     word.style.transform = `translate(${wLeft - wR.left}px,${wTop - wR.top}px) scale(${sW})`;
     root.classList.add('out');
     html.classList.add('uj-ready');
     // 5) al aterrizar, se retira la capa y queda la marca real de la página
+    // el logo y el nombre que viajaron SON la marca: la capa se retira de golpe y
+    // la marca real (idéntica) aparece justo debajo, sin duplicado ni parpadeo
     T(() => {
-      root.classList.add('gone');
-      T(terminar, 700);
+      html.classList.remove('uj-intro-on');
+      root.style.display = 'none';
+      terminar();
     }, 1350);
   };
   T(volar, 4300);
