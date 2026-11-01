@@ -30,6 +30,7 @@ import DescargarApk from '../src/components/DescargarApk';
 import TemaOscuroFijo from '../src/components/TemaOscuroFijo';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import Titular from '../src/components/Titular';
+import UJCoverflow from '../src/components/UJCoverflow';
 import { FX, REV, UJBackground, UJBrandMark, UJHeroScene, useUniJoberFx } from '../src/components/UniJoberFx';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { COLORS, FONTS, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
@@ -584,7 +585,11 @@ function BienvenidaContenido() {
 
         {/* ── Así se ve: fotos de ejemplo con créditos en el pie de página ── */}
         <View {...REV} style={styles.section}>
-          <SectionHeader kicker="Así se ve" title="Personas reales, primeras oportunidades" sub="Imágenes de ejemplo; los créditos están en el pie de página." colors={colors} styles={styles} />
+          <SectionHeader kicker="Galería" title="Mira cómo se ve en acción" sub="Imágenes de ejemplo; los créditos están en el pie de página." colors={colors} styles={styles} />
+          {Platform.OS === 'web' ? (
+            <UJCoverflow items={FOTOS} />
+          ) : (
+            <>
           {chunk(FOTOS, 2).map((row, ri) => (
             <View key={ri} style={[styles.fotoRow, { flexDirection: wide ? 'row' : 'column' }]}>
               {row.map((f, ci) => (
@@ -599,6 +604,8 @@ function BienvenidaContenido() {
               ))}
             </View>
           ))}
+            </>
+          )}
         </View>
 
         {/* ── Casos de éxito (por rol) ── */}
