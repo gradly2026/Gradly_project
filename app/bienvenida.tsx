@@ -30,7 +30,8 @@ import DescargarApk from '../src/components/DescargarApk';
 import TemaOscuroFijo from '../src/components/TemaOscuroFijo';
 import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import Titular from '../src/components/Titular';
-import UJCoverflow from '../src/components/UJCoverflow';
+import UJCoverflow, { uriDe } from '../src/components/UJCoverflow';
+import UJStories from '../src/components/UJStories';
 import { FX, REV, UJBackground, UJBrandMark, UJHeroScene, useUniJoberFx } from '../src/components/UniJoberFx';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { COLORS, FONTS, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
@@ -71,6 +72,12 @@ const ROLES: { key: Rol; label: string }[] = [
   { key: 'estudiante', label: 'Estudiantes' },
   { key: 'empresa', label: 'Empresas' },
   { key: 'universidad', label: 'Universidades' },
+];
+
+// Fotos extra del fondo de pantallas (solo se ven en el mosaico de las historias con scroll).
+const FOTOS_MOSAICO: { src: any; credito: string; url: string }[] = [
+  { src: require('../assets/images/landing/mosaico1.jpg'), credito: '"Woman Working" — Kristin Hardwick, vía StockSnap. Licencia CC0 (dominio público).', url: 'https://stocksnap.io/photo/woman-working-HIOJW30YKD' },
+  { src: require('../assets/images/landing/mosaico2.jpg'), credito: '"Woman Working" — Kristin Hardwick, vía StockSnap. Licencia CC0 (dominio público).', url: 'https://stocksnap.io/photo/woman-working-GZLDAMHFU4' },
 ];
 
 /** Reparte un array en filas de `size` — así una fila de cards se hace con
@@ -460,6 +467,32 @@ function BienvenidaContenido() {
           {wide && Platform.OS === 'web' && <View style={{ flex: 1, alignItems: 'center' }}><UJHeroScene /></View>}
         </View>
 
+        {/* ── Historias con scroll (solo web): laptop, teléfono 3D y fondo de
+            pantallas. Reemplazan a "¿Qué es?", "Beneficios" y "Cómo funciona",
+            que siguen igual en nativo. ── */}
+        {Platform.OS === 'web' ? (
+          <View onLayout={registrarSeccion('como-funciona')}>
+            <UJStories
+              mision="Eliminar la distancia entre estudiar y trabajar — que cualquier estudiante universitario en El Salvador pueda hacer una pasantía real durante su carrera, sin depender de contactos."
+              vision="Ser la forma en que universidades y empresas coordinan pasantías y primeras contrataciones — horas, comprobantes y seguimiento en un solo lugar, empezando en El Salvador."
+              laptop={[
+                { titulo: 'Encuentra tu pasantía', desc: 'Tu universidad te asigna un cupo de pasantía, o aplicas directo a una pasantía de tu carrera. Todo en un solo lugar.' },
+                { titulo: 'Tus horas avanzan solas', desc: FEATURES[1].desc },
+                { titulo: 'Pasantías reales, no simulacros', desc: 'Perfil validado por tu universidad, vacantes reales y certificación digital de tus horas.' },
+              ]}
+              phone={[
+                { titulo: 'Chat integrado', desc: FEATURES[2].desc },
+                { titulo: 'Asistencia con código', desc: 'Marcas tu código de asistencia cada día que te toca, directo desde el celular. Tus horas se ajustan solas si faltas con permiso.' },
+                { titulo: 'Ayuda a un toque', desc: 'El asistente UniJober resuelve tus dudas y, si algo falla en tu pasantía, reportas la incidencia con seguimiento de tu universidad.' },
+                { titulo: 'Certificación digital', desc: FEATURES[3].desc },
+              ]}
+              empresa={{ titulo: BENEFICIOS[1].title, items: BENEFICIOS[1].items }}
+              universidad={{ titulo: BENEFICIOS[2].title, items: BENEFICIOS[2].items }}
+              fotos={[...FOTOS, ...FOTOS_MOSAICO].map((f) => uriDe(f.src))}
+            />
+          </View>
+        ) : (
+          <>
         {/* ── ¿Qué es UniJober? ── */}
         <View {...REV} style={[styles.section, styles.sectionSurface]}>
           <Halo corner="tl" />
@@ -540,6 +573,8 @@ function BienvenidaContenido() {
             </View>
           ))}
         </View>
+          </>
+        )}
 
         {/* ── Oportunidades (por rol) ── */}
         <View {...REV} style={styles.section} onLayout={registrarSeccion('oportunidades')}>
@@ -764,7 +799,7 @@ function BienvenidaContenido() {
           </View>
           <View style={[styles.creditos, { borderColor: colors.border }]}>
             <Text style={[styles.footerColTitle, { color: colors.textPrimary }]}>Créditos de imágenes</Text>
-            {FOTOS.map((f) => (
+            {[...FOTOS, ...FOTOS_MOSAICO].map((f) => (
               <Text key={f.url} style={[styles.creditoLinea, { color: colors.textMuted }]} onPress={() => Linking.openURL(f.url)}>
                 {f.credito}
               </Text>

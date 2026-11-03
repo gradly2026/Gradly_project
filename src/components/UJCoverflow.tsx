@@ -16,7 +16,7 @@ import { FONTS } from '../context/ThemeContext';
 export type CoverItem = { src: any; titulo: string; sub: string; pos?: string };
 
 /** Ruta servible de una imagen importada con require() (web). */
-function uriDe(src: any): string {
+export function uriDe(src: any): string {
   try {
     if (typeof src === 'string') return src;
     if (src && typeof src === 'object' && src.uri) return src.uri;
