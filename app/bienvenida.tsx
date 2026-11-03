@@ -32,7 +32,7 @@ import { GlassCard } from '../components/ui/liquid-glass/GlassCard';
 import Titular from '../src/components/Titular';
 import UJCoverflow, { uriDe } from '../src/components/UJCoverflow';
 import UJStories from '../src/components/UJStories';
-import { FX, REV, UJBackground, UJBrandMark, UJHeroScene, useUniJoberFx } from '../src/components/UniJoberFx';
+import { FX, REV, UJBackground, UJBrandMark, UJHeroPhoneBg, UJHeroScene, useUniJoberFx } from '../src/components/UniJoberFx';
 import { LiquidBackground } from '../components/ui/liquid-glass/LiquidBackground';
 import { COLORS, FONTS, webScrollStyle, type GradlyColors } from '../src/context/ThemeContext';
 import { useTranslation } from '../src/context/TranslationContext';
@@ -428,6 +428,7 @@ function BienvenidaContenido() {
         <View
           style={[styles.hero, Platform.OS !== 'web' && { backgroundColor: colors.backgroundCard }, wide && Platform.OS === 'web' && styles.heroWide]}
         >
+          {!wide && <UJHeroPhoneBg />}
           <View style={[styles.heroCol, wide && Platform.OS === 'web' && { alignItems: 'flex-start' }]}>
           <View style={[styles.badge, { backgroundColor: colors.primary12, borderColor: colors.primary35 }]}>
             <Text style={[styles.badgeText, { color: colors.accent }]}>Pasantías y empleo, en tus manos</Text>

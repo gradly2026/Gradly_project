@@ -229,6 +229,30 @@ export function UJHeroScene({ width = 520 }: { width?: number }) {
   );
 }
 
+/** Teléfono 3D tenue detrás del texto del hero en pantallas angostas (sin tarjetas). */
+export function UJHeroPhoneBg() {
+  if (Platform.OS !== 'web') return null;
+  return createElement(
+    'div',
+    {
+      className: 'ujs',
+      'aria-hidden': 'true',
+      suppressHydrationWarning: true,
+      style: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 0, perspective: 1200, overflow: 'hidden' },
+    } as any,
+    createElement('style', { dangerouslySetInnerHTML: { __html: STORIES_CSS + '.ujb .ujs-ph{width:250px}.ujb .ujs-pscr{font-size:10.4px}' } } as any),
+    createElement(
+      'div',
+      {
+        className: 'ujb',
+        suppressHydrationWarning: true,
+        dangerouslySetInnerHTML: { __html: phone3d(mFeed()) },
+        style: { opacity: 0.22, transformStyle: 'preserve-3d', transform: 'rotateY(-24deg) rotateX(6deg) rotateZ(4deg)', filter: 'blur(.5px)' },
+      } as any,
+    ),
+  );
+}
+
 /** Marca de la barra superior. En web es el DESTINO de la animación de carga. */
 export function UJBrandMark({ color = '#F4F4F8' }: { color?: string }) {
   if (Platform.OS !== 'web') {

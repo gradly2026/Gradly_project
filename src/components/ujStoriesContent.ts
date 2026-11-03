@@ -110,7 +110,7 @@ export const STORIES_CSS =
 .u-qr i{aspect-ratio:1;background:#F4F4F8;border-radius:.1em}.u-qr i.z{background:transparent}
 
 /* móvil */
-.m-top{display:flex;align-items:center;justify-content:space-between;padding:2.9em .9em .6em;background:#101016;border-bottom:1px solid #2A2A34}
+.m-top{display:flex;align-items:center;justify-content:space-between;padding:3.7em .9em .6em;background:#101016;border-bottom:1px solid #2A2A34}
 .m-top .lg{font:400 1.15em 'Sora_800ExtraBold',Sora,sans-serif;display:flex;align-items:center;gap:.4em}
 .m-top .em{width:1.5em;height:1.7em;background:linear-gradient(145deg,#5963C4,#C9CDF5);border-radius:.5em}
 .m-top .pill{display:flex;gap:.7em;border:1px solid #2A2A34;border-radius:99px;padding:.4em .8em}
@@ -124,7 +124,7 @@ export const STORIES_CSS =
 .m-nav{position:absolute;left:.7em;right:.7em;bottom:.7em;height:3.4em;border-radius:99px;background:#101016;border:1px solid #2A2A34;display:flex;justify-content:space-around;align-items:center;z-index:5}
 .m-nav i{width:1.3em;height:1.3em;border-radius:.4em;background:#2A2A34}.m-nav i.on{background:#8890D5;box-shadow:0 0 .8em #8890D5aa}
 .m-fab{position:absolute;right:.8em;width:2.8em;height:2.8em;border-radius:50%;background:#5963C4;z-index:5;box-shadow:0 .5em 1em rgba(0,0,0,.5)}
-.m-chath{display:flex;align-items:center;gap:.6em;padding:3em .9em .7em;background:#101016;border-bottom:1px solid #2A2A34}
+.m-chath{display:flex;align-items:center;gap:.6em;padding:3.7em .9em .7em;background:#101016;border-bottom:1px solid #2A2A34}
 .m-chatin{position:absolute;left:.7em;right:.7em;bottom:.7em;display:flex;gap:.5em;align-items:center}
 .m-chatin span{flex:1;background:#131318;border:1px solid #2A2A34;border-radius:99px;padding:.6em 1em;font-size:.72em;color:#6a6a80}
 .m-chatin i{width:2.3em;height:2.3em;border-radius:50%;background:#5963C4}
@@ -175,7 +175,7 @@ export const STORIES_CSS =
  .ujs-step h2{font-size:clamp(24px,7vw,34px)}
  .ujs-step p{font-size:14px}
  .ujs-lap{width:min(520px,100%)}
- .ujs-ph{width:min(220px,46vw)}
+ .ujs-ph{width:min(220px,46vw,calc((var(--vh,700px) * .64 - 60px) * 9 / 19))}
  .ujs-mo .ujs-steps{left:5vw;width:90vw;top:30%}
  .ujs-grid{left:10%;width:130%}
  .ujs-mo-fade{background:linear-gradient(180deg,#0B0B0F 0%,rgba(11,11,15,.9) 45%,rgba(11,11,15,.3) 80%,transparent)}
