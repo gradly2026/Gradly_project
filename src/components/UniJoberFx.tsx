@@ -20,6 +20,7 @@ import { createElement, useEffect } from 'react';
 import { Image, Platform, StyleSheet, Text as RNText, View } from 'react-native';
 import { FONTS } from '../context/ThemeContext';
 import { EMBLEM_DEFS, EMBLEM_INNER, EMBLEM_VIEWBOX } from './uniJoberEmblem';
+import { mFeed, phone3d, STORIES_CSS } from './ujStoriesContent';
 
 const LOGO_NATIVO = require('../../assets/images/LogoGradlyRecorte.png');
 
@@ -183,7 +184,17 @@ export function UJHeroScene({ width = 520 }: { width?: number }) {
   return (
     <View style={{ width: '100%', maxWidth: width, height: 470, perspective: 1100 } as any}>
       <View {...({ dataSet: { uj: 'scene' } } as any)} style={{ flex: 1 } as any}>
-        {card('a', { left: '4%', top: '4%', width: '64%' }, 0, 40, (
+        {createElement(
+          'div',
+          {
+            className: 'ujs ujh',
+            suppressHydrationWarning: true,
+            style: { position: 'absolute', left: '50%', top: '50%', width: 200, marginLeft: -100, marginTop: -212, transformStyle: 'preserve-3d', transform: 'rotateY(-22deg) rotateX(4deg)' },
+          } as any,
+          createElement('style', { dangerouslySetInnerHTML: { __html: STORIES_CSS + '.ujh .ujs-ph{width:200px}.ujh .ujs-pscr{font-size:8.3px}' } } as any),
+          createElement('div', { dangerouslySetInnerHTML: { __html: phone3d(mFeed()) }, suppressHydrationWarning: true, style: { transformStyle: 'preserve-3d' } } as any),
+        )}
+        {card('a', { left: 0, top: '2%', width: '47%' }, 0, 40, (
           <>
             <RNText style={small}>Tu pasantía activa</RNText>
             <RNText style={big}>Analista de Datos Jr.</RNText>
@@ -193,7 +204,7 @@ export function UJHeroScene({ width = 520 }: { width?: number }) {
             <RNText style={{ ...small, marginTop: 8 }}>124 de 200 horas · 62 %</RNText>
           </>
         ))}
-        {card('b', { right: 0, top: '36%', width: '58%' }, 2, 110, (
+        {card('b', { right: 0, top: '38%', width: '46%' }, 2, 110, (
           <>
             <RNText style={small}>Chat con tu empresa</RNText>
             <View style={{ marginTop: 10, gap: 8 }}>
@@ -206,7 +217,7 @@ export function UJHeroScene({ width = 520 }: { width?: number }) {
             </View>
           </>
         ))}
-        {card('c', { left: '8%', bottom: '2%', width: '52%' }, 4, 70, (
+        {card('c', { left: 0, bottom: '1%', width: '44%' }, 4, 70, (
           <>
             <RNText style={small}>Al terminar</RNText>
             <RNText style={big}>Comprobante validado</RNText>

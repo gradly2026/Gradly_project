@@ -50,7 +50,7 @@ function findScroller(el: HTMLElement | null): HTMLElement | null {
 }
 
 /** Barrido de textos: cada paso entra desde la derecha y sale hacia la izquierda. */
-function pasos(story: HTMLElement, p: number) {
+function pasos(story: HTMLElement, p: number, fadeIn = false) {
   const els = Array.from(story.querySelectorAll<HTMLElement>('[data-step]'));
   const n = els.length;
   if (!n) return;
@@ -59,6 +59,7 @@ function pasos(story: HTMLElement, p: number) {
     let op = 1;
     let x = 0;
     if (t < 0) op = 0;
+    else if (i === 0 && fadeIn && t < 0.12) op = clamp(t / 0.12);
     else if (i > 0 && t < 0.2) {
       const e = clamp(t / 0.2);
       op = e;
@@ -74,7 +75,7 @@ function pasos(story: HTMLElement, p: number) {
     el.style.transform = `translateX(${x}px)`;
     el.style.pointerEvents = op > 0.5 ? 'auto' : 'none';
   });
-  const activo = clamp(Math.floor(p * n), 0, n - 1);
+  const activo = clamp(Math.floor(Math.max(p, 0) * n), 0, n - 1);
   story.querySelectorAll<HTMLElement>('[data-dots] i').forEach((d, k) => d.classList.toggle('on', k === activo));
 }
 
@@ -112,7 +113,6 @@ export default function UJStories(props: Props) {
       grid: q('[data-r=grid]'),
       cols: Array.from(root.querySelectorAll<HTMLElement>('[data-col]')),
       sc: Array.from(root.querySelectorAll<HTMLElement>('[data-sc]')),
-      tabs: Array.from(root.querySelectorAll<HTMLElement>('.ujs-tab i')),
     });
 
     const alto = () => (scroller ? scroller.clientHeight : window.innerHeight);
@@ -129,12 +129,12 @@ export default function UJStories(props: Props) {
       if (pscr) pscr.style.fontSize = pscr.clientWidth / 24 + 'px';
       root.querySelectorAll<HTMLElement>('[data-mc]').forEach((el) => {
         const card = el.parentElement as HTMLElement;
-        el.style.fontSize = card.clientWidth / 24 + 'px';
+        el.style.fontSize = card.clientWidth / (el.dataset.mc === 'ls' ? 58 : 24) + 'px';
       });
     };
 
     const tick = () => {
-      const { lapStory, phStory, moStory, lap, pg, pgv, ph, grid, cols, sc, tabs } = refs();
+      const { lapStory, phStory, moStory, lap, pg, pgv, ph, grid, cols, sc } = refs();
       if (lapStory && lap && pg && pgv) {
         const p = progreso(lapStory);
         const rec = Math.max(0, pg.scrollHeight - pgv.clientHeight);
@@ -142,6 +142,9 @@ export default function UJStories(props: Props) {
         lap.style.transform = reduce
           ? 'none'
           : `rotateX(${(1 - p) * 5}deg) rotateY(${-20 + p * 17}deg) scale(${0.9 + 0.1 * clamp(p * 3)})`;
+        const nav = Array.from(lapStory.querySelectorAll<HTMLElement>('[data-nav] .d-ni'));
+        const act = p < 0.34 ? 0 : p < 0.67 ? 1 : 4;
+        nav.forEach((it, k) => it.classList.toggle('on', k === act));
         pasos(lapStory, p);
       }
       if (phStory && ph) {
@@ -150,16 +153,17 @@ export default function UJStories(props: Props) {
         const giro = reduce ? 0 : ease(clamp(p / 0.6)) * 360;
         ph.style.transform = `translateY(${(1 - e1) * alto() * 0.55}px) scale(${0.28 + 0.72 * e1}) rotateY(${giro}deg)`;
         ph.style.opacity = String(clamp(p / 0.12));
+        // el texto aparece solo cuando el teléfono ya terminó de girar y mira
+        // de frente; la pantalla i corresponde exactamente al paso i
+        const tf = (p - 0.6) / 0.4;
         const n = sc.length;
-        const s = clamp((p - 0.38) / 0.62) * (n - 1);
+        const x = clamp(tf * n - 0.5, 0, n - 1);
         sc.forEach((el, k) => {
-          const d = s - k;
+          const d = x - k;
           el.style.opacity = String(clamp(1.5 - Math.abs(d) * 2.5));
           el.style.transform = `translateX(${-d * 26}px)`;
         });
-        const ti = [0, 2, 3, 4][Math.round(s)] ?? 0;
-        tabs.forEach((t, k) => t.classList.toggle('on', k === ti));
-        pasos(phStory, p);
+        pasos(phStory, tf, true);
       }
       if (moStory && grid) {
         const p = progreso(moStory);
