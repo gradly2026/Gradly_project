@@ -204,6 +204,7 @@ export const mFeed = () =>
   `<div class="u">${mTop()}<div class="m-body">
   ${vac('DC', '#2f7d6d', 'Distribuidora Costa Azul', 'Asistente Contable', ['Tiempo parcial', 'Híbrido'], '$300 - $450', 'Quedan 2 de 3 cupos', ['Excel', 'Facturación'], 'hace 2 días')}
   ${vac('CV', '#8a4fb0', 'Clínica Vida Plena', 'Auxiliar de Laboratorio', ['Tiempo completo', 'Presencial'], '$350 - $500', 'Quedan 1 de 2 cupos', ['Bioseguridad'], 'hace 4 días')}
+  ${vac('LT', '#c2562d', 'Logística Tres Puertos', 'Asistente de Inventarios', ['Medio tiempo', 'Presencial'], '$280 - $380', 'Quedan 3 de 4 cupos', ['Inventarios', 'Excel'], 'hace 5 días')}
   </div>${mFabs()}${mNav(0)}</div>`;
 
 /** Chat estudiante ↔ empresa (cordial y profesional). */
