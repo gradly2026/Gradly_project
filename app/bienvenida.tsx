@@ -58,11 +58,11 @@ const BREAKPOINT_ANCHO = 768;
 // Fotos de la sección "Así se ve" (ejemplos, sin marca de agua) y sus créditos,
 // que también se listan en el pie de página. Todas con licencia abierta:
 // CC0 (dominio público) o Creative Commons con atribución.
-const FOTOS: { src: any; titulo: string; sub: string; credito: string; url: string }[] = [
-  { src: require('../assets/images/landing/estudiantes.jpg'), titulo: 'Estudiantes en su primera pasantía', sub: 'Trabajo en equipo desde el primer día', credito: '"Team Meeting" — Startup Stock Photos, vía StockSnap. Licencia CC0 (dominio público).', url: 'https://stocksnap.io/photo/team-meeting-JBW2PXDOL6' },
-  { src: require('../assets/images/landing/equipo.jpg'), titulo: 'Equipos que forman talento', sub: 'Empresas aliadas', credito: '"Business People" — Direct Media, vía StockSnap. Licencia CC0 (dominio público).', url: 'https://stocksnap.io/photo/business-people-IS1XRUWYW4' },
-  { src: require('../assets/images/landing/aula.jpg'), titulo: 'Universidades que acompañan', sub: 'Seguimiento cercano a cada estudiante', credito: '"Students in a university classroom in Tennessee 05" — Harrison Keely, Wikimedia Commons. Licencia CC BY 4.0.', url: 'https://commons.wikimedia.org/w/index.php?curid=164182624' },
-  { src: require('../assets/images/landing/graduada.jpg'), titulo: 'Del aula al primer empleo', sub: 'Certificado y contratación', credito: '"Graduated!" — Ralph Daily, Wikimedia Commons. Licencia CC BY 2.0 (recortada).', url: 'https://commons.wikimedia.org/w/index.php?curid=20068096' },
+const FOTOS: { src: any; titulo: string; sub: string; credito: string; url: string; pos?: string }[] = [
+  { src: require('../assets/images/landing/estudiantes.jpg'), titulo: 'Estudiantes en su primera pasantía', sub: 'Trabajo en equipo desde el primer día', pos: 'center 45%', credito: '"Team Meeting" — Startup Stock Photos, vía StockSnap. Licencia CC0 (dominio público).', url: 'https://stocksnap.io/photo/team-meeting-JBW2PXDOL6' },
+  { src: require('../assets/images/landing/equipo.jpg'), titulo: 'Equipos que forman talento', sub: 'Empresas aliadas', pos: 'center 35%', credito: '"Business People" — Direct Media, vía StockSnap. Licencia CC0 (dominio público).', url: 'https://stocksnap.io/photo/business-people-IS1XRUWYW4' },
+  { src: require('../assets/images/landing/aula.jpg'), titulo: 'Universidades que acompañan', sub: 'Seguimiento cercano a cada estudiante', pos: 'center 55%', credito: '"Students in a university classroom in Tennessee 05" — Harrison Keely, Wikimedia Commons. Licencia CC BY 4.0.', url: 'https://commons.wikimedia.org/w/index.php?curid=164182624' },
+  { src: require('../assets/images/landing/graduada.jpg'), titulo: 'Del aula al primer empleo', sub: 'Certificado y contratación', pos: '30% 55%', credito: '"Graduated!" — Ralph Daily, Wikimedia Commons. Licencia CC BY 2.0 (recortada).', url: 'https://commons.wikimedia.org/w/index.php?curid=20068096' },
 ];
 
 type IconName = keyof typeof Ionicons.glyphMap;

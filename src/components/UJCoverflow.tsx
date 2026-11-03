@@ -8,11 +8,23 @@
 // soporta como cadena), así que esta pieza solo se usa allí.
 // ════════════════════════════════════════════════════════════════════════
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useRef, useState } from 'react';
-import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Asset } from 'expo-asset';
+import { createElement, useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { FONTS } from '../context/ThemeContext';
 
-export type CoverItem = { src: any; titulo: string; sub: string };
+export type CoverItem = { src: any; titulo: string; sub: string; pos?: string };
+
+/** Ruta servible de una imagen importada con require() (web). */
+function uriDe(src: any): string {
+  try {
+    if (typeof src === 'string') return src;
+    if (src && typeof src === 'object' && src.uri) return src.uri;
+    return Asset.fromModule(src).uri;
+  } catch {
+    return '';
+  }
+}
 
 export default function UJCoverflow({ items }: { items: CoverItem[] }) {
   const n = items.length;
@@ -91,7 +103,23 @@ export default function UJCoverflow({ items }: { items: CoverItem[] }) {
                 } as any
               }
             >
-              <Image source={it.src} resizeMode="cover" style={StyleSheet.absoluteFillObject} />
+              {/* Fondo explícito (cover + punto de enfoque): el <Image> de RN-web
+                  se pintaba en una caja mayor que la tarjeta y se veía ampliado */}
+              {createElement('div', {
+                role: 'img',
+                'aria-label': it.titulo,
+                style: {
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundImage: `url("${uriDe(it.src)}")`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: it.pos || 'center',
+                  backgroundRepeat: 'no-repeat',
+                },
+              } as any)}
               <View
                 style={
                   {
